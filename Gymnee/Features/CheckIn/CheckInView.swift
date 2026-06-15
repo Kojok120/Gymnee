@@ -1,14 +1,16 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import CoreLocation
 
-/// チェックインフロー（§6.3）。カメラ→写真→ジム選択(GPS補完)→メモ/合トレ→保存→共有導線。
+/// チェックインフロー（§6.3）。カメラ→写真→ジム選択(GPS自動選択・手動変更可)→メモ/合トレ→保存→共有導線。
 struct CheckInView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(AuthService.self) private var auth
     @Environment(LocationService.self) private var location
     @Environment(LocalSyncEngine.self) private var sync
+    @Query(sort: \Gym.name) private var gyms: [Gym]
 
     @State private var image: UIImage?
     @State private var photoItem: PhotosPickerItem?
@@ -21,6 +23,14 @@ struct CheckInView: View {
     @State private var visitedAt = Date.now
     @State private var savedVisit: Visit?
 
+    /// GPS で自動選択したかどうか・その距離。ユーザーが手動変更したら自動上書きを止める。
+    @State private var isAutoSelected = false
+    @State private var autoDistance: CLLocationDistance?
+    @State private var userPickedGym = false
+
+    /// 自動選択を許容する最大距離（m）。これを超える最寄りジムは自動選択しない。
+    private let autoSelectRadius: CLLocationDistance = 2000
+
     var body: some View {
         NavigationStack {
             if let savedVisit {
@@ -29,7 +39,14 @@ struct CheckInView: View {
                 form
             }
         }
-        .onAppear { location.requestWhenInUse() }
+        .onAppear {
+            location.requestWhenInUse()
+            location.refresh()
+            autoSelectNearestGym()
+        }
+        .onChange(of: location.current?.timestamp) { _, _ in
+            autoSelectNearestGym()
+        }
     }
 
     private var form: some View {
@@ -60,11 +77,18 @@ struct CheckInView: View {
         .sheet(isPresented: $showGymPicker) {
             GymPickerView(userId: auth.currentUserId ?? UUID()) { gym in
                 selectedGym = gym
+                userPickedGym = true
+                isAutoSelected = false
+                autoDistance = nil
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { captured in image = captured }
-                .ignoresSafeArea()
+            CameraPicker { captured in
+                image = captured
+                location.refresh()
+                autoSelectNearestGym()
+            }
+            .ignoresSafeArea()
         }
         .onChange(of: photoItem) { _, newItem in
             Task { await loadPhoto(newItem) }
@@ -115,18 +139,41 @@ struct CheckInView: View {
     }
 
     private var gymSection: some View {
-        Section("ジム") {
+        Section {
             Button { showGymPicker = true } label: {
-                HStack {
+                HStack(spacing: Theme.Spacing.md) {
                     Image(systemName: "building.2.fill").foregroundStyle(Theme.energy)
-                    Text(selectedGym?.name ?? "ジムを選択")
-                        .foregroundStyle(selectedGym == nil ? .secondary : .primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(selectedGym?.name ?? "ジムを選択")
+                            .foregroundStyle(selectedGym == nil ? .secondary : .primary)
+                        if let chain = selectedGym?.chain, !chain.isEmpty {
+                            Text(chain).font(.caption).foregroundStyle(.secondary)
+                        }
+                        if isAutoSelected {
+                            Label(autoHintText, systemImage: "location.fill")
+                                .font(.caption2).foregroundStyle(Theme.energy)
+                        }
+                    }
                     Spacer()
+                    Text("変更").font(.caption).foregroundStyle(Theme.energy)
                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                 }
             }
             .tint(.primary)
+        } header: {
+            Text("ジム")
+        } footer: {
+            if selectedGym == nil {
+                Text("現在地の近くにジムが見つかると自動で選択されます。手動でも選べます。")
+            }
         }
+    }
+
+    private var autoHintText: String {
+        if let d = autoDistance {
+            return "現在地から自動選択（\(formatDistance(d))）"
+        }
+        return "現在地から自動選択"
     }
 
     private var partnerSection: some View {
@@ -148,12 +195,36 @@ struct CheckInView: View {
         }
     }
 
+    // MARK: - Auto select
+
+    /// 現在地から最寄りの登録ジム（座標あり）を自動選択する。
+    /// ユーザーが手動選択済み、または既に手動の選択がある場合は上書きしない。
+    private func autoSelectNearestGym() {
+        guard !userPickedGym, let loc = location.current else { return }
+        // 既存の選択が手動由来なら触らない（自動由来なら、より近い候補に更新を許す）。
+        if selectedGym != nil && !isAutoSelected { return }
+
+        let nearest = gyms
+            .compactMap { gym -> (gym: Gym, dist: CLLocationDistance)? in
+                guard let lat = gym.lat, let lng = gym.lng else { return nil }
+                let d = loc.distance(from: CLLocation(latitude: lat, longitude: lng))
+                return (gym, d)
+            }
+            .min { $0.dist < $1.dist }
+
+        guard let nearest, nearest.dist <= autoSelectRadius else { return }
+        selectedGym = nearest.gym
+        autoDistance = nearest.dist
+        isAutoSelected = true
+    }
+
     // MARK: - Actions
 
     private func loadPhoto(_ item: PhotosPickerItem?) async {
         guard let item else { return }
         if let data = try? await item.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
             image = ui
+            autoSelectNearestGym()
         }
     }
 
