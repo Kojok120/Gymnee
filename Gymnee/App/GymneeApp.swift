@@ -12,6 +12,7 @@ struct GymneeApp: App {
                 .environment(env.auth)
                 .environment(env.sync)
                 .environment(env.location)
+                .environment(env.health)
                 .modelContainer(env.container)
         }
     }

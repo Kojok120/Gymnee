@@ -6,6 +6,7 @@ import SwiftData
 struct SettingsView: View {
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(HealthKitService.self) private var health
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
 
@@ -30,20 +31,25 @@ struct SettingsView: View {
             }
 
             Section("データ") {
-                NavigationLink {
-                    ComingSoonView(title: "ヘルスケア連携", systemImage: "heart.fill", note: "P4 で HealthKit 連携を実装します。")
+                Button {
+                    Task { await health.requestAuthorization() }
                 } label: {
-                    Label("ヘルスケア連携", systemImage: "heart.fill")
+                    HStack {
+                        Label("ヘルスケア連携", systemImage: "heart.fill")
+                        Spacer()
+                        Text(health.isAvailable ? (health.isAuthorized ? "許可済み" : "許可する") : "非対応")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                NavigationLink {
-                    ComingSoonView(title: "通知", systemImage: "bell.fill", note: "P2/P5 でレストタイマー・PR通知を実装します。")
-                } label: {
-                    Label("通知", systemImage: "bell.fill")
-                }
-                NavigationLink {
-                    ComingSoonView(title: "CSVエクスポート", systemImage: "square.and.arrow.up", note: "P4 で全記録のエクスポートを実装します。")
-                } label: {
-                    Label("CSVエクスポート", systemImage: "square.and.arrow.up")
+                .tint(.primary)
+                .disabled(!health.isAvailable)
+
+                if let uid = auth.currentUserId {
+                    NavigationLink {
+                        AnalyticsView(userId: uid)
+                    } label: {
+                        Label("分析・CSVエクスポート", systemImage: "chart.bar.xaxis")
+                    }
                 }
             }
 

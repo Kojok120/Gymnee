@@ -11,6 +11,7 @@ final class AppEnvironment {
     let auth: AuthService
     let sync: LocalSyncEngine
     let location: LocationService
+    let health: HealthKitService
 
     init(container: ModelContainer? = nil) {
         let resolved = container ?? GymneeSchema.makeContainer()
@@ -18,6 +19,7 @@ final class AppEnvironment {
         self.sync = LocalSyncEngine()
         self.auth = AuthService()
         self.location = LocationService()
+        self.health = HealthKitService()
         self.auth.bootstrap(context: resolved.mainContext)
     }
 }
