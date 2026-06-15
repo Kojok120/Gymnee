@@ -1,9 +1,12 @@
 import SwiftUI
 import SwiftData
+import CoreLocation
 
-/// ジム自己登録（§6.4）。現在地を任意で取り込み、近隣候補表示に活用する。
+/// ジム自己登録（§6.4）。現在地を取り込み、リバースジオコーディングで店名/住所を自動補完する。
 struct AddGymView: View {
     let userId: UUID
+    /// 初期表示する名前（チェックインの「近くに無い」フォールバックから渡せる）。
+    var suggestedName: String? = nil
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -12,13 +15,25 @@ struct AddGymView: View {
 
     @State private var name = ""
     @State private var chain = ""
+    @State private var address = ""
     @State private var captureLocation = true
+    @State private var geocoding = false
+    @State private var didPrefill = false
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("ジム名") {
-                    TextField("例: エニタイム◯◯店", text: $name)
+                Section {
+                    HStack {
+                        TextField("例: エニタイム◯◯店", text: $name)
+                        if geocoding { ProgressView().controlSize(.small) }
+                    }
+                } header: {
+                    Text("ジム名")
+                } footer: {
+                    if !address.isEmpty {
+                        Label(address, systemImage: "mappin.and.ellipse").font(.caption2)
+                    }
                 }
                 Section("チェーン（任意）") {
                     TextField("例: Anytime Fitness", text: $chain)
@@ -32,6 +47,11 @@ struct AddGymView: View {
                                     .font(.caption.monospaced())
                                     .foregroundStyle(.secondary)
                             }
+                            Button {
+                                Task { await reverseGeocode(force: true) }
+                            } label: {
+                                Label("現在地から店名・住所を取得", systemImage: "location.magnifyingglass")
+                            }
                         } else {
                             Text("位置情報を取得中… 許諾が必要です。")
                                 .font(.caption)
@@ -39,7 +59,7 @@ struct AddGymView: View {
                         }
                     }
                 } footer: {
-                    Text("現在地を登録すると、次回チェックイン時に近くのジムとして自動提案されます。")
+                    Text("現在地を登録すると店名・住所を自動補完し、次回チェックイン時に近くのジムとして自動提案されます。")
                 }
             }
             .navigationTitle("ジムを追加")
@@ -54,8 +74,29 @@ struct AddGymView: View {
                 }
             }
             .onAppear {
+                if let suggestedName, name.isEmpty { name = suggestedName }
                 if captureLocation { location.requestWhenInUse() }
             }
+            .task(id: location.current?.timestamp) {
+                await reverseGeocode(force: false)
+            }
+        }
+    }
+
+    /// 現在地を逆ジオコーディングして店名/住所を補完。force=false のときは未入力欄のみ埋める。
+    private func reverseGeocode(force: Bool) async {
+        guard captureLocation, let loc = location.current else { return }
+        if !force && didPrefill { return }
+        geocoding = true
+        defer { geocoding = false }
+        guard let placemark = try? await CLGeocoder().reverseGeocodeLocation(loc).first else { return }
+        didPrefill = true
+        let placeName = placemark.name ?? placemark.areasOfInterest?.first
+        let parts = [placemark.administrativeArea, placemark.locality, placemark.thoroughfare, placemark.subThoroughfare]
+            .compactMap { $0 }
+        address = parts.joined()
+        if let placeName, (force || name.trimmingCharacters(in: .whitespaces).isEmpty) {
+            name = placeName
         }
     }
 
@@ -64,6 +105,7 @@ struct AddGymView: View {
         let gym = Gym(
             name: name.trimmingCharacters(in: .whitespaces),
             chain: chain.isEmpty ? nil : chain,
+            address: address.isEmpty ? nil : address,
             lat: loc?.coordinate.latitude,
             lng: loc?.coordinate.longitude,
             source: .user,

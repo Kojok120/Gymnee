@@ -61,6 +61,7 @@ struct RootView: View {
     private func debugScreen(_ name: String, userId: UUID) -> some View {
         switch name {
         case "gym": NavigationStack { GymListView(userId: userId) }
+        case "addgym": AddGymView(userId: userId)
         case "checkin": CheckInView()
         case "profile": NavigationStack { ProfileView(userId: userId) }
         case "social": SocialFeedView()
