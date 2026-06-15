@@ -1,0 +1,82 @@
+name: Gymnee
+options:
+  bundleIdPrefix: com.gymnee
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGNING_ALLOWED: "NO"
+    DEVELOPMENT_TEAM: ""
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+
+targets:
+  Gymnee:
+    type: application
+    platform: iOS
+    sources:
+      - path: Gymnee
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app
+        PRODUCT_NAME: Gymnee
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: "YES"
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: "NO"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+    info:
+      path: Gymnee/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Gymnee
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen:
+          UIColorName: ""
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: "ジムでの写真チェックインと進捗写真の撮影に使用します。"
+        NSPhotoLibraryUsageDescription: "進捗写真やチェックイン写真の選択・保存に使用します。"
+        NSPhotoLibraryAddUsageDescription: "生成した共有カードを写真ライブラリに保存するために使用します。"
+        NSLocationWhenInUseUsageDescription: "現在地から近くのジムを自動で候補表示するために使用します。"
+        NSLocationAlwaysAndWhenInUseUsageDescription: "登録したジムへの接近時に自動チェックインを提案するために使用します。"
+        NSHealthShareUsageDescription: "体重・体組成を読み込み、記録に反映するために使用します。"
+        NSHealthUpdateUsageDescription: "ワークアウト記録をヘルスケアへ書き戻すために使用します。"
+        NSMotionUsageDescription: "アクティビティの記録に使用します。"
+
+  GymneeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: GymneeTests
+    dependencies:
+      - target: Gymnee
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+
+schemes:
+  Gymnee:
+    build:
+      targets:
+        Gymnee: all
+        GymneeTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - GymneeTests

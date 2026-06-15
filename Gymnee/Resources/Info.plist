@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Gymnee</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>ジムでの写真チェックインと進捗写真の撮影に使用します。</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>体重・体組成を読み込み、記録に反映するために使用します。</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>ワークアウト記録をヘルスケアへ書き戻すために使用します。</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>登録したジムへの接近時に自動チェックインを提案するために使用します。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>現在地から近くのジムを自動で候補表示するために使用します。</string>
+	<key>NSMotionUsageDescription</key>
+	<string>アクティビティの記録に使用します。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>生成した共有カードを写真ライブラリに保存するために使用します。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>進捗写真やチェックイン写真の選択・保存に使用します。</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string></string>
+	</dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>
