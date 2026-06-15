@@ -107,6 +107,8 @@ final class WorkoutExercise {
     @Attribute(.unique) var id: UUID
     var orderIndex: Int
     var note: String?
+    /// スーパーセットのグループ識別子。同じ値同士が 1 つのスーパーセット（nil は単独）。
+    var supersetGroup: Int?
     var updatedAt: Date
     var isDirty: Bool
 
@@ -120,6 +122,7 @@ final class WorkoutExercise {
         id: UUID = UUID(),
         orderIndex: Int,
         note: String? = nil,
+        supersetGroup: Int? = nil,
         workout: Workout? = nil,
         exercise: Exercise? = nil,
         updatedAt: Date = .now,
@@ -128,6 +131,7 @@ final class WorkoutExercise {
         self.id = id
         self.orderIndex = orderIndex
         self.note = note
+        self.supersetGroup = supersetGroup
         self.workout = workout
         self.exercise = exercise
         self.updatedAt = updatedAt

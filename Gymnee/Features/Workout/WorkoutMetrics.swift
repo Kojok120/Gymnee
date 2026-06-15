@@ -23,6 +23,31 @@ enum WorkoutMetrics {
         return (mostRecent?.sets ?? []).sorted { $0.setIndex < $1.setIndex }
     }
 
+    /// 直近 N セッションの代表セット（最重量の作業セット）。インライン履歴表示用。
+    static func recentTopSets(for exercise: Exercise, userId: UUID, excludingWorkoutId: UUID?, limit: Int = 3) -> [(date: Date, weight: Double, reps: Int)] {
+        let sessions = exercise.workoutExercises
+            .filter { $0.workout?.userId == userId && $0.workout?.id != excludingWorkoutId }
+            .compactMap { we -> (date: Date, weight: Double, reps: Int)? in
+                guard let date = we.workout?.date else { return nil }
+                let working = we.sets.filter { $0.type != .warmup && $0.weight > 0 }
+                guard let top = working.max(by: { $0.weight < $1.weight }) else { return nil }
+                return (date, top.weight, top.reps)
+            }
+            .sorted { $0.date > $1.date }
+        return Array(sessions.prefix(limit))
+    }
+
+    /// 種目の履歴ベスト推定1RM（%1RM 提案の基準）。
+    static func bestE1RM(for exercise: Exercise, userId: UUID, excludingWorkoutId: UUID?) -> Double {
+        var best = 0.0
+        for we in exercise.workoutExercises where we.workout?.userId == userId && we.workout?.id != excludingWorkoutId {
+            for s in we.sets where s.type != .warmup && s.weight > 0 && s.reps > 0 {
+                best = max(best, OneRepMax.estimate(weight: s.weight, reps: s.reps))
+            }
+        }
+        return best
+    }
+
     /// 現在ベスト（PR 検出の基準）。候補セットを除外して履歴から算出。
     static func bests(for exercise: Exercise, userId: UUID, excludingSetId: UUID?) -> PRDetector.Bests {
         var b = PRDetector.Bests()

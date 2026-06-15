@@ -14,6 +14,7 @@ struct WorkoutLoggerView: View {
     @State private var showExercisePicker = false
     @State private var plateTarget: Double?
     @State private var prToast: String?
+    @State private var editingNote: WorkoutExercise?
 
     private var userId: UUID { auth.currentUserId ?? UUID() }
     private var orderedExercises: [WorkoutExercise] {
@@ -44,9 +45,29 @@ struct WorkoutLoggerView: View {
             PlateCalculatorView(initialTarget: target.weight)
         }
         .overlay(alignment: .top) { prToastView }
+        .sheet(item: $editingNote) { we in
+            NavigationStack {
+                Form {
+                    TextField("種目メモ（例: フォーム意識・痛みなど）", text: noteBinding(we), axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                .navigationTitle(we.exercise?.name ?? "メモ")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("完了") { try? context.save(); editingNote = nil }
+                    }
+                }
+            }
+            .presentationDetents([.height(220)])
+        }
     }
 
     private struct PlateTarget: Identifiable { let weight: Double; var id: Double { weight } }
+
+    private func noteBinding(_ we: WorkoutExercise) -> Binding<String> {
+        Binding(get: { we.note ?? "" }, set: { we.note = $0.isEmpty ? nil : $0; we.updatedAt = .now })
+    }
 
     // MARK: - Sections
 
@@ -68,6 +89,9 @@ struct WorkoutLoggerView: View {
 
     private func exerciseSection(_ we: WorkoutExercise) -> some View {
         Section {
+            if let note = we.note, !note.isEmpty {
+                Label(note, systemImage: "note.text").font(.caption).foregroundStyle(.secondary)
+            }
             ForEach(we.sets.sorted { $0.setIndex < $1.setIndex }) { set in
                 SetRowView(set: set) { onSetCompleted(set, in: we) }
                     .swipeActions {
@@ -77,26 +101,49 @@ struct WorkoutLoggerView: View {
             Button {
                 addSet(to: we)
             } label: {
-                Label("セットを追加", systemImage: "plus.circle")
-                    .font(.subheadline)
+                Label("セットを追加", systemImage: "plus.circle").font(.subheadline)
+            }
+            if let history = historyText(for: we) {
+                Label(history, systemImage: "clock.arrow.circlepath")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            if let suggest = suggestionText(for: we) {
+                Label(suggest, systemImage: "target")
+                    .font(.caption2).foregroundStyle(Theme.energy)
             }
         } header: {
-            HStack {
+            HStack(spacing: 6) {
+                if we.supersetGroup != nil {
+                    Image(systemName: "link").font(.caption2).foregroundStyle(supersetColor(we))
+                }
                 Text(we.exercise?.name ?? "種目")
-                Spacer()
                 if let hint = previousHint(for: we) {
                     Text(hint).font(.caption2).foregroundStyle(.secondary)
                 }
-                Button {
-                    plateTarget = topWeight(of: we)
-                } label: {
-                    Image(systemName: "circle.hexagongrid.fill").font(.caption)
-                }
+                Spacer()
+                exerciseMenu(we)
             }
         } footer: {
             if let est = estimated1RM(for: we), est > 0 {
                 Text(String(format: "推定1RM %.1fkg", est))
             }
+        }
+        .listRowBackground(we.supersetGroup != nil ? supersetColor(we).opacity(0.06) : Color(uiColor: .secondarySystemGroupedBackground))
+    }
+
+    private func exerciseMenu(_ we: WorkoutExercise) -> some View {
+        Menu {
+            Button { addWarmup(to: we) } label: { Label("ウォームアップを追加", systemImage: "flame") }
+            Button { plateTarget = topWeight(of: we) } label: { Label("プレート計算", systemImage: "circle.hexagongrid.fill") }
+            Button { editingNote = we } label: { Label("メモを編集", systemImage: "note.text") }
+            if we.supersetGroup != nil {
+                Button { clearSuperset(we) } label: { Label("スーパーセット解除", systemImage: "link") }
+            } else if canSupersetWithNext(we) {
+                Button { linkSupersetWithNext(we) } label: { Label("次とスーパーセット", systemImage: "link") }
+            }
+            Button(role: .destructive) { deleteExercise(we) } label: { Label("種目を削除", systemImage: "trash") }
+        } label: {
+            Image(systemName: "ellipsis.circle").font(.body)
         }
     }
 
@@ -238,5 +285,84 @@ struct WorkoutLoggerView: View {
         let prev = WorkoutMetrics.previousSets(for: exercise, userId: userId, excludingWorkoutId: workout.id)
         guard let top = prev.first else { return nil }
         return String(format: "前回 %.0f×%d", top.weight, top.reps)
+    }
+
+    /// 直近セッションのインライン履歴（例: 6/14 80×6 · 6/11 75×8）。
+    private func historyText(for we: WorkoutExercise) -> String? {
+        guard let exercise = we.exercise else { return nil }
+        let recent = WorkoutMetrics.recentTopSets(for: exercise, userId: userId, excludingWorkoutId: workout.id, limit: 3)
+        guard !recent.isEmpty else { return nil }
+        let f = DateFormatter(); f.dateFormat = "M/d"
+        return recent.map { String(format: "%@ %.0f×%d", f.string(from: $0.date), $0.weight, $0.reps) }
+            .joined(separator: " · ")
+    }
+
+    /// 履歴ベスト推定1RM からの %1RM 目標重量（例: 目標 5→102.5 / 8→90 / 12→80kg）。
+    private func suggestionText(for we: WorkoutExercise) -> String? {
+        guard let exercise = we.exercise else { return nil }
+        let e1RM = WorkoutMetrics.bestE1RM(for: exercise, userId: userId, excludingWorkoutId: workout.id)
+        guard e1RM > 0 else { return nil }
+        let s = StrengthSuggester.suggestions(e1RM: e1RM)
+        let body = s.map { String(format: "%d→%g", $0.reps, $0.weight) }.joined(separator: " / ")
+        return "目標 \(body)kg"
+    }
+
+    // MARK: - Warmup / Superset actions
+
+    private func addWarmup(to we: WorkoutExercise) {
+        let existing = we.sets.sorted { $0.setIndex < $1.setIndex }
+        let working = existing.filter { $0.type != .warmup }
+        // 本番重量：作業セットの最大、無ければ履歴の8レップ推奨。
+        let target: Double = {
+            if let maxW = working.map(\.weight).max(), maxW > 0 { return maxW }
+            guard let ex = we.exercise else { return 0 }
+            let e1RM = WorkoutMetrics.bestE1RM(for: ex, userId: userId, excludingWorkoutId: workout.id)
+            return StrengthSuggester.workingWeight(e1RM: e1RM, reps: 8)
+        }()
+        let warmups = WarmupCalculator.sets(workingWeight: target)
+        guard !warmups.isEmpty else { return }
+
+        // 既存ウォームアップを除去してから先頭に差し込み、全セットを再採番。
+        for s in existing where s.type == .warmup { context.delete(s) }
+        var idx = 0
+        for w in warmups {
+            context.insert(ExerciseSet(setIndex: idx, weight: w.weight, reps: w.reps, type: .warmup, isCompleted: false, workoutExercise: we))
+            idx += 1
+        }
+        for s in working { s.setIndex = idx; idx += 1 }
+        try? context.save()
+    }
+
+    private func canSupersetWithNext(_ we: WorkoutExercise) -> Bool {
+        orderedExercises.contains { $0.orderIndex == we.orderIndex + 1 }
+    }
+
+    private func linkSupersetWithNext(_ we: WorkoutExercise) {
+        guard let next = orderedExercises.first(where: { $0.orderIndex == we.orderIndex + 1 }) else { return }
+        let group = we.orderIndex
+        we.supersetGroup = group
+        next.supersetGroup = group
+        we.updatedAt = .now; next.updatedAt = .now
+        try? context.save()
+    }
+
+    private func clearSuperset(_ we: WorkoutExercise) {
+        let group = we.supersetGroup
+        for ex in orderedExercises where ex.supersetGroup == group {
+            ex.supersetGroup = nil
+            ex.updatedAt = .now
+        }
+        try? context.save()
+    }
+
+    private func deleteExercise(_ we: WorkoutExercise) {
+        context.delete(we)
+        try? context.save()
+    }
+
+    private func supersetColor(_ we: WorkoutExercise) -> Color {
+        let palette: [Color] = [.blue, .purple, .pink, .teal, .indigo]
+        guard let g = we.supersetGroup else { return Theme.energy }
+        return palette[abs(g) % palette.count]
     }
 }
