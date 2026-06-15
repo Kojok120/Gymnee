@@ -63,5 +63,29 @@ enum DemoData {
 
         try? context.save()
     }
+
+    /// 検証用の進行中ワークアウト（種目・前回値オートフィル付き）を作って返す。
+    @MainActor
+    static func makeLoggerWorkout(_ context: ModelContext, userId: UUID) -> Workout {
+        let workout = Workout(userId: userId, date: .now, name: "デモセッション", isDirty: false)
+        context.insert(workout)
+        let names = ["ベンチプレス", "スクワット"]
+        for (i, name) in names.enumerated() {
+            guard let ex = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == name })))?.first else { continue }
+            let we = WorkoutExercise(orderIndex: i, workout: workout, exercise: ex, isDirty: false)
+            context.insert(we)
+            let prev = WorkoutMetrics.previousSets(for: ex, userId: userId, excludingWorkoutId: workout.id)
+            if prev.isEmpty {
+                context.insert(ExerciseSet(setIndex: 0, weight: 60, reps: 8, workoutExercise: we, isDirty: false))
+                context.insert(ExerciseSet(setIndex: 1, weight: 60, reps: 8, workoutExercise: we, isDirty: false))
+            } else {
+                for (s, p) in prev.enumerated() {
+                    context.insert(ExerciseSet(setIndex: s, weight: p.weight, reps: p.reps, type: p.type, workoutExercise: we, isDirty: false))
+                }
+            }
+        }
+        try? context.save()
+        return workout
+    }
 }
 #endif

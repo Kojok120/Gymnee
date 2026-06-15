@@ -11,6 +11,9 @@ struct RootView: View {
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .calendar
     @State private var showCheckIn = false
+    #if DEBUG
+    @State private var debugWorkout: Workout?
+    #endif
 
     var body: some View {
         Group {
@@ -41,7 +44,11 @@ struct RootView: View {
         #if DEBUG
         guard DebugSupport.demoRequested else { return }
         if !auth.isSignedIn { auth.signIn(displayName: "デモ太郎") }
-        if let uid = auth.currentUserId { DemoData.seedIfNeeded(context, userId: uid) }
+        guard let uid = auth.currentUserId else { return }
+        DemoData.seedIfNeeded(context, userId: uid)
+        if DebugSupport.screen == "logger", debugWorkout == nil {
+            debugWorkout = DemoData.makeLoggerWorkout(context, userId: uid)
+        }
         #endif
     }
 
@@ -51,6 +58,13 @@ struct RootView: View {
         switch name {
         case "gym": NavigationStack { GymListView(userId: userId) }
         case "checkin": CheckInView()
+        case "workout": WorkoutHomeView()
+        case "logger":
+            if let w = debugWorkout {
+                NavigationStack { WorkoutLoggerView(workout: w) }
+            } else {
+                WorkoutHomeView()
+            }
         default: mainTabs
         }
     }
