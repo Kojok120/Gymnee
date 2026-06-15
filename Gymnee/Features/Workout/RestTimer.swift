@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import UserNotifications
+import ActivityKit
 
 /// レストタイマー（§6.5）。セット完了で起動し、カウントダウン表示＋完了通知。
 /// Live Activity 連動は P5 で追加する。
@@ -15,12 +16,16 @@ final class RestTimer {
     private var task: Task<Void, Never>?
     private let notificationId = "gymnee.restTimer"
 
+    var exerciseName: String = "レスト"
+    private var activity: Activity<RestTimerActivityAttributes>?
+
     func start(seconds: Int? = nil) {
         let duration = seconds ?? presetDuration
         total = duration
         remaining = duration
         isRunning = true
         scheduleNotification(after: duration)
+        startLiveActivity(duration: duration)
         task?.cancel()
         task = Task { [weak self] in
             while !Task.isCancelled {
@@ -44,6 +49,34 @@ final class RestTimer {
         task?.cancel()
         task = nil
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notificationId])
+        endLiveActivity()
+    }
+
+    // MARK: - Live Activity (§6.10)
+
+    private func startLiveActivity(duration: Int) {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        endLiveActivity()
+        let attributes = RestTimerActivityAttributes(workoutName: "Gymnee")
+        let state = RestTimerActivityAttributes.ContentState(
+            endDate: Date.now.addingTimeInterval(TimeInterval(duration)),
+            exerciseName: exerciseName
+        )
+        do {
+            activity = try Activity.request(
+                attributes: attributes,
+                content: .init(state: state, staleDate: nil)
+            )
+        } catch {
+            activity = nil
+        }
+    }
+
+    private func endLiveActivity() {
+        guard let activity else { return }
+        let current = activity
+        self.activity = nil
+        Task { await current.end(nil, dismissalPolicy: .immediate) }
     }
 
     private func tick() {

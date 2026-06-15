@@ -20,8 +20,11 @@ struct CalendarHomeView: View {
 private struct CalendarHomeContent: View {
     let userId: UUID
 
+    @Environment(\.modelContext) private var context
+    @Environment(LocationService.self) private var location
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
+    @Query private var gyms: [Gym]
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
     @State private var anchor = Date.now
@@ -40,6 +43,7 @@ private struct CalendarHomeContent: View {
         self.userId = userId
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date)
+        _gyms = Query(sort: \Gym.name)
     }
 
     var body: some View {
@@ -69,6 +73,30 @@ private struct CalendarHomeContent: View {
         .navigationDestination(item: $selectedDate) { selection in
             DayDetailView(userId: userId, date: selection.date)
         }
+        .task(id: visits.count) { syncPlatform() }
+    }
+
+    /// Widget スナップショット更新＋ジオフェンス監視開始＋Watch保留チェックイン消化（§6.10）。
+    private func syncPlatform() {
+        consumeWatchCheckIns()
+        SnapshotUpdater.update(userId: userId, context: context)
+        let regions = gyms.compactMap { gym -> (id: UUID, name: String, lat: Double, lng: Double)? in
+            guard let lat = gym.lat, let lng = gym.lng else { return nil }
+            return (gym.id, gym.name, lat, lng)
+        }
+        location.startMonitoring(gymRegions: regions)
+    }
+
+    /// Watch（App Group キュー）からのクイックチェックインを来店として取り込む。
+    private func consumeWatchCheckIns() {
+        let pending = SharedStore.consumePendingCheckIns()
+        guard !pending.isEmpty else { return }
+        let gym = gyms.first(where: { $0.isFavorite }) ?? gyms.first
+        for date in pending {
+            let visit = Visit(userId: userId, visitedAt: date, gym: gym)
+            context.insert(visit)
+        }
+        try? context.save()
     }
 
     // MARK: - Stats

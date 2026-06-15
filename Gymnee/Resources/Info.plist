@@ -38,6 +38,8 @@
 	<string>生成した共有カードを写真ライブラリに保存するために使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>進捗写真やチェックイン写真の選択・保存に使用します。</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -185,6 +185,7 @@ struct WorkoutLoggerView: View {
         let detected = WorkoutMetrics.evaluatePR(set: set, exercise: exercise, workout: workout, userId: userId, context: context, sync: sync)
         sync.enqueue(PendingChange(entity: "exercise_sets", recordId: set.id, operation: .upsert, updatedAt: set.updatedAt))
         try? context.save()
+        restTimer.exerciseName = exercise.name
         restTimer.start()
         if !detected.isEmpty {
             let labels = detected.map(\.type.label).joined(separator: "・")

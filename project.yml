@@ -23,6 +23,10 @@ targets:
     platform: iOS
     sources:
       - path: Gymnee
+      - path: Shared
+      - path: SharedActivity
+    dependencies:
+      - target: GymneeWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app
@@ -47,6 +51,7 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
         NSCameraUsageDescription: "ジムでの写真チェックインと進捗写真の撮影に使用します。"
         NSPhotoLibraryUsageDescription: "進捗写真やチェックイン写真の選択・保存に使用します。"
         NSPhotoLibraryAddUsageDescription: "生成した共有カードを写真ライブラリに保存するために使用します。"
@@ -55,6 +60,49 @@ targets:
         NSHealthShareUsageDescription: "体重・体組成を読み込み、記録に反映するために使用します。"
         NSHealthUpdateUsageDescription: "ワークアウト記録をヘルスケアへ書き戻すために使用します。"
         NSMotionUsageDescription: "アクティビティの記録に使用します。"
+
+  GymneeWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: GymneeWidgets
+      - path: Shared
+      - path: SharedActivity
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.widgets
+        PRODUCT_NAME: GymneeWidgets
+        GENERATE_INFOPLIST_FILE: "NO"
+        SKIP_INSTALL: "YES"
+    info:
+      path: GymneeWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Gymnee
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  GymneeWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: GymneeWatch
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.watchkitapp
+        PRODUCT_NAME: GymneeWatch
+        GENERATE_INFOPLIST_FILE: "NO"
+        TARGETED_DEVICE_FAMILY: "4"
+    info:
+      path: GymneeWatch/Info.plist
+      properties:
+        CFBundleDisplayName: Gymnee
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        WKApplication: true
 
   GymneeTests:
     type: bundle.unit-test
