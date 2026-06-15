@@ -63,7 +63,7 @@ private struct CalendarHomeContent: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                NavigationLink { ProfileView(userId: userId) } label: { Image(systemName: "person.crop.circle") }
             }
         }
         .navigationDestination(item: $selectedDate) { selection in

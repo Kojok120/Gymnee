@@ -58,6 +58,12 @@ struct RootView: View {
         switch name {
         case "gym": NavigationStack { GymListView(userId: userId) }
         case "checkin": CheckInView()
+        case "profile": NavigationStack { ProfileView(userId: userId) }
+        case "share":
+            ShareCardEditorView(content: ShareCardContent(
+                image: nil, gymName: "Gymnee 渋谷", streak: 3,
+                prText: "ベンチ 80kg", exerciseSummary: "胸・三頭 3種目"
+            ))
         case "workout": WorkoutHomeView()
         case "logger":
             if let w = debugWorkout {
