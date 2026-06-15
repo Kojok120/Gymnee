@@ -22,6 +22,7 @@ private struct CalendarHomeContent: View {
 
     @Environment(\.modelContext) private var context
     @Environment(LocationService.self) private var location
+    @Environment(NotificationService.self) private var notifications
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
     @Query private var gyms: [Gym]
@@ -76,7 +77,7 @@ private struct CalendarHomeContent: View {
         .task(id: visits.count) { syncPlatform() }
     }
 
-    /// Widget スナップショット更新＋ジオフェンス監視開始＋Watch保留チェックイン消化（§6.10）。
+    /// Widget スナップショット更新＋ジオフェンス監視開始＋Watch保留チェックイン消化＋通知予約（§6.10）。
     private func syncPlatform() {
         consumeWatchCheckIns()
         SnapshotUpdater.update(userId: userId, context: context)
@@ -85,6 +86,18 @@ private struct CalendarHomeContent: View {
             return (gym.id, gym.name, lat, lng)
         }
         location.startMonitoring(gymRegions: regions)
+        scheduleReminders()
+    }
+
+    private func scheduleReminders() {
+        Task { await notifications.requestAuthorization() }
+        let today = calendar.startOfDay(for: .now)
+        let checkedInToday = visits.contains { calendar.isDateInToday($0.visitedAt) }
+        notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: checkedInToday)
+        let planned = workouts
+            .filter { $0.isPlanned && $0.completedAt == nil && $0.date >= today }
+            .map { (id: $0.id, name: $0.name, date: $0.date) }
+        notifications.schedulePlannedWorkouts(planned)
     }
 
     /// Watch（App Group キュー）からのクイックチェックインを来店として取り込む。

@@ -9,6 +9,7 @@ struct WorkoutLoggerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(NotificationService.self) private var notifications
 
     @State private var restTimer = RestTimer()
     @State private var showExercisePicker = false
@@ -237,6 +238,7 @@ struct WorkoutLoggerView: View {
         if !detected.isEmpty {
             let labels = detected.map(\.type.label).joined(separator: "・")
             showPRToast("PR更新！ \(labels)")
+            notifications.notifyPR("\(exercise.name) \(labels)")
         }
     }
 

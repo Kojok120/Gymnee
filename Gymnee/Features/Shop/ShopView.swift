@@ -21,6 +21,7 @@ private struct ShopContent: View {
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(NotificationService.self) private var notifications
     @Query(sort: \Product.name) private var products: [Product]
     @Query private var supplyLogs: [SupplyLog]
     @Query private var orders: [Order]
@@ -70,6 +71,9 @@ private struct ShopContent: View {
             }
         }
         .task(id: orders.count) { cartCount = CartStore.itemCount(userId: userId, context: context) }
+        .task(id: supplyLogs.count) {
+            for product in lowProducts { notifications.notifySupplyLow(productId: product.id, productName: product.name) }
+        }
     }
 
     private var goalPicker: some View {
