@@ -8,19 +8,53 @@ enum AppTab: Hashable {
 /// 中央の「チェックイン」タブは選択時にフルスクリーンのチェックインフローを起動する（§6.3）。
 struct RootView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .calendar
     @State private var showCheckIn = false
 
     var body: some View {
         Group {
             if auth.isSignedIn {
-                mainTabs
+                signedInContent
             } else {
                 OnboardingView()
             }
         }
         .animation(.default, value: auth.isSignedIn)
+        .task { await runDebugHarnessIfNeeded() }
     }
+
+    @ViewBuilder
+    private var signedInContent: some View {
+        #if DEBUG
+        if let screen = DebugSupport.screen, let uid = auth.currentUserId {
+            debugScreen(screen, userId: uid)
+        } else {
+            mainTabs
+        }
+        #else
+        mainTabs
+        #endif
+    }
+
+    private func runDebugHarnessIfNeeded() async {
+        #if DEBUG
+        guard DebugSupport.demoRequested else { return }
+        if !auth.isSignedIn { auth.signIn(displayName: "デモ太郎") }
+        if let uid = auth.currentUserId { DemoData.seedIfNeeded(context, userId: uid) }
+        #endif
+    }
+
+    #if DEBUG
+    @ViewBuilder
+    private func debugScreen(_ name: String, userId: UUID) -> some View {
+        switch name {
+        case "gym": NavigationStack { GymListView(userId: userId) }
+        case "checkin": CheckInView()
+        default: mainTabs
+        }
+    }
+    #endif
 
     private var mainTabs: some View {
         TabView(selection: tabBinding) {
