@@ -53,19 +53,37 @@ enum DemoData {
         // フォローのデモ。
         context.insert(Follow(followerId: userId, followeeId: UUID(), followeeDisplayName: "ゆうき", isDirty: false))
 
-        // ワークアウト 1 件（種目・セット・PR 込み）。
+        // ベンチプレスの履歴（強度進捗・PRタイムライン用に複数セッション）。
         let bench = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "ベンチプレス" })))?.first
-        let workout = Workout(userId: userId, date: today, name: "胸・三頭", completedAt: .now, isDirty: false)
-        context.insert(workout)
-        if let bench {
-            let we = WorkoutExercise(orderIndex: 0, workout: workout, exercise: bench, isDirty: false)
-            context.insert(we)
-            let reps = [10, 8, 6]
-            let weights = [60.0, 70.0, 80.0]
-            for i in 0..<3 {
-                let set = ExerciseSet(setIndex: i, weight: weights[i], reps: reps[i], type: .normal, isPR: i == 2, isCompleted: true, workoutExercise: we, isDirty: false)
-                context.insert(set)
+        let squat = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "スクワット" })))?.first
+        // (日数前, トップ重量) を過去→現在で漸増。
+        let benchHistory: [(Int, Double)] = [(23, 70), (16, 72.5), (9, 77.5), (2, 80)]
+        for (off, topWeight) in benchHistory {
+            guard let date = cal.date(byAdding: .day, value: -off, to: today) else { continue }
+            let workout = Workout(userId: userId, date: date, name: "胸・三頭", completedAt: date, isDirty: false)
+            context.insert(workout)
+            if let bench {
+                let we = WorkoutExercise(orderIndex: 0, workout: workout, exercise: bench, isDirty: false)
+                context.insert(we)
+                let weights = [topWeight - 20, topWeight - 10, topWeight]
+                let reps = [10, 8, 6]
+                for i in 0..<3 {
+                    context.insert(ExerciseSet(setIndex: i, weight: weights[i], reps: reps[i], type: .normal, isPR: i == 2 && off == 2, isCompleted: true, workoutExercise: we, isDirty: false))
+                }
             }
+            if let squat, off == 2 {
+                let we = WorkoutExercise(orderIndex: 1, workout: workout, exercise: squat, isDirty: false)
+                context.insert(we)
+                for i in 0..<3 {
+                    context.insert(ExerciseSet(setIndex: i, weight: 100, reps: 5, type: .normal, isCompleted: true, workoutExercise: we, isDirty: false))
+                }
+            }
+        }
+
+        // PersonalRecord（PRタイムライン用）。
+        if let bench {
+            context.insert(PersonalRecord(userId: userId, type: .maxWeight, value: 80, achievedAt: cal.date(byAdding: .day, value: -2, to: today) ?? today, exercise: bench, isDirty: false))
+            context.insert(PersonalRecord(userId: userId, type: .est1RM, value: OneRepMax.estimate(weight: 80, reps: 6), achievedAt: cal.date(byAdding: .day, value: -2, to: today) ?? today, exercise: bench, isDirty: false))
         }
 
         try? context.save()
