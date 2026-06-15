@@ -233,7 +233,7 @@ struct WorkoutLoggerView: View {
         sync.enqueue(PendingChange(entity: "exercise_sets", recordId: set.id, operation: .upsert, updatedAt: set.updatedAt))
         try? context.save()
         restTimer.exerciseName = exercise.name
-        restTimer.start()
+        restTimer.start(seconds: we.restSeconds)
         if !detected.isEmpty {
             let labels = detected.map(\.type.label).joined(separator: "・")
             showPRToast("PR更新！ \(labels)")

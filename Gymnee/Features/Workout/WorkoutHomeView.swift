@@ -115,7 +115,7 @@ private struct WorkoutHomeContent: View {
         let ordered = routine.routineExercises.sorted { $0.orderIndex < $1.orderIndex }
         for (i, re) in ordered.enumerated() {
             guard let exercise = re.exercise else { continue }
-            let we = WorkoutExercise(orderIndex: i, workout: workout, exercise: exercise)
+            let we = WorkoutExercise(orderIndex: i, restSeconds: re.restSeconds, workout: workout, exercise: exercise)
             context.insert(we)
             let prev = WorkoutMetrics.previousSets(for: exercise, userId: userId, excludingWorkoutId: workout.id)
             let setCount = max(re.targetSets, prev.count)

@@ -109,6 +109,8 @@ final class WorkoutExercise {
     var note: String?
     /// スーパーセットのグループ識別子。同じ値同士が 1 つのスーパーセット（nil は単独）。
     var supersetGroup: Int?
+    /// 種目別レスト秒数（nil は既定値）。ルーティンから引き継ぐ。
+    var restSeconds: Int?
     var updatedAt: Date
     var isDirty: Bool
 
@@ -123,6 +125,7 @@ final class WorkoutExercise {
         orderIndex: Int,
         note: String? = nil,
         supersetGroup: Int? = nil,
+        restSeconds: Int? = nil,
         workout: Workout? = nil,
         exercise: Exercise? = nil,
         updatedAt: Date = .now,
@@ -132,6 +135,7 @@ final class WorkoutExercise {
         self.orderIndex = orderIndex
         self.note = note
         self.supersetGroup = supersetGroup
+        self.restSeconds = restSeconds
         self.workout = workout
         self.exercise = exercise
         self.updatedAt = updatedAt

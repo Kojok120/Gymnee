@@ -19,22 +19,40 @@ struct RoutineEditorView: View {
                 Section("名前") {
                     TextField("ルーティン名", text: $routine.name)
                 }
-                Section("種目") {
+                Section {
                     ForEach(orderedExercises) { re in
-                        HStack {
-                            Text(re.exercise?.name ?? "種目")
-                            Spacer()
-                            Stepper("\(re.targetSets)セット", value: bindingTargetSets(re), in: 1...10)
-                                .fixedSize()
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(re.exercise?.name ?? "種目").font(.body)
+                            HStack {
+                                Stepper("\(re.targetSets)セット", value: bindingTargetSets(re), in: 1...10)
+                                    .fixedSize()
+                                Spacer()
+                            }
+                            HStack {
+                                Image(systemName: "timer").font(.caption).foregroundStyle(.secondary)
+                                Stepper("レスト \(re.restSeconds ?? 90)秒", value: bindingRest(re), in: 30...300, step: 15)
+                                    .fixedSize()
+                            }
+                            .font(.caption)
                         }
+                        .padding(.vertical, 2)
                     }
                     .onDelete(perform: delete)
+                    .onMove(perform: move)
 
                     Button {
                         showPicker = true
                     } label: {
                         Label("種目を追加", systemImage: "plus")
                     }
+                } header: {
+                    HStack {
+                        Text("種目")
+                        Spacer()
+                        EditButton().font(.caption)
+                    }
+                } footer: {
+                    Text("ドラッグで並べ替え、種目別にレスト時間を設定できます。")
                 }
             }
             .navigationTitle("ルーティン編集")
@@ -52,6 +70,20 @@ struct RoutineEditorView: View {
 
     private func bindingTargetSets(_ re: RoutineExercise) -> Binding<Int> {
         Binding(get: { re.targetSets }, set: { re.targetSets = $0; re.updatedAt = .now })
+    }
+
+    private func bindingRest(_ re: RoutineExercise) -> Binding<Int> {
+        Binding(get: { re.restSeconds ?? 90 }, set: { re.restSeconds = $0; re.updatedAt = .now })
+    }
+
+    private func move(_ offsets: IndexSet, _ destination: Int) {
+        var items = orderedExercises
+        items.move(fromOffsets: offsets, toOffset: destination)
+        for (i, re) in items.enumerated() {
+            re.orderIndex = i
+            re.updatedAt = .now
+        }
+        try? context.save()
     }
 
     private func addExercise(_ exercise: Exercise) {

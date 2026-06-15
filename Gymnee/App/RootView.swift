@@ -13,6 +13,7 @@ struct RootView: View {
     @State private var showCheckIn = false
     #if DEBUG
     @State private var debugWorkout: Workout?
+    @State private var debugRoutine: Routine?
     #endif
 
     var body: some View {
@@ -49,6 +50,9 @@ struct RootView: View {
         if DebugSupport.screen == "logger", debugWorkout == nil {
             debugWorkout = DemoData.makeLoggerWorkout(context, userId: uid)
         }
+        if DebugSupport.screen == "routine", debugRoutine == nil {
+            debugRoutine = RoutineTemplates.create(RoutineTemplates.all[0], userId: uid, context: context)
+        }
         #endif
     }
 
@@ -61,6 +65,12 @@ struct RootView: View {
         case "profile": NavigationStack { ProfileView(userId: userId) }
         case "social": SocialFeedView()
         case "shop": ShopView()
+        case "routine":
+            if let r = debugRoutine {
+                NavigationStack { RoutineEditorView(routine: r) }
+            } else {
+                NavigationStack { RoutinesView(userId: userId) }
+            }
         case "analytics": NavigationStack { AnalyticsView(userId: userId) }
         case "body": NavigationStack { BodyMetricsView(userId: userId) }
         case "share":

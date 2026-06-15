@@ -8,6 +8,7 @@ struct RoutinesView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Routine.name) private var routines: [Routine]
     @State private var editing: Routine?
+    @State private var showTemplates = false
 
     init(userId: UUID) {
         self.userId = userId
@@ -47,11 +48,40 @@ struct RoutinesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { createRoutine() } label: { Image(systemName: "plus") }
+                Menu {
+                    Button { createRoutine() } label: { Label("空のルーティン", systemImage: "doc") }
+                    Button { showTemplates = true } label: { Label("テンプレから作成", systemImage: "square.grid.2x2") }
+                } label: { Image(systemName: "plus") }
             }
         }
         .sheet(item: $editing) { routine in
             RoutineEditorView(routine: routine)
+        }
+        .sheet(isPresented: $showTemplates) {
+            templatePicker
+        }
+    }
+
+    private var templatePicker: some View {
+        NavigationStack {
+            List(RoutineTemplates.all) { template in
+                Button {
+                    let routine = RoutineTemplates.create(template, userId: userId, context: context)
+                    showTemplates = false
+                    editing = routine
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(template.name).font(.body).foregroundStyle(.primary)
+                        Text("\(template.detail)・\(template.exerciseNames.count)種目×\(template.sets)セット")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("テンプレを選択")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { showTemplates = false } }
+            }
         }
     }
 

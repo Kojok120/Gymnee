@@ -38,6 +38,8 @@ final class RoutineExercise {
     var orderIndex: Int
     var targetSets: Int
     var targetReps: Int?
+    /// 種目別のレスト秒数（nil は既定値を使用）。
+    var restSeconds: Int?
     var updatedAt: Date
     var isDirty: Bool
 
@@ -49,6 +51,7 @@ final class RoutineExercise {
         orderIndex: Int,
         targetSets: Int = 3,
         targetReps: Int? = nil,
+        restSeconds: Int? = nil,
         routine: Routine? = nil,
         exercise: Exercise? = nil,
         updatedAt: Date = .now,
@@ -58,6 +61,7 @@ final class RoutineExercise {
         self.orderIndex = orderIndex
         self.targetSets = targetSets
         self.targetReps = targetReps
+        self.restSeconds = restSeconds
         self.routine = routine
         self.exercise = exercise
         self.updatedAt = updatedAt
