@@ -44,7 +44,14 @@ enum DemoData {
                 isDirty: false
             )
             context.insert(visit)
+            // 合トレのデモ（直近の来店に相手をタグ付け）。
+            if idx == 1 {
+                context.insert(VisitPartner(partnerUserId: UUID(), partnerDisplayName: "ゆうき", visit: visit))
+            }
         }
+
+        // フォローのデモ。
+        context.insert(Follow(followerId: userId, followeeId: UUID(), followeeDisplayName: "ゆうき", isDirty: false))
 
         // ワークアウト 1 件（種目・セット・PR 込み）。
         let bench = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "ベンチプレス" })))?.first
