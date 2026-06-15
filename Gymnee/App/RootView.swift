@@ -60,6 +60,7 @@ struct RootView: View {
         case "checkin": CheckInView()
         case "profile": NavigationStack { ProfileView(userId: userId) }
         case "social": SocialFeedView()
+        case "shop": ShopView()
         case "analytics": NavigationStack { AnalyticsView(userId: userId) }
         case "body": NavigationStack { BodyMetricsView(userId: userId) }
         case "share":
