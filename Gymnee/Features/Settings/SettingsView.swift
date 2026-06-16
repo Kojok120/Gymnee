@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(HealthKitService.self) private var health
+    @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
 
@@ -114,7 +115,12 @@ struct SettingsView: View {
         try? context.delete(model: OrderItem.self)
         try? context.delete(model: SupplyLog.self)
         try? context.delete(model: Subscription.self)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            errors.report("データの削除に失敗しました。\(error.localizedDescription)")
+            return
+        }
         auth.signOut()
     }
 }

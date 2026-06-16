@@ -8,6 +8,7 @@ enum AppTab: Hashable {
 /// 中央の「チェックイン」タブは選択時にフルスクリーンのチェックインフローを起動する（§6.3）。
 struct RootView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .calendar
     @State private var showCheckIn = false
@@ -26,6 +27,11 @@ struct RootView: View {
         }
         .animation(.default, value: auth.isSignedIn)
         .task { await runDebugHarnessIfNeeded() }
+        .alert("エラー", isPresented: Bindable(errors).isPresented, presenting: errors.message) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { msg in
+            Text(msg)
+        }
     }
 
     @ViewBuilder

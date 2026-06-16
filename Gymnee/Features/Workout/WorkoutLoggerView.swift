@@ -10,6 +10,7 @@ struct WorkoutLoggerView: View {
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(NotificationService.self) private var notifications
+    @Environment(AppErrorCenter.self) private var errors
 
     @State private var restTimer = RestTimer()
     @State private var showExercisePicker = false
@@ -255,7 +256,12 @@ struct WorkoutLoggerView: View {
         workout.isPlanned = false
         workout.updatedAt = .now
         workout.isDirty = true
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            errors.report("ワークアウトを保存できませんでした。\(error.localizedDescription)")
+            return
+        }
         sync.enqueue(PendingChange(entity: "workouts", recordId: workout.id, operation: .upsert, updatedAt: workout.updatedAt))
         restTimer.stop()
         dismiss()

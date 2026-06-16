@@ -9,6 +9,7 @@ struct AddBodyMetricView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(HealthKitService.self) private var health
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AppErrorCenter.self) private var errors
 
     @State private var date = Date.now
     @State private var weight: Double?
@@ -70,7 +71,12 @@ struct AddBodyMetricView: View {
     private func save() async {
         let metric = BodyMetric(userId: userId, date: date, weight: weight, bodyFat: bodyFat, measurements: measurements)
         context.insert(metric)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            errors.report("記録を保存できませんでした。\(error.localizedDescription)")
+            return
+        }
         sync.enqueue(PendingChange(entity: "body_metrics", recordId: metric.id, operation: .upsert, updatedAt: metric.updatedAt))
         if syncToHealth, let weight {
             await health.requestAuthorization()

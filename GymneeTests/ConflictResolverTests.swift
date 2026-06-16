@@ -28,12 +28,15 @@ final class ConflictResolverTests: XCTestCase {
     }
 }
 
-/// outbox の畳み込み（同一レコードは最新 1 件）のテスト。
+/// outbox の畳み込み（同一レコードは最新 1 件）・永続化のテスト。
 @MainActor
 final class LocalSyncEngineTests: XCTestCase {
+    private func tempURL() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("outbox-\(UUID().uuidString).json")
+    }
 
     func testEnqueueCoalescesSameRecord() {
-        let engine = LocalSyncEngine()
+        let engine = LocalSyncEngine(persistenceURL: tempURL())
         let recordId = UUID()
         engine.enqueue(PendingChange(entity: "visits", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 1)))
         engine.enqueue(PendingChange(entity: "visits", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 2)))
@@ -42,9 +45,21 @@ final class LocalSyncEngineTests: XCTestCase {
     }
 
     func testEnqueueKeepsDistinctRecords() {
-        let engine = LocalSyncEngine()
+        let engine = LocalSyncEngine(persistenceURL: tempURL())
         engine.enqueue(PendingChange(entity: "visits", recordId: UUID(), operation: .upsert, updatedAt: .now))
         engine.enqueue(PendingChange(entity: "workouts", recordId: UUID(), operation: .upsert, updatedAt: .now))
         XCTAssertEqual(engine.pendingCount, 2)
+    }
+
+    func testOutboxPersistsAcrossInstances() {
+        let url = tempURL()
+        let recordId = UUID()
+        let first = LocalSyncEngine(persistenceURL: url)
+        first.enqueue(PendingChange(entity: "visits", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 5)))
+        // 別インスタンス（＝再起動相当）で復元される。
+        let second = LocalSyncEngine(persistenceURL: url)
+        XCTAssertEqual(second.pendingCount, 1)
+        XCTAssertEqual(second.outbox.first?.recordId, recordId)
+        try? FileManager.default.removeItem(at: url)
     }
 }

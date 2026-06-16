@@ -12,6 +12,7 @@ struct AddGymView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(LocationService.self) private var location
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AppErrorCenter.self) private var errors
 
     @State private var name = ""
     @State private var chain = ""
@@ -112,7 +113,12 @@ struct AddGymView: View {
             createdBy: userId
         )
         context.insert(gym)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            errors.report("ジムを保存できませんでした。\(error.localizedDescription)")
+            return
+        }
         sync.enqueue(PendingChange(entity: "gyms", recordId: gym.id, operation: .upsert, updatedAt: gym.updatedAt))
         dismiss()
     }

@@ -7,6 +7,7 @@ struct CartView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AppErrorCenter.self) private var errors
     @Environment(\.dismiss) private var dismiss
     @State private var checkingOut = false
     @State private var completedOrder: Order?
@@ -107,7 +108,7 @@ struct CartView: View {
             sync.enqueue(PendingChange(entity: "orders", recordId: cart.id, operation: .upsert, updatedAt: cart.updatedAt))
             completedOrder = cart
         } catch {
-            // 決済失敗（Stub では起きない）。
+            errors.report("決済に失敗しました。\(error.localizedDescription)")
         }
     }
 }

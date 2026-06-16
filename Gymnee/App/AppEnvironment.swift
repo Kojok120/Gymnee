@@ -13,6 +13,7 @@ final class AppEnvironment {
     let location: LocationService
     let health: HealthKitService
     let notifications: NotificationService
+    let errors: AppErrorCenter
 
     init(container: ModelContainer? = nil) {
         let resolved = container ?? GymneeSchema.makeContainer()
@@ -22,6 +23,7 @@ final class AppEnvironment {
         self.location = LocationService()
         self.health = HealthKitService()
         self.notifications = NotificationService()
+        self.errors = AppErrorCenter()
         self.auth.bootstrap(context: resolved.mainContext)
         self.notifications.configure()
     }

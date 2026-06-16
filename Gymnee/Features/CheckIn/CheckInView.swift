@@ -10,6 +10,7 @@ struct CheckInView: View {
     @Environment(AuthService.self) private var auth
     @Environment(LocationService.self) private var location
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AppErrorCenter.self) private var errors
     @Query(sort: \Gym.name) private var gyms: [Gym]
 
     @State private var image: UIImage?
@@ -246,7 +247,12 @@ struct CheckInView: View {
             let partner = VisitPartner(partnerUserId: UUID(), partnerDisplayName: name, visit: visit)
             context.insert(partner)
         }
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            errors.report("チェックインを保存できませんでした。\(error.localizedDescription)")
+            return
+        }
         sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
         savedVisit = visit
     }
