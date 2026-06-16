@@ -1,5 +1,7 @@
 # Gymnee
 
+[![CI](https://github.com/Kojok120/Gymnee/actions/workflows/ci.yml/badge.svg)](https://github.com/Kojok120/Gymnee/actions/workflows/ci.yml)
+
 カレンダーを起点に、筋トレの **記録・共有・購買** が 1 アプリで完結する iOS ネイティブアプリ（Swift / SwiftUI）。
 要件定義書 `Gymnee_要件定義書_v0.md` の v1 フルスコープ（P0〜P7）を実装。
 
