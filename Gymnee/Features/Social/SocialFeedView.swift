@@ -29,11 +29,15 @@ private struct SocialContent: View {
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @Query private var follows: [Follow]
+    @Query private var blocks: [Block]
     @Query private var profiles: [Profile]
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
+    /// ソーシャル初回利用時のコミュニティガイドライン同意（1.2.5）。
+    @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
 
     @State private var tab = 0
     @State private var showAddFriend = false
+    @State private var reportTarget: ReportUserTarget?
 
     init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
@@ -43,24 +47,32 @@ private struct SocialContent: View {
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
         // 自分が follower か followee の両方を取得（相互判定のため）。
         _follows = Query(filter: #Predicate<Follow> { $0.followerId == userId || $0.followeeId == userId }, sort: \Follow.createdAt)
+        _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
 
     // MARK: - フォロー関係の導出
-    /// 自分がフォローしている関係。
-    private var following: [Follow] { follows.filter { $0.followerId == userId } }
-    /// 自分をフォローしている人の userId 集合。
-    private var followerIds: Set<UUID> { Set(follows.filter { $0.followeeId == userId }.map(\.followerId)) }
+    /// 自分がブロック中のユーザー集合（一覧・相互判定から除外）。
+    private var blockedIds: Set<UUID> { Set(blocks.map(\.blockedId)) }
+    /// 自分がフォローしている関係（ブロック相手を除外）。
+    private var following: [Follow] { follows.filter { $0.followerId == userId && !blockedIds.contains($0.followeeId) } }
+    /// 自分をフォローしている人の userId 集合（ブロック相手を除外）。
+    private var followerIds: Set<UUID> { Set(follows.filter { $0.followeeId == userId && !blockedIds.contains($0.followerId) }.map(\.followerId)) }
     /// 相互フォローか（相手も自分をフォローしている）。
     private func isMutual(_ f: Follow) -> Bool { followerIds.contains(f.followeeId) }
-    /// 自分をフォローしているが自分はまだフォローし返していない人。
+    /// 自分をフォローしているが自分はまだフォローし返していない人（ブロック相手を除外）。
     private var pendingFollowBack: [Follow] {
         let followingIds = Set(following.map(\.followeeId))
-        return follows.filter { $0.followeeId == userId && !followingIds.contains($0.followerId) }
+        return follows.filter { $0.followeeId == userId && !followingIds.contains($0.followerId) && !blockedIds.contains($0.followerId) }
     }
     private func displayName(for id: UUID) -> String {
         profiles.first(where: { $0.id == id })?.displayName ?? "ユーザー"
+    }
+
+    /// 対象ユーザーをブロック（フォロー双方向解除＋Block作成・同期）。
+    private func blockUser(_ id: UUID, name: String) {
+        Moderation.block(blockerId: userId, blockedId: id, displayName: name, context: context, sync: sync)
     }
 
     private func unfollow(_ f: Follow) {
@@ -79,6 +91,21 @@ private struct SocialContent: View {
     }
 
     var body: some View {
+        Group {
+            if agreedGuidelines {
+                mainContent
+            } else {
+                CommunityGuidelinesGate { agreedGuidelines = true }
+                    .navigationTitle("ソーシャル")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        }
+        .sheet(item: $reportTarget) { t in
+            ReportSheet(reporterId: userId, reportedUserId: t.id, reportedDisplayName: t.displayName)
+        }
+    }
+
+    private var mainContent: some View {
         Group {
             switch tab {
             case 1: friendsList
@@ -146,6 +173,14 @@ private struct SocialContent: View {
                             }
                         }
                         .swipeActions { Button("解除", role: .destructive) { unfollow(f) } }
+                        .contextMenu {
+                            Button("通報", systemImage: "flag") {
+                                reportTarget = ReportUserTarget(id: f.followeeId, displayName: f.followeeDisplayName ?? "ユーザー")
+                            }
+                            Button("ブロック", systemImage: "hand.raised", role: .destructive) {
+                                blockUser(f.followeeId, name: f.followeeDisplayName ?? "ユーザー")
+                            }
+                        }
                     }
                 }
                 Button { showAddFriend = true } label: {
@@ -162,6 +197,17 @@ private struct SocialContent: View {
                             Spacer()
                             Button("フォローし返す") { followBack(f.followerId) }
                                 .buttonStyle(.borderedProminent).tint(Theme.energy).controlSize(.small)
+                        }
+                        .swipeActions {
+                            Button("ブロック", role: .destructive) { blockUser(f.followerId, name: displayName(for: f.followerId)) }
+                        }
+                        .contextMenu {
+                            Button("通報", systemImage: "flag") {
+                                reportTarget = ReportUserTarget(id: f.followerId, displayName: displayName(for: f.followerId))
+                            }
+                            Button("ブロック", systemImage: "hand.raised", role: .destructive) {
+                                blockUser(f.followerId, name: displayName(for: f.followerId))
+                            }
                         }
                     }
                 }

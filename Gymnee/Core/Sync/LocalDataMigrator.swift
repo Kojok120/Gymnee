@@ -23,6 +23,9 @@ enum LocalDataMigrator {
         reassignOwned(FeedItem.self, entity: "feed_items", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         // フォローは follower 側を付け替え。
         reassignOwned(Follow.self, entity: "follows", context: context, into: &pending) { $0.followerId == old } set: { $0.followerId = new }
+        // ブロック/通報は実行者(blocker / reporter)側を付け替え。
+        reassignOwned(Block.self, entity: "blocks", context: context, into: &pending) { $0.blockerId == old } set: { $0.blockerId = new }
+        reassignOwned(Report.self, entity: "reports", context: context, into: &pending) { $0.reporterId == old } set: { $0.reporterId = new }
         // マスタはユーザー作成分(created_by)のみ。
         reassignOwned(Gym.self, entity: "gyms", context: context, into: &pending) { $0.createdBy == old } set: { $0.createdBy = new }
         reassignOwned(Exercise.self, entity: "exercises", context: context, into: &pending) { $0.createdBy == old } set: { $0.createdBy = new }

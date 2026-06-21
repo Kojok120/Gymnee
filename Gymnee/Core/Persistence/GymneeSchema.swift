@@ -21,6 +21,8 @@ enum GymneeSchemaV1: VersionedSchema {
             BodyMetric.self,
             ProgressPhoto.self,
             Follow.self,
+            Block.self,
+            Report.self,
             FeedItem.self,
             Product.self,
             SupplyLog.self,

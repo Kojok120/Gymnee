@@ -12,17 +12,23 @@ struct AddFriendView: View {
     @Environment(LocalSyncEngine.self) private var sync
 
     @Query private var myFollows: [Follow]
+    @Query private var myBlocks: [Block]
     @State private var query = ""
     @State private var results: [SupabaseClient.RemoteProfile] = []
     @State private var searching = false
     @State private var didSearch = false
+    @State private var reportTarget: ReportUserTarget?
 
     init(userId: UUID) {
         self.userId = userId
         _myFollows = Query(filter: #Predicate<Follow> { $0.followerId == userId })
+        _myBlocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
     private var followingIds: Set<UUID> { Set(myFollows.map(\.followeeId)) }
+    private var blockedIds: Set<UUID> { Set(myBlocks.map(\.blockedId)) }
+    /// ブロック中のユーザーは検索結果から除外する。
+    private var visibleResults: [SupabaseClient.RemoteProfile] { results.filter { !blockedIds.contains($0.id) } }
 
     var body: some View {
         NavigationStack {
@@ -37,6 +43,9 @@ struct AddFriendView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("閉じる") { dismiss() } }
+            }
+            .sheet(item: $reportTarget) { t in
+                ReportSheet(reporterId: userId, reportedUserId: t.id, reportedDisplayName: t.displayName)
             }
         }
     }
@@ -62,13 +71,13 @@ struct AddFriendView: View {
                 }
             }
 
-            if didSearch && results.isEmpty && !searching {
+            if didSearch && visibleResults.isEmpty && !searching {
                 Section { Text("該当するユーザーが見つかりませんでした。").foregroundStyle(.secondary) }
             }
 
-            if !results.isEmpty {
+            if !visibleResults.isEmpty {
                 Section("検索結果") {
-                    ForEach(results) { profile in
+                    ForEach(visibleResults) { profile in
                         HStack {
                             Image(systemName: "person.circle.fill").foregroundStyle(Theme.energy)
                             Text(profile.displayName)
@@ -79,6 +88,19 @@ struct AddFriendView: View {
                             } else {
                                 Button("フォロー") { follow(profile) }
                                     .buttonStyle(.borderedProminent).tint(Theme.energy).controlSize(.small)
+                            }
+                        }
+                        .swipeActions {
+                            Button("ブロック", role: .destructive) {
+                                Moderation.block(blockerId: userId, blockedId: profile.id, displayName: profile.displayName, context: context, sync: sync)
+                            }
+                        }
+                        .contextMenu {
+                            Button("通報", systemImage: "flag") {
+                                reportTarget = ReportUserTarget(id: profile.id, displayName: profile.displayName)
+                            }
+                            Button("ブロック", systemImage: "hand.raised", role: .destructive) {
+                                Moderation.block(blockerId: userId, blockedId: profile.id, displayName: profile.displayName, context: context, sync: sync)
                             }
                         }
                     }

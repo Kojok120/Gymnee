@@ -51,6 +51,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "body_metrics":      return fetchBodyMetric(id).map(encodeBodyMetric)
         case "progress_photos":   return fetchProgressPhoto(id).map(encodeProgressPhoto)
         case "follows":           return fetchFollow(id).map(encodeFollow)
+        case "blocks":            return fetchBlock(id).map(encodeBlock)
+        case "reports":           return fetchReport(id).map(encodeReport)
         case "feed_items":        return fetchFeedItem(id).map(encodeFeedItem)
         case "supply_logs":       return fetchSupplyLog(id).map(encodeSupplyLog)
         case "subscriptions":     return fetchSubscription(id).map(encodeSubscription)
@@ -79,6 +81,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
             case "body_metrics":      applyBodyMetric(row)
             case "progress_photos":   applyProgressPhoto(row)
             case "follows":           applyFollow(row)
+            case "blocks":            applyBlock(row)
+            case "reports":           applyReport(row)
             case "feed_items":        applyFeedItem(row)
             case "products":          applyProduct(row)
             case "supply_logs":       applySupplyLog(row)
@@ -406,6 +410,46 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.isDirty = false
     }
 
+    // MARK: - blocks
+    private func encodeBlock(_ m: Block) -> [String: Any] {
+        ["id": lower(m.id), "blocker_id": lower(m.blockerId), "blocked_id": lower(m.blockedId),
+         "blocked_display_name": opt(m.blockedDisplayName), "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+    }
+    private func applyBlock(_ row: [String: Any]) {
+        guard let id = uuid(row["id"]) else { return }
+        let existing = fetchBlock(id)
+        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
+        let m = existing ?? insert(Block(id: id, blockerId: uuid(row["blocker_id"]) ?? UUID(), blockedId: uuid(row["blocked_id"]) ?? UUID()))
+        m.blockerId = uuid(row["blocker_id"]) ?? m.blockerId
+        m.blockedId = uuid(row["blocked_id"]) ?? m.blockedId
+        m.blockedDisplayName = str(row["blocked_display_name"])
+        m.createdAt = date(row["created_at"]) ?? m.createdAt
+        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
+        m.isDirty = false
+    }
+
+    // MARK: - reports
+    private func encodeReport(_ m: Report) -> [String: Any] {
+        ["id": lower(m.id), "reporter_id": lower(m.reporterId), "reported_user_id": lower(m.reportedUserId),
+         "context_type": opt(m.contextType), "context_id": opt(m.contextId?.uuidString.lowercased()),
+         "reason": m.reason, "detail": opt(m.detail), "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+    }
+    private func applyReport(_ row: [String: Any]) {
+        guard let id = uuid(row["id"]) else { return }
+        let existing = fetchReport(id)
+        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
+        let m = existing ?? insert(Report(id: id, reporterId: uuid(row["reporter_id"]) ?? UUID(), reportedUserId: uuid(row["reported_user_id"]) ?? UUID(), reason: str(row["reason"]) ?? "other"))
+        m.reporterId = uuid(row["reporter_id"]) ?? m.reporterId
+        m.reportedUserId = uuid(row["reported_user_id"]) ?? m.reportedUserId
+        m.contextType = str(row["context_type"])
+        m.contextId = uuid(row["context_id"])
+        m.reason = str(row["reason"]) ?? m.reason
+        m.detail = str(row["detail"])
+        m.createdAt = date(row["created_at"]) ?? m.createdAt
+        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
+        m.isDirty = false
+    }
+
     // MARK: - feed_items
     private func encodeFeedItem(_ m: FeedItem) -> [String: Any] {
         ["id": lower(m.id), "user_id": lower(m.userId), "author_display_name": opt(m.authorDisplayName),
@@ -506,6 +550,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func fetchBodyMetric(_ id: UUID) -> BodyMetric? { first(FetchDescriptor<BodyMetric>(predicate: #Predicate { $0.id == id })) }
     private func fetchProgressPhoto(_ id: UUID) -> ProgressPhoto? { first(FetchDescriptor<ProgressPhoto>(predicate: #Predicate { $0.id == id })) }
     private func fetchFollow(_ id: UUID) -> Follow? { first(FetchDescriptor<Follow>(predicate: #Predicate { $0.id == id })) }
+    private func fetchBlock(_ id: UUID) -> Block? { first(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })) }
+    private func fetchReport(_ id: UUID) -> Report? { first(FetchDescriptor<Report>(predicate: #Predicate { $0.id == id })) }
     private func fetchFeedItem(_ id: UUID) -> FeedItem? { first(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == id })) }
     private func fetchProduct(_ id: UUID) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.id == id })) }
     private func fetchProductByName(_ name: String) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.name == name })) }

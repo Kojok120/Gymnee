@@ -138,6 +138,8 @@ struct SettingsView: View {
         try? context.delete(model: BodyMetric.self)
         try? context.delete(model: ProgressPhoto.self)
         try? context.delete(model: Follow.self)
+        try? context.delete(model: Block.self)
+        try? context.delete(model: Report.self)
         try? context.delete(model: FeedItem.self)
         try? context.delete(model: Product.self)
         try? context.delete(model: SupplyLog.self)
