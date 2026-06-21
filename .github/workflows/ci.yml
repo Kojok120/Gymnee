@@ -24,6 +24,14 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Prepare secrets config (placeholders for CI)
+        # 実鍵入りの Secrets.{dev,prod}.xcconfig は .gitignore 済みで CI には無い。
+        # example からプレースホルダを生成して xcodegen の configFiles 検証を満たす
+        # （SUPABASE_* は未設定扱い → アプリはローカルのみモードでビルド/テスト）。
+        run: |
+          cp -n Config/Secrets.example.xcconfig Config/Secrets.dev.xcconfig || true
+          cp -n Config/Secrets.example.xcconfig Config/Secrets.prod.xcconfig || true
+
       - name: Generate Xcode project
         run: xcodegen generate
 
