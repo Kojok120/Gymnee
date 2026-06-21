@@ -60,7 +60,7 @@ nav .wrap{display:flex;align-items:center;justify-content:space-between;height:6
 /* ---------- HERO ---------- */
 .hero{position:relative;padding:54px 0 80px;overflow:hidden;text-align:center}
 .hero-c{max-width:920px;margin:0 auto;position:relative;z-index:2}
-.hero h1{font-family:var(--display);font-weight:800;font-size:clamp(2.3rem,5.4vw,4rem);line-height:1.14;letter-spacing:-.025em;margin:20px auto 0;max-width:17em}
+.hero h1{font-family:var(--display);font-weight:800;font-size:clamp(2rem,5.4vw,4rem);line-height:1.16;letter-spacing:-.025em;margin:20px auto 0;max-width:17em}
 .hero h1 .lime{color:var(--lime);text-shadow:0 0 44px rgba(199,255,61,.4)}
 .hero .sub{margin:22px auto 0;font-size:1.1rem;color:var(--muted);max-width:33em}
 .hero-cta{display:flex;gap:14px;flex-wrap:wrap;margin-top:30px;justify-content:center}
@@ -187,6 +187,40 @@ footer .cp{width:100%;border-top:1px solid var(--line);padding-top:20px;color:va
   .reveal{opacity:1;transform:none;transition:none}
   html{scroll-behavior:auto}
 }
+/* ---------- スマホ最適化（最後に置いて確実に上書き） ---------- */
+@media(max-width:560px){
+  .wrap{padding:0 18px}
+  .hero{padding:26px 0 48px}
+  .hero .sub{font-size:.96rem;margin-top:18px}
+  .hero-cta{margin-top:24px;gap:10px}
+  .btn{padding:13px 20px;font-size:.95rem}
+  .trustline{margin-top:20px;gap:8px}
+  .pill{font-size:.62rem;padding:5px 9px}
+  /* スクショは小さめに（中央phoneのみ） */
+  .phone-cluster{margin-top:40px}
+  .pc-center{width:62vw;max-width:226px}
+  .phone{padding:8px;border-radius:34px}
+  .phone img{border-radius:26px}
+  .chip{padding:8px 11px;border-radius:12px}
+  .chip .big{font-size:1.1rem}
+  .chip-a{top:2%;left:-3%}.chip-b{bottom:24%;right:-3%}
+  .insight{padding:54px 0}
+  .insight p{font-size:1rem}
+  .feat{padding:46px 0}
+  .feat-text p{font-size:.98rem}
+  .feat-visual .phone{max-width:60vw}
+  .stats{padding:16px 0 56px}
+  .stat{padding:22px 18px}
+  .stat .num{font-size:2.1rem}
+  .heatsec{padding:48px 0}
+  .heatsec .inner{padding:24px}
+  .gallery{padding:16px 0 56px}
+  .gal-track .phone{width:64vw;max-width:230px}
+  .more{padding:58px 0}
+  .more .grid{grid-template-columns:1fr 1fr;gap:12px}
+  .card{padding:18px 16px}
+  .final{padding:70px 0}
+}
 </style>
 <noscript><style>.reveal{opacity:1!important;transform:none!important}</style></noscript>
 </head>
@@ -207,7 +241,7 @@ footer .cp{width:100%;border-top:1px solid var(--line);padding-top:20px;color:va
 <header class="hero" id="top">
   <div class="wrap hero-c">
     <span class="eyebrow">CALENDAR-FIRST TRAINING LOG</span>
-    <h1>撮るだけでチェックイン。<br><span class="lime">続けるほど、強くなる。</span></h1>
+    <h1>撮るだけで<wbr>チェックイン。<br><span class="lime">続けるほど、<wbr>強くなる。</span></h1>
     <p class="sub">カレンダーを起点に、記録・継続・共有がひとつに。ジムを変えても、出張先でも、合トレでも——あなたの記録は同じタイムラインに積み上がる。</p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="#join">ベータに参加する →</a>
