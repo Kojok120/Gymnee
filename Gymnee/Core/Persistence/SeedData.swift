@@ -147,7 +147,8 @@ enum SeedData {
     }
 
     /// 楽天アフィリエイトID（計測タグ）。リンク経由の購入で手数料が発生する。
-    private static let rakutenAffiliateId = "5519a6c7.399a4850.5519a6c8.91d431bc"
+    /// 楽天ウェブサービス ダッシュボードの Affiliate ID と一致させる（送客計上のため）。
+    private static let rakutenAffiliateId = "5519c310.d841aa29.5519c311.eac66aa0"
 
     /// 楽天市場の検索ページを遷移先にし、楽天アフィリエイトの計測リダイレクトで包んだ URL を返す。
     /// （遷移先は `pc=` にフルエンコードして渡す。リモートカタログ＝Supabase products があればそちらが優先。）

@@ -4,29 +4,55 @@
 Supabase products テーブル更新用の UPDATE SQL を生成する。
 
 使い方:
-  RAKUTEN_APP_ID=<楽天アプリID> python3 scripts/fetch_rakuten_catalog.py > supabase/catalog_from_rakuten.sql
+  RAKUTEN_APP_ID=<applicationId(UUID)> RAKUTEN_ACCESS_KEY=<accessKey> \
+    python3 scripts/fetch_rakuten_catalog.py > supabase/catalog_from_rakuten.sql
   （affiliateId は既定で Gymnee の楽天アフィリエイトIDを使用。RAKUTEN_AFFILIATE_ID で上書き可）
   生成された SQL を psql で Supabase に流す。
 
-API キー（applicationId）はアプリに埋め込まず、ここ（サーバ側生成）に留める。
+2026年2月の楽天ウェブサービス刷新に対応:
+  - エンドポイントが openapi.rakuten.co.jp（旧 app.rakuten.co.jp は 2026/5/13 停止）
+  - applicationId が UUID 形式
+  - accessKey が必須（ここではヘッダーで渡し URL/ログに残さない）
+
+API キー（applicationId / accessKey）はアプリに埋め込まず、ここ（サーバ側生成）に留める。
 """
 import os, sys, json, time
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
 
 APP_ID = os.environ.get("RAKUTEN_APP_ID", "").strip()
-AFFILIATE_ID = os.environ.get("RAKUTEN_AFFILIATE_ID", "5519a6c7.399a4850.5519a6c8.91d431bc").strip()
-ENDPOINT = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601"
+ACCESS_KEY = os.environ.get("RAKUTEN_ACCESS_KEY", "").strip()
+AFFILIATE_ID = os.environ.get("RAKUTEN_AFFILIATE_ID", "5519c310.d841aa29.5519c311.eac66aa0").strip()
+ENDPOINT = "https://openapi.rakuten.co.jp/ichibams/api/IchibaItem/Search/20220601"
 
-# キュレーション: (Supabaseの商品名=キー, 検索キーワード)
+# キュレーション。各商品で「人気順に取得 → must を含み ng を含まず価格帯に収まる物」を採用。
+#   name      : Supabase products の商品名キー
+#   keyword   : 検索キーワード
+#   must      : itemName にこのいずれかが含まれること（的外れ商品を排除）
+#   ng        : itemName にこれらが含まれたら除外（5kg大容量・別カテゴリ等）
+#   price     : (下限, 上限) 円。バルク/多袋セットや異常価格を除外
 CURATED = [
-    ("ホエイプロテイン 1kg", "ホエイプロテイン 1kg"),
-    ("ソイプロテイン 1kg", "ソイプロテイン 1kg"),
-    ("クレアチン 500g", "クレアチン モノハイドレート"),
-    ("EAA 500g", "EAA アミノ酸 粉末"),
-    ("マルトデキストリン 1kg", "マルトデキストリン 1kg"),
-    ("リストラップ", "リストラップ 筋トレ"),
-    ("トレーニングベルト", "トレーニングベルト リフティング"),
+    {"name": "ホエイプロテイン 1kg", "keyword": "ホエイプロテイン 1kg",
+     "must": ["ホエイ", "プロテイン"], "ng": ["5kg", "3kg", "ソイ", "お試し", "ゲイナー", "セット"],
+     "price": (1500, 7000)},
+    {"name": "ソイプロテイン 1kg", "keyword": "ソイプロテイン 1kg",
+     "must": ["ソイ"], "ng": ["ホエイ", "5kg", "3kg", "お試し", "セット"],
+     "price": (1500, 7000)},
+    {"name": "クレアチン 500g", "keyword": "クレアチン モノハイドレート 500g",
+     "must": ["クレアチン"], "ng": ["タブレット", "1kg", "セット", "4個"],
+     "price": (1000, 5000)},
+    {"name": "EAA 500g", "keyword": "EAA 粉末 500g",
+     "must": ["EAA"], "ng": ["BCAA", "カプセル", "タブレット", "セット"],
+     "price": (1500, 8000)},
+    {"name": "マルトデキストリン 1kg", "keyword": "マルトデキストリン 1kg",
+     "must": ["マルトデキストリン", "粉飴"], "ng": ["5kg", "10袋", "3kg", "セット"],
+     "price": (800, 4000)},
+    {"name": "リストラップ", "keyword": "リストラップ 手首 筋トレ",
+     "must": ["リストラップ"], "ng": ["バトルロープ", "ニーラップ", "ニースリーブ", "肘"],
+     "price": (700, 4000)},
+    {"name": "トレーニングベルト", "keyword": "トレーニングベルト リフティング",
+     "must": ["ベルト"], "ng": ["加圧", "ダイエット", "腹", "EMS"],
+     "price": (1500, 13000)},
 ]
 
 def sql_escape(s):
@@ -37,38 +63,81 @@ def search(keyword):
         "applicationId": APP_ID,
         "affiliateId": AFFILIATE_ID,
         "keyword": keyword,
-        "hits": 5,
-        "sort": "+reviewCount",   # レビュー数の多い＝信頼できる商品優先（"-reviewCount"で降順）
+        "hits": 30,
+        "sort": "-reviewCount",   # レビュー数の多い＝人気・定番を上位に（"-"で降順）
         "availability": 1,        # 在庫あり
         "imageFlag": 1,           # 画像ありのみ
         "format": "json",
     }
-    req = Request(ENDPOINT + "?" + urlencode(params), headers={"User-Agent": "Gymnee/1.0"})
-    with urlopen(req, timeout=20) as r:
-        return json.load(r)
+    # accessKey はクエリではなくヘッダーで渡し、URL/ログに秘密情報を残さない。
+    headers = {"User-Agent": "Gymnee/1.0", "accessKey": ACCESS_KEY}
+    url = ENDPOINT + "?" + urlencode(params)
+    # 登録QPSが低い（=1）ため 429 はバックオフして数回リトライ。
+    for attempt in range(4):
+        try:
+            req = Request(url, headers=headers)
+            with urlopen(req, timeout=20) as r:
+                return json.load(r)
+        except Exception as e:
+            code = getattr(e, "code", None)
+            if code == 429 and attempt < 3:
+                wait = 3 * (2 ** attempt)  # 3, 6, 12s
+                sys.stderr.write(f"  429: {wait}s 待って再試行…\n")
+                time.sleep(wait)
+                continue
+            raise
+    return {}
 
-def pick_best(items):
-    # レビュー数×平均が高い、在庫ありの先頭を採用。降順に並べ替え。
-    scored = []
-    for it in items:
-        item = it.get("Item", it)
-        score = (item.get("reviewCount", 0) or 0) * (item.get("reviewAverage", 0) or 0)
-        scored.append((score, item))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return scored[0][1] if scored else None
+def _name_of(item):
+    return item.get("itemName", "") or ""
+
+def pick_best(spec, raw_items):
+    """人気順に取得した候補から、must/ng/価格帯で絞り、レビュー数×平均が最大の物を選ぶ。
+    厳しすぎて0件なら段階的に条件を緩める（価格 → must/ng）。"""
+    items = [it.get("Item", it) for it in raw_items]
+    lo, hi = spec["price"]
+    must, ng = spec.get("must", []), spec.get("ng", [])
+
+    def passes(item, use_price=True, use_text=True):
+        nm = _name_of(item)
+        if use_text and must and not any(m in nm for m in must):
+            return False
+        if use_text and any(g in nm for g in ng):
+            return False
+        if use_price:
+            p = item.get("itemPrice") or 0
+            if p < lo or p > hi:
+                return False
+        return True
+
+    def best(cands):
+        scored = [((it.get("reviewCount", 0) or 0) * max(it.get("reviewAverage", 0) or 0, 1.0), it)
+                  for it in cands]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[0][1] if scored else None
+
+    for use_price, use_text in ((True, True), (False, True), (False, False)):
+        cands = [it for it in items if passes(it, use_price, use_text)]
+        if cands:
+            return best(cands)
+    return items[0] if items else None
 
 def main():
     if not APP_ID:
-        sys.stderr.write("ERROR: RAKUTEN_APP_ID を環境変数で渡してください。\n")
+        sys.stderr.write("ERROR: RAKUTEN_APP_ID(applicationId/UUID) を環境変数で渡してください。\n")
         sys.exit(1)
-    print("-- 楽天 Ichiba Item Search API から生成（実商品ディープリンク＋実価格＋画像）")
+    if not ACCESS_KEY:
+        sys.stderr.write("ERROR: RAKUTEN_ACCESS_KEY(accessKey) を環境変数で渡してください（2026新API必須）。\n")
+        sys.exit(1)
+    print("-- 楽天 Ichiba Item Search API（新openapi）から生成: 実商品ディープリンク＋実価格＋画像")
     print("-- 再実行で最新に更新できる。Supabase products を商品名キーで UPDATE。")
-    for name, keyword in CURATED:
+    for spec in CURATED:
+        name = spec["name"]
         try:
-            data = search(keyword)
+            data = search(spec["keyword"])
         except Exception as e:
             sys.stderr.write(f"WARN {name}: API失敗 {e}\n"); continue
-        item = pick_best(data.get("Items", []))
+        item = pick_best(spec, data.get("Items", []))
         if not item:
             sys.stderr.write(f"WARN {name}: 商品なし\n"); continue
         aff_url = item.get("affiliateUrl") or item.get("itemUrl")
@@ -85,8 +154,9 @@ def main():
             f"image_url='{sql_escape(img)}', merchant='{sql_escape(shop)}', updated_at=now() "
             f"where name='{sql_escape(name)}';"
         )
-        sys.stderr.write(f"OK {name}: {item.get('itemName','')[:30]}… ¥{price}\n")
-        time.sleep(0.4)  # API レート制限に配慮
+        rc = item.get("reviewCount", 0); ra = item.get("reviewAverage", 0)
+        sys.stderr.write(f"OK {name}: {_name_of(item)[:34]}… ¥{price}（★{ra}/{rc}件）\n")
+        time.sleep(1.5)  # 登録QPS=1 を順守
 
 if __name__ == "__main__":
     main()
