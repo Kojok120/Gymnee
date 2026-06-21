@@ -146,25 +146,22 @@ enum SeedData {
         let keyword: String
     }
 
-    /// 提携先の検索 / 商品ページ URL を生成する。
-    /// **TODO（ASP連携）**: 現状は提携先の検索ページ（計測タグ無し）。
-    /// 楽天 / バリューコマース(iHerb) のアフィリエイト ID 取得後、計測タグ付き URL に差し替えるか、
-    /// リモートカタログ（Supabase products テーブル）から配信して `affiliateURL` を上書きする。
+    /// 楽天アフィリエイトID（計測タグ）。リンク経由の購入で手数料が発生する。
+    private static let rakutenAffiliateId = "5519a6c7.399a4850.5519a6c8.91d431bc"
+
+    /// 楽天市場の検索ページを遷移先にし、楽天アフィリエイトの計測リダイレクトで包んだ URL を返す。
+    /// （遷移先は `pc=` にフルエンコードして渡す。リモートカタログ＝Supabase products があればそちらが優先。）
     private static func affiliateURL(for preset: PresetProduct) -> String {
-        let encoded = preset.keyword.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? preset.keyword
-        switch preset.merchant {
-        case "iHerb":
-            return "https://jp.iherb.com/search?kw=\(encoded)"
-        default: // 楽天市場
-            return "https://search.rakuten.co.jp/search/mall/\(encoded)/"
-        }
+        let dest = "https://search.rakuten.co.jp/search/mall/\(preset.keyword)/"
+        let encoded = dest.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? dest
+        return "https://hb.afl.rakuten.co.jp/hgc/\(rakutenAffiliateId)/?pc=\(encoded)"
     }
 
     private static let presetProducts: [PresetProduct] = [
         .init(name: "ホエイプロテイン 1kg", description: "高純度ホエイ。増量・維持の基本。", price: 3980, category: "プロテイン", goalTags: ["bulk", "maintain"], servings: 33, merchant: "楽天市場", keyword: "ホエイプロテイン 1kg"),
         .init(name: "ソイプロテイン 1kg", description: "植物性。減量フェーズに。", price: 3580, category: "プロテイン", goalTags: ["cut"], servings: 33, merchant: "楽天市場", keyword: "ソイプロテイン 1kg"),
-        .init(name: "クレアチン 500g", description: "高強度トレの定番サプリ。", price: 2480, category: "サプリ", goalTags: ["strength", "bulk"], servings: 100, merchant: "iHerb", keyword: "クレアチン モノハイドレート"),
-        .init(name: "EAA 500g", description: "トレ中のアミノ酸補給。", price: 4280, category: "サプリ", goalTags: ["maintain", "cut"], servings: 50, merchant: "iHerb", keyword: "EAA アミノ酸"),
+        .init(name: "クレアチン 500g", description: "高強度トレの定番サプリ。", price: 2480, category: "サプリ", goalTags: ["strength", "bulk"], servings: 100, merchant: "楽天市場", keyword: "クレアチン モノハイドレート"),
+        .init(name: "EAA 500g", description: "トレ中のアミノ酸補給。", price: 4280, category: "サプリ", goalTags: ["maintain", "cut"], servings: 50, merchant: "楽天市場", keyword: "EAA アミノ酸"),
         .init(name: "マルトデキストリン 1kg", description: "増量期のカロリー補給に。", price: 1880, category: "カーボ", goalTags: ["bulk"], servings: 20, merchant: "楽天市場", keyword: "マルトデキストリン 1kg"),
         .init(name: "リストラップ", description: "高重量プレス系の手首保護。", price: 1980, category: "ギア", goalTags: ["strength"], servings: nil, merchant: "楽天市場", keyword: "リストラップ 筋トレ"),
         .init(name: "トレーニングベルト", description: "スクワット/デッドの体幹サポート。", price: 5980, category: "ギア", goalTags: ["strength"], servings: nil, merchant: "楽天市場", keyword: "トレーニングベルト"),
