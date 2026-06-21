@@ -62,27 +62,6 @@ enum FeedItemType: String, Codable, CaseIterable, Sendable {
     case workout
 }
 
-/// 注文ステータス（§4.5）。
-enum OrderStatus: String, Codable, CaseIterable, Sendable {
-    case cart
-    case pending
-    case paid
-    case shipped
-    case delivered
-    case cancelled
-
-    var label: String {
-        switch self {
-        case .cart: return "カート"
-        case .pending: return "支払い待ち"
-        case .paid: return "支払い済み"
-        case .shipped: return "発送済み"
-        case .delivered: return "配達済み"
-        case .cancelled: return "キャンセル"
-        }
-    }
-}
-
 /// サブスク階層（§4.5、採用可否は §9-5 で要決定）。
 enum SubscriptionTier: String, Codable, CaseIterable, Sendable {
     case free

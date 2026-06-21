@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import UIKit
 import Observation
 
 /// 通知の集約（§6.10 / §6.12 深掘り）。許諾要求・フォアグラウンド表示・各種リマインドを一元管理。
@@ -13,13 +14,24 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     func configure() {
         center.delegate = self
         center.getNotificationSettings { settings in
-            Task { @MainActor in self.isAuthorized = settings.authorizationStatus == .authorized }
+            Task { @MainActor in
+                self.isAuthorized = settings.authorizationStatus == .authorized
+                // 既に許諾済みなら APNs 登録を更新（トークンのローテーション追従）。
+                if self.isAuthorized { self.registerForRemotePush() }
+            }
         }
     }
 
     func requestAuthorization() async {
         let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
         isAuthorized = granted
+        if granted { registerForRemotePush() }
+    }
+
+    /// APNs リモート通知の登録を要求する（成功/失敗は AppDelegate → PushTokenCenter に届く）。
+    /// 実配信には `aps-environment` entitlement と APNs 鍵が必要。
+    func registerForRemotePush() {
+        UIApplication.shared.registerForRemoteNotifications()
     }
 
     // MARK: - 通知種別

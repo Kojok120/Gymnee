@@ -15,6 +15,12 @@ settings:
     DEVELOPMENT_TEAM: PG5P26J3W2
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
 
+# 環境別シークレット（iOS の .env 相当）。Debug→dev / Release→prod。
+# 実ファイルは .gitignore 済み。Config/Secrets.example.xcconfig を複製して値を入れる。
+configFiles:
+  Debug: Config/Secrets.dev.xcconfig
+  Release: Config/Secrets.prod.xcconfig
+
 targets:
   Gymnee:
     type: application
@@ -29,6 +35,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app
         PRODUCT_NAME: Gymnee
+        CODE_SIGN_ENTITLEMENTS: Gymnee/Gymnee.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: "YES"
@@ -50,6 +57,9 @@ targets:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
+        # 環境別シークレット（xcconfig → ビルド設定 → ここ → 実行時に Bundle から読む）。
+        SUPABASE_HOST: "$(SUPABASE_HOST)"
+        SUPABASE_KEY: "$(SUPABASE_KEY)"
         NSCameraUsageDescription: "ジムでの写真チェックインと進捗写真の撮影に使用します。"
         NSPhotoLibraryUsageDescription: "進捗写真やチェックイン写真の選択・保存に使用します。"
         NSPhotoLibraryAddUsageDescription: "生成した共有カードを写真ライブラリに保存するために使用します。"
@@ -70,6 +80,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.widgets
         PRODUCT_NAME: GymneeWidgets
+        CODE_SIGN_ENTITLEMENTS: GymneeWidgets/GymneeWidgets.entitlements
         GENERATE_INFOPLIST_FILE: "NO"
         SKIP_INSTALL: "YES"
     info:
@@ -92,6 +103,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.watchkitapp
         PRODUCT_NAME: GymneeWatch
+        CODE_SIGN_ENTITLEMENTS: GymneeWatch/GymneeWatch.entitlements
         GENERATE_INFOPLIST_FILE: "NO"
         TARGETED_DEVICE_FAMILY: "4"
     info:

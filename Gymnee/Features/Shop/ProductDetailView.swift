@@ -1,14 +1,15 @@
 import SwiftUI
 import SwiftData
 
-/// 商品詳細（§6.12）。カート追加・補給ロギング（在庫リマインドの根拠）。
+/// 商品詳細（§6.12）。**アフィリエイト方式**：提携先サイトへ送客し、補給ロギング（在庫リマインドの根拠）を行う。
 struct ProductDetailView: View {
     let product: Product
     let userId: UUID
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
-    @State private var added = false
+    @Environment(AppErrorCenter.self) private var errors
+    @State private var browserURL: IdentifiableURL?
     @State private var logged = false
 
     var body: some View {
@@ -22,7 +23,11 @@ struct ProductDetailView: View {
                     .background(Theme.energy.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.Radius.lg))
 
                 Text(product.name).font(.title2.bold())
-                Text(formatPrice(product.price)).font(.title3).foregroundStyle(Theme.energy)
+                Text(formatReferencePrice(product.price)).font(.title3).foregroundStyle(Theme.energy)
+                if let merchant = product.merchant {
+                    Label("提携先: \(merchant)", systemImage: "link")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
                 if let desc = product.productDescription {
                     Text(desc).font(.body).foregroundStyle(.secondary)
                 }
@@ -35,11 +40,20 @@ struct ProductDetailView: View {
                     }
                 }
 
-                Button { addToCart() } label: {
-                    Label(added ? "カートに追加しました" : "カートに追加", systemImage: added ? "checkmark" : "cart.badge.plus")
+                AffiliateDisclosure()
+                    .padding(.top, Theme.Spacing.xs)
+
+                Button { openAffiliate() } label: {
+                    Label("提携先サイトで見る", systemImage: "arrow.up.forward.app")
                         .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.sm)
                 }
                 .buttonStyle(.borderedProminent).tint(Theme.energy)
+                .disabled(product.resolvedAffiliateURL == nil)
+
+                if product.resolvedAffiliateURL == nil {
+                    Text("この商品のリンクは現在準備中です。")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
 
                 if product.servingsPerUnit != nil {
                     Button { logSupply() } label: {
@@ -55,11 +69,17 @@ struct ProductDetailView: View {
         }
         .navigationTitle(product.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $browserURL) { item in
+            SafariView(url: item.url).ignoresSafeArea()
+        }
     }
 
-    private func addToCart() {
-        CartStore.addToCart(product: product, userId: userId, context: context, sync: sync)
-        added = true
+    private func openAffiliate() {
+        guard let url = product.resolvedAffiliateURL else {
+            errors.report("商品リンクが見つかりませんでした。")
+            return
+        }
+        browserURL = IdentifiableURL(url: url)
     }
 
     private func logSupply() {

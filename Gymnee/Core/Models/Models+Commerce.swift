@@ -1,19 +1,25 @@
 import Foundation
 import SwiftData
 
-/// 商品（§4.5）。在庫管理の有無はフルフィルメント方式に依存（§9-4）。
+/// 商品（§4.5 / §6.12）。
+/// **コマースはアフィリエイト方式**：在庫・配送・決済は自社で持たず、提携先（楽天市場 / iHerb 等）の
+/// 商品ページへ送客する。価格は提携先の値が正のため、ここでは「参考価格」として表示にのみ使う。
 @Model
 final class Product {
     @Attribute(.unique) var id: UUID
     var name: String
     var productDescription: String?
+    /// 参考価格（円）。実価格・在庫は提携先サイトに従う。表示は「目安」として扱う。
     var price: Decimal
     var imageURL: String?
     /// 同梱アセット画像名（オフライン表示用）。
     var imageAsset: String?
     var category: String?
     var goalTags: [String]
-    var stock: Int?
+    /// アフィリエイト遷移先（提携先の商品 / 検索ページ）。実 ASP の計測タグ付き URL を入れる。
+    var affiliateURL: String?
+    /// 提携先名（例: 楽天市場 / iHerb）。ステマ規制の開示表示に使用。
+    var merchant: String?
     /// 補給ロギングの基準量（例: 1容器あたりの回数）。在庫リマインドに使用。
     var servingsPerUnit: Int?
     var updatedAt: Date
@@ -28,7 +34,8 @@ final class Product {
         imageAsset: String? = nil,
         category: String? = nil,
         goalTags: [String] = [],
-        stock: Int? = nil,
+        affiliateURL: String? = nil,
+        merchant: String? = nil,
         servingsPerUnit: Int? = nil,
         updatedAt: Date = .now,
         isDirty: Bool = true
@@ -41,86 +48,23 @@ final class Product {
         self.imageAsset = imageAsset
         self.category = category
         self.goalTags = goalTags
-        self.stock = stock
+        self.affiliateURL = affiliateURL
+        self.merchant = merchant
         self.servingsPerUnit = servingsPerUnit
         self.updatedAt = updatedAt
         self.isDirty = isDirty
     }
-}
 
-/// 注文（§4.5）。物理グッズのため外部決済（§6.12）。
-@Model
-final class Order {
-    @Attribute(.unique) var id: UUID
-    var userId: UUID
-    var statusRaw: String
-    var total: Decimal
-    var stripePaymentIntent: String?
-    var createdAt: Date
-    var updatedAt: Date
-    var isDirty: Bool
-
-    @Relationship(deleteRule: .cascade, inverse: \OrderItem.order)
-    var items: [OrderItem] = []
-
-    var status: OrderStatus {
-        get { OrderStatus(rawValue: statusRaw) ?? .cart }
-        set { statusRaw = newValue.rawValue }
-    }
-
-    init(
-        id: UUID = UUID(),
-        userId: UUID,
-        status: OrderStatus = .cart,
-        total: Decimal = 0,
-        stripePaymentIntent: String? = nil,
-        createdAt: Date = .now,
-        updatedAt: Date = .now,
-        isDirty: Bool = true
-    ) {
-        self.id = id
-        self.userId = userId
-        self.statusRaw = status.rawValue
-        self.total = total
-        self.stripePaymentIntent = stripePaymentIntent
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-        self.isDirty = isDirty
-    }
-}
-
-/// 注文明細（§4.5）。
-@Model
-final class OrderItem {
-    @Attribute(.unique) var id: UUID
-    var quantity: Int
-    var unitPrice: Decimal
-    var updatedAt: Date
-    var isDirty: Bool
-
-    var order: Order?
-    var product: Product?
-
-    init(
-        id: UUID = UUID(),
-        quantity: Int,
-        unitPrice: Decimal,
-        order: Order? = nil,
-        product: Product? = nil,
-        updatedAt: Date = .now,
-        isDirty: Bool = true
-    ) {
-        self.id = id
-        self.quantity = quantity
-        self.unitPrice = unitPrice
-        self.order = order
-        self.product = product
-        self.updatedAt = updatedAt
-        self.isDirty = isDirty
+    /// 提携先へ遷移可能な URL（妥当な http(s) のみ）。
+    var resolvedAffiliateURL: URL? {
+        guard let affiliateURL, let url = URL(string: affiliateURL),
+              url.scheme == "http" || url.scheme == "https" else { return nil }
+        return url
     }
 }
 
 /// 補給ロギング（§4.5）。在庫リマインドの根拠（§6.12）。
+/// アフィリエイト方式では購入を自動検知できないため、「摂取した」のユーザーログから消費ペースを推定する。
 @Model
 final class SupplyLog {
     @Attribute(.unique) var id: UUID
@@ -155,7 +99,8 @@ final class SupplyLog {
     }
 }
 
-/// 有料プラン（§4.5）。採用可否は §9-5 で要決定。
+/// 有料プラン（§4.5）。採用可否は §9-5 で要決定。アフィリエイト移行後も将来のマネタイズ余地として
+/// モデルのみ残置（UI / IAP 未接続）。
 @Model
 final class Subscription {
     @Attribute(.unique) var id: UUID

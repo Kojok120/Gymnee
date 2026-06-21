@@ -71,6 +71,7 @@ struct RootView: View {
         case "checkin": CheckInView()
         case "profile": NavigationStack { ProfileView(userId: userId) }
         case "social": SocialFeedView()
+        case "friends": SocialFeedView(initialTab: 1)
         case "shop": ShopView()
         case "routine":
             if let r = debugRoutine {

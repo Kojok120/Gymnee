@@ -1,112 +1,183 @@
 import SwiftUI
+import AuthenticationServices
 
-/// サインイン・初期設定（§5 / §6.1）。
-/// v0 はモック/ローカル認証。Sign in with Apple ボタンも用意するが実体はモックに委譲する。
+/// サインイン・初期設定（§5 / §6.1）。アプリの第一印象。
+/// Sign in with Apple（公式ボタン）を主、表示名のみのローカル開始を副とする。
+/// Supabase 接続時は Apple 経由でリモートセッションを確立、未接続時はローカルにフォールバック。
 struct OnboardingView: View {
     @Environment(AuthService.self) private var auth
     @State private var displayName: String = ""
     @State private var showNameEntry = false
+    @State private var appeared = false
+
+    private let features: [(icon: String, title: String, sub: String)] = [
+        ("camera.fill", "写真でチェックイン", "撮るだけで来店が記録され、共有導線が立ち上がる"),
+        ("dumbbell.fill", "セット・レップ・重量をフル記録", "前回値オートフィルと自動 PR 検出で、続く"),
+        ("flame.fill", "ヒートマップで継続を可視化", "ジムを変えても1本のタイムラインに残る")
+    ]
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [Theme.deep, Theme.deep.opacity(0.85), Theme.energy.opacity(0.35)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            backdrop
 
-            VStack(spacing: Theme.Spacing.xl) {
-                Spacer()
-
-                VStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: "figure.strengthtraining.traditional")
-                        .font(.system(size: 64, weight: .bold))
-                        .foregroundStyle(Theme.energy)
-                    Text("Gymnee")
-                        .font(.system(size: 40, weight: .heavy, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text("カレンダーから始まる、\nクロスジムの筋トレ記録。")
-                        .font(.headline)
-                        .foregroundStyle(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                }
-
-                Spacer()
-
-                featureRow(icon: "camera.fill", text: "写真チェックインで来店を記録")
-                featureRow(icon: "chart.bar.fill", text: "セット・レップ・重量をフル記録")
-                featureRow(icon: "flame.fill", text: "ヒートマップで継続を可視化")
-
-                Spacer()
-
-                VStack(spacing: Theme.Spacing.md) {
-                    Button {
-                        auth.signInWithApple()
-                    } label: {
-                        Label("Sign in with Apple", systemImage: "applelogo")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Theme.Spacing.md)
-                            .background(.white, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
-                            .foregroundStyle(.black)
-                    }
-
-                    Button {
-                        showNameEntry = true
-                    } label: {
-                        Text("名前を入力して始める")
-                            .font(.subheadline.bold())
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Theme.Spacing.md)
-                            .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: Theme.Radius.md))
-                            .foregroundStyle(.white)
-                    }
-
-                    Text("v0 はローカル認証で動作します（Sign in with Apple は後日有効化）。")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.6))
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.bottom, Theme.Spacing.xl)
+            VStack(spacing: 0) {
+                Spacer(minLength: Theme.Spacing.xxl)
+                hero
+                Spacer(minLength: Theme.Spacing.xl)
+                featureList
+                Spacer(minLength: Theme.Spacing.xl)
+                actions
             }
             .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.bottom, Theme.Spacing.xl)
         }
         .sheet(isPresented: $showNameEntry) {
             nameEntrySheet
                 .presentationDetents([.medium])
+                .presentationBackground(.regularMaterial)
+        }
+        .task {
+            withAnimation(.smooth.delay(0.05)) { appeared = true }
         }
     }
 
-    private func featureRow(icon: String, text: String) -> some View {
-        HStack(spacing: Theme.Spacing.md) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(Theme.energy)
-                .frame(width: 32)
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(.white)
-            Spacer()
+    // MARK: - Backdrop
+
+    private var backdrop: some View {
+        ZStack {
+            Theme.heroBackground.ignoresSafeArea()
+            // ふわりと浮かぶ lime のグロー（奥行き）。
+            Circle()
+                .fill(Theme.lime.opacity(0.22))
+                .frame(width: 360, height: 360)
+                .blur(radius: 120)
+                .offset(x: 120, y: -260)
+                .ignoresSafeArea()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    // MARK: - Hero
+
+    private var hero: some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            ZStack {
+                Circle()
+                    .fill(Theme.lime.opacity(0.16))
+                    .frame(width: 108, height: 108)
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .font(.system(size: 52, weight: .bold))
+                    .foregroundStyle(Theme.limeFill)
+            }
+            .scaleEffect(appeared ? 1 : 0.7)
+            .opacity(appeared ? 1 : 0)
+
+            VStack(spacing: Theme.Spacing.sm) {
+                Text("Gymnee")
+                    .font(.system(size: 46, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("カレンダーから始まる、\nクロスジムの筋トレ記録。")
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.78))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+            }
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 12)
+        }
+    }
+
+    // MARK: - Feature list
+
+    private var featureList: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            ForEach(Array(features.enumerated()), id: \.offset) { index, f in
+                HStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: f.icon)
+                        .font(.title3)
+                        .foregroundStyle(Theme.limeFill)
+                        .frame(width: 44, height: 44)
+                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(f.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text(f.sub)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Theme.Spacing.md)
+                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 20)
+                .animation(.smooth.delay(0.12 + Double(index) * 0.08), value: appeared)
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private var actions: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            SignInWithAppleButton(.signIn) { request in
+                auth.prepareAppleRequest(request)
+            } onCompletion: { result in
+                Task { await auth.completeSignInWithApple(result) }
+            }
+            .signInWithAppleButtonStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+
+            Button("名前を入力して始める") { showNameEntry = true }
+                .buttonStyle(.gymneePrimary)
+
+            Text("Sign in with Apple でサインインすると、複数端末で記録が同期されます。")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.5))
+                .multilineTextAlignment(.center)
+                .padding(.top, Theme.Spacing.xs)
+        }
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 16)
+        .animation(.smooth.delay(0.36), value: appeared)
+    }
+
+    // MARK: - Name entry
 
     private var nameEntrySheet: some View {
         NavigationStack {
-            Form {
-                Section("表示名") {
-                    TextField("例: たろう", text: $displayName)
-                        .textInputAutocapitalization(.never)
+            VStack(spacing: Theme.Spacing.xl) {
+                VStack(spacing: Theme.Spacing.sm) {
+                    Text("はじめまして")
+                        .font(.title2.bold())
+                    Text("表示名を入力してください。あとから変更できます。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-                Section {
-                    Button("始める") {
-                        auth.signIn(displayName: displayName)
-                        showNameEntry = false
-                    }
-                    .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .padding(.top, Theme.Spacing.lg)
+
+                TextField("例: たろう", text: $displayName)
+                    .textInputAutocapitalization(.never)
+                    .font(.title3)
+                    .multilineTextAlignment(.center)
+                    .padding(Theme.Spacing.lg)
+                    .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+
+                Button("始める") {
+                    auth.signIn(displayName: displayName)
+                    showNameEntry = false
                 }
+                .buttonStyle(.gymneePrimary)
+                .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .opacity(displayName.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+
+                Spacer()
             }
+            .padding(Theme.Spacing.xl)
             .navigationTitle("プロフィール")
             .navigationBarTitleDisplayMode(.inline)
         }

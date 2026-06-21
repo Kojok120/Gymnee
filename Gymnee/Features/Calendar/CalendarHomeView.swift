@@ -2,7 +2,6 @@ import SwiftUI
 import SwiftData
 
 /// カレンダーホーム（§6.2）。月/週表示・来店マーカー・連続記録・週次ゴール。
-/// ヒートマップ（年間ビュー）とリカバリーは P4 で追加する。
 struct CalendarHomeView: View {
     @Environment(AuthService.self) private var auth
 
@@ -29,7 +28,6 @@ private struct CalendarHomeContent: View {
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
     @State private var anchor = Date.now
-    @State private var isWeekMode = false
     @State private var selectedDate: SelectedDay?
 
     /// navigationDestination(item:) は Identifiable を要求するため Date をラップする。
@@ -50,14 +48,13 @@ private struct CalendarHomeContent: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
-                statsRow
-                modePicker
+                heroCard
                 calendarCard
                 upcomingSection
             }
             .padding(Theme.Spacing.lg)
         }
-        .background(Theme.groupedBackground)
+        .background(Theme.bg0)
         .navigationTitle("Gymnee")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -74,12 +71,14 @@ private struct CalendarHomeContent: View {
         .navigationDestination(item: $selectedDate) { selection in
             DayDetailView(userId: userId, date: selection.date)
         }
+        // Watch 保留チェックインの取り込みは「一度だけ」。visits.count トリガに乗せると
+        // 挿入→count変化→再実行→再挿入 の無限ループになる（特に App Group 破損時）。
+        .task { consumeWatchCheckIns() }
         .task(id: visits.count) { syncPlatform() }
     }
 
-    /// Widget スナップショット更新＋ジオフェンス監視開始＋Watch保留チェックイン消化＋通知予約（§6.10）。
+    /// Widget スナップショット更新＋ジオフェンス監視開始＋通知予約（§6.10）。挿入は行わない。
     private func syncPlatform() {
-        consumeWatchCheckIns()
         SnapshotUpdater.update(userId: userId, context: context)
         let regions = gyms.compactMap { gym -> (id: UUID, name: String, lat: Double, lng: Double)? in
             guard let lat = gym.lat, let lng = gym.lng else { return nil }
@@ -90,7 +89,12 @@ private struct CalendarHomeContent: View {
     }
 
     private func scheduleReminders() {
+        #if DEBUG
+        // デモ/スクショ用ハーネス起動時は許諾ダイアログを出さない（自動撮影をクリーンに保つ）。
+        if !DebugSupport.demoRequested { Task { await notifications.requestAuthorization() } }
+        #else
         Task { await notifications.requestAuthorization() }
+        #endif
         let today = calendar.startOfDay(for: .now)
         let checkedInToday = visits.contains { calendar.isDateInToday($0.visitedAt) }
         notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: checkedInToday)
@@ -105,29 +109,82 @@ private struct CalendarHomeContent: View {
         let pending = SharedStore.consumePendingCheckIns()
         guard !pending.isEmpty else { return }
         let gym = gyms.first(where: { $0.isFavorite }) ?? gyms.first
+        var inserted = false
         for date in pending {
-            let visit = Visit(userId: userId, visitedAt: date, gym: gym)
-            context.insert(visit)
+            // 既に同時刻の来店があれば重複挿入しない（App Group 破損でキューが消えない場合の保険）。
+            if visits.contains(where: { abs($0.visitedAt.timeIntervalSince(date)) < 1 }) { continue }
+            context.insert(Visit(userId: userId, visitedAt: date, gym: gym))
+            inserted = true
         }
-        try? context.save()
+        if inserted { try? context.save() }
     }
 
-    // MARK: - Stats
+    // MARK: - Hero (streak ring + week goal + plain language)
 
-    private var statsRow: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            StatPill(value: "\(currentStreak)", label: "連続日数", tint: .orange)
-            StatPill(value: "\(weekCount)/\(weeklyGoal)", label: "今週", tint: weekCount >= weeklyGoal ? Theme.energy : .primary)
-            StatPill(value: "\(longestStreak)", label: "最長連続")
+    private var heroCard: some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            HStack(spacing: Theme.Spacing.xl) {
+                ProgressRing(progress: goalProgress, lineWidth: 11, size: 108) {
+                    VStack(spacing: 0) {
+                        Image(systemName: "flame.fill")
+                            .font(.caption)
+                            .foregroundStyle(currentStreak > 0 ? Theme.warning : Theme.textTertiary)
+                        Text("\(currentStreak)")
+                            .font(.numL)
+                            .foregroundStyle(Theme.textPrimary)
+                            .contentTransition(.numericText())
+                        Text("連続日")
+                            .font(.overline)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        OverlineLabel(text: "今週の達成")
+                        Spacer()
+                        if weekCount >= weeklyGoal {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.caption)
+                                .foregroundStyle(Theme.lime)
+                        }
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text("\(weekCount)")
+                            .font(.numL)
+                            .foregroundStyle(weekCount >= weeklyGoal ? Theme.lime : Theme.textPrimary)
+                            .contentTransition(.numericText())
+                        Text("/ \(weeklyGoal)")
+                            .font(.numS)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    weekDots
+                }
+            }
+
+            Divider().overlay(Theme.bg3)
+
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: encouragement.icon)
+                    .foregroundStyle(Theme.lime)
+                Text(encouragement.text)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer(minLength: 0)
+            }
         }
+        .gymneeCard(padding: Theme.Spacing.xl, highlighted: weekCount >= weeklyGoal)
     }
 
-    private var modePicker: some View {
-        Picker("", selection: $isWeekMode) {
-            Text("月").tag(false)
-            Text("週").tag(true)
+    /// 週次ゴールの達成ドット（埋まると lime）。
+    private var weekDots: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<max(weeklyGoal, 1), id: \.self) { i in
+                Capsule()
+                    .fill(i < weekCount ? Theme.lime : Theme.bg3)
+                    .frame(height: 6)
+            }
         }
-        .pickerStyle(.segmented)
     }
 
     // MARK: - Calendar
@@ -137,31 +194,41 @@ private struct CalendarHomeContent: View {
             header
             weekdayHeader
             grid
+            legend
         }
         .gymneeCard()
     }
 
     private var header: some View {
         HStack {
-            Button { shift(-1) } label: { Image(systemName: "chevron.left") }
+            Button { withAnimation(.snappy) { shift(-1) } } label: {
+                Image(systemName: "chevron.left").font(.body.weight(.semibold))
+            }
             Spacer()
             Text(titleText).font(.headline)
+            if !calendar.isDate(anchor, equalTo: .now, toGranularity: .month) {
+                Button { withAnimation(.snappy) { anchor = .now } } label: {
+                    Text("今日")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, 3)
+                        .background(Theme.limeSoft, in: Capsule())
+                        .foregroundStyle(Theme.lime)
+                }
+                .padding(.leading, 4)
+            }
             Spacer()
-            Button { shift(1) } label: { Image(systemName: "chevron.right") }
-        }
-        .overlay(alignment: .trailing) {
-            if !calendar.isDate(anchor, equalTo: .now, toGranularity: isWeekMode ? .weekOfYear : .month) {
-                Button("今日") { anchor = .now }
-                    .font(.caption)
-                    .offset(y: 30)
+            Button { withAnimation(.snappy) { shift(1) } } label: {
+                Image(systemName: "chevron.right").font(.body.weight(.semibold))
             }
         }
+        .tint(Theme.textPrimary)
     }
 
     private var weekdayHeader: some View {
         HStack {
             ForEach(weekdaySymbols, id: \.self) { sym in
-                Text(sym).font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                Text(sym).font(.caption2.weight(.semibold)).foregroundStyle(Theme.textTertiary).frame(maxWidth: .infinity)
             }
         }
     }
@@ -173,7 +240,7 @@ private struct CalendarHomeContent: View {
                 if let day {
                     dayCell(day)
                 } else {
-                    Color.clear.frame(height: 44)
+                    Color.clear.frame(height: 46)
                 }
             }
         }
@@ -184,29 +251,48 @@ private struct CalendarHomeContent: View {
         let hasVisit = visitDays.contains(start)
         let hasWorkout = workoutDays.contains(start)
         let isToday = calendar.isDateInToday(date)
+        let inMonth = calendar.isDate(date, equalTo: anchor, toGranularity: .month)
         return Button {
             selectedDate = SelectedDay(date: start)
         } label: {
-            VStack(spacing: 3) {
+            VStack(spacing: 4) {
                 Text("\(calendar.component(.day, from: date))")
-                    .font(.subheadline)
-                    .foregroundStyle(calendar.isDate(date, equalTo: anchor, toGranularity: .month) || isWeekMode ? .primary : .secondary)
-                HStack(spacing: 2) {
-                    Circle().fill(hasVisit ? Theme.energy : .clear).frame(width: 5, height: 5)
-                    Circle().fill(hasWorkout ? Color.orange : .clear).frame(width: 5, height: 5)
+                    .font(.subheadline.weight(isToday ? .bold : .regular))
+                    .foregroundStyle(isToday ? Theme.onLime : (inMonth ? Theme.textPrimary : Theme.textTertiary))
+                    .frame(width: 30, height: 30)
+                    .background {
+                        if isToday {
+                            Circle().fill(Theme.limeFill)
+                        } else if hasVisit {
+                            Circle().fill(Theme.limeSoft)
+                        }
+                    }
+                HStack(spacing: 3) {
+                    Circle().fill(hasVisit && !isToday ? Theme.lime : .clear).frame(width: 5, height: 5)
+                    Circle().fill(hasWorkout ? Theme.warning : .clear).frame(width: 5, height: 5)
                 }
                 .frame(height: 5)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 44)
-            .background(isToday ? Theme.energy.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
-            .overlay {
-                if isToday {
-                    RoundedRectangle(cornerRadius: Theme.Radius.sm).stroke(Theme.energy, lineWidth: 1)
-                }
-            }
+            .frame(height: 46)
         }
         .buttonStyle(.plain)
+    }
+
+    private var legend: some View {
+        HStack(spacing: Theme.Spacing.lg) {
+            legendItem(color: Theme.lime, label: "来店")
+            legendItem(color: Theme.warning, label: "ワークアウト")
+            Spacer()
+        }
+        .padding(.top, Theme.Spacing.xs)
+    }
+
+    private func legendItem(color: Color, label: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(label).font(.caption2).foregroundStyle(Theme.textTertiary)
+        }
     }
 
     // MARK: - Upcoming (予定→実績)
@@ -217,17 +303,19 @@ private struct CalendarHomeContent: View {
             .prefix(3)
         return Group {
             if !planned.isEmpty {
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    SectionHeader(title: "予定")
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    SectionHeader(title: "これからの予定")
                     ForEach(Array(planned), id: \.id) { w in
-                        HStack {
-                            Image(systemName: "calendar.badge.clock").foregroundStyle(.orange)
-                            Text(w.name)
+                        HStack(spacing: Theme.Spacing.md) {
+                            Image(systemName: "calendar.badge.clock")
+                                .foregroundStyle(Theme.warning)
+                                .frame(width: 36, height: 36)
+                                .background(Theme.warning.opacity(0.14), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                            Text(w.name).font(.subheadline.weight(.medium))
                             Spacer()
                             Text(w.date, format: .dateTime.month().day())
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.caption.weight(.medium)).foregroundStyle(Theme.textSecondary)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -253,6 +341,24 @@ private struct CalendarHomeContent: View {
     private var weekCount: Int {
         StreakCalculator.weeklyVisitDays(visitDays: visits.map(\.visitedAt), calendar: calendar)
     }
+    private var goalProgress: Double {
+        guard weeklyGoal > 0 else { return 0 }
+        return min(1, Double(weekCount) / Double(weeklyGoal))
+    }
+
+    /// 励まし文（Gentler Streak 流：責めない・前向き）。
+    private var encouragement: (icon: String, text: String) {
+        if weekCount >= weeklyGoal {
+            return ("checkmark.seal.fill", "今週は\(weekCount)日トレ — 目標達成、最高の週！")
+        }
+        if currentStreak >= 3 {
+            return ("flame.fill", "\(currentStreak)日連続。この調子で続けよう。")
+        }
+        if weekCount > 0 {
+            return ("bolt.fill", "今週は\(weekCount)日。あと\(weeklyGoal - weekCount)日で目標達成。")
+        }
+        return ("sparkles", "新しい週。まずは1回チェックインしてみよう。")
+    }
 
     private var weekdaySymbols: [String] {
         let f = DateFormatter()
@@ -263,33 +369,27 @@ private struct CalendarHomeContent: View {
     private var titleText: String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = isWeekMode ? "yyyy年 M月" : "yyyy年 M月"
+        f.dateFormat = "yyyy年 M月"
         return f.string(from: anchor)
     }
 
-    /// 表示対象の日配列。月モードは前後の空白を nil で埋める。週モードはその週の7日。
+    /// 表示対象の日配列。前後の空白を nil で埋めた当月のグリッド。
     private var displayedDays: [Date?] {
-        if isWeekMode {
-            guard let week = calendar.dateInterval(of: .weekOfYear, for: anchor) else { return [] }
-            return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: week.start) }
-        } else {
-            guard let monthInterval = calendar.dateInterval(of: .month, for: anchor) else { return [] }
-            let firstDay = monthInterval.start
-            let weekdayOfFirst = calendar.component(.weekday, from: firstDay)
-            let leading = (weekdayOfFirst - calendar.firstWeekday + 7) % 7
-            let daysInMonth = calendar.range(of: .day, in: .month, for: anchor)?.count ?? 30
-            var result: [Date?] = Array(repeating: nil, count: leading)
-            for d in 0..<daysInMonth {
-                result.append(calendar.date(byAdding: .day, value: d, to: firstDay))
-            }
-            while result.count % 7 != 0 { result.append(nil) }
-            return result
+        guard let monthInterval = calendar.dateInterval(of: .month, for: anchor) else { return [] }
+        let firstDay = monthInterval.start
+        let weekdayOfFirst = calendar.component(.weekday, from: firstDay)
+        let leading = (weekdayOfFirst - calendar.firstWeekday + 7) % 7
+        let daysInMonth = calendar.range(of: .day, in: .month, for: anchor)?.count ?? 30
+        var result: [Date?] = Array(repeating: nil, count: leading)
+        for d in 0..<daysInMonth {
+            result.append(calendar.date(byAdding: .day, value: d, to: firstDay))
         }
+        while result.count % 7 != 0 { result.append(nil) }
+        return result
     }
 
     private func shift(_ direction: Int) {
-        let component: Calendar.Component = isWeekMode ? .weekOfYear : .month
-        if let next = calendar.date(byAdding: component, value: direction, to: anchor) {
+        if let next = calendar.date(byAdding: .month, value: direction, to: anchor) {
             anchor = next
         }
     }

@@ -16,5 +16,10 @@ Gymnee.xcodeproj/
 .build/
 .swiftpm/
 
+# Secrets (copy Config/Secrets.example.xcconfig → Secrets.dev/prod.xcconfig and fill in)
+Config/Secrets.dev.xcconfig
+Config/Secrets.prod.xcconfig
+Gymnee/Resources/Supabase.plist
+
 # Misc
 *.log

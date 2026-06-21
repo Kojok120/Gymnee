@@ -29,6 +29,11 @@ struct CheckInView: View {
     @State private var autoDistance: CLLocationDistance?
     @State private var userPickedGym = false
 
+    /// 地図(MapKit)から見つけた近隣ジム候補（DB 未登録の初訪問ジムを含む）。
+    @State private var nearbyPlaces: [NearbyPlace] = []
+    @State private var isSearchingPlaces = false
+    private let placeSearch = PlaceSearchService()
+
     /// 自動選択を許容する最大距離（m）。これを超える最寄りジムは自動選択しない。
     private let autoSelectRadius: CLLocationDistance = 2000
 
@@ -44,9 +49,11 @@ struct CheckInView: View {
             location.requestWhenInUse()
             location.refresh()
             autoSelectNearestGym()
+            Task { await loadNearbyPlaces() }
         }
         .onChange(of: location.current?.timestamp) { _, _ in
             autoSelectNearestGym()
+            Task { await loadNearbyPlaces() }
         }
     }
 
@@ -54,6 +61,9 @@ struct CheckInView: View {
         Form {
             photoSection
             gymSection
+            if selectedGym == nil, !nearbyPlaces.isEmpty {
+                nearbyPlacesSection
+            }
             Section("メモ") {
                 TextField("今日の調子・メニューなど", text: $note, axis: .vertical)
                     .lineLimit(2...4)
@@ -170,6 +180,35 @@ struct CheckInView: View {
         }
     }
 
+    /// 地図から見つけた近隣ジム候補（DB 未登録でも出る）。タップで登録＆選択。
+    private var nearbyPlacesSection: some View {
+        Section {
+            ForEach(nearbyPlaces) { place in
+                Button { registerAndSelect(place) } label: {
+                    HStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.energy)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(place.name).foregroundStyle(.primary)
+                            if let d = place.distance {
+                                Text(formatDistance(d)).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Text("ここに登録").font(.caption).foregroundStyle(Theme.energy)
+                    }
+                }
+                .tint(.primary)
+            }
+        } header: {
+            HStack {
+                Text("近くのジム（地図）")
+                if isSearchingPlaces { ProgressView().controlSize(.mini) }
+            }
+        } footer: {
+            Text("地図上で見つかったジムです。まだ登録していないジムでも、タップで登録してチェックインできます。")
+        }
+    }
+
     private var autoHintText: String {
         if let d = autoDistance {
             return "現在地から自動選択（\(formatDistance(d))）"
@@ -217,6 +256,52 @@ struct CheckInView: View {
         selectedGym = nearest.gym
         autoDistance = nearest.dist
         isAutoSelected = true
+    }
+
+    /// 現在地周辺のジムを地図(MapKit)から検索する。手動選択済み・既選択時は探さない。
+    private func loadNearbyPlaces() async {
+        guard !userPickedGym, selectedGym == nil, let loc = location.current else { return }
+        isSearchingPlaces = true
+        defer { isSearchingPlaces = false }
+        let found = await placeSearch.nearbyGyms(around: loc.coordinate)
+        // 距離を付与して近い順に並べ、上位だけ出す。
+        let withDistance = found.map { place -> NearbyPlace in
+            var p = place
+            p.distance = loc.distance(from: CLLocation(latitude: place.lat, longitude: place.lng))
+            return p
+        }
+        .sorted { ($0.distance ?? .greatestFiniteMagnitude) < ($1.distance ?? .greatestFiniteMagnitude) }
+        // 既に同じ画面で選択が走っていたら反映しない。
+        guard selectedGym == nil, !userPickedGym else { return }
+        nearbyPlaces = Array(withDistance.prefix(5))
+    }
+
+    /// 近隣ジム候補を「自分のジム」として登録し、選択する（同名の既存ジムがあれば再利用）。
+    private func registerAndSelect(_ place: NearbyPlace) {
+        if let existing = gyms.first(where: { $0.name == place.name }) {
+            applyUserSelection(existing)
+            return
+        }
+        let gym = Gym(
+            name: place.name,
+            address: place.address,
+            lat: place.lat,
+            lng: place.lng,
+            source: .user,
+            createdBy: auth.currentUserId
+        )
+        context.insert(gym)
+        try? context.save()
+        sync.enqueue(PendingChange(entity: "gyms", recordId: gym.id, operation: .upsert, updatedAt: gym.updatedAt))
+        applyUserSelection(gym)
+    }
+
+    private func applyUserSelection(_ gym: Gym) {
+        selectedGym = gym
+        userPickedGym = true
+        isAutoSelected = false
+        autoDistance = nil
+        nearbyPlaces = []
     }
 
     // MARK: - Actions

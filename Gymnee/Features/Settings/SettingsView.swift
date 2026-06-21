@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AuthenticationServices
 
 /// 設定（§5 / §7）。HealthKit・通知・エクスポート・サブスク・データ削除の各導線。
 /// P0 ではプロフィール・同期状態・サインアウト・データ削除を実装。各機能は対応フェーズで有効化する。
@@ -25,10 +26,38 @@ struct SettingsView: View {
             }
 
             Section("同期") {
-                LabeledContent("未同期の変更", value: "\(sync.pendingCount) 件")
-                Text("v0 はオフラインのみ。Supabase 接続後に自動同期します。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                LabeledContent("バックエンド", value: sync.isRemoteEnabled ? "接続済み" : "ローカルのみ")
+                if sync.isRemoteEnabled {
+                    LabeledContent("認証", value: auth.isBackendAuthenticated ? "サインイン済み" : "未サインイン")
+                    LabeledContent("未同期の変更", value: "\(sync.pendingCount) 件")
+                    if let last = sync.lastSyncedAt {
+                        LabeledContent("最終同期", value: last.formatted(.relative(presentation: .named)))
+                    }
+                    if let err = sync.lastError {
+                        Label(err, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    Button {
+                        Task { await sync.syncNow() }
+                    } label: {
+                        Label("今すぐ同期", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    if !auth.isBackendAuthenticated {
+                        SignInWithAppleButton(.signIn) { request in
+                            auth.prepareAppleRequest(request)
+                        } onCompletion: { result in
+                            Task { await auth.completeSignInWithApple(result) }
+                        }
+                        .signInWithAppleButtonStyle(.black)
+                        .frame(height: 44)
+                        Text("Sign in with Apple でサインインすると、これまでのローカル記録もクラウドに同期されます。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    LabeledContent("未同期の変更", value: "\(sync.pendingCount) 件")
+                    Text("現在はローカルのみで動作中（Supabase 未設定）。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
 
             Section("データ") {
@@ -111,8 +140,6 @@ struct SettingsView: View {
         try? context.delete(model: Follow.self)
         try? context.delete(model: FeedItem.self)
         try? context.delete(model: Product.self)
-        try? context.delete(model: Order.self)
-        try? context.delete(model: OrderItem.self)
         try? context.delete(model: SupplyLog.self)
         try? context.delete(model: Subscription.self)
         do {
@@ -121,6 +148,12 @@ struct SettingsView: View {
             errors.report("データの削除に失敗しました。\(error.localizedDescription)")
             return
         }
-        auth.signOut()
+        // リモート接続時はサーバ側のアカウント（auth.users → 全データ CASCADE）も削除する。
+        Task {
+            let ok = await auth.deleteAccount()
+            if !ok {
+                errors.report("サーバ側データの削除に失敗しました。時間をおいて再度お試しください。")
+            }
+        }
     }
 }

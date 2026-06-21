@@ -23,8 +23,6 @@ enum GymneeSchemaV1: VersionedSchema {
             Follow.self,
             FeedItem.self,
             Product.self,
-            Order.self,
-            OrderItem.self,
             SupplyLog.self,
             Subscription.self,
         ]

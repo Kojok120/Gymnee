@@ -5,11 +5,13 @@ import SwiftData
 /// 実マルチユーザ連携は Supabase 接続後。今回はローカルデータ＋UI＋抽象。
 struct SocialFeedView: View {
     @Environment(AuthService.self) private var auth
+    /// 起動時に表示するタブ（0=フィード, 1=フレンド）。ディープリンク/検証ハーネス用。
+    var initialTab: Int = 0
 
     var body: some View {
         NavigationStack {
             if let uid = auth.currentUserId {
-                SocialContent(userId: uid)
+                SocialContent(userId: uid, initialTab: initialTab)
             } else {
                 EmptyStateView(systemImage: "person.2", title: "未ログイン")
             }
@@ -20,24 +22,61 @@ struct SocialFeedView: View {
 private struct SocialContent: View {
     let userId: UUID
 
+    @Environment(\.modelContext) private var context
+    @Environment(LocalSyncEngine.self) private var sync
+
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @Query private var follows: [Follow]
+    @Query private var profiles: [Profile]
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
 
     @State private var tab = 0
     @State private var showAddFriend = false
 
-    init(userId: UUID) {
+    init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
+        _tab = State(initialValue: initialTab)
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
-        _follows = Query(filter: #Predicate<Follow> { $0.followerId == userId }, sort: \Follow.createdAt)
+        // 自分が follower か followee の両方を取得（相互判定のため）。
+        _follows = Query(filter: #Predicate<Follow> { $0.followerId == userId || $0.followeeId == userId }, sort: \Follow.createdAt)
     }
 
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
+
+    // MARK: - フォロー関係の導出
+    /// 自分がフォローしている関係。
+    private var following: [Follow] { follows.filter { $0.followerId == userId } }
+    /// 自分をフォローしている人の userId 集合。
+    private var followerIds: Set<UUID> { Set(follows.filter { $0.followeeId == userId }.map(\.followerId)) }
+    /// 相互フォローか（相手も自分をフォローしている）。
+    private func isMutual(_ f: Follow) -> Bool { followerIds.contains(f.followeeId) }
+    /// 自分をフォローしているが自分はまだフォローし返していない人。
+    private var pendingFollowBack: [Follow] {
+        let followingIds = Set(following.map(\.followeeId))
+        return follows.filter { $0.followeeId == userId && !followingIds.contains($0.followerId) }
+    }
+    private func displayName(for id: UUID) -> String {
+        profiles.first(where: { $0.id == id })?.displayName ?? "ユーザー"
+    }
+
+    private func unfollow(_ f: Follow) {
+        let id = f.id
+        context.delete(f)
+        try? context.save()
+        sync.enqueue(PendingChange(entity: "follows", recordId: id, operation: .delete, updatedAt: .now))
+    }
+
+    private func followBack(_ targetId: UUID) {
+        guard !following.contains(where: { $0.followeeId == targetId }) else { return }
+        let follow = Follow(followerId: userId, followeeId: targetId, followeeDisplayName: displayName(for: targetId))
+        context.insert(follow)
+        try? context.save()
+        sync.enqueue(PendingChange(entity: "follows", recordId: follow.id, operation: .upsert, updatedAt: follow.updatedAt))
+    }
 
     var body: some View {
         Group {
@@ -90,18 +129,41 @@ private struct SocialContent: View {
 
     private var friendsList: some View {
         List {
-            Section("フォロー中") {
-                if follows.isEmpty {
+            Section("フォロー中 (\(following.count))") {
+                if following.isEmpty {
                     Text("まだ誰もフォローしていません。").foregroundStyle(.secondary)
                 } else {
-                    ForEach(follows) { f in
-                        Label(f.followeeDisplayName ?? "ユーザー", systemImage: "person.fill")
+                    ForEach(following) { f in
+                        HStack {
+                            Image(systemName: "person.fill").foregroundStyle(Theme.energy)
+                            Text(f.followeeDisplayName ?? "ユーザー")
+                            Spacer()
+                            if isMutual(f) {
+                                Label("相互", systemImage: "arrow.left.arrow.right")
+                                    .font(.caption2.bold()).foregroundStyle(Theme.energy)
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(Theme.energy.opacity(0.15), in: Capsule())
+                            }
+                        }
+                        .swipeActions { Button("解除", role: .destructive) { unfollow(f) } }
                     }
                 }
-                Button {
-                    showAddFriend = true
-                } label: {
-                    Label("フレンドを追加", systemImage: "person.badge.plus")
+                Button { showAddFriend = true } label: {
+                    Label("ユーザーを探す", systemImage: "magnifyingglass")
+                }
+            }
+
+            if !pendingFollowBack.isEmpty {
+                Section("あなたをフォロー") {
+                    ForEach(pendingFollowBack) { f in
+                        HStack {
+                            Image(systemName: "person").foregroundStyle(.secondary)
+                            Text(displayName(for: f.followerId))
+                            Spacer()
+                            Button("フォローし返す") { followBack(f.followerId) }
+                                .buttonStyle(.borderedProminent).tint(Theme.energy).controlSize(.small)
+                        }
+                    }
                 }
             }
 

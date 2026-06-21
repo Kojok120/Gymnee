@@ -76,16 +76,27 @@ struct WorkoutLoggerView: View {
     private var headerSection: some View {
         Section {
             TextField("ワークアウト名", text: $workout.name)
-                .font(.headline)
+                .font(.title3.bold())
             if let gym = workout.visit?.gym {
                 Label(gym.name, systemImage: "building.2.fill").font(.caption).foregroundStyle(.secondary)
             }
-            HStack {
-                Label("\(orderedExercises.count)種目", systemImage: "list.bullet")
-                Spacer()
-                Label(String(format: "総ボリューム %.0fkg", totalVolume), systemImage: "scalemass")
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xl) {
+                inlineMetric(label: "種目", value: "\(orderedExercises.count)")
+                inlineMetric(label: "セット", value: "\(completedSets)/\(totalSets)")
+                inlineMetric(label: "ボリューム", value: String(format: "%.0f", totalVolume), unit: "kg")
+                Spacer(minLength: 0)
             }
-            .font(.caption).foregroundStyle(.secondary)
+            .padding(.top, 2)
+        }
+    }
+
+    private func inlineMetric(label: String, value: String, unit: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            OverlineLabel(text: label)
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                Text(value).font(.numS).foregroundStyle(Theme.textPrimary)
+                if let unit { Text(unit).font(.caption2).foregroundStyle(Theme.textTertiary) }
+            }
         }
     }
 
@@ -161,36 +172,81 @@ struct WorkoutLoggerView: View {
 
     // MARK: - Rest timer bar
 
+    /// 浮遊するグラス製レストタイマーピル（§6.5）。残時間を表すドレインリング + カウントダウン。
     @ViewBuilder
     private var restBar: some View {
         if restTimer.isRunning {
             HStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "timer").foregroundStyle(Theme.energy)
-                Text(restTimer.displayText).font(.title3.monospacedDigit().bold())
-                ProgressView(value: restTimer.progress).tint(Theme.energy)
-                Button("+30") { restTimer.addTime(30) }.font(.caption.bold())
-                Button {
-                    restTimer.stop()
-                } label: { Image(systemName: "stop.fill") }
+                ZStack {
+                    Circle().stroke(Theme.bg3, lineWidth: 4)
+                    Circle()
+                        .trim(from: 0, to: max(0.001, 1 - restTimer.progress))
+                        .stroke(Theme.lime, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .shadow(color: Theme.limeGlow, radius: 4)
+                    Image(systemName: "timer").font(.caption2).foregroundStyle(Theme.lime)
+                }
+                .frame(width: 38, height: 38)
+                .animation(.timerTick, value: restTimer.progress)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("レスト").font(.overline).foregroundStyle(Theme.textTertiary)
+                    Text(restTimer.displayText)
+                        .font(.numM)
+                        .foregroundStyle(Theme.textPrimary)
+                        .contentTransition(.numericText())
+                }
+
+                Spacer(minLength: 0)
+
+                Button { restTimer.addTime(30) } label: {
+                    Text("+30s")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Theme.lime)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.limeSoft, in: Capsule())
+                }
+                Button { restTimer.stop() } label: {
+                    Image(systemName: "forward.end.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(Theme.Spacing.sm)
+                        .background(Theme.bg2, in: Circle())
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.vertical, Theme.Spacing.md)
-            .background(.bar)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay { Capsule().strokeBorder(Theme.lime.opacity(0.25), lineWidth: 1) }
+            .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.sm)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .sensoryFeedback(.success, trigger: restTimer.isRunning)
         }
     }
 
+    /// PR 達成バナー（アプリで最も特別な瞬間）。
     @ViewBuilder
     private var prToastView: some View {
         if let prToast {
-            Label(prToast, systemImage: "trophy.fill")
-                .font(.subheadline.bold())
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.md)
-                .background(.yellow.opacity(0.95), in: Capsule())
-                .foregroundStyle(.black)
-                .shadow(radius: 6)
-                .padding(.top, Theme.Spacing.sm)
-                .transition(.move(edge: .top).combined(with: .opacity))
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "medal.fill").font(.headline)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("NEW PR").font(.overline).tracking(1.5)
+                    Text(prToast).font(.subheadline.bold())
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.md)
+            .background(Theme.celebration, in: Capsule())
+            .foregroundStyle(Theme.onLime)
+            .shadow(color: Theme.limeGlow, radius: 16, y: 4)
+            .padding(.top, Theme.Spacing.sm)
+            .transition(.scale(scale: 0.8).combined(with: .move(edge: .top)).combined(with: .opacity))
+            .sensoryFeedback(.success, trigger: prToast)
         }
     }
 
@@ -274,6 +330,14 @@ struct WorkoutLoggerView: View {
             .flatMap(\.sets)
             .filter { $0.type != .warmup }
             .reduce(0) { $0 + $1.volume }
+    }
+
+    private var totalSets: Int {
+        orderedExercises.flatMap(\.sets).filter { $0.type != .warmup }.count
+    }
+
+    private var completedSets: Int {
+        orderedExercises.flatMap(\.sets).filter { $0.type != .warmup && $0.isCompleted }.count
     }
 
     private func topWeight(of we: WorkoutExercise) -> Double {

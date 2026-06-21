@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Gymnee 本体の Capability。Developer Portal / Automatic Signing 側でも同 Capability を有効化すること。
+  - applesignin: Sign in with Apple（§6.1 必須）
+  - application-groups: Widget / Watch とのデータ共有（§6.10、group.com.gymnee.app）
+  - healthkit: 体重・体組成の読込／ワークアウト書き戻し（§6.9）
+  ※ Push(APNs) を使う段階で aps-environment を追加する。
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.gymnee.app</string>
+    </array>
+    <key>com.apple.developer.healthkit</key>
+    <true/>
+    <key>com.apple.developer.healthkit.access</key>
+    <array/>
+    <!-- aps-environment は App Store ビルドが development を弾くため一旦削除。
+         プッシュ送信を実装する段階で「Push Notifications」capability を有効化し production で戻す。 -->
+</dict>
+</plist>

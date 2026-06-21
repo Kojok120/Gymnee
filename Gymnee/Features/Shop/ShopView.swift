@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// ショップ（§6.12）。商品一覧・ゴール連動レコメンド・在庫リマインド・カート・注文履歴。
+/// ショップ（§6.12）。**アフィリエイト方式**：商品一覧・ゴール連動レコメンド・在庫リマインドを提示し、
+/// 各商品は提携先サイト（楽天市場 / iHerb 等）へ送客する。カート・決済・注文は持たない。
 struct ShopView: View {
     @Environment(AuthService.self) private var auth
 
@@ -20,13 +21,10 @@ private struct ShopContent: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context
-    @Environment(LocalSyncEngine.self) private var sync
     @Environment(NotificationService.self) private var notifications
     @Query(sort: \Product.name) private var products: [Product]
     @Query private var supplyLogs: [SupplyLog]
-    @Query private var orders: [Order]
     @AppStorage("gymnee.goal") private var goal = "maintain"
-    @State private var cartCount = 0
 
     private let goals: [(key: String, label: String)] = [
         ("bulk", "増量"), ("cut", "減量"), ("maintain", "維持"), ("strength", "筋力"),
@@ -35,12 +33,13 @@ private struct ShopContent: View {
     init(userId: UUID) {
         self.userId = userId
         _supplyLogs = Query(filter: #Predicate<SupplyLog> { $0.userId == userId })
-        _orders = Query(filter: #Predicate<Order> { $0.userId == userId })
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                AffiliateDisclosure()
+                    .padding(.horizontal, Theme.Spacing.sm)
                 goalPicker
                 if !lowProducts.isEmpty { reminderCard }
                 if !recommended.isEmpty { recommendSection }
@@ -51,26 +50,6 @@ private struct ShopContent: View {
         .background(Theme.groupedBackground)
         .navigationTitle("ショップ")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                NavigationLink { OrderHistoryView(userId: userId) } label: { Image(systemName: "clock.arrow.circlepath") }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    CartView(userId: userId)
-                } label: {
-                    Image(systemName: "cart")
-                        .overlay(alignment: .topTrailing) {
-                            if cartCount > 0 {
-                                Text("\(cartCount)").font(.caption2.bold())
-                                    .padding(4).background(.red, in: Circle()).foregroundStyle(.white)
-                                    .offset(x: 10, y: -10)
-                            }
-                        }
-                }
-            }
-        }
-        .task(id: orders.count) { cartCount = CartStore.itemCount(userId: userId, context: context) }
         .task(id: supplyLogs.count) {
             for product in lowProducts { notifications.notifySupplyLow(productId: product.id, productName: product.name) }
         }
@@ -91,11 +70,13 @@ private struct ShopContent: View {
             Label("そろそろ無くなりそう", systemImage: "exclamationmark.triangle.fill")
                 .font(.headline).foregroundStyle(.orange)
             ForEach(lowProducts) { product in
-                HStack {
-                    Text(product.name).font(.subheadline)
-                    Spacer()
-                    Button("購入") { addToCart(product) }
-                        .buttonStyle(.borderedProminent).tint(Theme.energy).controlSize(.small)
+                NavigationLink { ProductDetailView(product: product, userId: userId) } label: {
+                    HStack {
+                        Text(product.name).font(.subheadline).foregroundStyle(.primary)
+                        Spacer()
+                        Text("見る").font(.caption.bold()).foregroundStyle(Theme.energy)
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -127,10 +108,14 @@ private struct ShopContent: View {
                         productIcon(product)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(product.name).foregroundStyle(.primary)
-                            if let cat = product.category { Text(cat).font(.caption).foregroundStyle(.secondary) }
+                            if let merchant = product.merchant {
+                                Text(merchant).font(.caption).foregroundStyle(.secondary)
+                            } else if let cat = product.category {
+                                Text(cat).font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
-                        Text(formatPrice(product.price)).font(.subheadline.bold())
+                        Text(formatReferencePrice(product.price)).font(.caption).foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
                 }
@@ -143,7 +128,7 @@ private struct ShopContent: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             productIcon(product).frame(maxWidth: .infinity)
             Text(product.name).font(.caption.bold()).lineLimit(2)
-            Text(formatPrice(product.price)).font(.caption2).foregroundStyle(Theme.energy)
+            Text(formatReferencePrice(product.price)).font(.caption2).foregroundStyle(Theme.energy)
         }
         .frame(width: 130)
         .gymneeCard(padding: Theme.Spacing.md)
@@ -167,33 +152,21 @@ private struct ShopContent: View {
         }
     }
 
-    private func addToCart(_ product: Product) {
-        CartStore.addToCart(product: product, userId: userId, context: context, sync: sync)
-        cartCount = CartStore.itemCount(userId: userId, context: context)
-    }
-
     // MARK: - Derived
 
     private var recommended: [Product] {
         products.filter { $0.goalTags.contains(goal) }
     }
 
-    private var purchasedUnits: [UUID: Int] {
-        var counts: [UUID: Int] = [:]
-        for order in orders where order.status != .cart {
-            for item in order.items {
-                if let pid = item.product?.id { counts[pid, default: 0] += item.quantity }
-            }
-        }
-        return counts
-    }
-
+    /// 在庫リマインド（§6.12）。アフィリエイト方式では購入を検知できないため、
+    /// 補給ログの消費ペースのみから「1容器を消費しきりそうか」を推定する（unitsPurchased=1 固定）。
     private var lowProducts: [Product] {
         products.filter { product in
-            let logs = supplyLogs.filter { $0.product?.id == product.id }.map { SupplyAnalyzer.LogPoint(date: $0.date, amount: $0.amount) }
+            let logs = supplyLogs
+                .filter { $0.product?.id == product.id }
+                .map { SupplyAnalyzer.LogPoint(date: $0.date, amount: $0.amount) }
             guard !logs.isEmpty else { return false }
-            let units = purchasedUnits[product.id] ?? 1
-            return SupplyAnalyzer.estimate(logs: logs, servingsPerUnit: product.servingsPerUnit, unitsPurchased: units).isLow
+            return SupplyAnalyzer.estimate(logs: logs, servingsPerUnit: product.servingsPerUnit, unitsPurchased: 1).isLow
         }
     }
 }

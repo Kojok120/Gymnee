@@ -14,20 +14,33 @@ struct ProfileView: View {
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId })
     }
 
+    private var currentStreak: Int { StreakCalculator.currentStreak(visitDays: visits.map(\.visitedAt)) }
+    private var longestStreak: Int { StreakCalculator.longestStreak(visitDays: visits.map(\.visitedAt)) }
+
     var body: some View {
         List {
             Section {
-                HStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 56))
-                        .foregroundStyle(Theme.energy)
-                    VStack(alignment: .leading) {
-                        Text(auth.session?.displayName ?? "ゲスト").font(.title3.bold())
-                        Text("\(visits.count) 来店・\(StreakCalculator.currentStreak(visitDays: visits.map(\.visitedAt)))日連続")
-                            .font(.caption).foregroundStyle(.secondary)
+                VStack(spacing: Theme.Spacing.lg) {
+                    HStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(Theme.lime)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(auth.session?.displayName ?? "ゲスト").font(.title2.bold())
+                            Text("トレーニングを続けています")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    HStack(spacing: Theme.Spacing.md) {
+                        StatPill(value: "\(visits.count)", label: "来店", tint: Theme.lime, systemImage: "mappin.and.ellipse")
+                        StatPill(value: "\(currentStreak)", label: "連続日", tint: Theme.warning, systemImage: "flame.fill")
+                        StatPill(value: "\(longestStreak)", label: "最長", tint: Theme.textPrimary, systemImage: "trophy.fill")
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, Theme.Spacing.sm)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
             }
 
             Section("マイデータ") {
