@@ -42,6 +42,7 @@ private struct ShopContent: View {
                 AffiliateDisclosure()
                     .padding(.horizontal, Theme.Spacing.sm)
                 goalPicker
+                strategyCard
                 if !lowProducts.isEmpty { reminderCard }
                 if !recommended.isEmpty { recommendSection }
                 allProductsSection
@@ -63,6 +64,42 @@ private struct ShopContent: View {
                 ForEach(goals, id: \.key) { Text($0.label).tag($0.key) }
             }
             .pickerStyle(.segmented)
+        }
+    }
+
+    /// 目標別の戦略カード。商品が重なっても「考え方」が明確に変わるようにする。
+    private var strategyCard: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+            Image(systemName: goalIcon(goal))
+                .font(.title3).foregroundStyle(Theme.energy)
+                .frame(width: 36, height: 36)
+                .background(Theme.energy.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(goalLabel(goal))の戦略").font(.subheadline.bold())
+                Text(goalStrategy(goal)).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gymneeCard()
+    }
+
+    private func goalIcon(_ key: String) -> String {
+        switch key {
+        case "bulk": return "arrow.up.circle.fill"
+        case "cut": return "arrow.down.circle.fill"
+        case "maintain": return "equal.circle.fill"
+        case "strength": return "bolt.fill"
+        default: return "target"
+        }
+    }
+
+    private func goalStrategy(_ key: String) -> String {
+        switch key {
+        case "bulk": return "消費を上回る摂取がカギ。ホエイ＋カーボ（マルト）でエネルギーとたんぱく質を確保し、クレアチンで高強度を支える。"
+        case "cut": return "低カロリーかつ高たんぱくを維持。植物性プロテインやEAAで筋量を守りつつ、摂取カロリーを抑える。カーボの摂りすぎに注意。"
+        case "maintain": return "摂取と消費のバランスを保つ。ホエイで日々のたんぱく質を充足し、EAAでトレ中の分解を抑える。"
+        case "strength": return "高重量に向けた出力と保護。クレアチンでパワーを底上げし、リストラップ/ベルトで手首・体幹を守る。"
+        default: return ""
         }
     }
 
@@ -198,16 +235,41 @@ private struct ShopContent: View {
 
     // MARK: - Derived
 
+    /// おすすめ＝目標に合う商品を「固有度の高い順」に。減量ならソイ、維持ならホエイが先頭に来る。
     private var recommended: [Product] {
-        products.filter { goalAffinity($0).contains(goal) }
+        products.filter { goalAffinity($0).contains(goal) }.sorted(by: isOrderedBefore)
     }
 
-    /// 全商品をゴール適合（合致を先頭）→名前で並べ替え。ゴール切替で表示順が必ず変わる。
+    /// 全商品を「目標適合スコア→カテゴリ→名前」で並べ替え。ゴール切替で先頭から表示が変わる。
     private var sortedProducts: [Product] {
-        products.sorted { a, b in
-            let am = goalAffinity(a).contains(goal), bm = goalAffinity(b).contains(goal)
-            if am != bm { return am }
-            return a.name.localizedCompare(b.name) == .orderedAscending
+        products.sorted(by: isOrderedBefore)
+    }
+
+    /// 並び順比較。① 目標への固有度が高い商品を先頭（共有商品は下げる）② プロテインを優先 ③ 名前。
+    private func isOrderedBefore(_ a: Product, _ b: Product) -> Bool {
+        let sa = goalScore(a), sb = goalScore(b)
+        if sa != sb { return sa > sb }
+        let ca = categoryRank(a), cb = categoryRank(b)
+        if ca != cb { return ca < cb }
+        return a.name.localizedCompare(b.name) == .orderedAscending
+    }
+
+    /// 目標適合スコア。合致しなければ 0。合致する中でも「その目標専用（タグが少ない）」ほど高い。
+    /// 例: ソイ[cut]=99 は EAA[maintain,cut]=98 より減量で上位 → 減量はソイ、維持はホエイが先頭に。
+    private func goalScore(_ p: Product) -> Int {
+        let affinity = goalAffinity(p)
+        guard affinity.contains(goal) else { return 0 }
+        return 100 - affinity.count
+    }
+
+    /// 同スコア時の優先順位（主役のプロテインを先に）。
+    private func categoryRank(_ p: Product) -> Int {
+        switch p.category {
+        case "プロテイン": return 0
+        case "カーボ": return 1
+        case "サプリ": return 2
+        case "ギア": return 3
+        default: return 4
         }
     }
 
