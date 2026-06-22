@@ -13,15 +13,17 @@ struct SettingsView: View {
     @State private var showDeleteConfirm = false
     @State private var showEmailSignIn = false
     @State private var showProfileEdit = false
+    @State private var browserURL: IdentifiableURL?
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
+    @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
 
     var body: some View {
         Form {
             Section("プロフィール") {
                 Button { showProfileEdit = true } label: {
                     HStack(spacing: Theme.Spacing.md) {
-                        AvatarView(filename: avatarFilename, size: 44)
+                        AvatarView(filename: avatarFilename, urlString: avatarURLString, size: 44)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(auth.session?.displayName ?? "—").foregroundStyle(.primary)
                             Text("プロフィールを編集").font(.caption).foregroundStyle(.secondary)
@@ -119,6 +121,21 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("規約・サポート") {
+                Button { browserURL = IdentifiableURL(url: Self.termsURL) } label: {
+                    legalRow("利用規約", systemImage: "doc.text")
+                }
+                .tint(.primary)
+                Button { browserURL = IdentifiableURL(url: Self.privacyURL) } label: {
+                    legalRow("プライバシーポリシー", systemImage: "hand.raised")
+                }
+                .tint(.primary)
+                Link(destination: Self.contactURL) {
+                    legalRow("お問い合わせ", systemImage: "envelope")
+                }
+                .tint(.primary)
+            }
+
             Section {
                 Button("サインアウト", role: .destructive) {
                     auth.signOut()
@@ -147,6 +164,25 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showProfileEdit) {
             ProfileEditView()
+        }
+        .sheet(item: $browserURL) { item in
+            SafariView(url: item.url).ignoresSafeArea()
+        }
+    }
+
+    // 規約・サポートの遷移先（公式ドメイン gymnee.app）。
+    private static let termsURL = URL(string: "https://gymnee.app/terms-of-service.html")!
+    private static let privacyURL = URL(string: "https://gymnee.app/privacy-policy.html")!
+    // 件名「Gymnee お問い合わせ」を percent-encode（生の日本語だと URL(string:) が nil になり得るため）。
+    private static let contactURL = URL(string: "mailto:kojokamo120@gmail.com?subject=Gymnee%20%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B")!
+
+    /// 規約・サポート行（左ラベル＋右に外部リンクの示唆アイコン）。
+    private func legalRow(_ title: String, systemImage: String) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            Image(systemName: "arrow.up.right")
+                .font(.caption).foregroundStyle(.tertiary)
         }
     }
 

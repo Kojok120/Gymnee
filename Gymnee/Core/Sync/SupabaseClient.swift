@@ -207,6 +207,22 @@ actor SupabaseClient {
         }
     }
 
+    /// アバター画像を avatars バケットへアップロードし、公開URL（バージョン無し）を返す。
+    /// パス先頭フォルダ = uid で storage の RLS（本人のみ書込）を通過する。bucket は public。
+    func uploadAvatar(userId: UUID, jpeg: Data) async throws -> String {
+        let path = "\(userId.uuidString.lowercased())/avatar.jpg"
+        let url = config.url.appendingPathComponent("storage/v1/object/avatars/\(path)")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        req.setValue("true", forHTTPHeaderField: "x-upsert")
+        req.httpBody = jpeg
+        try await send(req)
+        return config.url.appendingPathComponent("storage/v1/object/public/avatars/\(path)").absoluteString
+    }
+
     /// アカウント削除 RPC（auth.users 削除 → CASCADE）。要ユーザートークン。
     func deleteAccount() async throws {
         var request = restRequest(path: "rpc/delete_account")

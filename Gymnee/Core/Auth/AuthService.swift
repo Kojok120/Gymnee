@@ -247,6 +247,28 @@ final class AuthService {
         ensureProfile(for: updated)
     }
 
+    /// アバター画像をストレージへアップロードし、Profile.avatar_url を更新する。
+    /// 返り値はキャッシュ無効化用のバージョン付き公開URL（同期は呼び出し側で enqueue）。
+    func uploadAvatar(_ jpeg: Data) async -> String? {
+        guard let supabase, isBackendAuthenticated, let uid = currentUserId else { return nil }
+        do {
+            let base = try await supabase.uploadAvatar(userId: uid, jpeg: jpeg)
+            let versioned = base + "?v=\(Int(Date().timeIntervalSince1970))"
+            if let context {
+                let descriptor = FetchDescriptor<Profile>(predicate: #Predicate { $0.id == uid })
+                if let profile = (try? context.fetch(descriptor))?.first {
+                    profile.avatarURL = versioned
+                    profile.updatedAt = .now
+                    profile.isDirty = true
+                    try? context.save()
+                }
+            }
+            return versioned
+        } catch {
+            return nil
+        }
+    }
+
     /// 認証ユーザーに対応する Profile が無ければ作成する。
     private func ensureProfile(for session: UserSession) {
         guard let context else { return }

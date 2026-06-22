@@ -8,6 +8,7 @@ struct ProfileView: View {
 
     @Environment(AuthService.self) private var auth
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
+    @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @State private var showProfileEdit = false
     @Query private var visits: [Visit]
 
@@ -24,7 +25,7 @@ struct ProfileView: View {
             Section {
                 VStack(spacing: Theme.Spacing.lg) {
                     HStack(spacing: Theme.Spacing.md) {
-                        AvatarView(filename: avatarFilename, size: 60)
+                        AvatarView(filename: avatarFilename, urlString: avatarURLString, size: 60)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(auth.session?.displayName ?? "ゲスト").font(.title2.bold())
                             Text("プロフィールを編集")

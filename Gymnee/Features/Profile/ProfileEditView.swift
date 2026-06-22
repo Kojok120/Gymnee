@@ -1,24 +1,38 @@
 import SwiftUI
 import PhotosUI
 
-/// アバター画像（端末ローカル保存のファイル名）を丸く表示。未設定はシンボル。
-/// 画像は PhotoStore に保存し、ファイル名を @AppStorage("gymnee.avatarFilename") に持つ。
+/// アバター画像を丸く表示。端末ローカルのキャッシュ（自分用＝即時）→ サーバー公開URL → シンボル の順。
+/// 自分の画像は PhotoStore に保存しファイル名を @AppStorage("gymnee.avatarFilename")、
+/// 公開URLを @AppStorage("gymnee.avatarURL") に持つ。他人は urlString のみ。
 struct AvatarView: View {
-    let filename: String
+    var filename: String = ""
+    var urlString: String? = nil
     var size: CGFloat = 60
 
     var body: some View {
-        if !filename.isEmpty, let image = PhotoStore.load(filename) {
-            Image(uiImage: image)
-                .resizable().scaledToFill()
-                .frame(width: size, height: size)
-                .clipShape(Circle())
-        } else {
-            Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: size))
-                .foregroundStyle(Theme.lime)
-                .frame(width: size, height: size)
+        Group {
+            if !filename.isEmpty, let image = PhotoStore.load(filename) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else if let urlString, !urlString.isEmpty, let url = URL(string: urlString) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        symbol
+                    }
+                }
+            } else {
+                symbol
+            }
         }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+    }
+
+    private var symbol: some View {
+        Image(systemName: "person.crop.circle.fill")
+            .resizable().scaledToFit()
+            .foregroundStyle(Theme.lime)
     }
 }
 
@@ -28,10 +42,12 @@ struct ProfileEditView: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(\.dismiss) private var dismiss
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
+    @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
 
     @State private var name = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var pickedImage: UIImage?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -44,10 +60,11 @@ struct ProfileEditView: View {
                             PhotosPicker(selection: $photoItem, matching: .images) {
                                 Label("アイコン画像を変更", systemImage: "photo")
                             }
-                            if !avatarFilename.isEmpty || pickedImage != nil {
+                            if !avatarFilename.isEmpty || !avatarURLString.isEmpty || pickedImage != nil {
                                 Button("画像を削除", role: .destructive) {
                                     pickedImage = nil
                                     avatarFilename = ""
+                                    avatarURLString = ""
                                 }
                                 .font(.caption)
                             }
@@ -63,11 +80,15 @@ struct ProfileEditView: View {
             .navigationTitle("プロフィール編集")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() } }
+                ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() }.disabled(isSaving) }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("保存") { save() }
-                        .bold()
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("保存") { save() }
+                            .bold()
+                            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
             }
             .onAppear { if name.isEmpty { name = auth.session?.displayName ?? "" } }
@@ -89,18 +110,42 @@ struct ProfileEditView: View {
                 .frame(width: 96, height: 96)
                 .clipShape(Circle())
         } else {
-            AvatarView(filename: avatarFilename, size: 96)
+            AvatarView(filename: avatarFilename, urlString: avatarURLString, size: 96)
         }
     }
 
     private func save() {
-        auth.updateDisplayName(name)
-        if let pickedImage, let filename = PhotoStore.save(pickedImage) {
-            avatarFilename = filename
+        isSaving = true
+        Task {
+            auth.updateDisplayName(name)
+            if let pickedImage {
+                // ローカルキャッシュ（即時表示用）
+                if let filename = PhotoStore.save(pickedImage) { avatarFilename = filename }
+                // サーバーへアップロード（他人にも表示されるよう avatar_url を更新）
+                if let jpeg = Self.downscaledJPEG(pickedImage),
+                   let url = await auth.uploadAvatar(jpeg) {
+                    avatarURLString = url
+                }
+            }
+            if let uid = auth.currentUserId {
+                sync.enqueue(PendingChange(entity: "profiles", recordId: uid, operation: .upsert, updatedAt: .now))
+                await sync.syncNow()
+            }
+            isSaving = false
+            dismiss()
         }
-        if let uid = auth.currentUserId {
-            sync.enqueue(PendingChange(entity: "profiles", recordId: uid, operation: .upsert, updatedAt: .now))
+    }
+
+    /// アップロード用に最大 512px へ縮小して JPEG 化（転送量・保存量を抑える）。
+    private static func downscaledJPEG(_ image: UIImage, maxDimension: CGFloat = 512) -> Data? {
+        let size = image.size
+        let scale = min(1, maxDimension / max(size.width, size.height))
+        let target = CGSize(width: size.width * scale, height: size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let resized = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
         }
-        dismiss()
+        return resized.jpegData(compressionQuality: 0.85)
     }
 }
