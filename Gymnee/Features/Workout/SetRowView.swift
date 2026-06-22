@@ -20,6 +20,8 @@ struct NumberField: UIViewRepresentable {
         let base = UIFont.systemFont(ofSize: 19, weight: .semibold)
         tf.font = UIFont(descriptor: base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor, size: 19)
         tf.setContentHuggingPriority(.required, for: .horizontal)
+        // 点滅キャレットをはっきり見せる（入力箇所が分かるように）。
+        tf.tintColor = UIColor(Theme.energy)
         tf.addTarget(context.coordinator, action: #selector(Coordinator.editingChanged(_:)), for: .editingChanged)
         return tf
     }
@@ -36,9 +38,8 @@ struct NumberField: UIViewRepresentable {
         let set: (String) -> Void
         init(set: @escaping (String) -> Void) { self.set = set }
         @objc func editingChanged(_ tf: UITextField) { set(tf.text ?? "") }
-        func textFieldDidBeginEditing(_ tf: UITextField) {
-            DispatchQueue.main.async { tf.selectAll(nil) }
-        }
+        // selectAll はせず点滅キャレットを表示する。値が 0 のときは空表示なので、
+        // 新規セットはタップ→そのまま入力できる（0 を消す手間はないまま）。
     }
 }
 
