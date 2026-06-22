@@ -69,6 +69,12 @@ private struct CalendarHomeContent: View {
         // push 先（ProfileView 等）の子リンクからも確実に解決できるようにするため
         // （iOS 26.5 では pushed view 上の navigationDestination が無効化される）。
         .gymneeNavigationDestinations(userId: userId)
+        .navigationDestination(for: Gym.self) { gym in
+            GymDetailView(gym: gym, userId: userId)
+        }
+        .navigationDestination(for: WorkoutRef.self) { ref in
+            WorkoutDetailView(workout: ref.workout)
+        }
         .navigationDestination(item: $selectedDate) { selection in
             DayDetailView(userId: userId, date: selection.date)
         }

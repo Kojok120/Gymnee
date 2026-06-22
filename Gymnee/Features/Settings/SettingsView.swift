@@ -81,10 +81,8 @@ struct SettingsView: View {
                 .tint(.primary)
                 .disabled(!health.isAvailable)
 
-                if let uid = auth.currentUserId {
-                    NavigationLink {
-                        AnalyticsView(userId: uid)
-                    } label: {
+                if auth.currentUserId != nil {
+                    NavigationLink(value: AppRoute.analytics) {
                         Label("分析・CSVエクスポート", systemImage: "chart.bar.xaxis")
                     }
                 }

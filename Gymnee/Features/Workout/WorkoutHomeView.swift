@@ -56,6 +56,13 @@ private struct WorkoutHomeContent: View {
             case .library: ExerciseLibraryView(userId: userId)
             }
         }
+        // 過去ワークアウト詳細・種目詳細はルートで値ベースに解決（push 先での宣言を避ける）。
+        .navigationDestination(for: WorkoutRef.self) { ref in
+            WorkoutDetailView(workout: ref.workout)
+        }
+        .navigationDestination(for: Exercise.self) { exercise in
+            ExerciseDetailView(exercise: exercise, userId: userId)
+        }
     }
 
     private enum NavTarget: Hashable { case routines, library }
@@ -150,9 +157,7 @@ private struct WorkoutHomeContent: View {
                     .gymneeCard()
             } else {
                 ForEach(recentWorkouts) { workout in
-                    NavigationLink {
-                        WorkoutDetailView(workout: workout)
-                    } label: {
+                    NavigationLink(value: WorkoutRef(workout: workout)) {
                         VStack(alignment: .leading, spacing: 4) {
                             WorkoutRow(workout: workout)
                             Text(workout.date, format: .dateTime.year().month().day())

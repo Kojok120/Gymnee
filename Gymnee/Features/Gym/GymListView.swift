@@ -67,9 +67,7 @@ struct GymListView: View {
     }
 
     private func gymRow(_ gym: Gym) -> some View {
-        NavigationLink {
-            GymDetailView(gym: gym, userId: userId)
-        } label: {
+        NavigationLink(value: gym) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(gym.name).font(.body)

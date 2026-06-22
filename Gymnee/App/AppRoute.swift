@@ -17,6 +17,15 @@ enum AppRoute: Hashable {
     case settings
 }
 
+/// ワークアウト詳細への遷移値。WorkoutHome の activeWorkout(navigationDestination(item:))
+/// と Workout 型が衝突しないよう、生の Workout ではなくラッパで push する。
+/// Hashable は id ベースで安定させる。
+struct WorkoutRef: Hashable {
+    let workout: Workout
+    static func == (lhs: WorkoutRef, rhs: WorkoutRef) -> Bool { lhs.workout.id == rhs.workout.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(workout.id) }
+}
+
 extension View {
     /// CalendarHome の NavigationStack ルートに付与する共通 destination 宣言。
     /// すべての AppRoute をここで解決する（push 先での個別宣言は行わない）。
