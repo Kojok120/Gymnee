@@ -182,13 +182,19 @@ actor SupabaseClient {
     struct RemoteProfile: Sendable, Identifiable {
         let id: UUID
         let displayName: String
+        let avatarURL: String?
     }
 
     func searchProfiles(nameQuery: String, excluding selfId: UUID?, limit: Int = 20) async throws -> [RemoteProfile] {
         let trimmed = nameQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let pattern = "*\(trimmed)*".addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? trimmed
-        var query = "select=id,display_name&display_name=ilike.\(pattern)&limit=\(limit)"
+        // 日本語など非 ASCII を確実に percent-encode する（.alphanumerics は Unicode 文字を
+        // 「英数」とみなし生のまま残すため、日本語検索で不正リクエストになっていた）。
+        // PostgREST のワイルドカード `*` は残す。
+        var allowed = CharacterSet()
+        allowed.insert(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~*")
+        let pattern = "*\(trimmed)*".addingPercentEncoding(withAllowedCharacters: allowed) ?? trimmed
+        var query = "select=id,display_name,avatar_url&display_name=ilike.\(pattern)&limit=\(limit)"
         if let selfId { query += "&id=neq.\(selfId.uuidString.lowercased())" }
         var request = restRequest(path: "profiles", query: query)
         request.httpMethod = "GET"
@@ -197,7 +203,7 @@ actor SupabaseClient {
         return rows.compactMap { row in
             guard let idStr = row["id"] as? String, let id = UUID(uuidString: idStr) else { return nil }
             let name = (row["display_name"] as? String) ?? "ユーザー"
-            return RemoteProfile(id: id, displayName: name)
+            return RemoteProfile(id: id, displayName: name, avatarURL: row["avatar_url"] as? String)
         }
     }
 
