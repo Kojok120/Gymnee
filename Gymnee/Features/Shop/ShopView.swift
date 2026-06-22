@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// ショップ（§6.12）。**アフィリエイト方式**：商品一覧・ゴール連動レコメンド・在庫リマインドを提示し、
 /// 各商品は提携先サイト（楽天市場 / iHerb 等）へ送客する。カート・決済・注文は持たない。
@@ -101,13 +102,16 @@ private struct ShopContent: View {
 
     private var allProductsSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            SectionHeader(title: "すべての商品")
-            ForEach(products) { product in
+            SectionHeader(title: "すべての商品（\(goalLabel(goal))順）")
+            ForEach(sortedProducts) { product in
                 NavigationLink { ProductDetailView(product: product, userId: userId) } label: {
                     HStack {
-                        productIcon(product)
+                        productThumbnail(product, size: 52)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(product.name).foregroundStyle(.primary)
+                            HStack(spacing: 6) {
+                                Text(product.name).foregroundStyle(.primary)
+                                if goalAffinity(product).contains(goal) { goalBadge }
+                            }
                             if let merchant = product.merchant {
                                 Text(merchant).font(.caption).foregroundStyle(.secondary)
                             } else if let cat = product.category {
@@ -124,9 +128,21 @@ private struct ShopContent: View {
         .gymneeCard()
     }
 
+    private var goalBadge: some View {
+        Text("ゴール向け")
+            .font(.caption2.bold())
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Theme.energy.opacity(0.15), in: Capsule())
+            .foregroundStyle(Theme.energy)
+    }
+
+    private func goalLabel(_ key: String) -> String {
+        goals.first { $0.key == key }?.label ?? key
+    }
+
     private func productCard(_ product: Product) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            productIcon(product).frame(maxWidth: .infinity)
+            productThumbnail(product, size: 106).frame(maxWidth: .infinity)
             Text(product.name).font(.caption.bold()).lineLimit(2)
             Text(formatReferencePrice(product.price)).font(.caption2).foregroundStyle(Theme.energy)
         }
@@ -134,11 +150,39 @@ private struct ShopContent: View {
         .gymneeCard(padding: Theme.Spacing.md)
     }
 
-    private func productIcon(_ product: Product) -> some View {
+    /// 商品サムネイル。画像（imageURL / imageAsset）があれば表示し、無ければカテゴリアイコンにフォールバック。
+    @ViewBuilder
+    private func productThumbnail(_ product: Product, size: CGFloat = 44) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.sm)
+        if let urlString = product.imageURL, let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                case .failure:
+                    productIcon(product, size: size)
+                default:
+                    ZStack { Color.secondary.opacity(0.1); ProgressView().controlSize(.small) }
+                }
+            }
+            .frame(width: size, height: size)
+            .clipped()
+            .clipShape(shape)
+        } else if let asset = product.imageAsset, !asset.isEmpty, UIImage(named: asset) != nil {
+            Image(asset).resizable().scaledToFill()
+                .frame(width: size, height: size)
+                .clipped()
+                .clipShape(shape)
+        } else {
+            productIcon(product, size: size)
+        }
+    }
+
+    private func productIcon(_ product: Product, size: CGFloat = 44) -> some View {
         Image(systemName: iconName(for: product.category))
-            .font(.title2)
+            .font(size >= 80 ? .largeTitle : .title2)
             .foregroundStyle(Theme.energy)
-            .frame(width: 44, height: 44)
+            .frame(width: size, height: size)
             .background(Theme.energy.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
@@ -155,7 +199,35 @@ private struct ShopContent: View {
     // MARK: - Derived
 
     private var recommended: [Product] {
-        products.filter { $0.goalTags.contains(goal) }
+        products.filter { goalAffinity($0).contains(goal) }
+    }
+
+    /// 全商品をゴール適合（合致を先頭）→名前で並べ替え。ゴール切替で表示順が必ず変わる。
+    private var sortedProducts: [Product] {
+        products.sorted { a, b in
+            let am = goalAffinity(a).contains(goal), bm = goalAffinity(b).contains(goal)
+            if am != bm { return am }
+            return a.name.localizedCompare(b.name) == .orderedAscending
+        }
+    }
+
+    /// 商品のゴール適合タグ。`goalTags` があればそれを、無ければカテゴリ/名前から推定する
+    /// （リモートカタログで goal_tags が空でもゴール連動が効くようにするフォールバック）。
+    private func goalAffinity(_ p: Product) -> Set<String> {
+        if !p.goalTags.isEmpty { return Set(p.goalTags) }
+        let name = p.name
+        switch p.category {
+        case "カーボ": return ["bulk"]
+        case "ギア": return ["strength"]
+        case "プロテイン":
+            return name.contains("ソイ") ? ["cut", "maintain"] : ["bulk", "maintain"]
+        case "サプリ":
+            if name.contains("クレアチン") { return ["strength", "bulk"] }
+            if name.contains("EAA") || name.contains("BCAA") { return ["cut", "maintain"] }
+            return ["maintain", "cut"]
+        default:
+            return ["bulk", "cut", "maintain", "strength"] // 不明は全ゴールに表示
+        }
     }
 
     /// 在庫リマインド（§6.12）。アフィリエイト方式では購入を検知できないため、
