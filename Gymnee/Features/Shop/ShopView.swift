@@ -245,24 +245,24 @@ private struct ShopContent: View {
         products.sorted(by: isOrderedBefore)
     }
 
-    /// 並び順比較。① 目標への固有度が高い商品を先頭（共有商品は下げる）② プロテインを優先 ③ 名前。
+    /// 並び順比較。① 目標に合う商品を先頭 ② カテゴリ（プロテイン→カーボ→サプリ→ギア）
+    /// ③ 同カテゴリ内は「その目標に固有（タグが少ない）」ほど先 ④ 名前。
+    /// 例: 減量はソイ、維持はホエイ/カゼインが先頭、その下に目標固有のサプリ（減量=L-カルニチン/CLA、
+    /// 維持=ビタミンD3/マルチビタミン）が並ぶ。
     private func isOrderedBefore(_ a: Product, _ b: Product) -> Bool {
-        let sa = goalScore(a), sb = goalScore(b)
-        if sa != sb { return sa > sb }
+        let ma = goalAffinity(a).contains(goal)
+        let mb = goalAffinity(b).contains(goal)
+        if ma != mb { return ma }
         let ca = categoryRank(a), cb = categoryRank(b)
         if ca != cb { return ca < cb }
+        if ma {
+            let na = goalAffinity(a).count, nb = goalAffinity(b).count
+            if na != nb { return na < nb }
+        }
         return a.name.localizedCompare(b.name) == .orderedAscending
     }
 
-    /// 目標適合スコア。合致しなければ 0。合致する中でも「その目標専用（タグが少ない）」ほど高い。
-    /// 例: ソイ[cut]=99 は EAA[maintain,cut]=98 より減量で上位 → 減量はソイ、維持はホエイが先頭に。
-    private func goalScore(_ p: Product) -> Int {
-        let affinity = goalAffinity(p)
-        guard affinity.contains(goal) else { return 0 }
-        return 100 - affinity.count
-    }
-
-    /// 同スコア時の優先順位（主役のプロテインを先に）。
+    /// カテゴリ優先順位（主役のプロテインを先に、ギアを最後に）。
     private func categoryRank(_ p: Product) -> Int {
         switch p.category {
         case "プロテイン": return 0
