@@ -37,9 +37,6 @@ private struct CalendarHomeContent: View {
         var id: Date { date }
     }
 
-    /// トップ導線（ジム一覧／マイページ）の値ベースルート。
-    private enum Route: Hashable { case gyms, profile }
-
     private let calendar = Calendar.current
 
     init(userId: UUID) {
@@ -62,21 +59,16 @@ private struct CalendarHomeContent: View {
         .navigationTitle("Gymnee")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                NavigationLink(value: Route.gyms) { Image(systemName: "building.2") }
+                NavigationLink(value: AppRoute.gyms) { Image(systemName: "building.2") }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: Route.profile) { Image(systemName: "person.crop.circle") }
+                NavigationLink(value: AppRoute.profile) { Image(systemName: "person.crop.circle") }
             }
         }
-        // 値ベースに統一。クロージャ型 NavigationLink を navigationDestination(item:) と
-        // 同一 NavigationStack で混在させると "NavigationRequestObserver tried to update
-        // multiple times per frame" でクラッシュするため、トップ導線も値ベースにする。
-        .navigationDestination(for: Route.self) { route in
-            switch route {
-            case .gyms: GymListView(userId: userId)
-            case .profile: ProfileView(userId: userId)
-            }
-        }
+        // AppRoute の destination は NavigationStack ルート（ここ）で一括宣言する。
+        // push 先（ProfileView 等）の子リンクからも確実に解決できるようにするため
+        // （iOS 26.5 では pushed view 上の navigationDestination が無効化される）。
+        .gymneeNavigationDestinations(userId: userId)
         .navigationDestination(item: $selectedDate) { selection in
             DayDetailView(userId: userId, date: selection.date)
         }

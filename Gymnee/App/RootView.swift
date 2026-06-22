@@ -69,7 +69,7 @@ struct RootView: View {
         case "gym": NavigationStack { GymListView(userId: userId) }
         case "addgym": AddGymView(userId: userId)
         case "checkin": CheckInView()
-        case "profile": NavigationStack { ProfileView(userId: userId) }
+        case "profile": NavigationStack { ProfileView(userId: userId).gymneeNavigationDestinations(userId: userId) }
         case "social": SocialFeedView()
         case "friends": SocialFeedView(initialTab: 1)
         case "shop": ShopView()

@@ -44,30 +44,21 @@ struct ProfileView: View {
             }
 
             Section("マイデータ") {
-                NavigationLink(value: Route.photos) { Label("進捗写真", systemImage: "photo.stack") }
-                NavigationLink(value: Route.body) { Label("身体メトリクス", systemImage: "ruler") }
-                NavigationLink(value: Route.analytics) { Label("分析ダッシュボード", systemImage: "chart.bar.xaxis") }
+                NavigationLink(value: AppRoute.photos) { Label("進捗写真", systemImage: "photo.stack") }
+                NavigationLink(value: AppRoute.body) { Label("身体メトリクス", systemImage: "ruler") }
+                NavigationLink(value: AppRoute.analytics) { Label("分析ダッシュボード", systemImage: "chart.bar.xaxis") }
             }
 
             Section {
-                NavigationLink(value: Route.settings) { Label("設定", systemImage: "gearshape") }
+                NavigationLink(value: AppRoute.settings) { Label("設定", systemImage: "gearshape") }
             }
         }
         .navigationTitle("マイページ")
         .navigationBarTitleDisplayMode(.inline)
-        // 値ベースの遅延ナビゲーション。遷移先は「タップ時のみ」生成する。
-        // クロージャ型 NavigationLink { DestView(...) } は List 描画のたびに遷移先を先行生成し、
-        // 各遷移先の init が #Predicate 付き @Query を毎回作り直すため、NavigationStack の
-        // 差分計算が更新サイクルに陥り iOS 26 系でメインスレッドがハングしていた（ウォッチドッグ kill）。
-        .navigationDestination(for: Route.self) { route in
-            switch route {
-            case .photos: ProgressPhotosView(userId: userId)
-            case .body: BodyMetricsView(userId: userId)
-            case .analytics: AnalyticsView(userId: userId)
-            case .settings: SettingsView()
-            }
-        }
+        // 遷移先は値ベース（AppRoute）。destination は NavigationStack ルート側
+        // （CalendarHomeView の gymneeNavigationDestinations）で一括宣言しており、
+        // ここ（push されたビュー）では宣言しない。クロージャ型リンクで遷移先を先行生成すると
+        // 各遷移先の init が #Predicate 付き @Query を作り直し更新サイクル→ハング（iOS 26 系）に
+        // なるため、必ず値ベース＋ルート宣言にする。
     }
-
-    private enum Route: Hashable { case photos, body, analytics, settings }
 }
