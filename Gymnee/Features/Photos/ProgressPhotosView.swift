@@ -6,6 +6,7 @@ struct ProgressPhotosView: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context
+    @Environment(LocalSyncEngine.self) private var sync
     @Query private var photos: [ProgressPhoto]
     @State private var showAdd = false
     @State private var showCompare = false
@@ -106,9 +107,11 @@ struct ProgressPhotosView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("削除", role: .destructive) {
+                        let photoId = photo.id
                         PhotoStore.delete(photo.localPhotoFilename)
                         context.delete(photo)
                         try? context.save()
+                        sync.enqueue(PendingChange(entity: "progress_photos", recordId: photoId, operation: .delete, updatedAt: .now))
                         fullscreen = nil
                     }
                 }

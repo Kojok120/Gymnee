@@ -7,6 +7,7 @@ struct DayDetailView: View {
     let date: Date
 
     @Environment(\.modelContext) private var context
+    @Environment(LocalSyncEngine.self) private var sync
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
 
@@ -68,8 +69,10 @@ struct DayDetailView: View {
     }
 
     private func delete(_ visit: Visit) {
+        let visitId = visit.id
         PhotoStore.delete(visit.localPhotoFilename)
         context.delete(visit)
         try? context.save()
+        sync.enqueue(PendingChange(entity: "visits", recordId: visitId, operation: .delete, updatedAt: .now))
     }
 }

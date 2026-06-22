@@ -7,6 +7,7 @@ struct RoutineEditorView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(LocalSyncEngine.self) private var sync
     @State private var showPicker = false
 
     private var orderedExercises: [RoutineExercise] {
@@ -84,25 +85,38 @@ struct RoutineEditorView: View {
             re.updatedAt = .now
         }
         try? context.save()
+        for re in items {
+            sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
+        }
     }
 
     private func addExercise(_ exercise: Exercise) {
         let re = RoutineExercise(orderIndex: routine.routineExercises.count, targetSets: 3, routine: routine, exercise: exercise)
         context.insert(re)
         try? context.save()
+        sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
     }
 
     private func delete(_ offsets: IndexSet) {
         let items = orderedExercises
+        let removedIds = offsets.map { items[$0].id }
         for index in offsets {
             context.delete(items[index])
         }
         try? context.save()
+        for id in removedIds {
+            sync.enqueue(PendingChange(entity: "routine_exercises", recordId: id, operation: .delete, updatedAt: .now))
+        }
     }
 
     private func save() {
         routine.updatedAt = .now
         routine.isDirty = true
         try? context.save()
+        // 名称変更に加え、ステッパーで編集したセット数・レストも確実に送出（漏れ防止に全種目を upsert）。
+        sync.enqueue(PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt))
+        for re in routine.routineExercises {
+            sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
+        }
     }
 }

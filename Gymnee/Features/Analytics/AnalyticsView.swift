@@ -63,8 +63,8 @@ struct AnalyticsView: View {
 
     private var heatmapCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "来店ヒートマップ")
-            HeatmapView(counts: visitCounts)
+            SectionHeader(title: "来店ヒートマップ（直近\(period.label)）")
+            HeatmapView(counts: visitCounts, weeks: period.weeks)
         }
         .gymneeCard()
     }

@@ -6,6 +6,7 @@ struct RoutinesView: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context
+    @Environment(LocalSyncEngine.self) private var sync
     @Query(sort: \Routine.name) private var routines: [Routine]
     @State private var editing: Routine?
     @State private var showTemplates = false
@@ -33,8 +34,7 @@ struct RoutinesView: View {
                 }
                 .swipeActions {
                     Button("削除", role: .destructive) {
-                        context.delete(routine)
-                        try? context.save()
+                        deleteRoutine(routine)
                     }
                 }
             }
@@ -67,6 +67,7 @@ struct RoutinesView: View {
             List(RoutineTemplates.all) { template in
                 Button {
                     let routine = RoutineTemplates.create(template, userId: userId, context: context)
+                    enqueueRoutine(routine)
                     showTemplates = false
                     editing = routine
                 } label: {
@@ -89,6 +90,27 @@ struct RoutinesView: View {
         let routine = Routine(userId: userId, name: "新しいルーティン")
         context.insert(routine)
         try? context.save()
+        sync.enqueue(PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt))
         editing = routine
+    }
+
+    /// テンプレ生成済みルーティンと配下種目をまとめて送出キューへ。
+    private func enqueueRoutine(_ routine: Routine) {
+        sync.enqueue(PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt))
+        for re in routine.routineExercises {
+            sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
+        }
+    }
+
+    /// ルーティン削除＝本体と配下種目の削除を送出（サーバ側 FK でも連鎖するが明示的に積む）。
+    private func deleteRoutine(_ routine: Routine) {
+        let routineId = routine.id
+        let exerciseIds = routine.routineExercises.map(\.id)
+        context.delete(routine)
+        try? context.save()
+        sync.enqueue(PendingChange(entity: "routines", recordId: routineId, operation: .delete, updatedAt: .now))
+        for id in exerciseIds {
+            sync.enqueue(PendingChange(entity: "routine_exercises", recordId: id, operation: .delete, updatedAt: .now))
+        }
     }
 }

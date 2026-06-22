@@ -17,6 +17,7 @@ struct AddFriendView: View {
     @State private var results: [SupabaseClient.RemoteProfile] = []
     @State private var searching = false
     @State private var didSearch = false
+    @State private var searchError: String?
     @State private var reportTarget: ReportUserTarget?
 
     init(userId: UUID) {
@@ -71,7 +72,12 @@ struct AddFriendView: View {
                 }
             }
 
-            if didSearch && visibleResults.isEmpty && !searching {
+            if let searchError {
+                Section {
+                    Label(searchError, systemImage: "wifi.exclamationmark")
+                        .foregroundStyle(.orange)
+                }
+            } else if didSearch && visibleResults.isEmpty && !searching {
                 Section { Text("該当するユーザーが見つかりませんでした。").foregroundStyle(.secondary) }
             }
 
@@ -113,8 +119,14 @@ struct AddFriendView: View {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return }
         searching = true
+        searchError = nil
         defer { searching = false }
-        results = await auth.searchUsers(query: q)
+        do {
+            results = try await auth.searchUsers(query: q)
+        } catch {
+            results = []
+            searchError = "検索に失敗しました。通信状況を確認して再試行してください。"
+        }
         didSearch = true
     }
 

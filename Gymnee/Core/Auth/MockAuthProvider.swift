@@ -51,6 +51,7 @@ final class MockAuthProvider: AuthProviding, @unchecked Sendable {
         // アカウント削除時は保持していた userId・表示名も破棄する（再ログインで復帰させない）。
         defaults.removeObject(forKey: userIdKey)
         defaults.removeObject(forKey: displayNameKey)
+        SharedStore.saveUserId(nil)
     }
 
     func persistSession(userId: UUID, displayName: String) {
@@ -60,6 +61,8 @@ final class MockAuthProvider: AuthProviding, @unchecked Sendable {
     private func persist(id: UUID, name: String) {
         defaults.set(id.uuidString, forKey: userIdKey)
         defaults.set(name, forKey: displayNameKey)
+        // App Intent / Siri は別プロセスで standard を読めないため App Group へもミラーする。
+        SharedStore.saveUserId(id)
     }
 
     /// 文字列から決定的に UUID を生成（SHA256 の先頭 16 バイト）。

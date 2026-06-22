@@ -87,7 +87,11 @@ struct BodyMetricsView: View {
     }
 
     private func delete(_ offsets: IndexSet) {
+        let removedIds = offsets.map { metrics[$0].id }
         for i in offsets { context.delete(metrics[i]) }
         try? context.save()
+        for id in removedIds {
+            sync.enqueue(PendingChange(entity: "body_metrics", recordId: id, operation: .delete, updatedAt: .now))
+        }
     }
 }

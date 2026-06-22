@@ -21,6 +21,7 @@ private struct CalendarHomeContent: View {
 
     @Environment(\.modelContext) private var context
     @Environment(LocationService.self) private var location
+    @Environment(LocalSyncEngine.self) private var sync
     @Environment(NotificationService.self) private var notifications
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
@@ -74,6 +75,10 @@ private struct CalendarHomeContent: View {
         // Watch 保留チェックインの取り込みは「一度だけ」。visits.count トリガに乗せると
         // 挿入→count変化→再実行→再挿入 の無限ループになる（特に App Group 破損時）。
         .task { consumeWatchCheckIns() }
+        // Watch から WCSession 経由でチェックインが届いたら、前面表示中でも即取り込む（重複ガード済み）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeWatchCheckInReceived)) { _ in
+            consumeWatchCheckIns()
+        }
         .task(id: visits.count) { syncPlatform() }
     }
 
@@ -109,14 +114,20 @@ private struct CalendarHomeContent: View {
         let pending = SharedStore.consumePendingCheckIns()
         guard !pending.isEmpty else { return }
         let gym = gyms.first(where: { $0.isFavorite }) ?? gyms.first
-        var inserted = false
+        var insertedVisits: [Visit] = []
         for date in pending {
             // 既に同時刻の来店があれば重複挿入しない（App Group 破損でキューが消えない場合の保険）。
             if visits.contains(where: { abs($0.visitedAt.timeIntervalSince(date)) < 1 }) { continue }
-            context.insert(Visit(userId: userId, visitedAt: date, gym: gym))
-            inserted = true
+            let visit = Visit(userId: userId, visitedAt: date, gym: gym)
+            context.insert(visit)
+            insertedVisits.append(visit)
         }
-        if inserted { try? context.save() }
+        if !insertedVisits.isEmpty {
+            try? context.save()
+            for visit in insertedVisits {
+                sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
+            }
+        }
     }
 
     // MARK: - Hero (streak ring + week goal + plain language)

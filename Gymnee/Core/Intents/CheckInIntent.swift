@@ -11,9 +11,10 @@ struct GymCheckInIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        // 別プロセス実行（Siri/ショートカット）でも読めるよう App Group を優先、無ければ standard。
         guard
-            let idString = UserDefaults.standard.string(forKey: "gymnee.auth.userId"),
-            let userId = UUID(uuidString: idString)
+            let userId = SharedStore.userId()
+                ?? UserDefaults.standard.string(forKey: "gymnee.auth.userId").flatMap(UUID.init(uuidString:))
         else {
             return .result(dialog: "Gymnee にサインインしてください。")
         }

@@ -18,8 +18,9 @@ struct HeatmapView: View {
                     ForEach(weekStarts, id: \.self) { weekStart in
                         VStack(spacing: spacing) {
                             ForEach(0..<7, id: \.self) { dow in
-                                let day = calendar.date(byAdding: .day, value: dow, to: weekStart)!
-                                cellView(for: day)
+                                if let day = calendar.date(byAdding: .day, value: dow, to: weekStart) {
+                                    cellView(for: day)
+                                }
                             }
                         }
                         .id(weekStart)

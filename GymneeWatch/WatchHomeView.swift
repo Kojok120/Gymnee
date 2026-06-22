@@ -23,7 +23,8 @@ struct WatchHomeView: View {
                 }
 
                 Button {
-                    SharedStore.addPendingCheckIn()
+                    // App Group は端末間で同期しないため、本体へは WCSession 経由で送る。
+                    WatchConnector.shared.sendCheckIn()
                     checkedIn = true
                 } label: {
                     Label(checkedIn ? "リクエスト済み" : "クイックチェックイン", systemImage: checkedIn ? "checkmark" : "camera.fill")
@@ -38,5 +39,8 @@ struct WatchHomeView: View {
             .padding()
         }
         .onAppear { snapshot = SharedStore.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeSnapshotUpdated)) { _ in
+            snapshot = SharedStore.load()
+        }
     }
 }

@@ -29,6 +29,7 @@ targets:
       - path: Gymnee
       - path: Shared
       - path: SharedActivity
+      - path: SharedConnectivity
     dependencies:
       - target: GymneeWidgets
     settings:
@@ -99,6 +100,7 @@ targets:
     sources:
       - path: GymneeWatch
       - path: Shared
+      - path: SharedConnectivity
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.watchkitapp
@@ -113,6 +115,8 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         WKApplication: true
+        # 本体アプリのコンパニオンとして対応付け（WCSession ペアリングの前提）。
+        WKCompanionAppBundleIdentifier: com.gymnee.app
 
   GymneeTests:
     type: bundle.unit-test

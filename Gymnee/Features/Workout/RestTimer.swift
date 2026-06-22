@@ -97,8 +97,8 @@ final class RestTimer {
     }
 
     private func scheduleNotification(after seconds: Int) {
+        // 許諾は NotificationService が一元管理する（毎回ここで要求すると重複・競合する）。
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         let content = UNMutableNotificationContent()
         content.title = "レスト終了"
         content.body = "次のセットを始めましょう 💪"

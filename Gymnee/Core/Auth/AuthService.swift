@@ -57,9 +57,10 @@ final class AuthService {
     }
 
     /// 表示名で他ユーザーを検索する（相互フォローの相手探し）。バックエンド未認証なら空。
-    func searchUsers(query: String) async -> [SupabaseClient.RemoteProfile] {
+    /// 通信失敗は throw で呼び出し側へ伝える（「該当なし」と区別してフィードバックするため）。
+    func searchUsers(query: String) async throws -> [SupabaseClient.RemoteProfile] {
         guard let supabase, isBackendAuthenticated else { return [] }
-        return (try? await supabase.searchProfiles(nameQuery: query, excluding: currentUserId)) ?? []
+        return try await supabase.searchProfiles(nameQuery: query, excluding: currentUserId)
     }
 
     func signIn(displayName: String) {

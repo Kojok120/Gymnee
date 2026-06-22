@@ -6,6 +6,7 @@ struct GymListView: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context
+    @Environment(LocalSyncEngine.self) private var sync
     @Query(sort: \Gym.name) private var gyms: [Gym]
     @Query private var visits: [Visit]
 
@@ -85,6 +86,7 @@ struct GymListView: View {
                     gym.isFavorite.toggle()
                     gym.updatedAt = .now
                     try? context.save()
+                    sync.enqueue(PendingChange(entity: "gyms", recordId: gym.id, operation: .upsert, updatedAt: gym.updatedAt))
                 } label: {
                     Image(systemName: gym.isFavorite ? "star.fill" : "star")
                         .foregroundStyle(gym.isFavorite ? .yellow : .secondary)

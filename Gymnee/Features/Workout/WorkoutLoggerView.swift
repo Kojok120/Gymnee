@@ -57,7 +57,11 @@ struct WorkoutLoggerView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("完了") { try? context.save(); editingNote = nil }
+                        Button("完了") {
+                            try? context.save()
+                            sync.enqueue(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
+                            editingNote = nil
+                        }
                     }
                 }
             }
@@ -278,11 +282,14 @@ struct WorkoutLoggerView: View {
         )
         context.insert(set)
         try? context.save()
+        sync.enqueue(PendingChange(entity: "exercise_sets", recordId: set.id, operation: .upsert, updatedAt: set.updatedAt))
     }
 
     private func deleteSet(_ set: ExerciseSet, from we: WorkoutExercise) {
+        let setId = set.id
         context.delete(set)
         try? context.save()
+        sync.enqueue(PendingChange(entity: "exercise_sets", recordId: setId, operation: .delete, updatedAt: .now))
     }
 
     private func onSetCompleted(_ set: ExerciseSet, in we: WorkoutExercise) {
@@ -319,6 +326,13 @@ struct WorkoutLoggerView: View {
             return
         }
         sync.enqueue(PendingChange(entity: "workouts", recordId: workout.id, operation: .upsert, updatedAt: workout.updatedAt))
+        // 未完了のまま編集した重量/レップ/RPE/メモも取りこぼさないよう、配下の種目とセットを一括送出。
+        for we in workout.exercises {
+            sync.enqueue(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
+            for set in we.sets {
+                sync.enqueue(PendingChange(entity: "exercise_sets", recordId: set.id, operation: .upsert, updatedAt: set.updatedAt))
+            }
+        }
         restTimer.stop()
         dismiss()
     }
@@ -395,14 +409,21 @@ struct WorkoutLoggerView: View {
         guard !warmups.isEmpty else { return }
 
         // 既存ウォームアップを除去してから先頭に差し込み、全セットを再採番。
+        let removedWarmupIds = existing.filter { $0.type == .warmup }.map(\.id)
         for s in existing where s.type == .warmup { context.delete(s) }
         var idx = 0
         for w in warmups {
             context.insert(ExerciseSet(setIndex: idx, weight: w.weight, reps: w.reps, type: .warmup, isCompleted: false, workoutExercise: we))
             idx += 1
         }
-        for s in working { s.setIndex = idx; idx += 1 }
+        for s in working { s.setIndex = idx; s.updatedAt = .now; idx += 1 }
         try? context.save()
+        for id in removedWarmupIds {
+            sync.enqueue(PendingChange(entity: "exercise_sets", recordId: id, operation: .delete, updatedAt: .now))
+        }
+        for s in we.sets {
+            sync.enqueue(PendingChange(entity: "exercise_sets", recordId: s.id, operation: .upsert, updatedAt: s.updatedAt))
+        }
     }
 
     private func canSupersetWithNext(_ we: WorkoutExercise) -> Bool {
@@ -416,20 +437,32 @@ struct WorkoutLoggerView: View {
         next.supersetGroup = group
         we.updatedAt = .now; next.updatedAt = .now
         try? context.save()
+        sync.enqueue(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
+        sync.enqueue(PendingChange(entity: "workout_exercises", recordId: next.id, operation: .upsert, updatedAt: next.updatedAt))
     }
 
     private func clearSuperset(_ we: WorkoutExercise) {
         let group = we.supersetGroup
-        for ex in orderedExercises where ex.supersetGroup == group {
+        let affected = orderedExercises.filter { $0.supersetGroup == group }
+        for ex in affected {
             ex.supersetGroup = nil
             ex.updatedAt = .now
         }
         try? context.save()
+        for ex in affected {
+            sync.enqueue(PendingChange(entity: "workout_exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
+        }
     }
 
     private func deleteExercise(_ we: WorkoutExercise) {
+        let exerciseId = we.id
+        let setIds = we.sets.map(\.id)
         context.delete(we)
         try? context.save()
+        sync.enqueue(PendingChange(entity: "workout_exercises", recordId: exerciseId, operation: .delete, updatedAt: .now))
+        for id in setIds {
+            sync.enqueue(PendingChange(entity: "exercise_sets", recordId: id, operation: .delete, updatedAt: .now))
+        }
     }
 
     private func supersetColor(_ we: WorkoutExercise) -> Color {

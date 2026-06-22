@@ -29,5 +29,7 @@ enum SnapshotUpdater {
         )
         SharedStore.save(snapshot)
         WidgetCenter.shared.reloadAllTimelines()
+        // Apple Watch にも最新スナップショットを配布（端末間は App Group 不可のため WCSession 経由）。
+        WatchConnector.shared.sendSnapshot(snapshot)
     }
 }

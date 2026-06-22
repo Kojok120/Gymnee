@@ -13,6 +13,8 @@ final class PushTokenCenter {
 
     /// トークン取得時のフック（AppEnvironment が Supabase 登録処理を差し込む）。
     @ObservationIgnored var onToken: ((String) -> Void)?
+    /// データ通知受信時のフック（AppEnvironment が同期トリガ等を差し込む）。
+    @ObservationIgnored var onRemoteNotification: (([AnyHashable: Any]) -> Void)?
 
     private init() {}
 
@@ -20,6 +22,11 @@ final class PushTokenCenter {
         apnsToken = token
         lastError = nil
         onToken?(token)
+    }
+
+    /// リモート通知の受信を購読側へ橋渡しする。
+    func handleRemoteNotification(_ userInfo: [AnyHashable: Any]) {
+        onRemoteNotification?(userInfo)
     }
 
     func fail(_ error: Error) {
@@ -50,5 +57,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         Task { @MainActor in PushTokenCenter.shared.fail(error) }
+    }
+
+    /// リモート通知（サイレント/データ通知含む）の受信フック。
+    /// 表示通知のフォアグラウンド提示は `NotificationService`(UNUserNotificationCenterDelegate) が担う。
+    /// ここではデータ通知を受けてバックグラウンド同期トリガに使えるよう橋渡しする。
+    /// ※ 実配信には `aps-environment` entitlement と APNs 鍵（サーバ側）が別途必要。
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any]
+    ) async -> UIBackgroundFetchResult {
+        await MainActor.run { PushTokenCenter.shared.handleRemoteNotification(userInfo) }
+        return .newData
     }
 }

@@ -26,6 +26,8 @@ final class AppEnvironment {
         self.errors = AppErrorCenter()
         self.auth.bootstrap(context: resolved.mainContext)
         self.notifications.configure()
+        // Apple Watch との WCSession を起動（手首からのチェックイン受信・スナップショット配布）。
+        WatchConnector.shared.activate()
         configureRemoteSyncIfAvailable()
     }
 
@@ -39,6 +41,11 @@ final class AppEnvironment {
         // APNs トークン取得時に Supabase の device_tokens へ登録（要サインイン＝best-effort）。
         PushTokenCenter.shared.onToken = { token in
             Task { try? await client.registerDeviceToken(token) }
+        }
+        // データ通知を受けたら最新差分を取り込む（実配信は APNs 鍵が前提＝best-effort）。
+        PushTokenCenter.shared.onRemoteNotification = { [weak self] _ in
+            guard let self else { return }
+            Task { await self.sync.syncNow() }
         }
         // バックエンドサインイン成功時：旧ローカルデータを新 userId へ付け替え→同期。
         auth.onBackendSignIn = { [weak self] oldUserId, newUserId in
