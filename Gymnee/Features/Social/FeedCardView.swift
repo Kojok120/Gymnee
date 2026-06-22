@@ -7,6 +7,11 @@ struct FeedCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             header
+            // 他人の投稿は本文（種目アイコン＋内容）を1行で見せる。
+            if entry.isFromOther {
+                Label(entry.title, systemImage: entry.icon)
+                    .font(.subheadline).foregroundStyle(Theme.textPrimary)
+            }
             if let photo = PhotoStore.load(entry.photoFilename) {
                 Image(uiImage: photo)
                     .resizable().scaledToFill()
@@ -27,14 +32,23 @@ struct FeedCardView: View {
 
     private var header: some View {
         HStack {
-            Image(systemName: entry.icon)
-                .foregroundStyle(iconColor)
-                .frame(width: 28, height: 28)
-                .background(iconColor.opacity(0.15), in: Circle())
-            VStack(alignment: .leading, spacing: 1) {
-                Text(entry.title).font(.subheadline.bold())
-                Text(entry.date, format: .dateTime.month().day().hour().minute())
-                    .font(.caption2).foregroundStyle(.secondary)
+            if entry.isFromOther {
+                AvatarView(urlString: entry.authorAvatarURL, size: 32)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.authorName ?? "ユーザー").font(.subheadline.bold())
+                    Text(entry.date, format: .dateTime.month().day().hour().minute())
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            } else {
+                Image(systemName: entry.icon)
+                    .foregroundStyle(iconColor)
+                    .frame(width: 28, height: 28)
+                    .background(iconColor.opacity(0.15), in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.title).font(.subheadline.bold())
+                    Text(entry.date, format: .dateTime.month().day().hour().minute())
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             Label(entry.visibility.label, systemImage: visibilityIcon)

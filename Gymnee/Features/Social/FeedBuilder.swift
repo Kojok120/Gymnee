@@ -36,6 +36,13 @@ struct FeedEntry: Identifiable {
     let photoFilename: String?
     let visibility: Visibility
     let partners: [String]
+    /// 他人の投稿のとき著者名（自分の投稿は nil）。
+    var authorName: String? = nil
+    /// 他人の投稿のとき著者アバターの公開URL。
+    var authorAvatarURL: String? = nil
+
+    /// 他ユーザーの投稿か（フィード上の表示分岐用）。
+    var isFromOther: Bool { authorName != nil }
 
     var icon: String {
         switch kind {
@@ -100,6 +107,37 @@ enum FeedBuilder {
         }
 
         return entries.sorted { $0.date > $1.date }
+    }
+
+    /// フォロー中の他ユーザーの投稿（サーバーから取り込んだ feed_items）をフィード項目へ変換する。
+    /// 著者名・アバターはローカルに保持している Profile から引く。
+    static func othersEntries(
+        feedItems: [FeedItem],
+        excludingUser userId: UUID,
+        profilesById: [UUID: Profile]
+    ) -> [FeedEntry] {
+        feedItems.compactMap { item -> FeedEntry? in
+            guard item.userId != userId else { return nil }
+            let kind: FeedEntry.Kind
+            switch item.type {
+            case .visit: kind = .visit
+            case .pr: kind = .pr
+            case .workout: kind = .workout
+            }
+            let profile = profilesById[item.userId]
+            return FeedEntry(
+                id: item.id,
+                date: item.createdAt,
+                kind: kind,
+                title: item.summary ?? "投稿",
+                subtitle: nil,
+                photoFilename: nil,
+                visibility: item.visibility,
+                partners: [],
+                authorName: profile?.displayName ?? item.authorDisplayName ?? "ユーザー",
+                authorAvatarURL: profile?.avatarURL
+            )
+        }
     }
 
     private static func formatPR(_ pr: PersonalRecord) -> String {

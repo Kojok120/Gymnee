@@ -24,6 +24,7 @@ private struct SocialContent: View {
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AuthService.self) private var auth
 
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
@@ -31,7 +32,9 @@ private struct SocialContent: View {
     @Query private var follows: [Follow]
     @Query private var blocks: [Block]
     @Query private var profiles: [Profile]
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
+    /// 自分＋フォロー中の他人の feed_items（サーバーから RLS 経由で取り込む）。
+    @Query private var feedItems: [FeedItem]
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
     /// ソーシャル初回利用時のコミュニティガイドライン同意（1.2.5）。
     @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
 
@@ -53,7 +56,20 @@ private struct SocialContent: View {
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
-    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
+
+    /// 自分の投稿を feed_items として発行し、最新差分を同期（push＋pull）する。
+    private func refreshFeed() async {
+        FeedPublisher.publishOwnPosts(
+            userId: userId,
+            authorName: auth.session?.displayName,
+            context: context,
+            visibilityStore: visStore,
+            defaultVisibility: defaultVisibility,
+            sync: sync
+        )
+        await sync.syncNow()
+    }
 
     // MARK: - フォロー関係の導出
     /// 自分がブロック中のユーザー集合（一覧・相互判定から除外）。
@@ -117,6 +133,8 @@ private struct SocialContent: View {
         }
         .navigationTitle("ソーシャル")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await refreshFeed() }
+        .refreshable { await refreshFeed() }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showMyPosts = true } label: {
@@ -134,13 +152,17 @@ private struct SocialContent: View {
         .sheet(isPresented: $showMyPosts) {
             NavigationStack { MyPostsView(userId: userId, visibilityStore: visStore, onClose: { showMyPosts = false }) }
         }
+        .onChange(of: showMyPosts) { _, shown in if !shown { Task { await refreshFeed() } } }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
     }
 
     // MARK: - Feed
 
     private var feed: some View {
-        let entries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility, visibilityStore: visStore)
+        let ownEntries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility, visibilityStore: visStore)
+        let profilesById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let otherEntries = FeedBuilder.othersEntries(feedItems: feedItems, excludingUser: userId, profilesById: profilesById)
+        let entries = (ownEntries + otherEntries).sorted { $0.date > $1.date }
         return ScrollView {
             LazyVStack(spacing: Theme.Spacing.md) {
                 ForEach(entries) { entry in
@@ -156,6 +178,7 @@ private struct SocialContent: View {
                 EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です", message: "チェックインやワークアウトが時系列で並びます。")
             }
         }
+        .onChange(of: editVisit) { _, v in if v == nil { Task { await refreshFeed() } } }
         .sheet(item: $editVisit) { visit in
             CheckInEditView(visit: visit, visibilityStore: visStore)
         }
@@ -179,13 +202,18 @@ private struct SocialContent: View {
         }
     }
 
-    /// 投稿の長押しメニュー：公開範囲の変更（編集はカードのタップで開く）。
+    /// 投稿の長押しメニュー：公開範囲の変更（自分の投稿のみ。編集はカードのタップで開く）。
     @ViewBuilder
     private func postMenu(_ entry: FeedEntry) -> some View {
-        Menu("公開範囲") {
-            ForEach(Visibility.allCases, id: \.self) { v in
-                Button { visStore.set(v, for: entry.id) } label: {
-                    Label(v.label, systemImage: (visStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
+        if !entry.isFromOther {
+            Menu("公開範囲") {
+                ForEach(Visibility.allCases, id: \.self) { v in
+                    Button {
+                        visStore.set(v, for: entry.id)
+                        Task { await refreshFeed() }
+                    } label: {
+                        Label(v.label, systemImage: (visStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
+                    }
                 }
             }
         }
