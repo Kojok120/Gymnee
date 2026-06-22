@@ -5,17 +5,19 @@ import SwiftData
 /// スワイプで削除できる。削除はフィード表示の元データ（visit / workout / personal_record）を消す。
 struct MyPostsView: View {
     let userId: UUID
+    /// シートを閉じる。NavigationStack 内の \.dismiss はシートを閉じないため明示的に渡す。
+    var onClose: () -> Void
 
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
     @Environment(LocalSyncEngine.self) private var sync
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
 
-    init(userId: UUID) {
+    init(userId: UUID, onClose: @escaping () -> Void) {
         self.userId = userId
+        self.onClose = onClose
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
@@ -33,7 +35,7 @@ struct MyPostsView: View {
     var body: some View {
         List {
             ForEach(entries) { entry in
-                FeedCardView(entry: entry)
+                row(entry)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -53,8 +55,23 @@ struct MyPostsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button("閉じる") { dismiss() }
+                Button("閉じる") { onClose() }
             }
+        }
+    }
+
+    /// ワークアウト投稿はタップで詳細へ。来店・自己ベストは表示のみ。
+    @ViewBuilder
+    private func row(_ entry: FeedEntry) -> some View {
+        if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
+            NavigationLink {
+                WorkoutDetailView(workout: workout)
+            } label: {
+                FeedCardView(entry: entry)
+            }
+            .buttonStyle(.plain)
+        } else {
+            FeedCardView(entry: entry)
         }
     }
 

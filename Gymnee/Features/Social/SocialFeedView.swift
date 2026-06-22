@@ -137,7 +137,7 @@ private struct SocialContent: View {
             }
         }
         .sheet(isPresented: $showMyPosts) {
-            NavigationStack { MyPostsView(userId: userId) }
+            NavigationStack { MyPostsView(userId: userId, onClose: { showMyPosts = false }) }
         }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
     }
@@ -149,7 +149,16 @@ private struct SocialContent: View {
         return ScrollView {
             LazyVStack(spacing: Theme.Spacing.md) {
                 ForEach(entries) { entry in
-                    FeedCardView(entry: entry)
+                    if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
+                        NavigationLink {
+                            WorkoutDetailView(workout: workout)
+                        } label: {
+                            FeedCardView(entry: entry)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        FeedCardView(entry: entry)
+                    }
                 }
             }
             .padding(Theme.Spacing.lg)
