@@ -1,0 +1,7 @@
+# Supabase CLI 設定。`supabase link --project-ref <ref>` で対象プロジェクトに紐づける。
+# project_id は現状 dev/beta（本番化時に prod プロジェクトの ref へ差し替え）。
+project_id = "bdeaeykruwxazdoewxmg"
+
+# send-push は DB トリガーから X-Push-Secret 認証で呼ぶため、Supabase の JWT 検証は無効化する。
+[functions.send-push]
+verify_jwt = false

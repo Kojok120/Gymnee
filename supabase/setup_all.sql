@@ -657,3 +657,41 @@ create index if not exists reports_created_idx on public.reports(created_at desc
 alter table public.reports enable row level security;
 create policy reports_own on public.reports for all to authenticated
     using (reporter_id = auth.uid()) with check (reporter_id = auth.uid());
+
+-- migrations/0008_push_on_visit.sql
+-- フレンドのチェックイン通知（visits insert → Edge Function send-push）。
+-- 適用後に DB 設定が必要: app.send_push_url / app.push_secret（docs/apns-push-setup.md 参照）。
+create extension if not exists pg_net;
+
+create or replace function public.notify_friend_checkin()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  fn_url text := current_setting('app.send_push_url', true);
+  secret text := current_setting('app.push_secret', true);
+begin
+  if fn_url is null or fn_url = '' then
+    return new;
+  end if;
+  if new.visited_at < now() - interval '10 minutes' then
+    return new;
+  end if;
+  perform net.http_post(
+    url     := fn_url,
+    headers := jsonb_build_object(
+                 'Content-Type', 'application/json',
+                 'X-Push-Secret', coalesce(secret, '')
+               ),
+    body    := jsonb_build_object('event', 'friend_checkin', 'visitId', new.id)
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_friend_checkin on public.visits;
+create trigger trg_notify_friend_checkin
+  after insert on public.visits
+  for each row execute function public.notify_friend_checkin();

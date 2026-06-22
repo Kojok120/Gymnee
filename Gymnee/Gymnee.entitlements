@@ -21,7 +21,10 @@
     <true/>
     <key>com.apple.developer.healthkit.access</key>
     <array/>
-    <!-- aps-environment は App Store ビルドが development を弾くため一旦削除。
-         プッシュ送信を実装する段階で「Push Notifications」capability を有効化し production で戻す。 -->
+    <!-- APNs プッシュ（§6.10 フレンドのチェックイン通知）。
+         開発/デバッグは development。配布アーカイブ時は Xcode が自動で production へ昇格する。
+         ※ Developer Portal の App ID で「Push Notifications」capability を有効化すること。 -->
+    <key>aps-environment</key>
+    <string>development</string>
 </dict>
 </plist>
