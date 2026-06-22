@@ -34,5 +34,15 @@ struct WorkoutDetailView: View {
         }
         .navigationTitle(workout.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                // 編集はロガー画面を再利用（セット・種目の追加/修正、完了の付け直しが可能）。
+                NavigationLink {
+                    WorkoutLoggerView(workout: workout)
+                } label: {
+                    Text("編集")
+                }
+            }
+        }
     }
 }
