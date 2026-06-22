@@ -37,6 +37,9 @@ private struct CalendarHomeContent: View {
         var id: Date { date }
     }
 
+    /// トップ導線（ジム一覧／マイページ）の値ベースルート。
+    private enum Route: Hashable { case gyms, profile }
+
     private let calendar = Calendar.current
 
     init(userId: UUID) {
@@ -59,14 +62,19 @@ private struct CalendarHomeContent: View {
         .navigationTitle("Gymnee")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                NavigationLink {
-                    GymListView(userId: userId)
-                } label: {
-                    Image(systemName: "building.2")
-                }
+                NavigationLink(value: Route.gyms) { Image(systemName: "building.2") }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { ProfileView(userId: userId) } label: { Image(systemName: "person.crop.circle") }
+                NavigationLink(value: Route.profile) { Image(systemName: "person.crop.circle") }
+            }
+        }
+        // 値ベースに統一。クロージャ型 NavigationLink を navigationDestination(item:) と
+        // 同一 NavigationStack で混在させると "NavigationRequestObserver tried to update
+        // multiple times per frame" でクラッシュするため、トップ導線も値ベースにする。
+        .navigationDestination(for: Route.self) { route in
+            switch route {
+            case .gyms: GymListView(userId: userId)
+            case .profile: ProfileView(userId: userId)
             }
         }
         .navigationDestination(item: $selectedDate) { selection in
