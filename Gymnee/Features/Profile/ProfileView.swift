@@ -44,24 +44,30 @@ struct ProfileView: View {
             }
 
             Section("マイデータ") {
-                NavigationLink { ProgressPhotosView(userId: userId) } label: {
-                    Label("進捗写真", systemImage: "photo.stack")
-                }
-                NavigationLink { BodyMetricsView(userId: userId) } label: {
-                    Label("身体メトリクス", systemImage: "ruler")
-                }
-                NavigationLink { AnalyticsView(userId: userId) } label: {
-                    Label("分析ダッシュボード", systemImage: "chart.bar.xaxis")
-                }
+                NavigationLink(value: Route.photos) { Label("進捗写真", systemImage: "photo.stack") }
+                NavigationLink(value: Route.body) { Label("身体メトリクス", systemImage: "ruler") }
+                NavigationLink(value: Route.analytics) { Label("分析ダッシュボード", systemImage: "chart.bar.xaxis") }
             }
 
             Section {
-                NavigationLink { SettingsView() } label: {
-                    Label("設定", systemImage: "gearshape")
-                }
+                NavigationLink(value: Route.settings) { Label("設定", systemImage: "gearshape") }
             }
         }
         .navigationTitle("マイページ")
         .navigationBarTitleDisplayMode(.inline)
+        // 値ベースの遅延ナビゲーション。遷移先は「タップ時のみ」生成する。
+        // クロージャ型 NavigationLink { DestView(...) } は List 描画のたびに遷移先を先行生成し、
+        // 各遷移先の init が #Predicate 付き @Query を毎回作り直すため、NavigationStack の
+        // 差分計算が更新サイクルに陥り iOS 26 系でメインスレッドがハングしていた（ウォッチドッグ kill）。
+        .navigationDestination(for: Route.self) { route in
+            switch route {
+            case .photos: ProgressPhotosView(userId: userId)
+            case .body: BodyMetricsView(userId: userId)
+            case .analytics: AnalyticsView(userId: userId)
+            case .settings: SettingsView()
+            }
+        }
     }
+
+    private enum Route: Hashable { case photos, body, analytics, settings }
 }
