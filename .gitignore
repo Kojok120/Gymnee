@@ -21,6 +21,10 @@ Config/Secrets.dev.xcconfig
 Config/Secrets.prod.xcconfig
 Gymnee/Resources/Supabase.plist
 
+# APNs auth key (.p8) and any secrets dir — never commit private keys
+secrets/
+*.p8
+
 # Misc
 *.log
 
