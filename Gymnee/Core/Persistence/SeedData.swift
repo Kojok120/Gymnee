@@ -46,6 +46,7 @@ enum SeedData {
         .init(name: "chocoZAP", chain: "chocoZAP"),
         .init(name: "FASTGYM24", chain: "FASTGYM24"),
         .init(name: "JOYFIT", chain: "JOYFIT"),
+        .init(name: "FIT PLACE24", chain: "FitPlace"),
         .init(name: "エクスパンドジム", chain: "Expand"),
     ]
 
