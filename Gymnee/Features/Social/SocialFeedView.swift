@@ -38,6 +38,7 @@ private struct SocialContent: View {
     @State private var tab = 0
     @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
+    @State private var showMyPosts = false
 
     init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
@@ -115,6 +116,12 @@ private struct SocialContent: View {
         .navigationTitle("ソーシャル")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { showMyPosts = true } label: {
+                    Image(systemName: "person.crop.rectangle.stack")
+                }
+                .accessibilityLabel("自分の投稿")
+            }
             ToolbarItem(placement: .principal) {
                 Picker("", selection: $tab) {
                     Text("フィード").tag(0)
@@ -128,6 +135,9 @@ private struct SocialContent: View {
                     }
                 } label: { Image(systemName: "eye") }
             }
+        }
+        .sheet(isPresented: $showMyPosts) {
+            NavigationStack { MyPostsView(userId: userId) }
         }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
     }
