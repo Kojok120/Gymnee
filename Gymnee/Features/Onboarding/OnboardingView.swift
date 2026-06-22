@@ -2,12 +2,10 @@ import SwiftUI
 import AuthenticationServices
 
 /// サインイン・初期設定（§5 / §6.1）。アプリの第一印象。
-/// Sign in with Apple（公式ボタン）を主、表示名のみのローカル開始を副とする。
-/// Supabase 接続時は Apple 経由でリモートセッションを確立、未接続時はローカルにフォールバック。
+/// Sign in with Apple / Google / メールでアカウント作成（オフライン/ゲスト開始は廃止）。
+/// アカウント必須にすることで、サインイン方法の違いによる多重ID・孤児データの発生を防ぐ。
 struct OnboardingView: View {
     @Environment(AuthService.self) private var auth
-    @State private var displayName: String = ""
-    @State private var showNameEntry = false
     @State private var showEmailSignIn = false
     @State private var appeared = false
 
@@ -31,11 +29,6 @@ struct OnboardingView: View {
             }
             .padding(.horizontal, Theme.Spacing.xl)
             .padding(.bottom, Theme.Spacing.xl)
-        }
-        .sheet(isPresented: $showNameEntry) {
-            nameEntrySheet
-                .presentationDetents([.medium])
-                .presentationBackground(.regularMaterial)
         }
         .sheet(isPresented: $showEmailSignIn) {
             EmailSignInSheet()
@@ -144,11 +137,6 @@ struct OnboardingView: View {
                 }
             }
 
-            Button("オフラインで始める（名前だけ）") { showNameEntry = true }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.7))
-                .padding(.top, Theme.Spacing.xs)
-
             Text("サインインすると、複数端末での同期・通知・フレンド機能が使えます。")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.5))
@@ -172,44 +160,6 @@ struct OnboardingView: View {
                         .strokeBorder(.white.opacity(0.18), lineWidth: 1)
                 }
                 .foregroundStyle(.white)
-        }
-    }
-
-    // MARK: - Name entry
-
-    private var nameEntrySheet: some View {
-        NavigationStack {
-            VStack(spacing: Theme.Spacing.xl) {
-                VStack(spacing: Theme.Spacing.sm) {
-                    Text("はじめまして")
-                        .font(.title2.bold())
-                    Text("表示名を入力してください。あとから変更できます。")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, Theme.Spacing.lg)
-
-                TextField("例: たろう", text: $displayName)
-                    .textInputAutocapitalization(.never)
-                    .font(.title3)
-                    .multilineTextAlignment(.center)
-                    .padding(Theme.Spacing.lg)
-                    .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
-
-                Button("始める") {
-                    auth.signIn(displayName: displayName)
-                    showNameEntry = false
-                }
-                .buttonStyle(.gymneePrimary)
-                .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty)
-                .opacity(displayName.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
-
-                Spacer()
-            }
-            .padding(Theme.Spacing.xl)
-            .navigationTitle("プロフィール")
-            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
