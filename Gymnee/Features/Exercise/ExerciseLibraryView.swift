@@ -14,7 +14,9 @@ struct ExerciseLibraryView: View {
             ForEach(grouped.keys.sorted(by: { $0.label < $1.label }), id: \.self) { mg in
                 Section(mg.label) {
                     ForEach(grouped[mg] ?? []) { exercise in
-                        NavigationLink(value: exercise) {
+                        NavigationLink {
+                            ExerciseDetailView(exercise: exercise, userId: userId)
+                        } label: {
                             HStack {
                                 Text(exercise.name)
                                 Spacer()

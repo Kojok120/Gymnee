@@ -15,15 +15,10 @@ enum AppRoute: Hashable {
     case body
     case analytics
     case settings
-}
-
-/// ワークアウト詳細への遷移値。WorkoutHome の activeWorkout(navigationDestination(item:))
-/// と Workout 型が衝突しないよう、生の Workout ではなくラッパで push する。
-/// Hashable は id ベースで安定させる。
-struct WorkoutRef: Hashable {
-    let workout: Workout
-    static func == (lhs: WorkoutRef, rhs: WorkoutRef) -> Bool { lhs.workout.id == rhs.workout.id }
-    func hash(into hasher: inout Hasher) { hasher.combine(workout.id) }
+    /// ジム詳細。GymDetailView は init で @Query を作る（=List 内クロージャ型だと先行生成で
+    /// ハング）ため、値ベースで遅延生成する。push 元 GymList も AppRoute 由来なので
+    /// 同一 navigationDestination(for: AppRoute) で確実に解決できる。
+    case gymDetail(Gym)
 }
 
 extension View {
@@ -38,6 +33,7 @@ extension View {
             case .body: BodyMetricsView(userId: userId)
             case .analytics: AnalyticsView(userId: userId)
             case .settings: SettingsView()
+            case .gymDetail(let gym): GymDetailView(gym: gym, userId: userId)
             }
         }
     }

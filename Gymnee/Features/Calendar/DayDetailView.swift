@@ -48,7 +48,9 @@ struct DayDetailView: View {
                     Text("ワークアウト記録なし").foregroundStyle(.secondary)
                 } else {
                     ForEach(workouts) { workout in
-                        NavigationLink(value: WorkoutRef(workout: workout)) {
+                        NavigationLink {
+                            WorkoutDetailView(workout: workout)
+                        } label: {
                             WorkoutRow(workout: workout)
                         }
                     }
