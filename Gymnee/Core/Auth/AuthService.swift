@@ -235,6 +235,18 @@ final class AuthService {
 
     // MARK: - Profile
 
+    /// 表示名を更新する（セッション・Profile・ローカル永続を整合）。Profile の同期は呼び出し側で enqueue する。
+    func updateDisplayName(_ name: String) {
+        guard let current = session else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != current.displayName else { return }
+        let updated = UserSession(userId: current.userId, displayName: trimmed)
+        session = updated
+        provider.persistSession(userId: current.userId, displayName: trimmed)
+        if isBackendAuthenticated { defaults.set(trimmed, forKey: backendNameKey) }
+        ensureProfile(for: updated)
+    }
+
     /// 認証ユーザーに対応する Profile が無ければ作成する。
     private func ensureProfile(for session: UserSession) {
         guard let context else { return }

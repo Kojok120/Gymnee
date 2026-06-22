@@ -12,12 +12,25 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
     @State private var showEmailSignIn = false
+    @State private var showProfileEdit = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
 
     var body: some View {
         Form {
             Section("プロフィール") {
-                LabeledContent("表示名", value: auth.session?.displayName ?? "—")
+                Button { showProfileEdit = true } label: {
+                    HStack(spacing: Theme.Spacing.md) {
+                        AvatarView(filename: avatarFilename, size: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(auth.session?.displayName ?? "—").foregroundStyle(.primary)
+                            Text("プロフィールを編集").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .tint(.primary)
                 if let id = auth.currentUserId {
                     LabeledContent("ユーザーID") {
                         Text(id.uuidString.prefix(8) + "…")
@@ -131,6 +144,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showEmailSignIn) {
             EmailSignInSheet()
+        }
+        .sheet(isPresented: $showProfileEdit) {
+            ProfileEditView()
         }
     }
 

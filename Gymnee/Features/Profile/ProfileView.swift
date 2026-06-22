@@ -7,6 +7,7 @@ struct ProfileView: View {
     let userId: UUID
 
     @Environment(AuthService.self) private var auth
+    @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @Query private var visits: [Visit]
 
     init(userId: UUID) {
@@ -22,9 +23,7 @@ struct ProfileView: View {
             Section {
                 VStack(spacing: Theme.Spacing.lg) {
                     HStack(spacing: Theme.Spacing.md) {
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(Theme.lime)
+                        AvatarView(filename: avatarFilename, size: 60)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(auth.session?.displayName ?? "ゲスト").font(.title2.bold())
                             Text("トレーニングを続けています")
