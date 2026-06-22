@@ -8,6 +8,7 @@ struct OnboardingView: View {
     @Environment(AuthService.self) private var auth
     @State private var displayName: String = ""
     @State private var showNameEntry = false
+    @State private var showEmailSignIn = false
     @State private var appeared = false
 
     private let features: [(icon: String, title: String, sub: String)] = [
@@ -35,6 +36,9 @@ struct OnboardingView: View {
             nameEntrySheet
                 .presentationDetents([.medium])
                 .presentationBackground(.regularMaterial)
+        }
+        .sheet(isPresented: $showEmailSignIn) {
+            EmailSignInSheet()
         }
         .task {
             withAnimation(.smooth.delay(0.05)) { appeared = true }
@@ -131,18 +135,44 @@ struct OnboardingView: View {
             .frame(height: 52)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
 
-            Button("名前を入力して始める") { showNameEntry = true }
-                .buttonStyle(.gymneePrimary)
+            if auth.isBackendAvailable {
+                providerButton(title: "Google で続ける", systemImage: "globe") {
+                    Task { await auth.signInWithGoogle() }
+                }
+                providerButton(title: "メールで続ける", systemImage: "envelope.fill") {
+                    showEmailSignIn = true
+                }
+            }
 
-            Text("Sign in with Apple でサインインすると、複数端末で記録が同期されます。")
+            Button("オフラインで始める（名前だけ）") { showNameEntry = true }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.top, Theme.Spacing.xs)
+
+            Text("サインインすると、複数端末での同期・通知・フレンド機能が使えます。")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.5))
                 .multilineTextAlignment(.center)
-                .padding(.top, Theme.Spacing.xs)
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 16)
         .animation(.smooth.delay(0.36), value: appeared)
+    }
+
+    /// Onboarding のダーク背景に合うサインインボタン（半透明白）。
+    private func providerButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous)
+                        .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+                }
+                .foregroundStyle(.white)
+        }
     }
 
     // MARK: - Name entry

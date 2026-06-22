@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
+    @State private var showEmailSignIn = false
 
     var body: some View {
         Form {
@@ -50,7 +51,13 @@ struct SettingsView: View {
                         }
                         .signInWithAppleButtonStyle(.black)
                         .frame(height: 44)
-                        Text("Sign in with Apple でサインインすると、これまでのローカル記録もクラウドに同期されます。")
+                        Button { Task { await auth.signInWithGoogle() } } label: {
+                            Label("Google で続ける", systemImage: "globe")
+                        }
+                        Button { showEmailSignIn = true } label: {
+                            Label("メールで続ける", systemImage: "envelope.fill")
+                        }
+                        Text("サインインすると、これまでのローカル記録もクラウドに同期されます。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } else {
@@ -112,6 +119,9 @@ struct SettingsView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("この端末上の全記録が消えます。元に戻せません。")
+        }
+        .sheet(isPresented: $showEmailSignIn) {
+            EmailSignInSheet()
         }
     }
 

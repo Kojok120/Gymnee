@@ -28,6 +28,8 @@ final class AuthService {
     @ObservationIgnored var onBackendSignIn: ((_ oldUserId: UUID?, _ newUserId: UUID) -> Void)?
 
     @ObservationIgnored private let defaults = UserDefaults.standard
+    /// OAuth(Google) のブラウザ往復用（ASWebAuthenticationSession ラッパ）。
+    @ObservationIgnored private let webAuth = WebAuthSession()
     private let accessTokenKey = "gymnee.supabase.accessToken"
     private let refreshTokenKey = "gymnee.supabase.refreshToken"
     private let backendUserIdKey = "gymnee.supabase.userId"
@@ -35,6 +37,8 @@ final class AuthService {
 
     var isSignedIn: Bool { session != nil }
     var currentUserId: UUID? { session?.userId }
+    /// バックエンド(Supabase)が構成済みで、メール/Google サインインが使えるか。
+    var isBackendAvailable: Bool { supabase != nil }
     /// 永続化済みのバックエンドセッションがあるか（再起動後の復元判定／Settings 表示用）。
     var hasPersistedBackendSession: Bool { defaults.string(forKey: refreshTokenKey) != nil }
 
@@ -98,6 +102,65 @@ final class AuthService {
         }
     }
 
+    /// バックエンド認証成功（Apple / メール / Google 共通）後のセッション確立。
+    /// アクセストークン設定・永続化・ローカル識別統一・Profile 整合・移行フックまでを一手に行う。
+    private func establishBackendSession(_ remote: SupabaseClient.AuthSession, displayName: String?, oldUserId: UUID?) async {
+        await supabase?.setAccessToken(remote.accessToken)
+        let name = [displayName, remote.fullName, session?.displayName, remote.email]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? "ユーザー"
+        persistBackendSession(access: remote.accessToken, refresh: remote.refreshToken, userId: remote.userId, displayName: name)
+        provider.persistSession(userId: remote.userId, displayName: name) // ローカル識別も Supabase id に統一
+        isBackendAuthenticated = true
+        let newSession = UserSession(userId: remote.userId, displayName: name)
+        session = newSession
+        ensureProfile(for: newSession)
+        // 旧ローカルデータの付け替え＋同期を AppEnvironment 側で実行。
+        onBackendSignIn?(oldUserId, remote.userId)
+    }
+
+    // MARK: - Email OTP（6桁コード）
+
+    /// メールにワンタイムコードを送る。送信できたら true。
+    func sendEmailCode(_ email: String) async -> Bool {
+        guard let supabase else { return false }
+        do {
+            try await supabase.sendEmailOTP(email: email.trimmingCharacters(in: .whitespacesAndNewlines))
+            return true
+        } catch { return false }
+    }
+
+    /// メールのコードを検証してバックエンドセッションを確立。
+    func verifyEmailCode(email: String, code: String) async -> Bool {
+        guard let supabase else { return false }
+        let addr = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let oldUserId = session?.userId
+            let remote = try await supabase.verifyEmailOTP(email: addr, token: code.trimmingCharacters(in: .whitespaces))
+            let fallbackName = String(addr.split(separator: "@").first ?? "ユーザー")
+            await establishBackendSession(remote, displayName: fallbackName, oldUserId: oldUserId)
+            return true
+        } catch { return false }
+    }
+
+    // MARK: - Google（OAuth via PKCE）
+
+    /// Google でサインイン。ASWebAuthenticationSession で認可 → code を PKCE 交換。成功で true。
+    func signInWithGoogle() async -> Bool {
+        guard let supabase else { return false }
+        let challenge = await supabase.googleAuthorizeURL(redirectTo: "gymnee://auth-callback")
+        do {
+            let callback = try await webAuth.start(url: challenge.url, callbackScheme: "gymnee")
+            guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "code" })?.value, !code.isEmpty
+            else { return false }
+            let oldUserId = session?.userId
+            let remote = try await supabase.exchangeCodeForSession(authCode: code, codeVerifier: challenge.codeVerifier)
+            await establishBackendSession(remote, displayName: nil, oldUserId: oldUserId)
+            return true
+        } catch { return false }
+    }
+
     private func persistBackendSession(access: String, refresh: String, userId: UUID, displayName: String) {
         defaults.set(access, forKey: accessTokenKey)
         defaults.set(refresh, forKey: refreshTokenKey)
@@ -152,17 +215,8 @@ final class AuthService {
             do {
                 let oldUserId = session?.userId
                 let remote = try await supabase.signInWithApple(identityToken: identityToken, nonce: currentNonce)
-                await supabase.setAccessToken(remote.accessToken)
-                let name = displayName ?? remote.email ?? "Apple ユーザー"
-                persistBackendSession(access: remote.accessToken, refresh: remote.refreshToken, userId: remote.userId, displayName: name)
-                provider.persistSession(userId: remote.userId, displayName: name) // ローカル識別も Supabase id に統一
-                isBackendAuthenticated = true
-                let newSession = UserSession(userId: remote.userId, displayName: name)
-                session = newSession
-                ensureProfile(for: newSession)
+                await establishBackendSession(remote, displayName: displayName, oldUserId: oldUserId)
                 currentNonce = nil
-                // 旧ローカルデータの付け替え＋同期を AppEnvironment 側で実行。
-                onBackendSignIn?(oldUserId, remote.userId)
                 return true
             } catch {
                 // リモート交換に失敗したらローカル経路にフォールバック（オフライン継続）。

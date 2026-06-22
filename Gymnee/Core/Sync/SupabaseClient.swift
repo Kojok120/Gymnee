@@ -1,4 +1,6 @@
 import Foundation
+import CryptoKit
+import Security
 
 /// Supabase REST(PostgREST)/Auth(GoTrue) への薄いクライアント。
 /// 外部 SDK を足さず URLSession で実装（依存ゼロ・ビルド単独で通る）。
@@ -92,6 +94,7 @@ actor SupabaseClient {
         let refreshToken: String
         let userId: UUID
         let email: String?
+        let fullName: String?
     }
 
     func signInWithApple(identityToken: String, nonce: String?) async throws -> AuthSession {
@@ -111,6 +114,68 @@ actor SupabaseClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": refreshToken])
         let data = try await send(request)
         return try Self.parseAuthSession(data)
+    }
+
+    // MARK: - Email OTP（6桁コード。マジックリンクのディープリンク不要でネイティブ向き）
+
+    /// メールにワンタイムコードを送る（未登録なら新規作成）。
+    func sendEmailOTP(email: String) async throws {
+        var request = authRequest(path: "otp")
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["email": email, "create_user": true])
+        try await send(request)
+    }
+
+    /// メールのワンタイムコードを検証してセッションを得る。
+    func verifyEmailOTP(email: String, token: String) async throws -> AuthSession {
+        var request = authRequest(path: "verify")
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["type": "email", "email": email, "token": token])
+        let data = try await send(request)
+        return try Self.parseAuthSession(data)
+    }
+
+    // MARK: - OAuth (Google) via PKCE（外部SDK不使用。caller が ASWebAuthenticationSession で開く）
+
+    struct PKCEChallenge: Sendable { let url: URL; let codeVerifier: String }
+
+    /// Google OAuth の authorize URL を PKCE で組む。返した codeVerifier は exchange 時に渡す。
+    func googleAuthorizeURL(redirectTo: String) -> PKCEChallenge {
+        let verifier = Self.randomCodeVerifier()
+        let challenge = Self.codeChallenge(for: verifier)
+        var comps = URLComponents(url: config.url.appendingPathComponent("auth/v1/authorize"), resolvingAgainstBaseURL: false)!
+        comps.queryItems = [
+            URLQueryItem(name: "provider", value: "google"),
+            URLQueryItem(name: "redirect_to", value: redirectTo),
+            URLQueryItem(name: "code_challenge", value: challenge),
+            URLQueryItem(name: "code_challenge_method", value: "s256"),
+            URLQueryItem(name: "apikey", value: config.anonKey),
+        ]
+        return PKCEChallenge(url: comps.url!, codeVerifier: verifier)
+    }
+
+    /// authorize 後に返る code を PKCE で session に交換する。
+    func exchangeCodeForSession(authCode: String, codeVerifier: String) async throws -> AuthSession {
+        var request = authRequest(path: "token", query: "grant_type=pkce")
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["auth_code": authCode, "code_verifier": codeVerifier])
+        let data = try await send(request)
+        return try Self.parseAuthSession(data)
+    }
+
+    private static func randomCodeVerifier() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return base64URL(Data(bytes))
+    }
+    private static func codeChallenge(for verifier: String) -> String {
+        base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
+    }
+    private static func base64URL(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     /// 表示名でユーザー（profiles）を検索する（相互フォローの相手探し）。
@@ -190,7 +255,9 @@ actor SupabaseClient {
         let user = dict["user"] as? [String: Any]
         let userId = (user?["id"] as? String).flatMap(UUID.init) ?? UUID()
         let email = user?["email"] as? String
-        return AuthSession(accessToken: accessToken, refreshToken: refreshToken, userId: userId, email: email)
+        let meta = user?["user_metadata"] as? [String: Any]
+        let fullName = (meta?["full_name"] as? String) ?? (meta?["name"] as? String)
+        return AuthSession(accessToken: accessToken, refreshToken: refreshToken, userId: userId, email: email, fullName: fullName)
     }
 }
 
