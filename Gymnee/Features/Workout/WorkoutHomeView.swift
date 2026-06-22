@@ -23,6 +23,7 @@ private struct WorkoutHomeContent: View {
     @Query private var routines: [Routine]
     @Query private var recentWorkouts: [Workout]
     @State private var activeWorkout: Workout?
+    @State private var editRoutine: Routine?
 
     init(userId: UUID) {
         self.userId = userId
@@ -55,6 +56,9 @@ private struct WorkoutHomeContent: View {
             case .routines: RoutinesView(userId: userId)
             case .library: ExerciseLibraryView(userId: userId)
             }
+        }
+        .sheet(item: $editRoutine) { routine in
+            RoutineEditorView(routine: routine)
         }
     }
 
@@ -129,11 +133,18 @@ private struct WorkoutHomeContent: View {
                                 Text("\(routine.routineExercises.count)種目").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
+                            Button { editRoutine = routine } label: {
+                                Image(systemName: "slider.horizontal.3").font(.body).foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
                             Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(Theme.lime)
                         }
                         .gymneeCard(padding: Theme.Spacing.md)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { editRoutine = routine } label: { Label("編集", systemImage: "pencil") }
+                    }
                 }
             }
         }
