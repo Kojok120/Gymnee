@@ -1,4 +1,52 @@
 import SwiftUI
+import UIKit
+
+/// 数値入力フィールド。値が 0 のときは空表示（プレースホルダのみ）、フォーカス時に全選択して
+/// 既存値を即上書きできるようにする（「毎回 0 を消す」手間をなくす）。小数入力中の再フォーマット
+/// 問題を避けるため、編集中は UITextField のテキストを正とし、確定値だけモデルへ書き戻す。
+struct NumberField: UIViewRepresentable {
+    let placeholder: String
+    let keyboard: UIKeyboardType
+    var color: Color = Theme.textPrimary
+    let get: () -> String
+    let set: (String) -> Void
+
+    func makeUIView(context: Context) -> UITextField {
+        let tf = UITextField()
+        tf.keyboardType = keyboard
+        tf.textAlignment = .center
+        tf.placeholder = placeholder
+        tf.delegate = context.coordinator
+        let base = UIFont.systemFont(ofSize: 19, weight: .semibold)
+        tf.font = UIFont(descriptor: base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor, size: 19)
+        tf.setContentHuggingPriority(.required, for: .horizontal)
+        tf.addTarget(context.coordinator, action: #selector(Coordinator.editingChanged(_:)), for: .editingChanged)
+        return tf
+    }
+
+    func updateUIView(_ tf: UITextField, context: Context) {
+        tf.textColor = UIColor(color)
+        // 編集中はユーザー入力（小数入力途中など）を尊重し、上書きしない。
+        if !tf.isFirstResponder { tf.text = get() }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(set: set) }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        let set: (String) -> Void
+        init(set: @escaping (String) -> Void) { self.set = set }
+        @objc func editingChanged(_ tf: UITextField) { set(tf.text ?? "") }
+        func textFieldDidBeginEditing(_ tf: UITextField) {
+            DispatchQueue.main.async { tf.selectAll(nil) }
+        }
+    }
+}
+
+/// 末尾の .0 を落とした表示（50.0→"50"、52.5→"52.5"）。
+private func numberString(_ value: Double) -> String {
+    if value == 0 { return "" }
+    return value == value.rounded() ? String(Int(value)) : String(value)
+}
 
 /// セット入力 1 行（§6.5）。種別・重量・レップ・RPE・完了・PR バッジ。
 /// 大きな丸数字 + 広いタップ領域。完了で lime に染まり、PR でメダルが弾ける。
@@ -72,12 +120,17 @@ struct SetRowView: View {
 
     private func field(value: Binding<Double>, suffix: String, width: CGFloat) -> some View {
         HStack(spacing: 2) {
-            TextField("0", value: value, format: .number)
-                .keyboardType(.decimalPad)
-                .multilineTextAlignment(.center)
-                .font(.numS)
-                .foregroundStyle(set.isCompleted ? Theme.lime : Theme.textPrimary)
-                .frame(width: width)
+            NumberField(
+                placeholder: "0",
+                keyboard: .decimalPad,
+                color: set.isCompleted ? Theme.lime : Theme.textPrimary,
+                get: { numberString(value.wrappedValue) },
+                set: {
+                    value.wrappedValue = Double($0.replacingOccurrences(of: ",", with: ".")) ?? 0
+                    set.updatedAt = .now
+                }
+            )
+            .frame(width: width)
             Text(suffix).font(.caption2).foregroundStyle(Theme.textTertiary)
         }
         .padding(.vertical, 6)
@@ -86,15 +139,20 @@ struct SetRowView: View {
     }
 
     private func intField(value: Binding<Int>, width: CGFloat) -> some View {
-        TextField("0", value: value, format: .number)
-            .keyboardType(.numberPad)
-            .multilineTextAlignment(.center)
-            .font(.numS)
-            .foregroundStyle(set.isCompleted ? Theme.lime : Theme.textPrimary)
-            .frame(width: width)
-            .padding(.vertical, 6)
-            .padding(.horizontal, 4)
-            .background(fieldBackground, in: RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+        NumberField(
+            placeholder: "0",
+            keyboard: .numberPad,
+            color: set.isCompleted ? Theme.lime : Theme.textPrimary,
+            get: { value.wrappedValue == 0 ? "" : String(value.wrappedValue) },
+            set: {
+                value.wrappedValue = Int($0) ?? 0
+                set.updatedAt = .now
+            }
+        )
+        .frame(width: width)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .background(fieldBackground, in: RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
     }
 
     private var fieldBackground: Color {
