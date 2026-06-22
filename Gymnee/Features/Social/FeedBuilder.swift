@@ -1,4 +1,27 @@
 import Foundation
+import Observation
+
+/// 投稿ごとの公開範囲（端末ローカル保存）。
+/// 現状マルチユーザー共有は未稼働のため visibility は実効しないが、UI 上で投稿単位に
+/// 設定・表示できるようにする。共有実装時に各レコード列（visits/workouts.visibility）へ移行する。
+@Observable
+final class PostVisibilityStore {
+    private let key = "gymnee.postVisibility"
+    private var map: [String: String]
+
+    init() {
+        map = (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
+    }
+
+    func visibility(for id: UUID) -> Visibility? {
+        map[id.uuidString].flatMap { Visibility(rawValue: $0) }
+    }
+
+    func set(_ visibility: Visibility, for id: UUID) {
+        map[id.uuidString] = visibility.rawValue
+        UserDefaults.standard.set(map, forKey: key)
+    }
+}
 
 /// フィードに表示する統合エントリ（§6.11）。来店/PR/ワークアウトを 1 つの時系列に束ねる。
 /// ローカルでは値型で都度生成（サーバ側フィードは FeedItem モデルで将来差し替え）。
@@ -29,9 +52,11 @@ enum FeedBuilder {
         visits: [Visit],
         personalRecords: [PersonalRecord],
         workouts: [Workout],
-        defaultVisibility: Visibility
+        defaultVisibility: Visibility,
+        visibilityStore: PostVisibilityStore? = nil
     ) -> [FeedEntry] {
         var entries: [FeedEntry] = []
+        func vis(_ id: UUID) -> Visibility { visibilityStore?.visibility(for: id) ?? defaultVisibility }
 
         for v in visits {
             entries.append(FeedEntry(
@@ -41,7 +66,7 @@ enum FeedBuilder {
                 title: v.gym?.name ?? "チェックイン",
                 subtitle: v.note,
                 photoFilename: v.localPhotoFilename,
-                visibility: defaultVisibility,
+                visibility: vis(v.id),
                 partners: v.partners.compactMap(\.partnerDisplayName)
             ))
         }
@@ -55,7 +80,7 @@ enum FeedBuilder {
                 title: "\(pr.exercise?.name ?? "種目") \(pr.type.label)",
                 subtitle: valueText,
                 photoFilename: nil,
-                visibility: defaultVisibility,
+                visibility: vis(pr.id),
                 partners: []
             ))
         }
@@ -69,7 +94,7 @@ enum FeedBuilder {
                 title: w.name,
                 subtitle: "\(w.exercises.count)種目・\(totalSets)セット",
                 photoFilename: nil,
-                visibility: defaultVisibility,
+                visibility: vis(w.id),
                 partners: []
             ))
         }

@@ -39,6 +39,8 @@ private struct SocialContent: View {
     @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
     @State private var showMyPosts = false
+    @State private var editVisit: Visit?
+    @State private var visStore = PostVisibilityStore()
 
     init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
@@ -128,16 +130,9 @@ private struct SocialContent: View {
                     Text("フレンド").tag(1)
                 }.pickerStyle(.segmented).frame(width: 200)
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("公開範囲", selection: $defaultVisibilityRaw) {
-                        ForEach(Visibility.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
-                    }
-                } label: { Image(systemName: "eye") }
-            }
         }
         .sheet(isPresented: $showMyPosts) {
-            NavigationStack { MyPostsView(userId: userId, onClose: { showMyPosts = false }) }
+            NavigationStack { MyPostsView(userId: userId, visibilityStore: visStore, onClose: { showMyPosts = false }) }
         }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
     }
@@ -145,20 +140,12 @@ private struct SocialContent: View {
     // MARK: - Feed
 
     private var feed: some View {
-        let entries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility)
+        let entries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility, visibilityStore: visStore)
         return ScrollView {
             LazyVStack(spacing: Theme.Spacing.md) {
                 ForEach(entries) { entry in
-                    if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
-                        NavigationLink {
-                            WorkoutDetailView(workout: workout)
-                        } label: {
-                            FeedCardView(entry: entry)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        FeedCardView(entry: entry)
-                    }
+                    feedRow(entry)
+                        .contextMenu { postMenu(entry) }
                 }
             }
             .padding(Theme.Spacing.lg)
@@ -168,6 +155,39 @@ private struct SocialContent: View {
             if entries.isEmpty {
                 EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です", message: "チェックインやワークアウトが時系列で並びます。")
             }
+        }
+        .sheet(item: $editVisit) { visit in
+            CheckInEditView(visit: visit, visibilityStore: visStore)
+        }
+    }
+
+    /// ワークアウト投稿はタップで詳細へ。他はカード表示。
+    @ViewBuilder
+    private func feedRow(_ entry: FeedEntry) -> some View {
+        if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
+            NavigationLink {
+                WorkoutDetailView(workout: workout)
+            } label: {
+                FeedCardView(entry: entry)
+            }
+            .buttonStyle(.plain)
+        } else {
+            FeedCardView(entry: entry)
+        }
+    }
+
+    /// 投稿の長押しメニュー：公開範囲の変更、チェックインの編集。
+    @ViewBuilder
+    private func postMenu(_ entry: FeedEntry) -> some View {
+        Menu("公開範囲") {
+            ForEach(Visibility.allCases, id: \.self) { v in
+                Button { visStore.set(v, for: entry.id) } label: {
+                    Label(v.label, systemImage: (visStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
+                }
+            }
+        }
+        if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
+            Button { editVisit = visit } label: { Label("チェックインを編集", systemImage: "pencil") }
         }
     }
 

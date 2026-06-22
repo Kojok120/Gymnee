@@ -7,28 +7,34 @@ struct MyPostsView: View {
     let userId: UUID
     /// シートを閉じる。NavigationStack 内の \.dismiss はシートを閉じないため明示的に渡す。
     var onClose: () -> Void
+    let visibilityStore: PostVisibilityStore
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    @State private var editVisit: Visit?
 
-    init(userId: UUID, onClose: @escaping () -> Void) {
+    init(userId: UUID, visibilityStore: PostVisibilityStore, onClose: @escaping () -> Void) {
         self.userId = userId
+        self.visibilityStore = visibilityStore
         self.onClose = onClose
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
     }
 
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
+
     private var entries: [FeedEntry] {
         FeedBuilder.build(
             visits: visits,
             personalRecords: prs,
             workouts: workouts,
-            defaultVisibility: Visibility(rawValue: defaultVisibilityRaw) ?? .friends
+            defaultVisibility: defaultVisibility,
+            visibilityStore: visibilityStore
         )
     }
 
@@ -42,6 +48,7 @@ struct MyPostsView: View {
                     .swipeActions {
                         Button("削除", role: .destructive) { delete(entry) }
                     }
+                    .contextMenu { postMenu(entry) }
             }
         }
         .listStyle(.plain)
@@ -58,6 +65,9 @@ struct MyPostsView: View {
                 Button("閉じる") { onClose() }
             }
         }
+        .sheet(item: $editVisit) { visit in
+            CheckInEditView(visit: visit, visibilityStore: visibilityStore)
+        }
     }
 
     /// ワークアウト投稿はタップで詳細へ。来店・自己ベストは表示のみ。
@@ -72,6 +82,21 @@ struct MyPostsView: View {
             .buttonStyle(.plain)
         } else {
             FeedCardView(entry: entry)
+        }
+    }
+
+    /// 投稿の長押しメニュー：公開範囲の変更、チェックインの編集。
+    @ViewBuilder
+    private func postMenu(_ entry: FeedEntry) -> some View {
+        Menu("公開範囲") {
+            ForEach(Visibility.allCases, id: \.self) { v in
+                Button { visibilityStore.set(v, for: entry.id) } label: {
+                    Label(v.label, systemImage: (visibilityStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
+                }
+            }
+        }
+        if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
+            Button { editVisit = visit } label: { Label("チェックインを編集", systemImage: "pencil") }
         }
     }
 

@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
     @State private var showEmailSignIn = false
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
 
     var body: some View {
         Form {
@@ -24,6 +25,16 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+            }
+
+            Section {
+                Picker("投稿の既定の公開範囲", selection: $defaultVisibilityRaw) {
+                    ForEach(Visibility.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
+                }
+            } header: {
+                Text("ソーシャル")
+            } footer: {
+                Text("チェックインやワークアウトを共有するときの初期の公開範囲。投稿ごとに個別変更もできます。")
             }
 
             Section("同期") {
