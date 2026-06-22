@@ -17,6 +17,11 @@ final class SwiftDataSyncStore: SyncBackingStore {
         self.defaults = defaults
     }
 
+    /// 同期中のバックエンド本人 id（AuthService が永続化）。RLS の created_by = auth.uid() 整合用。
+    private var currentUserId: UUID? {
+        defaults.string(forKey: "gymnee.supabase.userId").flatMap(UUID.init)
+    }
+
     // MARK: - 差分基準
 
     func lastPulledAt(table: String) -> Date? {
@@ -230,7 +235,10 @@ final class SwiftDataSyncStore: SyncBackingStore {
             "id": lower(m.id), "name": m.name, "muscle_group": m.muscleGroupRaw,
             "equipment": m.equipmentRaw, "is_custom": m.isCustom, "updated_at": iso(m.updatedAt),
         ]
-        if let by = m.createdBy { row["created_by"] = lower(by) }
+        // RLS(exercises_insert_own) は created_by = auth.uid() を要求する。プリセット(nil)や
+        // 旧 uid のままだと弾かれる。push できるのは本人のローカル種目だけなので、同期中の本人 id を
+        // 所有者として送る。
+        if let owner = currentUserId ?? m.createdBy { row["created_by"] = lower(owner) }
         return row
     }
     private func applyExercise(_ row: [String: Any]) {
