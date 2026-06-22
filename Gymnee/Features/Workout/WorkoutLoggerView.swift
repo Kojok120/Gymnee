@@ -261,6 +261,8 @@ struct WorkoutLoggerView: View {
             }
         }
         try? context.save()
+        // 参照する種目もサーバーへ（FK: workout_exercises.exercise_id）。
+        sync.enqueue(PendingChange(entity: "exercises", recordId: exercise.id, operation: .upsert, updatedAt: exercise.updatedAt))
         sync.enqueue(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
     }
 

@@ -94,6 +94,8 @@ struct RoutineEditorView: View {
         let re = RoutineExercise(orderIndex: routine.routineExercises.count, targetSets: 3, routine: routine, exercise: exercise)
         context.insert(re)
         try? context.save()
+        // 参照する種目もサーバーへ（FK: routine_exercises.exercise_id）。
+        sync.enqueue(PendingChange(entity: "exercises", recordId: exercise.id, operation: .upsert, updatedAt: exercise.updatedAt))
         sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
     }
 
