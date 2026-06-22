@@ -660,8 +660,16 @@ create policy reports_own on public.reports for all to authenticated
 
 -- migrations/0008_push_on_visit.sql
 -- フレンドのチェックイン通知（visits insert → Edge Function send-push）。
--- 適用後に DB 設定が必要: app.send_push_url / app.push_secret（docs/apns-push-setup.md 参照）。
+-- 適用後に push_config(1行) を upsert する必要あり（docs/apns-push-setup.md 参照）。
 create extension if not exists pg_net;
+
+create table if not exists public.push_config (
+    id            int primary key default 1,
+    send_push_url text,
+    push_secret   text,
+    constraint push_config_singleton check (id = 1)
+);
+alter table public.push_config enable row level security;
 
 create or replace function public.notify_friend_checkin()
 returns trigger
@@ -670,20 +678,20 @@ security definer
 set search_path = public
 as $$
 declare
-  fn_url text := current_setting('app.send_push_url', true);
-  secret text := current_setting('app.push_secret', true);
+  cfg public.push_config;
 begin
-  if fn_url is null or fn_url = '' then
+  select * into cfg from public.push_config where id = 1;
+  if cfg.send_push_url is null or cfg.send_push_url = '' then
     return new;
   end if;
   if new.visited_at < now() - interval '10 minutes' then
     return new;
   end if;
   perform net.http_post(
-    url     := fn_url,
+    url     := cfg.send_push_url,
     headers := jsonb_build_object(
                  'Content-Type', 'application/json',
-                 'X-Push-Secret', coalesce(secret, '')
+                 'X-Push-Secret', coalesce(cfg.push_secret, '')
                ),
     body    := jsonb_build_object('event', 'friend_checkin', 'visitId', new.id)
   );

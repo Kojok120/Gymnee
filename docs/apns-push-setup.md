@@ -47,15 +47,24 @@ supabase secrets set \
 
 ## 3. Supabase: DB 設定（トリガー → Function の接続情報）
 
-migration `0008_push_on_visit.sql` を適用後、SQL エディタで一度だけ:
+migration `0008_push_on_visit.sql` は `public.push_config`（1行・RLS で不可視）を作る。
+適用後、その1行を upsert する（SQL エディタで `<...>` を実値に置換して実行）:
 
 ```sql
-alter database postgres set app.send_push_url =
-  'https://bdeaeykruwxazdoewxmg.supabase.co/functions/v1/send-push';
-alter database postgres set app.push_secret = '<上の $PUSH_SECRET と同じ値>';
+insert into public.push_config (id, send_push_url, push_secret)
+values (
+  1,
+  'https://bdeaeykruwxazdoewxmg.supabase.co/functions/v1/send-push',
+  '<PUSH_SHARED_SECRET と同じ値>'
+)
+on conflict (id) do update
+  set send_push_url = excluded.send_push_url,
+      push_secret   = excluded.push_secret;
 ```
 
-設定は新規接続から有効（プール接続のため反映に少し時間がかかることがある）。
+> 接続情報を GUC（`alter database ... set`）に置かないのは、Supabase の `postgres` ロールでは
+> `permission denied to set parameter`（42501）になるため。RLS 有効＋ポリシー無しの設定テーブルに持ち、
+> security definer のトリガー関数だけが読む。クライアントからは参照不可。
 
 ## 4. 動作確認
 
