@@ -23,6 +23,8 @@ struct GymPickerView: View {
     @State private var nearbyPlaces: [NearbyPlace] = []
     @State private var isSearchingPlaces = false
     @State private var camera: MapCameraPosition = .automatic
+    /// 地図でタップ中のピン。即選択せず、まず名前カードを出して確認させる。
+    @State private var pendingPin: PendingPin?
     private let placeSearch = PlaceSearchService()
 
     enum Mode: String, CaseIterable, Identifiable {
@@ -30,6 +32,38 @@ struct GymPickerView: View {
         var id: String { rawValue }
         var label: String { self == .list ? "リスト" : "地図" }
         var icon: String { self == .list ? "list.bullet" : "map" }
+    }
+
+    /// 地図で選択中のピン（登録済みジム or 地図上の未登録ジム）。
+    enum PendingPin: Identifiable, Equatable {
+        case registered(Gym)
+        case place(NearbyPlace)
+        var id: String {
+            switch self {
+            case .registered(let g): return "g-\(g.id.uuidString)"
+            case .place(let p): return "p-\(p.id.uuidString)"
+            }
+        }
+        var name: String {
+            switch self {
+            case .registered(let g): return g.name
+            case .place(let p): return p.name
+            }
+        }
+        var subtitle: String? {
+            switch self {
+            case .registered(let g): return g.chain
+            case .place(let p): return p.address
+            }
+        }
+        var distance: Double? {
+            switch self {
+            case .registered: return nil
+            case .place(let p): return p.distance
+            }
+        }
+        var isRegistered: Bool { if case .registered = self { return true }; return false }
+        static func == (lhs: PendingPin, rhs: PendingPin) -> Bool { lhs.id == rhs.id }
     }
 
     var body: some View {
@@ -129,16 +163,22 @@ struct GymPickerView: View {
                 // 登録済みジム（座標あり）。
                 ForEach(mappableGyms, id: \.id) { gym in
                     Annotation(gym.name, coordinate: CLLocationCoordinate2D(latitude: gym.lat ?? 0, longitude: gym.lng ?? 0)) {
-                        pin(label: gym.name, tint: Theme.energy, systemImage: "dumbbell.fill") { select(gym) }
+                        pin(tint: Theme.energy, systemImage: "dumbbell.fill", selected: pendingPin == .registered(gym)) {
+                            pendingPin = .registered(gym)
+                        }
                     }
                 }
                 // 地図から見つかった未登録ジム。
                 ForEach(unregisteredPlaces) { place in
                     Annotation(place.name, coordinate: CLLocationCoordinate2D(latitude: place.lat, longitude: place.lng)) {
-                        pin(label: place.name, tint: .orange, systemImage: "mappin") { registerAndSelect(place) }
+                        pin(tint: .orange, systemImage: "mappin", selected: pendingPin == .place(place)) {
+                            pendingPin = .place(place)
+                        }
                     }
                 }
             }
+            // Apple Maps 標準の POI（飲食店など）は隠し、アプリのジムピンだけ表示する。
+            .mapStyle(.standard(pointsOfInterest: .excludingAll))
             .mapControls {
                 MapUserLocationButton()
                 MapCompass()
@@ -148,7 +188,7 @@ struct GymPickerView: View {
             // 凡例＋検索中インジケータ。
             HStack(spacing: Theme.Spacing.md) {
                 legend(color: Theme.energy, text: "登録済み")
-                legend(color: .orange, text: "未登録（タップで登録）")
+                legend(color: .orange, text: "地図のジム")
                 if isSearchingPlaces { ProgressView().controlSize(.mini) }
             }
             .font(.caption2)
@@ -156,24 +196,74 @@ struct GymPickerView: View {
             .background(.regularMaterial, in: Capsule())
             .padding(.top, Theme.Spacing.sm)
         }
+        // ピンをタップしたら、まず店舗名カードを出して確認させる（即選択しない）。
+        .safeAreaInset(edge: .bottom) {
+            if let pending = pendingPin {
+                selectionCard(pending)
+            }
+        }
+        .animation(.snappy, value: pendingPin)
     }
 
-    private func pin(label: String, tint: Color, systemImage: String, action: @escaping () -> Void) -> some View {
+    /// タップしたピンの店舗名カード。確認してから選択／登録する。
+    private func selectionCard(_ pending: PendingPin) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: pending.isRegistered ? "dumbbell.fill" : "mappin.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(pending.isRegistered ? Theme.energy : .orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pending.name).font(.headline)
+                    HStack(spacing: 6) {
+                        Text(pending.isRegistered ? "登録済みのジム" : "地図のジム（未登録）")
+                        if let d = pending.distance { Text("· \(formatDistance(d))") }
+                        if let sub = pending.subtitle, !sub.isEmpty { Text("· \(sub)").lineLimit(1) }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { pendingPin = nil } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Button {
+                confirm(pending)
+            } label: {
+                Text(pending.isRegistered ? "このジムを選択" : "このジムを登録して選択")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.energy)
+        }
+        .gymneeCard()
+        .padding(Theme.Spacing.md)
+        .background(.clear)
+    }
+
+    private func confirm(_ pending: PendingPin) {
+        switch pending {
+        case .registered(let gym): select(gym)
+        case .place(let place): registerAndSelect(place)
+        }
+    }
+
+    private func pin(tint: Color, systemImage: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 0) {
                 Image(systemName: systemImage)
                     .font(.caption.bold())
                     .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
+                    .frame(width: selected ? 40 : 30, height: selected ? 40 : 30)
                     .background(tint, in: Circle())
-                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                    .overlay(Circle().stroke(.white, lineWidth: selected ? 3 : 2))
                 Image(systemName: "triangle.fill")
-                    .font(.system(size: 8))
+                    .font(.system(size: selected ? 11 : 8))
                     .foregroundStyle(tint)
                     .rotationEffect(.degrees(180))
                     .offset(y: -3)
             }
-            .shadow(radius: 2)
+            .shadow(radius: selected ? 4 : 2)
         }
         .buttonStyle(.plain)
     }
