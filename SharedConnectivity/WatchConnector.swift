@@ -68,7 +68,8 @@ final class WatchConnector: NSObject {
         #if canImport(WatchConnectivity)
         guard WCSession.isSupported() else { return }
         let session = WCSession.default
-        guard session.activationState == .activated,
+        // Watch 未ペアリング/未インストール時の DeviceNotPaired エラーログを避ける。
+        guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled,
               let data = try? JSONEncoder().encode(snapshot) else { return }
         try? session.updateApplicationContext([snapshotKey: data])
         #endif
