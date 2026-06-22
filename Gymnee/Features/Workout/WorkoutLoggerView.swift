@@ -14,7 +14,6 @@ struct WorkoutLoggerView: View {
 
     @State private var restTimer = RestTimer()
     @State private var showExercisePicker = false
-    @State private var plateTarget: Double?
     @State private var prToast: String?
     @State private var editingNote: WorkoutExercise?
 
@@ -43,9 +42,6 @@ struct WorkoutLoggerView: View {
         .sheet(isPresented: $showExercisePicker) {
             ExercisePickerView { addExercise($0) }
         }
-        .sheet(item: Binding(get: { plateTarget.map { PlateTarget(weight: $0) } }, set: { plateTarget = $0?.weight })) { target in
-            PlateCalculatorView(initialTarget: target.weight)
-        }
         .overlay(alignment: .top) { prToastView }
         .sheet(item: $editingNote) { we in
             NavigationStack {
@@ -68,8 +64,6 @@ struct WorkoutLoggerView: View {
             .presentationDetents([.height(220)])
         }
     }
-
-    private struct PlateTarget: Identifiable { let weight: Double; var id: Double { weight } }
 
     private func noteBinding(_ we: WorkoutExercise) -> Binding<String> {
         Binding(get: { we.note ?? "" }, set: { we.note = $0.isEmpty ? nil : $0; we.updatedAt = .now })
@@ -151,7 +145,6 @@ struct WorkoutLoggerView: View {
     private func exerciseMenu(_ we: WorkoutExercise) -> some View {
         Menu {
             Button { addWarmup(to: we) } label: { Label("ウォームアップを追加", systemImage: "flame") }
-            Button { plateTarget = topWeight(of: we) } label: { Label("プレート計算", systemImage: "circle.hexagongrid.fill") }
             Button { editingNote = we } label: { Label("メモを編集", systemImage: "note.text") }
             if we.supersetGroup != nil {
                 Button { clearSuperset(we) } label: { Label("スーパーセット解除", systemImage: "link") }
@@ -352,10 +345,6 @@ struct WorkoutLoggerView: View {
 
     private var completedSets: Int {
         orderedExercises.flatMap(\.sets).filter { $0.type != .warmup && $0.isCompleted }.count
-    }
-
-    private func topWeight(of we: WorkoutExercise) -> Double {
-        we.sets.map(\.weight).max() ?? 60
     }
 
     private func estimated1RM(for we: WorkoutExercise) -> Double? {

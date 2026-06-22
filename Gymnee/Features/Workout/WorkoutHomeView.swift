@@ -23,7 +23,6 @@ private struct WorkoutHomeContent: View {
     @Query private var routines: [Routine]
     @Query private var recentWorkouts: [Workout]
     @State private var activeWorkout: Workout?
-    @State private var showPlateCalc = false
 
     init(userId: UUID) {
         self.userId = userId
@@ -56,9 +55,6 @@ private struct WorkoutHomeContent: View {
             case .routines: RoutinesView(userId: userId)
             case .library: ExerciseLibraryView(userId: userId)
             }
-        }
-        .sheet(isPresented: $showPlateCalc) {
-            PlateCalculatorView(initialTarget: 60)
         }
     }
 
@@ -95,7 +91,6 @@ private struct WorkoutHomeContent: View {
         HStack(spacing: Theme.Spacing.md) {
             NavigationLink(value: NavTarget.routines) { toolCard(icon: "list.bullet.rectangle.fill", label: "ルーティン") }
             NavigationLink(value: NavTarget.library) { toolCard(icon: "figure.strengthtraining.traditional", label: "種目") }
-            Button { showPlateCalc = true } label: { toolCard(icon: "circle.hexagongrid.fill", label: "プレート") }
         }
         .buttonStyle(.plain)
     }
