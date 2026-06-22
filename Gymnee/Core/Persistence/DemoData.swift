@@ -80,6 +80,20 @@ enum DemoData {
             }
         }
 
+        // 身体メトリクス（体重推移チャート＋サイズ）のデモ。
+        let bodyHistory: [(Int, Double, Double)] = [(120, 75.0, 18.0), (90, 74.2, 17.2), (60, 73.5, 16.5), (30, 73.0, 16.0), (1, 72.5, 15.0)]
+        for (off, w, bf) in bodyHistory {
+            guard let date = cal.date(byAdding: .day, value: -off, to: today) else { continue }
+            context.insert(BodyMetric(userId: userId, date: date, weight: w, bodyFat: bf, measurements: ["腕": 38, "胸": 102, "ウエスト": 78], isDirty: false))
+        }
+
+        // 進捗写真（グリッド・月次グルーピング・比較）のデモ。実画像は無いためプレースホルダ表示になる。
+        let photoOffsets = [115, 85, 55, 25, 2]
+        for (i, off) in photoOffsets.enumerated() {
+            guard let date = cal.date(byAdding: .day, value: -off, to: today) else { continue }
+            context.insert(ProgressPhoto(userId: userId, date: date, localPhotoFilename: "demo_\(i).jpg", visibility: i % 2 == 0 ? .private : .friends, isDirty: false))
+        }
+
         // PersonalRecord（PRタイムライン用）。
         if let bench {
             context.insert(PersonalRecord(userId: userId, type: .maxWeight, value: 80, achievedAt: cal.date(byAdding: .day, value: -2, to: today) ?? today, exercise: bench, isDirty: false))

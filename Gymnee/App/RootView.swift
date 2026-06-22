@@ -81,6 +81,7 @@ struct RootView: View {
             }
         case "analytics": NavigationStack { AnalyticsView(userId: userId) }
         case "body": NavigationStack { BodyMetricsView(userId: userId) }
+        case "photos": NavigationStack { ProgressPhotosView(userId: userId) }
         case "share":
             ShareCardEditorView(content: ShareCardContent(
                 image: nil, gymName: "Gymnee 渋谷", streak: 3,
