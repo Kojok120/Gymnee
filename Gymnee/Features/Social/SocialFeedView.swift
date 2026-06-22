@@ -161,7 +161,7 @@ private struct SocialContent: View {
         }
     }
 
-    /// ワークアウト投稿はタップで詳細へ。他はカード表示。
+    /// タップで開く（ワークアウト＝詳細、チェックイン＝編集）。仕様を統一。
     @ViewBuilder
     private func feedRow(_ entry: FeedEntry) -> some View {
         if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
@@ -171,12 +171,15 @@ private struct SocialContent: View {
                 FeedCardView(entry: entry)
             }
             .buttonStyle(.plain)
+        } else if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
+            Button { editVisit = visit } label: { FeedCardView(entry: entry) }
+                .buttonStyle(.plain)
         } else {
             FeedCardView(entry: entry)
         }
     }
 
-    /// 投稿の長押しメニュー：公開範囲の変更、チェックインの編集。
+    /// 投稿の長押しメニュー：公開範囲の変更（編集はカードのタップで開く）。
     @ViewBuilder
     private func postMenu(_ entry: FeedEntry) -> some View {
         Menu("公開範囲") {
@@ -185,9 +188,6 @@ private struct SocialContent: View {
                     Label(v.label, systemImage: (visStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
                 }
             }
-        }
-        if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
-            Button { editVisit = visit } label: { Label("チェックインを編集", systemImage: "pencil") }
         }
     }
 

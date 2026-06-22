@@ -70,7 +70,7 @@ struct MyPostsView: View {
         }
     }
 
-    /// ワークアウト投稿はタップで詳細へ。来店・自己ベストは表示のみ。
+    /// タップで開く（ワークアウト＝詳細、チェックイン＝編集）。仕様を統一。
     @ViewBuilder
     private func row(_ entry: FeedEntry) -> some View {
         if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
@@ -80,12 +80,15 @@ struct MyPostsView: View {
                 FeedCardView(entry: entry)
             }
             .buttonStyle(.plain)
+        } else if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
+            Button { editVisit = visit } label: { FeedCardView(entry: entry) }
+                .buttonStyle(.plain)
         } else {
             FeedCardView(entry: entry)
         }
     }
 
-    /// 投稿の長押しメニュー：公開範囲の変更、チェックインの編集。
+    /// 投稿の長押しメニュー：公開範囲の変更（編集はカードのタップで開く）。
     @ViewBuilder
     private func postMenu(_ entry: FeedEntry) -> some View {
         Menu("公開範囲") {
@@ -94,9 +97,6 @@ struct MyPostsView: View {
                     Label(v.label, systemImage: (visibilityStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
                 }
             }
-        }
-        if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
-            Button { editVisit = visit } label: { Label("チェックインを編集", systemImage: "pencil") }
         }
     }
 

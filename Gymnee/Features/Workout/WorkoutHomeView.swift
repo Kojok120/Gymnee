@@ -133,10 +133,6 @@ private struct WorkoutHomeContent: View {
                                 Text("\(routine.routineExercises.count)種目").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Button { editRoutine = routine } label: {
-                                Image(systemName: "slider.horizontal.3").font(.body).foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
                             Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(Theme.lime)
                         }
                         .gymneeCard(padding: Theme.Spacing.md)

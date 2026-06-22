@@ -8,6 +8,7 @@ struct ProfileView: View {
 
     @Environment(AuthService.self) private var auth
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
+    @State private var showProfileEdit = false
     @Query private var visits: [Visit]
 
     init(userId: UUID) {
@@ -22,15 +23,19 @@ struct ProfileView: View {
         List {
             Section {
                 VStack(spacing: Theme.Spacing.lg) {
-                    HStack(spacing: Theme.Spacing.md) {
-                        AvatarView(filename: avatarFilename, size: 60)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(auth.session?.displayName ?? "ゲスト").font(.title2.bold())
-                            Text("トレーニングを続けています")
-                                .font(.caption).foregroundStyle(.secondary)
+                    Button { showProfileEdit = true } label: {
+                        HStack(spacing: Theme.Spacing.md) {
+                            AvatarView(filename: avatarFilename, size: 60)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(auth.session?.displayName ?? "ゲスト").font(.title2.bold())
+                                Text("プロフィールを編集")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
-                        Spacer()
                     }
+                    .buttonStyle(.plain)
                     HStack(spacing: Theme.Spacing.md) {
                         StatPill(value: "\(visits.count)", label: "来店", tint: Theme.lime, systemImage: "mappin.and.ellipse")
                         StatPill(value: "\(currentStreak)", label: "連続日", tint: Theme.warning, systemImage: "flame.fill")
@@ -54,6 +59,7 @@ struct ProfileView: View {
         }
         .navigationTitle("マイページ")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showProfileEdit) { ProfileEditView() }
         // 遷移先は値ベース（AppRoute）。destination は NavigationStack ルート側
         // （CalendarHomeView の gymneeNavigationDestinations）で一括宣言しており、
         // ここ（push されたビュー）では宣言しない。クロージャ型リンクで遷移先を先行生成すると
