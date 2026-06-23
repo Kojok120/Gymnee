@@ -55,6 +55,7 @@ private struct WorkoutHomeContent: View {
             switch target {
             case .routines: RoutinesView(userId: userId)
             case .library: ExerciseLibraryView(userId: userId)
+            case .planner: WeekPlannerView(userId: userId)
             }
         }
         .sheet(item: $editRoutine) { routine in
@@ -62,7 +63,7 @@ private struct WorkoutHomeContent: View {
         }
     }
 
-    private enum NavTarget: Hashable { case routines, library }
+    private enum NavTarget: Hashable { case routines, library, planner }
 
     // MARK: - Sections
 
@@ -95,6 +96,7 @@ private struct WorkoutHomeContent: View {
         HStack(spacing: Theme.Spacing.md) {
             NavigationLink(value: NavTarget.routines) { toolCard(icon: "list.bullet.rectangle.fill", label: "ルーティン") }
             NavigationLink(value: NavTarget.library) { toolCard(icon: "figure.strengthtraining.traditional", label: "種目") }
+            NavigationLink(value: NavTarget.planner) { toolCard(icon: "calendar", label: "計画") }
         }
         .buttonStyle(.plain)
     }

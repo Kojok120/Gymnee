@@ -69,6 +69,8 @@ targets:
         NSHealthShareUsageDescription: "体重・体組成を読み込み、記録に反映するために使用します。"
         NSHealthUpdateUsageDescription: "ワークアウト記録をヘルスケアへ書き戻すために使用します。"
         NSMotionUsageDescription: "アクティビティの記録に使用します。"
+        NSCalendarsFullAccessUsageDescription: "予定に合わせてワークアウト計画を立て、自動で組み替えるために使用します。"
+        NSCalendarsUsageDescription: "予定に合わせてワークアウト計画を立てるために使用します。"
 
   GymneeWidgets:
     type: app-extension

@@ -21,6 +21,7 @@ struct GymneeApp: App {
                 .environment(env.notifications)
                 .environment(env.errors)
                 .environment(env.subscription)
+                .environment(env.calendar)
                 .modelContainer(env.container)
                 // 起動時にバックエンドセッションを復元（トークン更新）→ その後の同期が認証付きで通る。
                 .task { await env.bootstrapBackend() }

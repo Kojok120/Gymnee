@@ -15,6 +15,7 @@ final class AppEnvironment {
     let notifications: NotificationService
     let errors: AppErrorCenter
     let subscription: SubscriptionService
+    let calendar: CalendarService
 
     init(container: ModelContainer? = nil) {
         let resolved = container ?? GymneeSchema.makeContainer()
@@ -26,6 +27,7 @@ final class AppEnvironment {
         self.notifications = NotificationService()
         self.errors = AppErrorCenter()
         self.subscription = SubscriptionService()
+        self.calendar = CalendarService()
         self.auth.bootstrap(context: resolved.mainContext)
         self.notifications.configure()
         // Apple Watch との WCSession を起動（手首からのチェックイン受信・スナップショット配布）。
