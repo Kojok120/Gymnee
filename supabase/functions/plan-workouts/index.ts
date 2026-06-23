@@ -18,6 +18,21 @@ function extractJson(s: string): string {
   return a >= 0 && b > a ? s.slice(a, b + 1) : s;
 }
 
+/// 認証 JWT(sub=ユーザーid)を取り出す（レート制限キー用。検証は verify_jwt が担う）。
+function userIdFromJWT(req: Request): string | null {
+  try {
+    const auth = req.headers.get("authorization") ?? "";
+    const token = auth.replace(/^Bearer\s+/i, "");
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return typeof payload.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+/// ユーザー別の直近呼び出し時刻（ベストエフォートのレート制限。インスタンス内のみ）。
+const lastCall = new Map<string, number>();
+
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -32,14 +47,28 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "not_configured" }), { status: 503, headers: cors });
   }
 
+  // 簡易レート制限（認証ユーザー単位・ベストエフォート＝インスタンス内）。Gemini コスト乱用の抑止。
+  const sub = userIdFromJWT(req);
+  if (sub) {
+    const now = Date.now();
+    if (lastCall.size > 5000) lastCall.clear();
+    const prev = lastCall.get(sub);
+    if (prev && now - prev < 8000) {
+      return new Response(JSON.stringify({ error: "rate_limited" }), { status: 429, headers: cors });
+    }
+    lastCall.set(sub, now);
+  }
+
   let body: any = {};
   try { body = await req.json(); } catch { /* empty */ }
 
-  const days: string[] = Array.isArray(body.days) ? body.days : [];
-  const routines: string[] = Array.isArray(body.routines) ? body.routines : [];
-  const goal: number = Number(body.weeklyGoal ?? 3);
-  const busy: any[] = Array.isArray(body.events) ? body.events : [];
-  const history: any[] = Array.isArray(body.history) ? body.history : [];
+  // 入力上限（プロンプト膨張＝コスト膨張を防ぐ）。超過分は切り詰める。
+  const days: string[] = (Array.isArray(body.days) ? body.days : []).slice(0, 14);
+  const routines: string[] = (Array.isArray(body.routines) ? body.routines : [])
+    .slice(0, 30).map((r: any) => String(r).slice(0, 40));
+  const goal: number = Math.max(0, Math.min(14, Number(body.weeklyGoal ?? 3) || 0));
+  const busy: any[] = (Array.isArray(body.events) ? body.events : []).slice(0, 100);
+  const history: any[] = (Array.isArray(body.history) ? body.history : []).slice(0, 200);
 
   const prompt = [
     "あなたは熟練のパーソナルトレーナーです。以下の条件で今週のワークアウト計画を、種目・セット数・目標重量(kg)・レップまで具体的に組んでください。",

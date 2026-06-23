@@ -40,7 +40,7 @@ final class AuthService {
     /// バックエンド(Supabase)が構成済みで、メール/Google サインインが使えるか。
     var isBackendAvailable: Bool { supabase != nil }
     /// 永続化済みのバックエンドセッションがあるか（再起動後の復元判定／Settings 表示用）。
-    var hasPersistedBackendSession: Bool { defaults.string(forKey: refreshTokenKey) != nil }
+    var hasPersistedBackendSession: Bool { Keychain.get(refreshTokenKey) != nil }
 
     init(provider: AuthProviding = MockAuthProvider()) {
         self.provider = provider
@@ -84,7 +84,7 @@ final class AuthService {
     /// 再起動後にバックエンドセッションを復元する（refresh_token でアクセストークンを更新）。
     /// GymneeApp の起動時 task から呼ぶ。成功すると push/pull が認証付きで通る。
     func restoreBackendSession() async {
-        guard let supabase, let refresh = defaults.string(forKey: refreshTokenKey) else { return }
+        guard let supabase, let refresh = Keychain.get(refreshTokenKey) else { return }
         do {
             let remote = try await supabase.refreshSession(refreshToken: refresh)
             await supabase.setAccessToken(remote.accessToken)
@@ -162,14 +162,17 @@ final class AuthService {
     }
 
     private func persistBackendSession(access: String, refresh: String, userId: UUID, displayName: String) {
-        defaults.set(access, forKey: accessTokenKey)
-        defaults.set(refresh, forKey: refreshTokenKey)
+        // トークンは Keychain（端末外へ出ない）。非機微の id/表示名は UserDefaults。
+        Keychain.set(access, for: accessTokenKey)
+        Keychain.set(refresh, for: refreshTokenKey)
         defaults.set(userId.uuidString, forKey: backendUserIdKey)
         defaults.set(displayName, forKey: backendNameKey)
     }
 
     private func clearBackendSession() {
-        [accessTokenKey, refreshTokenKey, backendUserIdKey, backendNameKey].forEach { defaults.removeObject(forKey: $0) }
+        Keychain.delete(accessTokenKey)
+        Keychain.delete(refreshTokenKey)
+        [backendUserIdKey, backendNameKey].forEach { defaults.removeObject(forKey: $0) }
         isBackendAuthenticated = false
     }
 
