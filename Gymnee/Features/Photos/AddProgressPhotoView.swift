@@ -95,9 +95,11 @@ struct AddProgressPhotoView: View {
         Task {
             guard let jpeg = image.jpegData(compressionQuality: 0.8),
                   let ref = await auth.uploadPhoto(bucket: "progress-photos", filename: filename, jpeg: jpeg) else { return }
-            photo.photoURL = ref; photo.updatedAt = .now; photo.isDirty = true
+            // 画面破棄/削除後に元オブジェクトを触らない（id で再取得し、存在する時だけ書く）。
+            guard let fresh = (try? context.fetch(FetchDescriptor<ProgressPhoto>(predicate: #Predicate { $0.id == pid })))?.first else { return }
+            fresh.photoURL = ref; fresh.updatedAt = .now; fresh.isDirty = true
             try? context.save()
-            sync.enqueue(PendingChange(entity: "progress_photos", recordId: pid, operation: .upsert, updatedAt: photo.updatedAt))
+            sync.enqueue(PendingChange(entity: "progress_photos", recordId: pid, operation: .upsert, updatedAt: fresh.updatedAt))
         }
         dismiss()
     }

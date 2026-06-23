@@ -75,24 +75,36 @@ async function pushToUsers(
   const deviceTokens = (tokens ?? []).map((r: { token: string }) => r.token);
   if (deviceTokens.length === 0) return 0;
 
-  const providerToken = await makeProviderToken();
+  // 鍵未設定/不正PEM等で例外を出さず縮退（push_config 設定済みでAPNS鍵だけ未設定の運用ズレ対策）。
+  let providerToken: string;
+  try {
+    providerToken = await makeProviderToken();
+  } catch (e) {
+    console.error("APNs token生成失敗（鍵未設定/不正の可能性）:", String(e));
+    return 0;
+  }
   const apsBody = JSON.stringify({ aps: { alert: { title, body: message }, sound: "default" }, ...extra });
   let sent = 0;
   const stale: string[] = [];
-  await Promise.all(deviceTokens.map(async (token: string) => {
-    const res = await fetch(`https://${APNS_HOST}/3/device/${token}`, {
-      method: "POST",
-      headers: {
-        "authorization": `bearer ${providerToken}`,
-        "apns-topic": APNS_BUNDLE_ID,
-        "apns-push-type": "alert",
-        "content-type": "application/json",
-      },
-      body: apsBody,
-    });
-    if (res.status === 200) sent++;
-    else if (res.status === 410) stale.push(token);
-    else console.error(`APNs ${res.status} for token ${token.slice(0, 8)}…: ${await res.text()}`);
+  // fetch のネットワーク例外で全体が落ちないよう allSettled＋個別try/catch。
+  await Promise.allSettled(deviceTokens.map(async (token: string) => {
+    try {
+      const res = await fetch(`https://${APNS_HOST}/3/device/${token}`, {
+        method: "POST",
+        headers: {
+          "authorization": `bearer ${providerToken}`,
+          "apns-topic": APNS_BUNDLE_ID,
+          "apns-push-type": "alert",
+          "content-type": "application/json",
+        },
+        body: apsBody,
+      });
+      if (res.status === 200) sent++;
+      else if (res.status === 410 || res.status === 400) stale.push(token); // 失効/不正トークンは掃除
+      else console.error(`APNs ${res.status} for token ${token.slice(0, 8)}…: ${await res.text()}`);
+    } catch (e) {
+      console.error(`APNs fetch失敗 token ${token.slice(0, 8)}…: ${String(e)}`);
+    }
   }));
   if (stale.length > 0) await db.from("device_tokens").delete().in("token", stale);
   return sent;

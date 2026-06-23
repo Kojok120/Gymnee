@@ -386,9 +386,11 @@ struct CheckInView: View {
             Task {
                 guard let jpeg = img.jpegData(compressionQuality: 0.8),
                       let ref = await auth.uploadPhoto(bucket: "visit-photos", filename: filename, jpeg: jpeg) else { return }
-                visit.photoURL = ref; visit.updatedAt = .now; visit.isDirty = true
+                // 画面破棄/削除後に元オブジェクトを触らない（id で再取得し、存在する時だけ書く）。
+                guard let fresh = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == vid })))?.first else { return }
+                fresh.photoURL = ref; fresh.updatedAt = .now; fresh.isDirty = true
                 try? context.save()
-                sync.enqueue(PendingChange(entity: "visits", recordId: vid, operation: .upsert, updatedAt: visit.updatedAt))
+                sync.enqueue(PendingChange(entity: "visits", recordId: vid, operation: .upsert, updatedAt: fresh.updatedAt))
             }
         }
         savedVisit = visit

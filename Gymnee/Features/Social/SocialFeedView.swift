@@ -77,6 +77,7 @@ private struct SocialContent: View {
             sync: sync
         )
         await sync.syncNow()
+        rebuildFeedEntries() // 公開範囲変更/同期取り込み後に表示を確実に更新
     }
 
     // MARK: - フォロー関係の導出
@@ -177,7 +178,11 @@ private struct SocialContent: View {
         let ownEntries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility, visibilityStore: visStore)
         let profilesById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let otherEntries = FeedBuilder.othersEntries(feedItems: feedItems, excludingUser: userId, profilesById: profilesById)
-        feedEntries = (ownEntries + otherEntries).sorted { $0.date > $1.date }
+        // id 重複（自分の投稿と他者feed_itemのrefId衝突・多重ID孤児）で ForEach がアサーション落ちするのを防ぐ。
+        var seen = Set<UUID>()
+        feedEntries = (ownEntries + otherEntries)
+            .sorted { $0.date > $1.date }
+            .filter { seen.insert($0.id).inserted }
     }
 
     // フレンド/ランキングと容器(List)を統一してタブ切替の描画を滑らかに。重い構築はメモ化(feedEntries)。
@@ -201,7 +206,7 @@ private struct SocialContent: View {
                                actionTitle: "フレンドを探す", action: { showAddFriend = true })
             }
         }
-        .task(id: "\(visits.count)-\(workouts.count)-\(prs.count)-\(feedItems.count)") { rebuildFeedEntries() }
+        .task(id: "\(visits.count)-\(workouts.count)-\(prs.count)-\(feedItems.count)-\(profiles.count)") { rebuildFeedEntries() }
         .onChange(of: editVisit) { _, v in if v == nil { Task { await refreshFeed() } } }
         .sheet(item: $editVisit) { visit in
             CheckInEditView(visit: visit, visibilityStore: visStore)
