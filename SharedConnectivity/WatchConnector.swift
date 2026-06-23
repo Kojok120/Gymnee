@@ -6,6 +6,8 @@ import WatchConnectivity
 extension Notification.Name {
     /// iOS 本体：Watch からクイックチェックイン要求を受信した。
     static let gymneeWatchCheckInReceived = Notification.Name("gymnee.watchCheckInReceived")
+    /// チェックイン完了。記録タブへ誘導するために RootView が購読する。
+    static let gymneeDidCheckIn = Notification.Name("gymnee.didCheckIn")
     /// Watch：本体から最新スナップショットを受信した。
     static let gymneeSnapshotUpdated = Notification.Name("gymnee.snapshotUpdated")
 }

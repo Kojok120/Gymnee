@@ -40,7 +40,11 @@ struct CheckInView: View {
     var body: some View {
         NavigationStack {
             if let savedVisit {
-                CheckInSuccessView(visit: savedVisit) { dismiss() }
+                CheckInSuccessView(visit: savedVisit) {
+                    // 記録タブへ誘導（今日の計画の「開始」が自然に見えるように）。
+                    NotificationCenter.default.post(name: .gymneeDidCheckIn, object: nil)
+                    dismiss()
+                }
             } else {
                 form
             }

@@ -22,12 +22,19 @@ private struct WorkoutHomeContent: View {
     @Environment(\.modelContext) private var context
     @Query private var routines: [Routine]
     @Query private var recentWorkouts: [Workout]
+    @Query private var todayPlanned: [PlannedWorkout]
     @State private var activeWorkout: Workout?
     @State private var editRoutine: Routine?
 
     init(userId: UUID) {
         self.userId = userId
         _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
+        let dayStart = Calendar.current.startOfDay(for: Date())
+        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        _todayPlanned = Query(
+            filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone && $0.date >= dayStart && $0.date < dayEnd },
+            sort: \PlannedWorkout.date
+        )
         var desc = FetchDescriptor<Workout>(
             predicate: #Predicate { $0.userId == userId && $0.completedAt != nil },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
@@ -39,6 +46,7 @@ private struct WorkoutHomeContent: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
+                todayPlanSection
                 startHero
                 toolsRow
                 routinesSection
@@ -66,6 +74,44 @@ private struct WorkoutHomeContent: View {
     private enum NavTarget: Hashable { case routines, library, planner }
 
     // MARK: - Sections
+
+    /// 今日の計画（あれば最上部に表示）。「開始」で実記録へ。チェックイン直後に自然に見える位置。
+    @ViewBuilder
+    private var todayPlanSection: some View {
+        if !todayPlanned.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                SectionHeader(title: "今日の計画")
+                ForEach(todayPlanned) { plan in
+                    HStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "calendar.badge.clock")
+                            .foregroundStyle(Theme.lime)
+                            .frame(width: 40, height: 40)
+                            .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(plan.title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                            if let n = planExerciseCount(plan) {
+                                Text("\(n)種目").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("開始") {
+                            activeWorkout = PlanStarter.start(plan, userId: userId, routines: routines, context: context)
+                        }
+                        .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+                    }
+                    .gymneeCard(padding: Theme.Spacing.md)
+                }
+            }
+        }
+    }
+
+    /// 計画に含まれる種目数（AI詳細があればその数）。
+    private func planExerciseCount(_ plan: PlannedWorkout) -> Int? {
+        guard let json = plan.detailJSON, let data = json.data(using: .utf8),
+              let exs = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data), !exs.isEmpty
+        else { return nil }
+        return exs.count
+    }
 
     private var startHero: some View {
         Button { startEmpty() } label: {

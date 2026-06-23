@@ -122,6 +122,10 @@ struct RootView: View {
                 .tag(AppTab.other)
         }
         .tint(Theme.energy)
+        // チェックイン完了後は記録タブへ（今日の計画の「開始」導線を見せる）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in
+            selection = .workout
+        }
     }
 
     @ViewBuilder
