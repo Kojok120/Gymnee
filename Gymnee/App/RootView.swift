@@ -126,6 +126,10 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in
             selection = .workout
         }
+        // 完了サマリー「分析を見る」から分析タブへ。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeShowAnalytics)) { _ in
+            selection = .analytics
+        }
     }
 
     @ViewBuilder

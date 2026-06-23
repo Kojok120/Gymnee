@@ -8,6 +8,8 @@ extension Notification.Name {
     static let gymneeWatchCheckInReceived = Notification.Name("gymnee.watchCheckInReceived")
     /// チェックイン完了。記録タブへ誘導するために RootView が購読する。
     static let gymneeDidCheckIn = Notification.Name("gymnee.didCheckIn")
+    /// 完了サマリー等から分析タブへ切替えるための要求。
+    static let gymneeShowAnalytics = Notification.Name("gymnee.showAnalytics")
     /// Watch：本体から最新スナップショットを受信した。
     static let gymneeSnapshotUpdated = Notification.Name("gymnee.snapshotUpdated")
 }

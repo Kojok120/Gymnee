@@ -16,6 +16,11 @@ struct WorkoutLoggerView: View {
     @State private var showExercisePicker = false
     @State private var prToast: String?
     @State private var editingNote: WorkoutExercise?
+    @State private var showSummary = false
+    @State private var pendingShare = false
+    @State private var showShareCard = false
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
 
     private var userId: UUID { auth.currentUserId ?? UUID() }
     private var orderedExercises: [WorkoutExercise] {
@@ -43,6 +48,22 @@ struct WorkoutLoggerView: View {
             ExercisePickerView { addExercise($0) }
         }
         .overlay(alignment: .top) { prToastView }
+        .sheet(isPresented: $showSummary, onDismiss: { if pendingShare { pendingShare = false; showShareCard = true } }) {
+            WorkoutSummaryView(
+                workout: workout,
+                streak: currentStreak,
+                onShare: { pendingShare = true; showSummary = false },
+                onAnalytics: {
+                    showSummary = false
+                    NotificationCenter.default.post(name: .gymneeShowAnalytics, object: nil)
+                    dismiss()
+                },
+                onClose: { showSummary = false; dismiss() }
+            )
+        }
+        .sheet(isPresented: $showShareCard) {
+            ShareCardEditorView(content: shareContent)
+        }
         .sheet(item: $editingNote) { we in
             NavigationStack {
                 Form {
@@ -348,7 +369,33 @@ struct WorkoutLoggerView: View {
             }
         }
         restTimer.stop()
-        dismiss()
+        // 完了時にフィード発行（従来はSocialタブを開くまで遅延していた）。PR等を即座に届ける。
+        FeedPublisher.publishOwnPosts(
+            userId: userId, authorName: auth.session?.displayName, context: context,
+            visibilityStore: PostVisibilityStore(), defaultVisibility: defaultVisibility, sync: sync
+        )
+        // 即dismissせず達成サマリーを提示（共有/分析/閉じるへ分岐）。
+        showSummary = true
+    }
+
+    /// 連続日数（来店ベース）。サマリーの祝祭表示用。
+    private var currentStreak: Int {
+        let uid = userId
+        let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == uid }))) ?? []
+        return StreakCalculator.currentStreak(visitDays: visits.map(\.visitedAt), calendar: .current)
+    }
+
+    /// 共有カード内容（このワークアウト）。
+    private var shareContent: ShareCardContent {
+        let prNames = Set(workout.exercises.flatMap(\.sets).filter(\.isPR).compactMap { $0.workoutExercise?.exercise?.name })
+        let exNames = workout.exercises.compactMap { $0.exercise?.name }.prefix(3).joined(separator: "・")
+        return ShareCardContent(
+            image: nil,
+            gymName: workout.name,
+            streak: currentStreak,
+            prText: prNames.isEmpty ? nil : prNames.joined(separator: "・"),
+            exerciseSummary: exNames.isEmpty ? nil : "\(exNames) \(workout.exercises.count)種目"
+        )
     }
 
     // MARK: - Derived
