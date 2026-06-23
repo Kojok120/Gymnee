@@ -506,8 +506,13 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - supply_logs
     private func encodeSupplyLog(_ m: SupplyLog) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "product_id": opt(m.product?.id.uuidString.lowercased()),
-         "date": iso(m.date), "amount": m.amount, "product_name": opt(m.productName), "updated_at": iso(m.updatedAt)]
+        // m.product は inverse 無し関連。参照先(seed商品)がカタログ同期で削除されると宙ぶらりんになり、
+        // アクセスした瞬間に SwiftData がアサーションでクラッシュする（push のたびに発火）。
+        // 関連を読まず、productName から安全に product_id を解決する。
+        let productId = m.productName.flatMap { fetchProductByName($0)?.id }
+        return ["id": lower(m.id), "user_id": lower(m.userId),
+                "product_id": opt(productId?.uuidString.lowercased()),
+                "date": iso(m.date), "amount": m.amount, "product_name": opt(m.productName), "updated_at": iso(m.updatedAt)]
     }
     private func applySupplyLog(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }

@@ -296,8 +296,10 @@ private struct ShopContent: View {
     /// 補給ログの消費ペースのみから「1容器を消費しきりそうか」を推定する（unitsPurchased=1 固定）。
     private var lowProducts: [Product] {
         products.filter { product in
+            // supplyLog.product は inverse 無し関連で、参照先(seed商品)がカタログ同期で削除されると
+            // 宙ぶらりんになりアクセスでクラッシュする。productName で安全に突き合わせる。
             let logs = supplyLogs
-                .filter { $0.product?.id == product.id }
+                .filter { $0.productName == product.name }
                 .map { SupplyAnalyzer.LogPoint(date: $0.date, amount: $0.amount) }
             guard !logs.isEmpty else { return false }
             return SupplyAnalyzer.estimate(logs: logs, servingsPerUnit: product.servingsPerUnit, unitsPurchased: 1).isLow
