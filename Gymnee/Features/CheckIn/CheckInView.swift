@@ -12,6 +12,8 @@ struct CheckInView: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AppErrorCenter.self) private var errors
     @Query(sort: \Gym.name) private var gyms: [Gym]
+    @Query private var follows: [Follow]
+    @Query private var profiles: [Profile]
 
     @State private var image: UIImage?
     @State private var photoItem: PhotosPickerItem?
@@ -20,8 +22,14 @@ struct CheckInView: View {
     @State private var selectedGym: Gym?
     @State private var showGymPicker = false
     @State private var note = ""
-    @State private var partnerNames: [String] = []
+    /// 合トレ相手。フレンド選択なら実 userId、手入力ならランダム UUID を id に持つ。
+    @State private var partners: [PartnerDraft] = []
     @State private var newPartner = ""
+
+    struct PartnerDraft: Identifiable, Hashable {
+        let id: UUID
+        let name: String
+    }
     @State private var visitedAt = Date.now
     @State private var savedVisit: Visit?
 
@@ -227,21 +235,42 @@ struct CheckInView: View {
 
     private var partnerSection: some View {
         Section("合トレ相手（任意）") {
-            ForEach(partnerNames, id: \.self) { name in
-                Label(name, systemImage: "person.fill")
+            ForEach(partners) { p in
+                Label(p.name, systemImage: "person.fill")
             }
-            .onDelete { partnerNames.remove(atOffsets: $0) }
+            .onDelete { partners.remove(atOffsets: $0) }
+            if !friendOptions.isEmpty {
+                Menu {
+                    ForEach(friendOptions) { f in
+                        Button(f.name) { partners.append(f) }
+                    }
+                } label: {
+                    Label("フレンドから追加", systemImage: "person.2.fill")
+                }
+            }
             HStack {
-                TextField("名前を追加", text: $newPartner)
+                TextField("名前を手入力", text: $newPartner)
                 Button("追加") {
                     let trimmed = newPartner.trimmingCharacters(in: .whitespaces)
                     guard !trimmed.isEmpty else { return }
-                    partnerNames.append(trimmed)
+                    partners.append(PartnerDraft(id: UUID(), name: trimmed))
                     newPartner = ""
                 }
                 .disabled(newPartner.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+    }
+
+    /// フォロー中で、まだ追加していないフレンド（合トレ相手の候補）。
+    private var friendOptions: [PartnerDraft] {
+        guard let myId = auth.currentUserId else { return [] }
+        let added = Set(partners.map(\.id))
+        let nameById = Dictionary(profiles.map { ($0.id, $0.displayName) }, uniquingKeysWith: { a, _ in a })
+        return follows
+            .filter { $0.followerId == myId }
+            .map(\.followeeId)
+            .filter { !added.contains($0) }
+            .map { PartnerDraft(id: $0, name: nameById[$0] ?? "ユーザー") }
     }
 
     // MARK: - Auto select
@@ -340,8 +369,8 @@ struct CheckInView: View {
             note: note.isEmpty ? nil : note
         )
         context.insert(visit)
-        for name in partnerNames {
-            let partner = VisitPartner(partnerUserId: UUID(), partnerDisplayName: name, visit: visit)
+        for p in partners {
+            let partner = VisitPartner(partnerUserId: p.id, partnerDisplayName: p.name, visit: visit)
             context.insert(partner)
         }
         do {
