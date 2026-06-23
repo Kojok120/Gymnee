@@ -241,6 +241,29 @@ actor SupabaseClient {
         return config.url.appendingPathComponent("storage/v1/object/public/avatars/\(path)").absoluteString
     }
 
+    /// 任意バケットへ写真をアップロード（private バケット可）。戻り値は "bucket/path"（photoURL に保存）。
+    func uploadPhoto(bucket: String, path: String, jpeg: Data) async throws -> String {
+        let url = config.url.appendingPathComponent("storage/v1/object/\(bucket)/\(path)")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        req.setValue("true", forHTTPHeaderField: "x-upsert")
+        req.httpBody = jpeg
+        try await send(req)
+        return "\(bucket)/\(path)"
+    }
+
+    /// "bucket/path" 形式の参照から写真バイト列を取得（private バケットは認証付きGET）。
+    func downloadPhoto(ref: String) async throws -> Data {
+        let url = config.url.appendingPathComponent("storage/v1/object/\(ref)")
+        var req = URLRequest(url: url)
+        req.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        return try await send(req)
+    }
+
     struct PlanExercise: Codable, Sendable {
         let name: String
         let muscleGroup: String?

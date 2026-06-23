@@ -55,6 +55,23 @@ enum PhotoStore {
         return save(image, quality: quality)
     }
 
+    /// リモートから取得したバイト列を、指定ファイル名でローカルに書き戻す（再インストール後の復元用）。
+    @discardableResult
+    static func writeData(_ data: Data, as filename: String) -> UIImage? {
+        let url = directory.appendingPathComponent(filename)
+        try? data.write(to: url, options: .atomic)
+        let image = UIImage(data: data)
+        if let image { cache.setObject(image, forKey: filename as NSString) }
+        return image
+    }
+
+    /// ローカルにファイルが存在するか（キャッシュ含む）。
+    static func exists(_ filename: String?) -> Bool {
+        guard let filename else { return false }
+        if cache.object(forKey: filename as NSString) != nil { return true }
+        return FileManager.default.fileExists(atPath: directory.appendingPathComponent(filename).path)
+    }
+
     /// ファイル名から画像を読み込む（キャッシュ優先）。
     static func load(_ filename: String?) -> UIImage? {
         guard let filename else { return nil }

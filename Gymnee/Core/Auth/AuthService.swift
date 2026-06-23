@@ -272,6 +272,19 @@ final class AuthService {
         }
     }
 
+    /// 写真をバケットへアップロードし、参照("bucket/path")を返す（progress-photos / visit-photos）。
+    func uploadPhoto(bucket: String, filename: String, jpeg: Data) async -> String? {
+        guard let supabase, isBackendAuthenticated, let uid = currentUserId else { return nil }
+        let path = "\(uid.uuidString.lowercased())/\(filename)"
+        return try? await supabase.uploadPhoto(bucket: bucket, path: path, jpeg: jpeg)
+    }
+
+    /// 参照("bucket/path")から写真バイト列を取得（端末ローカルに無い時のフォールバック用）。
+    func downloadPhoto(ref: String) async -> Data? {
+        guard let supabase, isBackendAuthenticated else { return nil }
+        return try? await supabase.downloadPhoto(ref: ref)
+    }
+
     /// AI ワークアウト計画（Edge Function 経由）。未構成/未認証/失敗時は nil（呼び出し側で「準備中」）。
     func planWorkouts(days: [String], routines: [String], weeklyGoal: Int, events: [[String: Any]], history: [[String: Any]]) async -> [SupabaseClient.PlanItem]? {
         guard let supabase, isBackendAuthenticated else { return nil }

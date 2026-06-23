@@ -380,6 +380,17 @@ struct CheckInView: View {
             return
         }
         sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
+        // 来店写真をリモートにもアップロード（再インストール後の消失を防ぐ・best-effort）。
+        if let filename, let img = image {
+            let vid = visit.id
+            Task {
+                guard let jpeg = img.jpegData(compressionQuality: 0.8),
+                      let ref = await auth.uploadPhoto(bucket: "visit-photos", filename: filename, jpeg: jpeg) else { return }
+                visit.photoURL = ref; visit.updatedAt = .now; visit.isDirty = true
+                try? context.save()
+                sync.enqueue(PendingChange(entity: "visits", recordId: vid, operation: .upsert, updatedAt: visit.updatedAt))
+            }
+        }
         savedVisit = visit
     }
 }

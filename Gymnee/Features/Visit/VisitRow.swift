@@ -27,19 +27,14 @@ struct VisitRow: View {
         .padding(.vertical, 4)
     }
 
-    @ViewBuilder
     private var thumbnail: some View {
-        if let image = PhotoStore.load(visit.localPhotoFilename) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-        } else {
+        SyncedPhoto(filename: visit.localPhotoFilename, ref: visit.photoURL) {
             RoundedRectangle(cornerRadius: Theme.Radius.sm)
                 .fill(Theme.energy.opacity(0.15))
-                .frame(width: 56, height: 56)
                 .overlay(Image(systemName: "figure.strengthtraining.traditional").foregroundStyle(Theme.energy))
         }
+        .scaledToFill()
+        .frame(width: 56, height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 }
