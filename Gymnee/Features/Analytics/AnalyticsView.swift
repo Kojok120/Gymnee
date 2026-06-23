@@ -191,8 +191,6 @@ struct AnalyticsView: View {
     private var prTimelineCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             SectionHeader(title: "自己ベストの記録")
-            Text("PR＝Personal Record（種目ごとの自己ベスト：最大重量・最大レップ・最大ボリューム）")
-                .font(.caption2).foregroundStyle(.secondary)
             let recent = prs.filter { $0.achievedAt >= periodStart }
             if recent.isEmpty {
                 Text("この期間の自己ベスト更新はありません。").font(.caption).foregroundStyle(.secondary)
