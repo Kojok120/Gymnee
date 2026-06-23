@@ -31,6 +31,7 @@ private struct CalendarHomeContent: View {
     @State private var anchor = Date.now
     @State private var selectedDate: SelectedDay?
     @State private var showCheckIn = false
+    @State private var editingWorkout: Workout?
 
     /// navigationDestination(item:) は Identifiable を要求するため Date をラップする。
     private struct SelectedDay: Identifiable, Hashable {
@@ -75,7 +76,11 @@ private struct CalendarHomeContent: View {
         // （iOS 26.5 では pushed view 上の navigationDestination が無効化される）。
         .gymneeNavigationDestinations(userId: userId)
         .navigationDestination(item: $selectedDate) { selection in
-            DayDetailView(userId: userId, date: selection.date)
+            DayDetailView(userId: userId, date: selection.date, onEditWorkout: { editingWorkout = $0 })
+        }
+        // ロガーへの遷移はルートで宣言（pushed view 上の navigationDestination は 26.5 で無効のため）。
+        .navigationDestination(item: $editingWorkout) { workout in
+            WorkoutLoggerView(workout: workout)
         }
         // Watch 保留チェックインの取り込みは「一度だけ」。visits.count トリガに乗せると
         // 挿入→count変化→再実行→再挿入 の無限ループになる（特に App Group 破損時）。

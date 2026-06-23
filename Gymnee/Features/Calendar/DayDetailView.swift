@@ -5,18 +5,21 @@ import SwiftData
 struct DayDetailView: View {
     let userId: UUID
     let date: Date
+    /// ワークアウト編集を開く。pushed view 上では navigationDestination が無効(iOS26.5)なため、
+    /// ロガーへの遷移はルート(CalendarHomeContent)側に委ねる。
+    var onEditWorkout: (Workout) -> Void = { _ in }
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
-    @State private var activeWorkout: Workout?
 
     private let calendar = Calendar.current
 
-    init(userId: UUID, date: Date) {
+    init(userId: UUID, date: Date, onEditWorkout: @escaping (Workout) -> Void = { _ in }) {
         self.userId = userId
         self.date = date
+        self.onEditWorkout = onEditWorkout
         let start = Calendar.current.startOfDay(for: date)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
         _visits = Query(
@@ -63,9 +66,6 @@ struct DayDetailView: View {
         }
         .navigationTitle(titleText)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $activeWorkout) { workout in
-            WorkoutLoggerView(workout: workout)
-        }
     }
 
     /// その日（過去でも未来でも）にワークアウトを新規作成してロガーを開く。記録の後追い入力・先取り計画に。
@@ -74,7 +74,7 @@ struct DayDetailView: View {
         let workout = Workout(userId: userId, date: noon, name: "ワークアウト")
         context.insert(workout)
         try? context.save()
-        activeWorkout = workout
+        onEditWorkout(workout)
     }
 
     private var titleText: String {
