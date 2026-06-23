@@ -16,6 +16,7 @@ struct WeekPlannerView: View {
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
     @Query private var planned: [PlannedWorkout]
     @Query private var routines: [Routine]
+    @Query private var recentWorkouts: [Workout]
 
     @State private var addDay: PlanDay?
     @State private var showPaywall = false
@@ -27,6 +28,11 @@ struct WeekPlannerView: View {
         self.onStart = onStart
         _planned = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId }, sort: \PlannedWorkout.date)
         _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
+        let since = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
+        _recentWorkouts = Query(
+            filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil && $0.date >= since },
+            sort: \Workout.date, order: .reverse
+        )
     }
 
     private struct PlanDay: Identifiable { let date: Date; var id: Double { date.timeIntervalSince1970 } }
@@ -172,7 +178,18 @@ struct WeekPlannerView: View {
     private func start(_ plan: PlannedWorkout) {
         let workout = Workout(userId: userId, date: .now, name: plan.title, routineId: plan.routineId)
         context.insert(workout)
-        if let rid = plan.routineId, let routine = routines.first(where: { $0.id == rid }) {
+        if let json = plan.detailJSON, let data = json.data(using: .utf8),
+           let exs = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data), !exs.isEmpty {
+            // AI が組んだ種目＋セット＋重量/レップでプリフィル。
+            for (i, pe) in exs.enumerated() {
+                let exercise = findOrCreateExercise(name: pe.name, muscleGroup: pe.muscleGroup)
+                let we = WorkoutExercise(orderIndex: i, workout: workout, exercise: exercise)
+                context.insert(we)
+                for s in 0..<max(pe.sets, 1) {
+                    context.insert(ExerciseSet(setIndex: s, weight: pe.weight, reps: pe.reps, workoutExercise: we))
+                }
+            }
+        } else if let rid = plan.routineId, let routine = routines.first(where: { $0.id == rid }) {
             let ordered = routine.routineExercises.sorted { $0.orderIndex < $1.orderIndex }
             for (i, re) in ordered.enumerated() {
                 guard let exercise = re.exercise else { continue }
@@ -207,7 +224,8 @@ struct WeekPlannerView: View {
                     ["title": ev.title ?? "予定", "date": fmt.string(from: ev.startDate), "allDay": ev.isAllDay]
                 }
             }
-            let result = await auth.planWorkouts(days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal, events: evs)
+            let history = buildHistory(formatter: fmt)
+            let result = await auth.planWorkouts(days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal, events: evs, history: history)
             aiRunning = false
             if let result, !result.isEmpty {
                 applyPlan(result, formatter: fmt)
@@ -225,8 +243,38 @@ struct WeekPlannerView: View {
         for item in items {
             guard let date = formatter.date(from: item.date),
                   days.contains(where: { cal.isDate($0, inSameDayAs: date) }) else { continue }
-            context.insert(PlannedWorkout(userId: userId, date: cal.startOfDay(for: date), title: item.title))
+            let plan = PlannedWorkout(userId: userId, date: cal.startOfDay(for: date), title: item.title)
+            if !item.exercises.isEmpty, let data = try? JSONEncoder().encode(item.exercises) {
+                plan.detailJSON = String(data: data, encoding: .utf8)
+            }
+            context.insert(plan)
         }
         try? context.save()
+    }
+
+    /// 直近4週間の記録を AI 用に要約（種目・部位・トップセットの重量/レップ）。
+    private func buildHistory(formatter: DateFormatter) -> [[String: Any]] {
+        recentWorkouts.prefix(20).map { w in
+            [
+                "date": formatter.string(from: w.date),
+                "exercises": w.exercises.compactMap { we -> [String: Any]? in
+                    guard let ex = we.exercise else { return nil }
+                    let top = we.sets.max(by: { $0.weight < $1.weight })
+                    return ["name": ex.name, "muscleGroup": ex.muscleGroupRaw,
+                            "weight": top?.weight ?? 0, "reps": top?.reps ?? 0]
+                },
+            ]
+        }
+    }
+
+    /// 種目名から既存種目を引く。無ければカスタム種目として作成（本人専用）。
+    private func findOrCreateExercise(name: String, muscleGroup: String?) -> Exercise {
+        if let existing = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == name })))?.first {
+            return existing
+        }
+        let mg = muscleGroup.flatMap { MuscleGroup(rawValue: $0) } ?? .fullBody
+        let exercise = Exercise(name: name, muscleGroup: mg, equipment: .other, isCustom: true, createdBy: userId)
+        context.insert(exercise)
+        return exercise
     }
 }

@@ -1,5 +1,6 @@
-// AI ワークアウト計画（Premium, ⑧-8c）。Gemini にカレンダー予定＋ルーティンを渡し、
-// 今週の各日に何をやるかを提案させる。GEMINI_API_KEY が未設定なら 503（クライアントは「準備中」表示）。
+// AI ワークアウト計画（Premium, ⑧-8c）。Gemini にカレンダー予定＋ルーティン＋過去記録を渡し、
+// 今週の各日のメニューを「種目＋セット＋目標重量/レップ」まで組ませる。
+// GEMINI_API_KEY が未設定なら 503（クライアントは「準備中」表示）。
 //
 // デプロイ: supabase functions deploy plan-workouts
 // キー設定: supabase secrets set GEMINI_API_KEY=xxxx
@@ -28,15 +29,18 @@ Deno.serve(async (req) => {
   const routines: string[] = Array.isArray(body.routines) ? body.routines : [];
   const goal: number = Number(body.weeklyGoal ?? 3);
   const busy: any[] = Array.isArray(body.events) ? body.events : [];
+  const history: any[] = Array.isArray(body.history) ? body.history : [];
 
   const prompt = [
-    "あなたは熟練のパーソナルトレーナーです。以下の条件で今週のワークアウト計画を立ててください。",
-    `対象日(ISO8601, 日本時間想定): ${JSON.stringify(days)}`,
+    "あなたは熟練のパーソナルトレーナーです。以下の条件で今週のワークアウト計画を、種目・セット数・目標重量(kg)・レップまで具体的に組んでください。",
+    `対象日(ISO yyyy-MM-dd, 日本時間): ${JSON.stringify(days)}`,
     `利用可能なルーティン名: ${JSON.stringify(routines.length ? routines : ["全身", "上半身", "下半身"])}`,
     `今週の目標トレーニング日数: ${goal}`,
     `既存の予定(避けるべき多忙日の参考): ${JSON.stringify(busy)}`,
-    "制約: 予定で忙しい日は休養または軽め。連続して同じ部位を高頻度で行わない。目標日数に合わせる。",
-    'JSONのみを返す。形式: {"plan":[{"date":"<対象日のいずれか>","title":"<ルーティン名 or 休養>"}]}。',
+    `直近4週間の記録(頻度・部位バランス・前回重量の参考。空なら初心者想定で控えめに): ${JSON.stringify(history)}`,
+    "方針: 予定で忙しい日は休養または軽め。連続して同じ部位を高頻度で組まない。目標日数に合わせる。",
+    "重量は過去記録の前回値を基準に漸進的過負荷(無理のない範囲で微増)。記録が無い種目は控えめな初期値。",
+    'JSONのみを返す。形式: {"plan":[{"date":"<対象日>","title":"<部位/ルーティン名 or 休養>","exercises":[{"name":"種目名","muscleGroup":"chest|back|legs|shoulders|arms|core|fullBody のいずれか","sets":3,"reps":8,"weight":60}]}]}。休養日は exercises を空配列に。',
   ].join("\n");
 
   try {

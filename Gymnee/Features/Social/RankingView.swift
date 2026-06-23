@@ -27,8 +27,11 @@ struct RankingView: View {
         }
     }
 
+    /// 今週の起点（毎週月曜0時にリセット）。
     private var weekStart: Date {
-        Calendar.current.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
+        var cal = Calendar.current
+        cal.firstWeekday = 2 // 月曜始まり
+        return cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
     }
 
     private var myStreak: Int { StreakCalculator.currentStreak(visitDays: myVisits.map(\.visitedAt)) }

@@ -270,9 +270,9 @@ final class AuthService {
     }
 
     /// AI ワークアウト計画（Edge Function 経由）。未構成/未認証/失敗時は nil（呼び出し側で「準備中」）。
-    func planWorkouts(days: [String], routines: [String], weeklyGoal: Int, events: [[String: Any]]) async -> [SupabaseClient.PlanItem]? {
+    func planWorkouts(days: [String], routines: [String], weeklyGoal: Int, events: [[String: Any]], history: [[String: Any]]) async -> [SupabaseClient.PlanItem]? {
         guard let supabase, isBackendAuthenticated else { return nil }
-        return try? await supabase.planWorkouts(days: days, routines: routines, weeklyGoal: weeklyGoal, events: events)
+        return try? await supabase.planWorkouts(days: days, routines: routines, weeklyGoal: weeklyGoal, events: events, history: history)
     }
 
     /// 認証ユーザーに対応する Profile が無ければ作成する。

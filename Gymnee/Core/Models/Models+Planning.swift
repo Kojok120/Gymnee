@@ -13,6 +13,8 @@ final class PlannedWorkout {
     /// 紐づくルーティン（任意）。
     var routineId: UUID?
     var note: String?
+    /// AI が組んだ種目内容（[PlanExercise] の JSON）。開始時にこの内容で実記録をプリフィルする。
+    var detailJSON: String?
     var isDone: Bool
     var updatedAt: Date
     var isDirty: Bool

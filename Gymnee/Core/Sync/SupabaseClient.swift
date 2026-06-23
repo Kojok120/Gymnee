@@ -223,11 +223,26 @@ actor SupabaseClient {
         return config.url.appendingPathComponent("storage/v1/object/public/avatars/\(path)").absoluteString
     }
 
-    struct PlanItem: Sendable { let date: String; let title: String }
+    struct PlanExercise: Codable, Sendable {
+        let name: String
+        let muscleGroup: String?
+        let sets: Int
+        let reps: Int
+        let weight: Double
+    }
+    struct PlanItem: Sendable {
+        let date: String
+        let title: String
+        let exercises: [PlanExercise]
+    }
 
     /// AI ワークアウト計画（Edge Function plan-workouts → Gemini）。
+    /// 過去記録(history)・予定・ルーティン・目標日数を渡し、種目＋セット＋重量/レップまで組ませる。
     /// 503(not_configured) など非2xx は send が throw する（呼び出し側で「準備中」扱い）。
-    func planWorkouts(days: [String], routines: [String], weeklyGoal: Int, events: [[String: Any]]) async throws -> [PlanItem] {
+    func planWorkouts(
+        days: [String], routines: [String], weeklyGoal: Int,
+        events: [[String: Any]], history: [[String: Any]]
+    ) async throws -> [PlanItem] {
         let url = config.url.appendingPathComponent("functions/v1/plan-workouts")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -235,14 +250,25 @@ actor SupabaseClient {
         if let accessToken { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "days": days, "routines": routines, "weeklyGoal": weeklyGoal, "events": events,
+            "days": days, "routines": routines, "weeklyGoal": weeklyGoal,
+            "events": events, "history": history,
         ])
         let data = try await send(request)
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let plan = (obj?["plan"] as? [[String: Any]]) ?? []
         return plan.compactMap { row in
             guard let d = row["date"] as? String, let t = row["title"] as? String else { return nil }
-            return PlanItem(date: d, title: t)
+            let exs = (row["exercises"] as? [[String: Any]] ?? []).compactMap { e -> PlanExercise? in
+                guard let name = e["name"] as? String else { return nil }
+                return PlanExercise(
+                    name: name,
+                    muscleGroup: e["muscleGroup"] as? String,
+                    sets: (e["sets"] as? Int) ?? Int((e["sets"] as? Double) ?? 3),
+                    reps: (e["reps"] as? Int) ?? Int((e["reps"] as? Double) ?? 10),
+                    weight: (e["weight"] as? Double) ?? Double((e["weight"] as? Int) ?? 0)
+                )
+            }
+            return PlanItem(date: d, title: t, exercises: exs)
         }
     }
 
