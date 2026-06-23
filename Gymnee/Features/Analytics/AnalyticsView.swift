@@ -235,13 +235,15 @@ struct AnalyticsView: View {
             }
             ForEach(statuses) { status in
                 HStack {
-                    Text(status.muscle.label).frame(width: 48, alignment: .leading)
+                    Text(status.muscle.label)
+                        .frame(minWidth: 48, alignment: .leading)
+                        .lineLimit(1).minimumScaleFactor(0.7).fixedSize(horizontal: true, vertical: false)
                     ProgressView(value: status.recoveryProgress)
                         .tint(status.isRecovered ? Theme.energy : .orange)
                     Text(status.isRecovered ? "回復" : "回復中")
                         .font(.caption2)
                         .foregroundStyle(status.isRecovered ? Theme.energy : .orange)
-                        .frame(width: 40)
+                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 }
                 .font(.caption)
             }

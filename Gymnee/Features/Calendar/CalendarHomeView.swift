@@ -282,6 +282,7 @@ private struct CalendarHomeContent: View {
             VStack(spacing: 4) {
                 Text("\(calendar.component(.day, from: date))")
                     .font(.subheadline.weight(isToday ? .bold : .regular))
+                    .lineLimit(1).minimumScaleFactor(0.6)
                     .foregroundStyle(isToday ? Theme.onLime : (inMonth ? Theme.textPrimary : Theme.textTertiary))
                     .frame(width: 30, height: 30)
                     .background {

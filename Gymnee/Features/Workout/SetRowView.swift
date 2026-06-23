@@ -78,6 +78,8 @@ struct SetRowView: View {
             doneButton
         }
         .padding(.vertical, 2)
+        // 固定幅の数値入力が特大文字で潰れて完了ボタンが押せなくなるのを防ぐため上限を設定。
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .animation(.bouncy, value: set.isPR)
         .animation(.snappy, value: set.isCompleted)
     }

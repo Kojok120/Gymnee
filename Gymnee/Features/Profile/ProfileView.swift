@@ -28,6 +28,7 @@ struct ProfileView: View {
                         AvatarView(filename: avatarFilename, urlString: avatarURLString, size: 60)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(auth.session?.displayName ?? "ゲスト").font(.title2.bold())
+                                .lineLimit(1).truncationMode(.tail)
                             Text("プロフィールを編集")
                                 .font(.caption).foregroundStyle(.secondary)
                         }

@@ -128,10 +128,12 @@ struct WorkoutLoggerView: View {
                     Image(systemName: "link").font(.caption2).foregroundStyle(supersetColor(we))
                 }
                 Text(we.exercise?.name ?? "種目")
+                    .lineLimit(1).truncationMode(.tail)
                 if let hint = previousHint(for: we) {
                     Text(hint).font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(1).layoutPriority(-1)
                 }
-                Spacer()
+                Spacer(minLength: Theme.Spacing.sm)
                 exerciseMenu(we)
             }
         } footer: {

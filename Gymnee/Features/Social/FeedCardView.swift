@@ -46,14 +46,16 @@ struct FeedCardView: View {
                     .background(iconColor.opacity(0.15), in: Circle())
                 VStack(alignment: .leading, spacing: 1) {
                     Text(entry.title).font(.subheadline.bold())
+                        .lineLimit(2)
                     Text(entry.date, format: .dateTime.month().day().hour().minute())
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            Spacer(minLength: Theme.Spacing.sm)
             Label(entry.visibility.label, systemImage: visibilityIcon)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .lineLimit(1).layoutPriority(1)
         }
     }
 

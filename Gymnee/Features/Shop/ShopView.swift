@@ -180,7 +180,7 @@ struct ShopContent: View {
     private func productCard(_ product: Product) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             productThumbnail(product, size: 106).frame(maxWidth: .infinity)
-            Text(product.name).font(.caption.bold()).lineLimit(2)
+            Text(product.name).font(.caption.bold()).lineLimit(2).minimumScaleFactor(0.8)
             Text(formatReferencePrice(product.price)).font(.caption2).foregroundStyle(Theme.energy)
         }
         .frame(width: 130)

@@ -85,7 +85,7 @@ struct GymPickerView: View {
                         ForEach(Mode.allCases) { Label($0.label, systemImage: $0.icon).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 200)
+                    .fixedSize()
                 }
             }
             .sheet(isPresented: $showAdd) {

@@ -155,7 +155,7 @@ private struct SocialContent: View {
                     Text("フィード").tag(0)
                     Text("フレンド").tag(1)
                     Text("ランキング").tag(2)
-                }.pickerStyle(.segmented).frame(width: 260)
+                }.pickerStyle(.segmented)
             }
         }
         .sheet(isPresented: $showMyPosts) {

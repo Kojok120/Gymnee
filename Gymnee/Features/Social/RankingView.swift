@@ -113,8 +113,10 @@ struct RankingView: View {
                         .frame(width: 28)
                     AvatarView(urlString: rank.avatarURL, size: 36)
                     Text(rank.name).font(.subheadline.weight(rank.isMe ? .bold : .regular))
-                    Spacer()
+                        .lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: Theme.Spacing.sm)
                     Text("\(rank.xp) XP").font(.subheadline.bold().monospacedDigit()).foregroundStyle(Theme.energy)
+                        .lineLimit(1).layoutPriority(1)
                 }
                 .padding(.vertical, 6).padding(.horizontal, Theme.Spacing.md)
                 .background(rank.isMe ? Theme.limeSoft : Color(uiColor: .secondarySystemGroupedBackground),
