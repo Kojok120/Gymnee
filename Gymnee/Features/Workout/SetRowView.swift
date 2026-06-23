@@ -45,6 +45,7 @@ struct NumberField: UIViewRepresentable {
 
 /// 末尾の .0 を落とした表示（50.0→"50"、52.5→"52.5"）。
 private func numberString(_ value: Double) -> String {
+    guard value.isFinite else { return "" }   // NaN/∞ で String(Int(value)) がトラップするのを防ぐ
     if value == 0 { return "" }
     return value == value.rounded() ? String(Int(value)) : String(value)
 }
@@ -147,7 +148,8 @@ struct SetRowView: View {
                 color: set.isCompleted ? Theme.lime : Theme.textPrimary,
                 get: { numberString(value.wrappedValue) },
                 set: {
-                    value.wrappedValue = Double($0.replacingOccurrences(of: ",", with: ".")) ?? 0
+                    let v = Double($0.replacingOccurrences(of: ",", with: ".")) ?? 0
+                    value.wrappedValue = v.isFinite ? v : 0   // "inf"等のペーストで非有限を保存しない
                     set.updatedAt = .now
                 }
             )

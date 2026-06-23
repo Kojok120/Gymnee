@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// 日別詳細（§5 Day Detail）。その日の来店・写真・ワークアウト一覧。
+/// 日別詳細（§5 Day Detail）。その日の計画・来店・ワークアウト一覧。
 struct DayDetailView: View {
     let userId: UUID
     let date: Date
@@ -13,6 +13,8 @@ struct DayDetailView: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
+    @Query private var planned: [PlannedWorkout]
+    @Query private var routines: [Routine]
 
     private let calendar = Calendar.current
 
@@ -30,10 +32,38 @@ struct DayDetailView: View {
             filter: #Predicate<Workout> { $0.userId == userId && $0.date >= start && $0.date < end },
             sort: \Workout.date, order: .reverse
         )
+        _planned = Query(
+            filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone && $0.date >= start && $0.date < end },
+            sort: \PlannedWorkout.date
+        )
+        _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
     }
 
     var body: some View {
         List {
+            if !planned.isEmpty {
+                Section("計画") {
+                    ForEach(planned) { plan in
+                        HStack(spacing: Theme.Spacing.md) {
+                            Image(systemName: "calendar.badge.clock").foregroundStyle(Theme.lime)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(plan.title).font(.subheadline.weight(.semibold))
+                                    .lineLimit(1).truncationMode(.tail)
+                                if let n = planExerciseCount(plan) {
+                                    Text("\(n)種目").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Button("開始") { startPlan(plan) }
+                                .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+                        }
+                        .swipeActions {
+                            Button("削除", role: .destructive) { deletePlan(plan) }
+                        }
+                    }
+                }
+            }
+
             Section("来店") {
                 if visits.isEmpty {
                     Text("来店記録なし").foregroundStyle(.secondary)
@@ -57,6 +87,9 @@ struct DayDetailView: View {
                         } label: {
                             WorkoutRow(workout: workout)
                         }
+                        .swipeActions {
+                            Button("削除", role: .destructive) { deleteWorkout(workout) }
+                        }
                     }
                 }
                 Button { addWorkout() } label: {
@@ -77,6 +110,24 @@ struct DayDetailView: View {
         onEditWorkout(workout)
     }
 
+    /// 計画を開始＝実記録に変えてロガーを開く。
+    private func startPlan(_ plan: PlannedWorkout) {
+        let workout = PlanStarter.start(plan, userId: userId, routines: routines, context: context)
+        onEditWorkout(workout)
+    }
+
+    private func planExerciseCount(_ plan: PlannedWorkout) -> Int? {
+        guard let json = plan.detailJSON, let data = json.data(using: .utf8),
+              let exs = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data), !exs.isEmpty
+        else { return nil }
+        return exs.count
+    }
+
+    private func deletePlan(_ plan: PlannedWorkout) {
+        context.delete(plan) // PlannedWorkout は端末ローカルのみ（同期対象外）
+        try? context.save()
+    }
+
     private var titleText: String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
@@ -90,5 +141,12 @@ struct DayDetailView: View {
         context.delete(visit)
         try? context.save()
         sync.enqueue(PendingChange(entity: "visits", recordId: visitId, operation: .delete, updatedAt: .now))
+    }
+
+    private func deleteWorkout(_ workout: Workout) {
+        let id = workout.id
+        context.delete(workout) // 配下の workout_exercises / exercise_sets は cascade で削除
+        try? context.save()
+        sync.enqueue(PendingChange(entity: "workouts", recordId: id, operation: .delete, updatedAt: .now))
     }
 }

@@ -14,7 +14,10 @@ struct WorkoutSummaryView: View {
     private var workingSets: [ExerciseSet] {
         workout.exercises.flatMap(\.sets).filter { $0.type != .warmup }
     }
-    private var totalVolume: Double { workingSets.reduce(0) { $0 + $1.volume } }
+    private var totalVolume: Int {
+        let v = workingSets.reduce(0) { $0 + $1.volume }
+        return v.isFinite ? Int(v) : 0   // 非有限混入時も Int(∞) でトラップしない
+    }
     private var totalSets: Int { workingSets.count }
     private var exerciseCount: Int { workout.exercises.count }
     private var prNames: [String] {
@@ -66,7 +69,7 @@ struct WorkoutSummaryView: View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.md) {
             stat("種目", "\(exerciseCount)")
             stat("セット", "\(totalSets)")
-            stat("総ボリューム", "\(Int(totalVolume)) kg")
+            stat("総ボリューム", "\(totalVolume) kg")
             if let d = durationText { stat("所要時間", d) }
         }
     }

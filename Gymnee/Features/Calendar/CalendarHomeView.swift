@@ -27,6 +27,7 @@ private struct CalendarHomeContent: View {
     @Query private var workouts: [Workout]
     @Query private var gyms: [Gym]
     @Query private var prs: [PersonalRecord]
+    @Query private var planned: [PlannedWorkout]
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
     @State private var anchor = Date.now
@@ -49,6 +50,7 @@ private struct CalendarHomeContent: View {
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
+        _planned = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone }, sort: \PlannedWorkout.date)
         _gyms = Query(sort: \Gym.name)
     }
 
@@ -311,10 +313,11 @@ private struct CalendarHomeContent: View {
         // Set は 42 セルで使い回す（セル毎の再生成＝O(visits)×42 を回避）。
         let vDays = visitDays
         let wDays = workoutDays
+        let pDays = plannedDays
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(Array(displayedDays.enumerated()), id: \.offset) { _, day in
                 if let day {
-                    dayCell(day, visitDays: vDays, workoutDays: wDays)
+                    dayCell(day, visitDays: vDays, workoutDays: wDays, plannedDays: pDays)
                 } else {
                     Color.clear.frame(height: 46)
                 }
@@ -322,10 +325,14 @@ private struct CalendarHomeContent: View {
         }
     }
 
-    private func dayCell(_ date: Date, visitDays: Set<Date>, workoutDays: Set<Date>) -> some View {
+    /// 計画(未消化)のある日。グリッドにマーカーを出す。
+    private var plannedDays: Set<Date> { Set(planned.map { calendar.startOfDay(for: $0.date) }) }
+
+    private func dayCell(_ date: Date, visitDays: Set<Date>, workoutDays: Set<Date>, plannedDays: Set<Date>) -> some View {
         let start = calendar.startOfDay(for: date)
         let hasVisit = visitDays.contains(start)
         let hasWorkout = workoutDays.contains(start)
+        let hasPlan = plannedDays.contains(start)
         let isToday = calendar.isDateInToday(date)
         let inMonth = calendar.isDate(date, equalTo: anchor, toGranularity: .month)
         return Button {
@@ -342,11 +349,15 @@ private struct CalendarHomeContent: View {
                             Circle().fill(Theme.limeFill)
                         } else if hasVisit {
                             Circle().fill(Theme.limeSoft)
+                        } else if hasPlan {
+                            // 計画日は枠線で示す（実績の塗りと区別）。
+                            Circle().strokeBorder(Theme.energy.opacity(0.6), lineWidth: 1.5)
                         }
                     }
                 HStack(spacing: 3) {
                     Circle().fill(hasVisit && !isToday ? Theme.lime : .clear).frame(width: 5, height: 5)
                     Circle().fill(hasWorkout ? Theme.warning : .clear).frame(width: 5, height: 5)
+                    Circle().fill(hasPlan ? Theme.energy : .clear).frame(width: 5, height: 5)
                 }
                 .frame(height: 5)
             }
