@@ -6,6 +6,8 @@ import EventKit
 /// 予定を見ながら手動で配置・移動でき、AI計画（Premium）で自動提案も行う（8c）。
 struct WeekPlannerView: View {
     let userId: UUID
+    /// 計画を「開始」して実記録を作成→ロガーを開く（遷移はルート＝WorkoutHome側に委ねる）。
+    var onStart: (Workout) -> Void = { _ in }
 
     @Environment(\.modelContext) private var context
     @Environment(CalendarService.self) private var calendarService
@@ -20,8 +22,9 @@ struct WeekPlannerView: View {
     @State private var aiInfo = false
     @State private var aiRunning = false
 
-    init(userId: UUID) {
+    init(userId: UUID, onStart: @escaping (Workout) -> Void = { _ in }) {
         self.userId = userId
+        self.onStart = onStart
         _planned = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId }, sort: \PlannedWorkout.date)
         _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
     }
@@ -101,6 +104,10 @@ struct WeekPlannerView: View {
             .buttonStyle(.plain)
             Text(p.title).strikethrough(p.isDone).foregroundStyle(p.isDone ? .secondary : .primary)
             Spacer()
+            Button { start(p) } label: {
+                Image(systemName: "play.circle.fill").font(.title3).foregroundStyle(Theme.lime)
+            }
+            .buttonStyle(.plain)
             Menu {
                 Menu("別の日へ移動") {
                     ForEach(days, id: \.self) { d in
@@ -158,6 +165,31 @@ struct WeekPlannerView: View {
         context.insert(p)
         try? context.save()
         addDay = nil
+    }
+
+    /// 計画を「開始」：実記録(Workout)を今この瞬間で作成し、ルーティン紐付きなら種目/前回値を引き継いで
+    /// プリフィル。計画は完了扱いにしてロガーを開く。
+    private func start(_ plan: PlannedWorkout) {
+        let workout = Workout(userId: userId, date: .now, name: plan.title, routineId: plan.routineId)
+        context.insert(workout)
+        if let rid = plan.routineId, let routine = routines.first(where: { $0.id == rid }) {
+            let ordered = routine.routineExercises.sorted { $0.orderIndex < $1.orderIndex }
+            for (i, re) in ordered.enumerated() {
+                guard let exercise = re.exercise else { continue }
+                let we = WorkoutExercise(orderIndex: i, restSeconds: re.restSeconds, workout: workout, exercise: exercise)
+                context.insert(we)
+                let prev = WorkoutMetrics.previousSets(for: exercise, userId: userId, excludingWorkoutId: workout.id)
+                let setCount = max(re.targetSets, prev.count)
+                for s in 0..<setCount {
+                    let p = s < prev.count ? prev[s] : nil
+                    context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: p?.reps ?? 0, type: p?.type ?? .normal, workoutExercise: we))
+                }
+            }
+        }
+        plan.isDone = true
+        plan.updatedAt = .now
+        try? context.save()
+        onStart(workout)
     }
 
     private func aiPlan() {

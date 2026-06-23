@@ -55,7 +55,7 @@ private struct WorkoutHomeContent: View {
             switch target {
             case .routines: RoutinesView(userId: userId)
             case .library: ExerciseLibraryView(userId: userId)
-            case .planner: WeekPlannerView(userId: userId)
+            case .planner: WeekPlannerView(userId: userId, onStart: { activeWorkout = $0 })
             }
         }
         .sheet(item: $editRoutine) { routine in
