@@ -51,8 +51,25 @@ enum FeedPublisher {
             let sets = w.exercises.reduce(0) { $0 + $1.sets.count }
             upsert(refId: w.id, type: .workout, summary: "\(w.name)・\(w.exercises.count)種目・\(sets)セット", date: w.date)
         }
+        // PR はフィードを荒らさないよう「種目 × 日」で 1 件に集約する。初回の種目は
+        // 最大重量/レップ…と乱発せず「新しい種目に挑戦」1件、以降は「自己ベスト更新」1件。
+        let cal = Calendar.current
+        var firstDayByExercise: [UUID: Date] = [:]
         for pr in prs {
-            upsert(refId: pr.id, type: .pr, summary: "\(pr.exercise?.name ?? "種目") \(pr.type.label)", date: pr.achievedAt)
+            guard let exId = pr.exercise?.id else { continue }
+            let day = cal.startOfDay(for: pr.achievedAt)
+            if let cur = firstDayByExercise[exId] { firstDayByExercise[exId] = min(cur, day) }
+            else { firstDayByExercise[exId] = day }
+        }
+        let prGroups = Dictionary(grouping: prs.filter { $0.exercise != nil }) { pr in
+            "\(pr.exercise!.id.uuidString)|\(cal.startOfDay(for: pr.achievedAt).timeIntervalSince1970)"
+        }
+        for group in prGroups.values {
+            guard let rep = group.max(by: { $0.value < $1.value }), let exId = rep.exercise?.id else { continue }
+            let name = rep.exercise?.name ?? "種目"
+            let isFirst = cal.startOfDay(for: rep.achievedAt) == firstDayByExercise[exId]
+            let summary = isFirst ? "新しい種目に挑戦: \(name)" : "\(name) 自己ベスト更新"
+            upsert(refId: rep.id, type: .pr, summary: summary, date: rep.achievedAt)
         }
 
         // 残った既存 = もう存在しない投稿 → feed_item を削除して同期。
