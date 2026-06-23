@@ -217,9 +217,34 @@ private struct WorkoutHomeContent: View {
                         .gymneeCard(padding: Theme.Spacing.md)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { repeatWorkout(from: workout) } label: {
+                            Label("同じ内容で開始", systemImage: "arrow.clockwise")
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// 過去のワークアウトと同じ種目構成で新規に開始（前回値プレフィル）。ルーティン化せず再実行したい時に。
+    private func repeatWorkout(from source: Workout) {
+        let workout = Workout(userId: userId, date: .now, name: source.name)
+        context.insert(workout)
+        let ordered = source.exercises.sorted { $0.orderIndex < $1.orderIndex }
+        for (i, se) in ordered.enumerated() {
+            guard let exercise = se.exercise else { continue }
+            let we = WorkoutExercise(orderIndex: i, restSeconds: se.restSeconds, workout: workout, exercise: exercise)
+            context.insert(we)
+            let prev = WorkoutMetrics.previousSets(for: exercise, userId: userId, excludingWorkoutId: workout.id)
+            let setCount = max(max(se.sets.count, prev.count), 1)
+            for s in 0..<setCount {
+                let p = s < prev.count ? prev[s] : nil
+                context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: p?.reps ?? 0, type: p?.type ?? .normal, workoutExercise: we))
+            }
+        }
+        try? context.save()
+        activeWorkout = workout
     }
 
     // MARK: - Start actions

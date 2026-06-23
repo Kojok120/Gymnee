@@ -247,6 +247,14 @@ struct AnalyticsView: View {
                 }
                 .font(.caption)
             }
+            // 分析→行動の循環を閉じる：回復済みの部位を踏まえて記録を開始。
+            Button {
+                NotificationCenter.default.post(name: .gymneeOpenDestination, object: nil, userInfo: ["type": "workout"])
+            } label: {
+                Label("記録を開始", systemImage: "plus.circle.fill").font(.subheadline.bold())
+            }
+            .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+            .padding(.top, Theme.Spacing.xs)
         }
         .gymneeCard()
     }

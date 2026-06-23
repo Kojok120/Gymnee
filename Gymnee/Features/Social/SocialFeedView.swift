@@ -188,7 +188,9 @@ private struct SocialContent: View {
         .background(Theme.groupedBackground)
         .overlay {
             if entries.isEmpty {
-                EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です", message: "チェックインやワークアウトが時系列で並びます。")
+                EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です",
+                               message: "フレンドを見つけると、活動が時系列で並びます。",
+                               actionTitle: "フレンドを探す", action: { showAddFriend = true })
             }
         }
         .onChange(of: editVisit) { _, v in if v == nil { Task { await refreshFeed() } } }
