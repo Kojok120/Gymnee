@@ -9,10 +9,12 @@ struct SettingsView: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(HealthKitService.self) private var health
     @Environment(AppErrorCenter.self) private var errors
+    @Environment(SubscriptionService.self) private var subscription
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
     @State private var showEmailSignIn = false
     @State private var showProfileEdit = false
+    @State private var showPaywall = false
     @State private var browserURL: IdentifiableURL?
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
@@ -126,10 +128,16 @@ struct SettingsView: View {
             }
 
             Section("プラン") {
-                LabeledContent("現在のプラン", value: "Free")
-                Text("サブスク採用可否は要決定（§9-5）。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                LabeledContent("現在のプラン", value: subscription.isPremium ? "Premium" : "Free")
+                if !subscription.isPremium {
+                    Button { showPaywall = true } label: {
+                        Label("Premium にアップグレード", systemImage: "crown.fill")
+                    }
+                    .tint(Theme.lime)
+                } else {
+                    Button("購入を復元") { Task { await subscription.restore() } }
+                        .tint(.primary)
+                }
             }
 
             Section("規約・サポート") {
@@ -175,6 +183,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showProfileEdit) {
             ProfileEditView()
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
         }
         .sheet(item: $browserURL) { item in
             SafariView(url: item.url).ignoresSafeArea()
