@@ -193,9 +193,17 @@ private struct SocialContent: View {
         }
     }
 
+    /// カード（タップで開く）＋いいね/応援バー。
+    private func feedRow(_ entry: FeedEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            feedCard(entry)
+            ReactionBar(feedItemId: entry.id, userId: userId)
+        }
+    }
+
     /// タップで開く（ワークアウト＝詳細、チェックイン＝編集）。仕様を統一。
     @ViewBuilder
-    private func feedRow(_ entry: FeedEntry) -> some View {
+    private func feedCard(_ entry: FeedEntry) -> some View {
         if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
             NavigationLink {
                 WorkoutDetailView(workout: workout)

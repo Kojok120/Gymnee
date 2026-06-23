@@ -70,9 +70,17 @@ struct MyPostsView: View {
         }
     }
 
+    /// カード（タップで開く）＋いいね/応援バー。
+    private func row(_ entry: FeedEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            card(entry)
+            ReactionBar(feedItemId: entry.id, userId: userId)
+        }
+    }
+
     /// タップで開く（ワークアウト＝詳細、チェックイン＝編集）。仕様を統一。
     @ViewBuilder
-    private func row(_ entry: FeedEntry) -> some View {
+    private func card(_ entry: FeedEntry) -> some View {
         if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
             NavigationLink {
                 WorkoutDetailView(workout: workout)

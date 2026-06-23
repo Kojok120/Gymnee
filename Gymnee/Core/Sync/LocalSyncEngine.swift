@@ -30,7 +30,7 @@ final class LocalSyncEngine: SyncEngine {
         "profiles", "gyms", "gym_equipment", "visits", "visit_partners",
         "workouts", "exercises", "workout_exercises", "exercise_sets",
         "routines", "routine_exercises", "personal_records",
-        "body_metrics", "progress_photos", "follows", "blocks", "reports", "feed_items",
+        "body_metrics", "progress_photos", "follows", "blocks", "reports", "feed_items", "post_reactions",
         "products", "supply_logs", "subscriptions",
     ]
 

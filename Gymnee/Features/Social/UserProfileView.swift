@@ -46,7 +46,12 @@ struct UserProfileView: View {
                                    message: "この人の公開/友達限定の投稿がここに並びます。")
                         .padding(.top, Theme.Spacing.xl)
                 } else {
-                    ForEach(entries) { FeedCardView(entry: $0) }
+                    ForEach(entries) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            FeedCardView(entry: entry)
+                            ReactionBar(feedItemId: entry.id, userId: currentUserId)
+                        }
+                    }
                 }
             }
             .padding(Theme.Spacing.lg)

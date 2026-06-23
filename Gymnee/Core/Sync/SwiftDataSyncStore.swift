@@ -59,6 +59,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "blocks":            return fetchBlock(id).map(encodeBlock)
         case "reports":           return fetchReport(id).map(encodeReport)
         case "feed_items":        return fetchFeedItem(id).map(encodeFeedItem)
+        case "post_reactions":    return fetchPostReaction(id).map(encodePostReaction)
         case "supply_logs":       return fetchSupplyLog(id).map(encodeSupplyLog)
         case "subscriptions":     return fetchSubscription(id).map(encodeSubscription)
         // products はサーバ管理カタログ（クライアントから push しない）。
@@ -89,6 +90,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
             case "blocks":            applyBlock(row)
             case "reports":           applyReport(row)
             case "feed_items":        applyFeedItem(row)
+            case "post_reactions":    applyPostReaction(row)
             case "products":          applyProduct(row)
             case "supply_logs":       applySupplyLog(row)
             case "subscriptions":     applySubscription(row)
@@ -484,6 +486,24 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.isDirty = false
     }
 
+    // MARK: - post_reactions（いいね/応援）
+    private func encodePostReaction(_ m: PostReaction) -> [String: Any] {
+        ["id": lower(m.id), "user_id": lower(m.userId), "feed_item_id": lower(m.feedItemId),
+         "kind": m.kindRaw, "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+    }
+    private func applyPostReaction(_ row: [String: Any]) {
+        guard let id = uuid(row["id"]) else { return }
+        let existing = fetchPostReaction(id)
+        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
+        let m = existing ?? insert(PostReaction(id: id, userId: uuid(row["user_id"]) ?? UUID(), feedItemId: uuid(row["feed_item_id"]) ?? UUID()))
+        m.userId = uuid(row["user_id"]) ?? m.userId
+        m.feedItemId = uuid(row["feed_item_id"]) ?? m.feedItemId
+        m.kindRaw = str(row["kind"]) ?? m.kindRaw
+        m.createdAt = date(row["created_at"]) ?? m.createdAt
+        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
+        m.isDirty = false
+    }
+
     // MARK: - products（pull のみ＝サーバ管理カタログ）
     private func applyProduct(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -570,6 +590,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func fetchBlock(_ id: UUID) -> Block? { first(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })) }
     private func fetchReport(_ id: UUID) -> Report? { first(FetchDescriptor<Report>(predicate: #Predicate { $0.id == id })) }
     private func fetchFeedItem(_ id: UUID) -> FeedItem? { first(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == id })) }
+    private func fetchPostReaction(_ id: UUID) -> PostReaction? { first(FetchDescriptor<PostReaction>(predicate: #Predicate { $0.id == id })) }
     private func fetchProduct(_ id: UUID) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.id == id })) }
     private func fetchProductByName(_ name: String) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.name == name })) }
     private func fetchSupplyLog(_ id: UUID) -> SupplyLog? { first(FetchDescriptor<SupplyLog>(predicate: #Predicate { $0.id == id })) }
