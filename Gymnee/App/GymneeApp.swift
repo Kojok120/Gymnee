@@ -33,7 +33,7 @@ struct GymneeApp: App {
                 }
                 // サインイン完了時に同期（Apple サインインでトークンが入った直後）。
                 .onChange(of: env.auth.isSignedIn) { _, signedIn in
-                    if signedIn { Task { await env.sync.syncNow() } }
+                    if signedIn { Task { await env.sync.syncNow(force: true) } }
                 }
         }
     }

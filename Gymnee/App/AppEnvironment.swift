@@ -50,7 +50,7 @@ final class AppEnvironment {
         // データ通知を受けたら最新差分を取り込む（実配信は APNs 鍵が前提＝best-effort）。
         PushTokenCenter.shared.onRemoteNotification = { [weak self] _ in
             guard let self else { return }
-            Task { await self.sync.syncNow() }
+            Task { await self.sync.syncNow(force: true) }
         }
         // バックエンドサインイン成功時：旧ローカルデータを新 userId へ付け替え→同期。
         auth.onBackendSignIn = { [weak self] oldUserId, newUserId in
@@ -58,7 +58,7 @@ final class AppEnvironment {
             if let oldUserId, oldUserId != newUserId {
                 LocalDataMigrator.reassign(from: oldUserId, to: newUserId, context: self.container.mainContext, sync: self.sync)
             }
-            Task { await self.sync.syncNow() }
+            Task { await self.sync.syncNow(force: true) }
         }
     }
 

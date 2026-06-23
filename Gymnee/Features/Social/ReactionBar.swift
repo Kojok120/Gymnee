@@ -2,20 +2,15 @@ import SwiftUI
 import SwiftData
 
 /// 投稿カード下のいいね/応援バー（§6.11）。feed_item 単位でリアクションを集計・トグルする。
-/// 自己完結（自前 @Query）なのでフィード/自分の投稿/他人プロフィールどこでも置ける。
+/// パフォーマンス: 行ごとに @Query を張らず、親が PostReaction を一括取得して該当分を渡す。
 struct ReactionBar: View {
     let feedItemId: UUID
     let userId: UUID
+    /// この feed_item に紐づくリアクション（親が一括取得して渡す）。
+    let reactions: [PostReaction]
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
-    @Query private var reactions: [PostReaction]
-
-    init(feedItemId: UUID, userId: UUID) {
-        self.feedItemId = feedItemId
-        self.userId = userId
-        _reactions = Query(filter: #Predicate<PostReaction> { $0.feedItemId == feedItemId })
-    }
 
     var body: some View {
         HStack(spacing: Theme.Spacing.lg) {

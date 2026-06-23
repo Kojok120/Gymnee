@@ -13,6 +13,7 @@ struct UserProfileView: View {
     @Query private var theirFeedItems: [FeedItem]
     @Query private var profiles: [Profile]
     @Query private var myFollows: [Follow]
+    @Query private var allReactions: [PostReaction]
 
     init(targetUserId: UUID, currentUserId: UUID, fallbackName: String) {
         self.targetUserId = targetUserId
@@ -46,10 +47,11 @@ struct UserProfileView: View {
                                    message: "この人の公開/友達限定の投稿がここに並びます。")
                         .padding(.top, Theme.Spacing.xl)
                 } else {
+                    let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
                     ForEach(entries) { entry in
                         VStack(alignment: .leading, spacing: 4) {
                             FeedCardView(entry: entry)
-                            ReactionBar(feedItemId: entry.id, userId: currentUserId)
+                            ReactionBar(feedItemId: entry.id, userId: currentUserId, reactions: reactionsByItem[entry.id] ?? [])
                         }
                     }
                 }

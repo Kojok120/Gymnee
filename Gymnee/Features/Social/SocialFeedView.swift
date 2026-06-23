@@ -40,6 +40,7 @@ private struct SocialContent: View {
     @Query private var profiles: [Profile]
     /// 自分＋フォロー中の他人の feed_items（サーバーから RLS 経由で取り込む）。
     @Query private var feedItems: [FeedItem]
+    @Query private var allReactions: [PostReaction]
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
     /// ソーシャル初回利用時のコミュニティガイドライン同意（1.2.5）。
     @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
@@ -174,10 +175,11 @@ private struct SocialContent: View {
         let profilesById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let otherEntries = FeedBuilder.othersEntries(feedItems: feedItems, excludingUser: userId, profilesById: profilesById)
         let entries = (ownEntries + otherEntries).sorted { $0.date > $1.date }
+        let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
         return ScrollView {
             LazyVStack(spacing: Theme.Spacing.md) {
                 ForEach(entries) { entry in
-                    feedRow(entry)
+                    feedRow(entry, reactions: reactionsByItem[entry.id] ?? [])
                         .contextMenu { postMenu(entry) }
                 }
             }
@@ -196,10 +198,10 @@ private struct SocialContent: View {
     }
 
     /// カード（タップで開く）＋いいね/応援バー。
-    private func feedRow(_ entry: FeedEntry) -> some View {
+    private func feedRow(_ entry: FeedEntry, reactions: [PostReaction]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             feedCard(entry)
-            ReactionBar(feedItemId: entry.id, userId: userId)
+            ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions)
         }
     }
 

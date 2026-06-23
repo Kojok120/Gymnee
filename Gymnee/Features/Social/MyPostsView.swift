@@ -14,6 +14,7 @@ struct MyPostsView: View {
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
+    @Query private var allReactions: [PostReaction]
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
     @State private var editVisit: Visit?
 
@@ -39,9 +40,13 @@ struct MyPostsView: View {
     }
 
     var body: some View {
-        List {
+        // 毎描画の O(N^2) first(where:) を避けるため id 索引と reaction を一度だけ構築。
+        let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
+        let workoutsById = Dictionary(workouts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let visitsById = Dictionary(visits.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return List {
             ForEach(entries) { entry in
-                row(entry)
+                row(entry, reactions: reactionsByItem[entry.id] ?? [], workout: workoutsById[entry.id], visit: visitsById[entry.id])
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -71,24 +76,24 @@ struct MyPostsView: View {
     }
 
     /// カード（タップで開く）＋いいね/応援バー。
-    private func row(_ entry: FeedEntry) -> some View {
+    private func row(_ entry: FeedEntry, reactions: [PostReaction], workout: Workout?, visit: Visit?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            card(entry)
-            ReactionBar(feedItemId: entry.id, userId: userId)
+            card(entry, workout: workout, visit: visit)
+            ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions)
         }
     }
 
     /// タップで開く（ワークアウト＝詳細、チェックイン＝編集）。仕様を統一。
     @ViewBuilder
-    private func card(_ entry: FeedEntry) -> some View {
-        if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
+    private func card(_ entry: FeedEntry, workout: Workout?, visit: Visit?) -> some View {
+        if entry.kind == .workout, let workout {
             NavigationLink {
                 WorkoutDetailView(workout: workout)
             } label: {
                 FeedCardView(entry: entry)
             }
             .buttonStyle(.plain)
-        } else if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
+        } else if entry.kind == .visit, let visit {
             Button { editVisit = visit } label: { FeedCardView(entry: entry) }
                 .buttonStyle(.plain)
         } else {

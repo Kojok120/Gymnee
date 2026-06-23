@@ -132,7 +132,7 @@ struct ProfileEditView: View {
             }
             if let uid = auth.currentUserId {
                 sync.enqueue(PendingChange(entity: "profiles", recordId: uid, operation: .upsert, updatedAt: .now))
-                await sync.syncNow()
+                await sync.syncNow(force: true)
             }
             isSaving = false
             dismiss()

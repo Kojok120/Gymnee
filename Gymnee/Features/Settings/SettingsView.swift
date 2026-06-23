@@ -78,7 +78,7 @@ struct SettingsView: View {
                             .font(.caption).foregroundStyle(.orange)
                     }
                     Button {
-                        Task { await sync.syncNow() }
+                        Task { await sync.syncNow(force: true) }
                     } label: {
                         Label("今すぐ同期", systemImage: "arrow.triangle.2.circlepath")
                     }
