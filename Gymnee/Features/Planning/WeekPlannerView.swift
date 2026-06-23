@@ -20,6 +20,7 @@ struct WeekPlannerView: View {
 
     @State private var addDay: PlanDay?
     @State private var showPaywall = false
+    @AppStorage("gymnee.aiFreeUsed") private var aiFreeUsed = false
     @State private var aiInfo = false
     @State private var aiRunning = false
     /// カレンダー予定のキャッシュ（startOfDay→予定）。body 毎の同期列挙(hang)を避けるため一度だけ取得。
@@ -45,8 +46,27 @@ struct WeekPlannerView: View {
         return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
     }
 
+    private var weekPlans: [PlannedWorkout] {
+        let set = Set(days.map { cal.startOfDay(for: $0) })
+        return planned.filter { set.contains(cal.startOfDay(for: $0.date)) }
+    }
+
     var body: some View {
         List {
+            if !weekPlans.isEmpty {
+                Section {
+                    let done = weekPlans.filter(\.isDone).count
+                    let total = weekPlans.count
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        HStack {
+                            Text("今週の計画達成").font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text("\(done)/\(total)").font(.subheadline.bold().monospacedDigit()).foregroundStyle(Theme.lime)
+                        }
+                        ProgressView(value: Double(done), total: Double(max(total, 1))).tint(Theme.lime)
+                    }
+                }
+            }
             if !calendarService.authorized {
                 Section {
                     Button { Task { await calendarService.requestAccess(); loadEvents() } } label: {
@@ -190,7 +210,11 @@ struct WeekPlannerView: View {
     }
 
     private func aiPlan() {
-        guard subscription.isPremium else { showPaywall = true; return }
+        // 初回は無料で体験 → 価値を感じてから課金（無料ユーザーは2回目以降 Paywall）。
+        if !subscription.isPremium {
+            if aiFreeUsed { showPaywall = true; return }
+            aiFreeUsed = true
+        }
         aiRunning = true
         Task {
             let fmt = DateFormatter()

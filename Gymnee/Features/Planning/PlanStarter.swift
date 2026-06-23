@@ -38,6 +38,7 @@ enum PlanStarter {
         }
 
         plan.isDone = true
+        plan.completedWorkoutId = workout.id // 計画↔実績をリンク
         plan.updatedAt = .now
         try? context.save()
         return workout

@@ -378,11 +378,13 @@ struct WorkoutLoggerView: View {
         showSummary = true
     }
 
-    /// 連続日数（来店ベース）。サマリーの祝祭表示用。
+    /// 連続日数（来店＋完了ワークアウト）。サマリーの祝祭表示用。
     private var currentStreak: Int {
         let uid = userId
         let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == uid }))) ?? []
-        return StreakCalculator.currentStreak(visitDays: visits.map(\.visitedAt), calendar: .current)
+        let completed = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil }))) ?? []
+        let days = visits.map(\.visitedAt) + completed.map { $0.completedAt ?? $0.date }
+        return StreakCalculator.currentStreak(visitDays: days, calendar: .current)
     }
 
     /// 共有カード内容（このワークアウト）。

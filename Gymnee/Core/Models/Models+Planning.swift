@@ -16,6 +16,8 @@ final class PlannedWorkout {
     /// AI が組んだ種目内容（[PlanExercise] の JSON）。開始時にこの内容で実記録をプリフィルする。
     var detailJSON: String?
     var isDone: Bool
+    /// 開始して実記録に変わったワークアウトの id（計画↔実績のリンク／達成率算出の根拠）。
+    var completedWorkoutId: UUID?
     var updatedAt: Date
     var isDirty: Bool
 
@@ -27,6 +29,7 @@ final class PlannedWorkout {
         routineId: UUID? = nil,
         note: String? = nil,
         isDone: Bool = false,
+        completedWorkoutId: UUID? = nil,
         updatedAt: Date = .now,
         isDirty: Bool = true
     ) {
@@ -37,6 +40,7 @@ final class PlannedWorkout {
         self.routineId = routineId
         self.note = note
         self.isDone = isDone
+        self.completedWorkoutId = completedWorkoutId
         self.updatedAt = updatedAt
         self.isDirty = isDirty
     }

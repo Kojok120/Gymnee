@@ -126,8 +126,8 @@ private struct CalendarHomeContent: View {
             showNotifPrePrompt = true
         }
         let today = calendar.startOfDay(for: .now)
-        let checkedInToday = visits.contains { calendar.isDateInToday($0.visitedAt) }
-        notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: checkedInToday)
+        let activeToday = activeDays.contains { calendar.isDateInToday($0) }
+        notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: activeToday)
         notifications.scheduleWeeklyRecap()
         let planned = workouts
             .filter { $0.isPlanned && $0.completedAt == nil && $0.date >= today }
@@ -409,14 +409,18 @@ private struct CalendarHomeContent: View {
     private var workoutDays: Set<Date> {
         Set(workouts.filter { $0.completedAt != nil || !$0.isPlanned }.map { calendar.startOfDay(for: $0.date) })
     }
+    /// 連続記録・週次達成の対象日。来店だけでなく完了ワークアウトも算入（記録派も報われるように）。
+    private var activeDays: [Date] {
+        visits.map(\.visitedAt) + workouts.filter { $0.completedAt != nil }.map { $0.completedAt ?? $0.date }
+    }
     private var currentStreak: Int {
-        StreakCalculator.currentStreak(visitDays: visits.map(\.visitedAt), calendar: calendar)
+        StreakCalculator.currentStreak(visitDays: activeDays, calendar: calendar)
     }
     private var longestStreak: Int {
-        StreakCalculator.longestStreak(visitDays: visits.map(\.visitedAt), calendar: calendar)
+        StreakCalculator.longestStreak(visitDays: activeDays, calendar: calendar)
     }
     private var weekCount: Int {
-        StreakCalculator.weeklyVisitDays(visitDays: visits.map(\.visitedAt), calendar: calendar)
+        StreakCalculator.weeklyVisitDays(visitDays: activeDays, calendar: calendar)
     }
     private var goalProgress: Double {
         guard weeklyGoal > 0 else { return 0 }
