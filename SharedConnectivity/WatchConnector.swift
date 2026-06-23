@@ -21,7 +21,9 @@ extension Notification.Name {
 ///
 /// 受信側はいずれも従来どおり `SharedStore` を介して処理するので、既存の取り込み導線をそのまま使える。
 /// ※ アプリ拡張(Widget)では WatchConnectivity が使えないため、このファイルは本体/Watch ターゲットにのみ含める。
-final class WatchConnector: NSObject {
+// WCSessionDelegate のコールバックは WC 専用のバックグラウンドスレッドで届く。共有状態
+// (SharedStore/NotificationCenter) へのアクセスは main に直列化して競合を避ける。
+final class WatchConnector: NSObject, @unchecked Sendable {
     static let shared = WatchConnector()
 
     private let checkInKey = "checkInAt"
@@ -98,8 +100,9 @@ extension WatchConnector: WCSessionDelegate {
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         guard let data = applicationContext[snapshotKey] as? Data,
               let snapshot = try? JSONDecoder().decode(GymneeSnapshot.self, from: data) else { return }
-        SharedStore.save(snapshot)
+        // 共有状態の書込と通知を main に直列化（WC のBGスレッドからの競合を回避）。
         DispatchQueue.main.async {
+            SharedStore.save(snapshot)
             NotificationCenter.default.post(name: .gymneeSnapshotUpdated, object: nil)
         }
     }
@@ -107,9 +110,9 @@ extension WatchConnector: WCSessionDelegate {
     private func handleIncomingCheckIn(_ payload: [String: Any]) {
         guard let ts = payload[checkInKey] as? Double else { return }
         let date = Date(timeIntervalSince1970: ts)
-        // アプリ未起動時の受信にも備え、まず App Group キューに積む（既存の取り込み導線が拾う）。
-        SharedStore.addPendingCheckIn(at: date)
+        // App Group キュー書込と通知を main に直列化（既存の取り込み導線が拾う）。
         DispatchQueue.main.async {
+            SharedStore.addPendingCheckIn(at: date)
             NotificationCenter.default.post(name: .gymneeWatchCheckInReceived, object: nil)
         }
     }

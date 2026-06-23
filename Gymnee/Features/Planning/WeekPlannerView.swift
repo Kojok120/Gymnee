@@ -22,6 +22,8 @@ struct WeekPlannerView: View {
     @State private var showPaywall = false
     @State private var aiInfo = false
     @State private var aiRunning = false
+    /// カレンダー予定のキャッシュ（startOfDay→予定）。body 毎の同期列挙(hang)を避けるため一度だけ取得。
+    @State private var eventsByDay: [Date: [EKEvent]] = [:]
 
     init(userId: UUID, onStart: @escaping (Workout) -> Void = { _ in }) {
         self.userId = userId
@@ -47,7 +49,7 @@ struct WeekPlannerView: View {
         List {
             if !calendarService.authorized {
                 Section {
-                    Button { Task { await calendarService.requestAccess() } } label: {
+                    Button { Task { await calendarService.requestAccess(); loadEvents() } } label: {
                         Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
                     }
                 } footer: {
@@ -79,6 +81,8 @@ struct WeekPlannerView: View {
         }
         .navigationTitle("計画")
         .navigationBarTitleDisplayMode(.inline)
+        .task { loadEvents() }
+        .onChange(of: calendarService.authorized) { _, _ in loadEvents() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if aiRunning {
@@ -158,8 +162,15 @@ struct WeekPlannerView: View {
     // MARK: - Helpers
 
     private func events(on day: Date) -> [(Int, EKEvent)] {
-        let end = cal.date(byAdding: .day, value: 1, to: day) ?? day
-        return Array(calendarService.events(from: day, to: end).enumerated())
+        Array((eventsByDay[cal.startOfDay(for: day)] ?? []).enumerated())
+    }
+
+    /// 週分の予定を一度だけ取得して startOfDay 単位にキャッシュ（body 内の同期列挙を排除）。
+    private func loadEvents() {
+        guard calendarService.authorized, let first = days.first, let last = days.last,
+              let end = cal.date(byAdding: .day, value: 1, to: last) else { eventsByDay = [:]; return }
+        let all = calendarService.events(from: first, to: end)
+        eventsByDay = Dictionary(grouping: all) { cal.startOfDay(for: $0.startDate) }
     }
 
     private func plannedItems(on day: Date) -> [PlannedWorkout] {
