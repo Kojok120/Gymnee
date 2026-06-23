@@ -256,10 +256,13 @@ private struct CalendarHomeContent: View {
 
     private var grid: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+        // Set は 42 セルで使い回す（セル毎の再生成＝O(visits)×42 を回避）。
+        let vDays = visitDays
+        let wDays = workoutDays
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(Array(displayedDays.enumerated()), id: \.offset) { _, day in
                 if let day {
-                    dayCell(day)
+                    dayCell(day, visitDays: vDays, workoutDays: wDays)
                 } else {
                     Color.clear.frame(height: 46)
                 }
@@ -267,7 +270,7 @@ private struct CalendarHomeContent: View {
         }
     }
 
-    private func dayCell(_ date: Date) -> some View {
+    private func dayCell(_ date: Date, visitDays: Set<Date>, workoutDays: Set<Date>) -> some View {
         let start = calendar.startOfDay(for: date)
         let hasVisit = visitDays.contains(start)
         let hasWorkout = workoutDays.contains(start)

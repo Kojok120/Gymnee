@@ -15,6 +15,7 @@ struct CheckInView: View {
 
     @State private var image: UIImage?
     @State private var photoItem: PhotosPickerItem?
+    @State private var lastPlacesLocation: CLLocation?
     @State private var showCamera = false
     @State private var selectedGym: Gym?
     @State private var showGymPicker = false
@@ -57,6 +58,10 @@ struct CheckInView: View {
         }
         .onChange(of: location.current?.timestamp) { _, _ in
             autoSelectNearestGym()
+            // GPSティック毎の MapKit 再検索を抑止（80m以上動いた時のみ再検索）。
+            guard let loc = location.current else { return }
+            if let last = lastPlacesLocation, loc.distance(from: last) < 80 { return }
+            lastPlacesLocation = loc
             Task { await loadNearbyPlaces() }
         }
     }

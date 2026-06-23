@@ -24,9 +24,11 @@ struct AnalyticsView: View {
 
     init(userId: UUID) {
         self.userId = userId
-        _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date)
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt)
-        _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
+        // 最大表示期間(1年=52週)＋バッファ分だけ取得し、多年履歴の全ロードを避ける。
+        let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -53, to: Date()) ?? .distantPast
+        _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.date >= cutoff }, sort: \Workout.date)
+        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId && $0.visitedAt >= cutoff }, sort: \Visit.visitedAt)
+        _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId && $0.achievedAt >= cutoff }, sort: \PersonalRecord.achievedAt, order: .reverse)
     }
 
     var body: some View {

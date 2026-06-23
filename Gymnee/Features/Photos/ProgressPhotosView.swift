@@ -125,10 +125,14 @@ struct ProgressPhotosView: View {
     private var monthKeys: [String] {
         grouped.keys.sorted(by: >)
     }
-    private func monthKey(_ photo: ProgressPhoto) -> String {
+    /// 写真ごとに DateFormatter を新規生成しないよう共有（生成コストは高い）。
+    private static let monthFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
         f.dateFormat = "yyyy年 M月"
-        return f.string(from: photo.date)
+        return f
+    }()
+    private func monthKey(_ photo: ProgressPhoto) -> String {
+        Self.monthFormatter.string(from: photo.date)
     }
 }
