@@ -15,6 +15,7 @@ struct DayDetailView: View {
     @Query private var workouts: [Workout]
     @Query private var planned: [PlannedWorkout]
     @Query private var routines: [Routine]
+    @State private var showAddVisit = false
 
     private let calendar = Calendar.current
 
@@ -75,6 +76,9 @@ struct DayDetailView: View {
                             }
                     }
                 }
+                Button { showAddVisit = true } label: {
+                    Label("この日に来店を追加", systemImage: "plus.circle")
+                }
             }
 
             Section("ワークアウト") {
@@ -99,6 +103,23 @@ struct DayDetailView: View {
         }
         .navigationTitle(titleText)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showAddVisit) {
+            GymPickerView(userId: userId) { gym in
+                addVisit(gym: gym)
+                showAddVisit = false
+            }
+        }
+    }
+
+    /// その日に来店を追加（ジムを選択して作成）。過去/未来の後追い記録に。
+    private func addVisit(gym: Gym) {
+        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+        let visit = Visit(userId: userId, visitedAt: noon, gym: gym)
+        context.insert(visit)
+        try? context.save()
+        // FK 担保のため参照先ジムも送出してから来店を送る。
+        sync.enqueue(PendingChange(entity: "gyms", recordId: gym.id, operation: .upsert, updatedAt: .now))
+        sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
     }
 
     /// その日（過去でも未来でも）にワークアウトを新規作成してロガーを開く。記録の後追い入力・先取り計画に。
