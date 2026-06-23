@@ -1,45 +1,40 @@
 import SwiftUI
 
-/// 「その他」タブ（§5 ナビ）。ショップとジム管理をプルダウン（ナビバーのメニュー）で切り替える。
+/// 「その他」タブ（§5 ナビ）。Duolingo の「…」メニューのように、ジム・ショップなどを一覧から開く。
 struct OtherTabView: View {
     let userId: UUID
-    @State private var mode: Mode = .shop
 
-    enum Mode: String, CaseIterable, Identifiable {
-        case shop = "ショップ"
-        case gym = "ジム管理"
-        var id: String { rawValue }
-        var icon: String { self == .shop ? "bag.fill" : "building.2.fill" }
-    }
+    private enum Dest: Hashable { case shop, gym }
 
     var body: some View {
         NavigationStack {
-            Group {
-                switch mode {
-                case .shop: ShopContent(userId: userId)
-                case .gym: GymListView(userId: userId)
+            List {
+                Section {
+                    NavigationLink(value: Dest.shop) { menuRow("ショップ", icon: "bag.fill", tint: Theme.lime) }
+                    NavigationLink(value: Dest.gym) { menuRow("ジム管理", icon: "building.2.fill", tint: Theme.energy) }
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Menu {
-                        Picker("表示", selection: $mode) {
-                            ForEach(Mode.allCases) { m in
-                                Label(m.rawValue, systemImage: m.icon).tag(m)
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(mode.rawValue).font(.headline)
-                            Image(systemName: "chevron.down").font(.caption2)
-                        }
-                        .foregroundStyle(Theme.textPrimary)
-                    }
+            .navigationTitle("その他")
+            .navigationDestination(for: Dest.self) { dest in
+                switch dest {
+                case .shop:
+                    ShopContent(userId: userId)
+                        .navigationTitle("ショップ").navigationBarTitleDisplayMode(.inline)
+                case .gym:
+                    GymListView(userId: userId)
                 }
             }
-            // ジム詳細など AppRoute 値ベース遷移先をルートで宣言。
+            // ジム詳細など AppRoute 値ベース遷移をルートで宣言。
             .gymneeNavigationDestinations(userId: userId)
         }
+    }
+
+    private func menuRow(_ title: String, icon: String, tint: Color) -> some View {
+        Label {
+            Text(title).font(.body).foregroundStyle(.primary)
+        } icon: {
+            Image(systemName: icon).foregroundStyle(tint)
+        }
+        .padding(.vertical, 6)
     }
 }

@@ -10,6 +10,7 @@ struct DayDetailView: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
+    @State private var activeWorkout: Workout?
 
     private let calendar = Calendar.current
 
@@ -55,10 +56,25 @@ struct DayDetailView: View {
                         }
                     }
                 }
+                Button { addWorkout() } label: {
+                    Label("この日にワークアウトを追加", systemImage: "plus.circle")
+                }
             }
         }
         .navigationTitle(titleText)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $activeWorkout) { workout in
+            WorkoutLoggerView(workout: workout)
+        }
+    }
+
+    /// その日（過去でも未来でも）にワークアウトを新規作成してロガーを開く。記録の後追い入力・先取り計画に。
+    private func addWorkout() {
+        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+        let workout = Workout(userId: userId, date: noon, name: "ワークアウト")
+        context.insert(workout)
+        try? context.save()
+        activeWorkout = workout
     }
 
     private var titleText: String {
