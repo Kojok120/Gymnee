@@ -33,6 +33,8 @@ private struct CalendarHomeContent: View {
     @State private var selectedDate: SelectedDay?
     @State private var showCheckIn = false
     @State private var editingWorkout: Workout?
+    @State private var showNotifPrePrompt = false
+    @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
     /// navigationDestination(item:) は Identifiable を要求するため Date をラップする。
     private struct SelectedDay: Identifiable, Hashable {
@@ -74,6 +76,12 @@ private struct CalendarHomeContent: View {
             }
         }
         .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
+        .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
+            Button("オンにする") { notifPrePrompted = true; Task { await notifications.requestAuthorization() } }
+            Button("あとで", role: .cancel) { notifPrePrompted = true }
+        } message: {
+            Text("連続記録の途切れ予告・フレンドの活動・今週のまとめをお届けします。")
+        }
         // AppRoute の destination は NavigationStack ルート（ここ）で一括宣言する。
         // push 先（ProfileView 等）の子リンクからも確実に解決できるようにするため
         // （iOS 26.5 では pushed view 上の navigationDestination が無効化される）。
@@ -107,12 +115,16 @@ private struct CalendarHomeContent: View {
     }
 
     private func scheduleReminders() {
+        // プリパーミッション：いきなりOSダイアログを出さず、価値説明の後に許諾を取る。
+        // 拒否済み(.denied)では何も出さない（再有効化は設定画面から）。
         #if DEBUG
-        // デモ/スクショ用ハーネス起動時は許諾ダイアログを出さない（自動撮影をクリーンに保つ）。
-        if !DebugSupport.demoRequested { Task { await notifications.requestAuthorization() } }
+        let allowPrompt = !DebugSupport.demoRequested
         #else
-        Task { await notifications.requestAuthorization() }
+        let allowPrompt = true
         #endif
+        if allowPrompt, notifications.status == .notDetermined, !notifPrePrompted {
+            showNotifPrePrompt = true
+        }
         let today = calendar.startOfDay(for: .now)
         let checkedInToday = visits.contains { calendar.isDateInToday($0.visitedAt) }
         notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: checkedInToday)

@@ -10,6 +10,7 @@ struct SettingsView: View {
     @Environment(HealthKitService.self) private var health
     @Environment(AppErrorCenter.self) private var errors
     @Environment(SubscriptionService.self) private var subscription
+    @Environment(NotificationService.self) private var notifications
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
     @State private var showEmailSignIn = false
@@ -64,6 +65,30 @@ struct SettingsView: View {
             } footer: {
                 Text("ホームの「今週の達成」リングの目標日数。")
             }
+
+            Section {
+                switch notifications.status {
+                case .authorized, .provisional, .ephemeral:
+                    LabeledContent("通知", value: "オン")
+                case .denied:
+                    Button {
+                        notifications.openSystemSettings()
+                    } label: {
+                        Label("通知をオンにする（設定を開く）", systemImage: "bell.badge")
+                    }
+                default:
+                    Button {
+                        Task { await notifications.requestAuthorization() }
+                    } label: {
+                        Label("通知をオンにする", systemImage: "bell")
+                    }
+                }
+            } header: {
+                Text("通知")
+            } footer: {
+                Text("連続記録の途切れ予告・フレンドの活動・今週のまとめを受け取れます。")
+            }
+            .task { await notifications.refreshStatus() }
 
             Section("同期") {
                 LabeledContent("バックエンド", value: sync.isRemoteEnabled ? "接続済み" : "ローカルのみ")

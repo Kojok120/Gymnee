@@ -9,12 +9,15 @@ import Observation
 final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private let center = UNUserNotificationCenter.current()
     private(set) var isAuthorized = false
+    /// 生の許諾状態。プリパーミッション/再有効化の出し分けに使う。
+    private(set) var status: UNAuthorizationStatus = .notDetermined
 
     /// アプリ起動時にデリゲートを設定（フォアグラウンドでもバナー表示）。
     func configure() {
         center.delegate = self
         center.getNotificationSettings { settings in
             Task { @MainActor in
+                self.status = settings.authorizationStatus
                 self.isAuthorized = settings.authorizationStatus == .authorized
                 // 既に許諾済みなら APNs 登録を更新（トークンのローテーション追従）。
                 if self.isAuthorized { self.registerForRemotePush() }
@@ -22,10 +25,24 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// 現在の許諾状態を取り直す（設定アプリから戻った時など）。
+    func refreshStatus() async {
+        let settings = await center.notificationSettings()
+        status = settings.authorizationStatus
+        isAuthorized = settings.authorizationStatus == .authorized
+    }
+
     func requestAuthorization() async {
         let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
         isAuthorized = granted
+        status = granted ? .authorized : .denied
         if granted { registerForRemotePush() }
+    }
+
+    /// iOS の設定アプリ（本アプリのページ）を開く。拒否後の再有効化導線。
+    func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 
     /// APNs リモート通知の登録を要求する（成功/失敗は AppDelegate → PushTokenCenter に届く）。
@@ -105,5 +122,23 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound, .list])
+    }
+
+    /// 通知タップ時のルーティング（ローカル/リモート共通）。userInfo の type を見て該当タブへ。
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let info = response.notification.request.content.userInfo
+        let type = info["type"] as? String
+        let feedItemId = info["feedItemId"] as? String
+        Task { @MainActor in
+            var ui: [String: String] = [:]
+            if let type { ui["type"] = type }
+            if let feedItemId { ui["feedItemId"] = feedItemId }
+            NotificationCenter.default.post(name: .gymneeOpenDestination, object: nil, userInfo: ui)
+        }
+        completionHandler()
     }
 }

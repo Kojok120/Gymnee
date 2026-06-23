@@ -130,6 +130,17 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowAnalytics)) { _ in
             selection = .analytics
         }
+        // 通知タップのルーティング（type に応じて該当タブへ）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
+            switch note.userInfo?["type"] as? String {
+            case "reaction", "friend_checkin": selection = .social
+            case "workout": selection = .workout
+            case "analytics": selection = .analytics
+            case "recap", "checkin": selection = .calendar
+            case "shop": selection = .other
+            default: break
+            }
+        }
     }
 
     @ViewBuilder
