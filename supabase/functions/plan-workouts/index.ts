@@ -6,9 +6,17 @@
 // キー設定: supabase secrets set GEMINI_API_KEY=xxxx
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-// モデルは GEMINI_MODEL シークレットで切替可能（既定 gemini-2.5-flash）。
-// 例: supabase secrets set GEMINI_MODEL=gemini-3.5-flash（アクセス可能なキーになったら）。
-const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
+// モデル/APIバージョンは secrets で切替可能。gemini-3.5-flash は v1 でのみ提供。
+// 例: supabase secrets set GEMINI_MODEL=gemini-2.5-flash GEMINI_API_VERSION=v1beta
+const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash";
+const API_VERSION = Deno.env.get("GEMINI_API_VERSION") ?? "v1";
+
+/// 応答テキストから JSON 本体（最初の { 〜 最後の }）を取り出す。コードフェンスや前置きを除去。
+function extractJson(s: string): string {
+  const a = s.indexOf("{");
+  const b = s.lastIndexOf("}");
+  return a >= 0 && b > a ? s.slice(a, b + 1) : s;
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -47,19 +55,20 @@ Deno.serve(async (req) => {
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/${API_VERSION}/models/${MODEL}:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.7 },
+          // v1 は responseMimeType 非対応のため、プロンプトでJSON指定＋本文から抽出する。
+          generationConfig: { temperature: 0.7 },
         }),
       },
     );
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '{"plan":[]}';
-    return new Response(text, { headers: cors });
+    return new Response(extractJson(text), { headers: cors });
   } catch (e) {
     return new Response(JSON.stringify({ error: "upstream", detail: String(e) }), { status: 502, headers: cors });
   }
