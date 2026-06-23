@@ -11,6 +11,8 @@ struct RootView: View {
     @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .calendar
+    /// チェックイン起動の直前タブ。閉じたらここへ戻す（中央タブは Color.clear で空表示になるため）。
+    @State private var previousTab: AppTab = .calendar
     @State private var showCheckIn = false
     #if DEBUG
     @State private var debugWorkout: Workout?
@@ -123,7 +125,7 @@ struct RootView: View {
                 .tag(AppTab.shop)
         }
         .tint(Theme.energy)
-        .fullScreenCover(isPresented: $showCheckIn) {
+        .fullScreenCover(isPresented: $showCheckIn, onDismiss: { selection = previousTab }) {
             CheckInView()
         }
     }
@@ -134,6 +136,7 @@ struct RootView: View {
             get: { selection },
             set: { newValue in
                 if newValue == .checkin {
+                    previousTab = selection      // 戻り先を覚えておく
                     showCheckIn = true
                 } else {
                     selection = newValue

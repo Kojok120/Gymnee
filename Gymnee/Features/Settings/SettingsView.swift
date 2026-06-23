@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
+    @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
     var body: some View {
         Form {
@@ -50,6 +51,16 @@ struct SettingsView: View {
                 Text("ソーシャル")
             } footer: {
                 Text("チェックインやワークアウトを共有するときの初期の公開範囲。投稿ごとに個別変更もできます。")
+            }
+
+            Section {
+                Stepper(value: $weeklyGoal, in: 1...7) {
+                    LabeledContent("週のワークアウト目標", value: "\(weeklyGoal) 日")
+                }
+            } header: {
+                Text("ワークアウト")
+            } footer: {
+                Text("ホームの「今週の達成」リングの目標日数。")
             }
 
             Section("同期") {

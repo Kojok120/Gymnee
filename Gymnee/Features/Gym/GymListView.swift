@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// ジム管理 / 図鑑（§6.4）。プリセット＋自己登録、ジム別サマリー、訪問済みコレクション。
+/// ジム管理（§6.4）。プリセット＋自己登録、ジム別サマリー。
 struct GymListView: View {
     let userId: UUID
 
@@ -10,11 +10,8 @@ struct GymListView: View {
     @Query(sort: \Gym.name) private var gyms: [Gym]
     @Query private var visits: [Visit]
 
-    @State private var mode: Mode = .list
     @State private var search = ""
     @State private var showAdd = false
-
-    enum Mode: String, CaseIterable { case list = "ジム"; case dex = "図鑑" }
 
     init(userId: UUID) {
         self.userId = userId
@@ -22,22 +19,10 @@ struct GymListView: View {
     }
 
     var body: some View {
-        Group {
-            switch mode {
-            case .list: gymList
-            case .dex: GymCollectionView(gyms: gyms, visitCounts: visitCounts)
-            }
-        }
+        gymList
         .navigationTitle("ジム")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("", selection: $mode) {
-                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showAdd = true } label: { Image(systemName: "plus") }
             }
