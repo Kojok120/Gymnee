@@ -19,6 +19,12 @@ struct SocialFeedView: View {
     }
 }
 
+/// 他ユーザーのプロフィールへ遷移するための値（フレンド一覧から）。
+struct UserRef: Hashable {
+    let id: UUID
+    let name: String
+}
+
 private struct SocialContent: View {
     let userId: UUID
 
@@ -154,6 +160,9 @@ private struct SocialContent: View {
         }
         .onChange(of: showMyPosts) { _, shown in if !shown { Task { await refreshFeed() } } }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
+        .navigationDestination(for: UserRef.self) { ref in
+            UserProfileView(targetUserId: ref.id, currentUserId: userId, fallbackName: ref.name)
+        }
     }
 
     // MARK: - Feed
@@ -228,15 +237,17 @@ private struct SocialContent: View {
                     Text("まだ誰もフォローしていません。").foregroundStyle(.secondary)
                 } else {
                     ForEach(following) { f in
-                        HStack {
-                            Image(systemName: "person.fill").foregroundStyle(Theme.energy)
-                            Text(f.followeeDisplayName ?? "ユーザー")
-                            Spacer()
-                            if isMutual(f) {
-                                Label("相互", systemImage: "arrow.left.arrow.right")
-                                    .font(.caption2.bold()).foregroundStyle(Theme.energy)
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(Theme.energy.opacity(0.15), in: Capsule())
+                        NavigationLink(value: UserRef(id: f.followeeId, name: f.followeeDisplayName ?? "ユーザー")) {
+                            HStack {
+                                AvatarView(urlString: profiles.first { $0.id == f.followeeId }?.avatarURL, size: 32)
+                                Text(f.followeeDisplayName ?? "ユーザー")
+                                Spacer()
+                                if isMutual(f) {
+                                    Label("相互", systemImage: "arrow.left.arrow.right")
+                                        .font(.caption2.bold()).foregroundStyle(Theme.energy)
+                                        .padding(.horizontal, 8).padding(.vertical, 3)
+                                        .background(Theme.energy.opacity(0.15), in: Capsule())
+                                }
                             }
                         }
                         .swipeActions { Button("解除", role: .destructive) { unfollow(f) } }
