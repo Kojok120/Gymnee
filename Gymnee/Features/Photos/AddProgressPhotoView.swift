@@ -64,7 +64,11 @@ struct AddProgressPhotoView: View {
             }
             .onChange(of: photoItem) { _, item in
                 Task {
-                    if let data = try? await item?.loadTransferable(type: Data.self) { image = UIImage(data: data) }
+                    guard let data = try? await item?.loadTransferable(type: Data.self) else { return }
+                    // フルデコードせず背景でダウンサンプル（巨大画像の OOM 回避）。
+                    image = await Task.detached(priority: .userInitiated) {
+                        PhotoStore.downsample(data: data, maxPixel: 1280)
+                    }.value
                 }
             }
         }

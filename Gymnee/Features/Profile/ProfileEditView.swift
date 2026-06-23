@@ -94,9 +94,12 @@ struct ProfileEditView: View {
             .onAppear { if name.isEmpty { name = auth.session?.displayName ?? "" } }
             .onChange(of: photoItem) { _, item in
                 Task {
-                    if let data = try? await item?.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
-                        pickedImage = ui
-                    }
+                    guard let data = try? await item?.loadTransferable(type: Data.self) else { return }
+                    // フルデコードせず背景でダウンサンプル（巨大画像の OOM 回避）。
+                    let image = await Task.detached(priority: .userInitiated) {
+                        PhotoStore.downsample(data: data, maxPixel: 1024)
+                    }.value
+                    pickedImage = image
                 }
             }
         }

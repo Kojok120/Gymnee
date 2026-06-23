@@ -311,11 +311,14 @@ struct CheckInView: View {
     // MARK: - Actions
 
     private func loadPhoto(_ item: PhotosPickerItem?) async {
-        guard let item else { return }
-        if let data = try? await item.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
-            image = ui
-            autoSelectNearestGym()
-        }
+        guard let item, let data = try? await item.loadTransferable(type: Data.self) else { return }
+        // フルデコードせず背景でダウンサンプル（巨大画像の OOM 回避）。
+        let ui = await Task.detached(priority: .userInitiated) {
+            PhotoStore.downsample(data: data, maxPixel: 1280)
+        }.value
+        guard let ui else { return }
+        image = ui
+        autoSelectNearestGym()
     }
 
     private func save() {
