@@ -30,6 +30,12 @@ struct RoutineEditorView: View {
                                 Spacer()
                             }
                             HStack {
+                                Image(systemName: "repeat").font(.caption).foregroundStyle(.secondary)
+                                Stepper("目標 \(re.targetReps ?? 10)回", value: bindingTargetReps(re), in: 1...50)
+                                    .fixedSize()
+                            }
+                            .font(.caption)
+                            HStack {
                                 Image(systemName: "timer").font(.caption).foregroundStyle(.secondary)
                                 Stepper("レスト \(re.restSeconds ?? 90)秒", value: bindingRest(re), in: 30...300, step: 15)
                                     .fixedSize()
@@ -53,7 +59,7 @@ struct RoutineEditorView: View {
                         EditButton().font(.caption)
                     }
                 } footer: {
-                    Text("ドラッグで並べ替え、種目別にレスト時間を設定できます。")
+                    Text("ドラッグで並べ替え、種目別に目標セット数・目標レップ・レスト時間を設定できます。")
                 }
             }
             .navigationTitle("ルーティン編集")
@@ -71,6 +77,10 @@ struct RoutineEditorView: View {
 
     private func bindingTargetSets(_ re: RoutineExercise) -> Binding<Int> {
         Binding(get: { re.targetSets }, set: { re.targetSets = $0; re.updatedAt = .now })
+    }
+
+    private func bindingTargetReps(_ re: RoutineExercise) -> Binding<Int> {
+        Binding(get: { re.targetReps ?? 10 }, set: { re.targetReps = $0; re.updatedAt = .now })
     }
 
     private func bindingRest(_ re: RoutineExercise) -> Binding<Int> {

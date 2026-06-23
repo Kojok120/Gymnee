@@ -243,7 +243,9 @@ private struct WorkoutHomeContent: View {
             let setCount = max(re.targetSets, prev.count)
             for s in 0..<setCount {
                 let p = s < prev.count ? prev[s] : nil
-                context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: p?.reps ?? 0, type: p?.type ?? .normal, workoutExercise: we))
+                // レップは「前回実績 → ルーティンの目標レップ → 0」の順で初期値に。
+                let reps = p?.reps ?? re.targetReps ?? 0
+                context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: reps, type: p?.type ?? .normal, workoutExercise: we))
             }
         }
         try? context.save()
