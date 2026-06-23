@@ -134,6 +134,7 @@ private struct SocialContent: View {
         Group {
             switch tab {
             case 1: friendsList
+            case 2: RankingView(userId: userId)
             default: feed
             }
         }
@@ -152,7 +153,8 @@ private struct SocialContent: View {
                 Picker("", selection: $tab) {
                     Text("フィード").tag(0)
                     Text("フレンド").tag(1)
-                }.pickerStyle(.segmented).frame(width: 200)
+                    Text("ランキング").tag(2)
+                }.pickerStyle(.segmented).frame(width: 260)
             }
         }
         .sheet(isPresented: $showMyPosts) {
