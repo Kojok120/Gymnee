@@ -30,3 +30,6 @@ secrets/
 
 # 楽天API生成カタログ（再生成可・applicationIdを含む）
 supabase/catalog_from_rakuten.sql
+
+# Supabase CLI ローカル一時ファイル
+supabase/.temp/
