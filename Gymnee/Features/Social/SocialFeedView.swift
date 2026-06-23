@@ -51,6 +51,7 @@ private struct SocialContent: View {
     @State private var showMyPosts = false
     @State private var editVisit: Visit?
     @State private var visStore = PostVisibilityStore()
+    @State private var feedEntries: [FeedEntry] = []
 
     init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
@@ -170,15 +171,21 @@ private struct SocialContent: View {
 
     // MARK: - Feed
 
-    private var feed: some View {
+    /// フィード描画コストの大きい構築(FeedBuilder＋ソート)を毎描画で行わずキャッシュする。
+    /// データ件数が変わった時だけ再構築（タブ切替時の再計算ラグを排除）。
+    private func rebuildFeedEntries() {
         let ownEntries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility, visibilityStore: visStore)
         let profilesById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let otherEntries = FeedBuilder.othersEntries(feedItems: feedItems, excludingUser: userId, profilesById: profilesById)
-        let entries = (ownEntries + otherEntries).sorted { $0.date > $1.date }
+        feedEntries = (ownEntries + otherEntries).sorted { $0.date > $1.date }
+    }
+
+    // フィードは ScrollView＋カードの見た目を維持。重い構築はメモ化(feedEntries)してタブ切替のラグを排除。
+    private var feed: some View {
         let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
         return ScrollView {
             LazyVStack(spacing: Theme.Spacing.md) {
-                ForEach(entries) { entry in
+                ForEach(feedEntries) { entry in
                     feedRow(entry, reactions: reactionsByItem[entry.id] ?? [])
                         .contextMenu { postMenu(entry) }
                 }
@@ -187,12 +194,13 @@ private struct SocialContent: View {
         }
         .background(Theme.groupedBackground)
         .overlay {
-            if entries.isEmpty {
+            if feedEntries.isEmpty {
                 EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です",
                                message: "フレンドを見つけると、活動が時系列で並びます。",
                                actionTitle: "フレンドを探す", action: { showAddFriend = true })
             }
         }
+        .task(id: "\(visits.count)-\(workouts.count)-\(prs.count)-\(feedItems.count)") { rebuildFeedEntries() }
         .onChange(of: editVisit) { _, v in if v == nil { Task { await refreshFeed() } } }
         .sheet(item: $editVisit) { visit in
             CheckInEditView(visit: visit, visibilityStore: visStore)
@@ -245,7 +253,9 @@ private struct SocialContent: View {
     // MARK: - Friends / 合トレ
 
     private var friendsList: some View {
-        List {
+        // 行ごとの profiles.first(O(N^2)) を避けるため id 索引を一度だけ構築。
+        let avatarById = Dictionary(profiles.map { ($0.id, $0.avatarURL) }, uniquingKeysWith: { a, _ in a })
+        return List {
             Section("フォロー中 (\(following.count))") {
                 if following.isEmpty {
                     Text("まだ誰もフォローしていません。").foregroundStyle(.secondary)
@@ -253,7 +263,7 @@ private struct SocialContent: View {
                     ForEach(following) { f in
                         NavigationLink(value: UserRef(id: f.followeeId, name: f.followeeDisplayName ?? "ユーザー")) {
                             HStack {
-                                AvatarView(urlString: profiles.first { $0.id == f.followeeId }?.avatarURL, size: 32)
+                                AvatarView(urlString: avatarById[f.followeeId] ?? nil, size: 32)
                                 Text(f.followeeDisplayName ?? "ユーザー")
                                 Spacer()
                                 if isMutual(f) {

@@ -51,7 +51,7 @@ struct ProfileView: View {
             Section("マイデータ") {
                 NavigationLink(value: AppRoute.photos) { Label("進捗写真", systemImage: "photo.stack") }
                 NavigationLink(value: AppRoute.body) { Label("身体メトリクス", systemImage: "ruler") }
-                NavigationLink(value: AppRoute.analytics) { Label("分析ダッシュボード", systemImage: "chart.bar.xaxis") }
+                // 分析は専用タブに集約したためここからは外す。
             }
 
             Section {
