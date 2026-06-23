@@ -223,6 +223,29 @@ actor SupabaseClient {
         return config.url.appendingPathComponent("storage/v1/object/public/avatars/\(path)").absoluteString
     }
 
+    struct PlanItem: Sendable { let date: String; let title: String }
+
+    /// AI ワークアウト計画（Edge Function plan-workouts → Gemini）。
+    /// 503(not_configured) など非2xx は send が throw する（呼び出し側で「準備中」扱い）。
+    func planWorkouts(days: [String], routines: [String], weeklyGoal: Int, events: [[String: Any]]) async throws -> [PlanItem] {
+        let url = config.url.appendingPathComponent("functions/v1/plan-workouts")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "days": days, "routines": routines, "weeklyGoal": weeklyGoal, "events": events,
+        ])
+        let data = try await send(request)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let plan = (obj?["plan"] as? [[String: Any]]) ?? []
+        return plan.compactMap { row in
+            guard let d = row["date"] as? String, let t = row["title"] as? String else { return nil }
+            return PlanItem(date: d, title: t)
+        }
+    }
+
     /// アカウント削除 RPC（auth.users 削除 → CASCADE）。要ユーザートークン。
     func deleteAccount() async throws {
         var request = restRequest(path: "rpc/delete_account")

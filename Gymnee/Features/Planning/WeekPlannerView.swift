@@ -10,12 +10,15 @@ struct WeekPlannerView: View {
     @Environment(\.modelContext) private var context
     @Environment(CalendarService.self) private var calendarService
     @Environment(SubscriptionService.self) private var subscription
+    @Environment(AuthService.self) private var auth
+    @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
     @Query private var planned: [PlannedWorkout]
     @Query private var routines: [Routine]
 
     @State private var addDay: PlanDay?
     @State private var showPaywall = false
     @State private var aiInfo = false
+    @State private var aiRunning = false
 
     init(userId: UUID) {
         self.userId = userId
@@ -69,7 +72,11 @@ struct WeekPlannerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { aiPlan() } label: { Label("AIで計画", systemImage: "sparkles") }
+                if aiRunning {
+                    ProgressView()
+                } else {
+                    Button { aiPlan() } label: { Label("AIで計画", systemImage: "sparkles") }
+                }
             }
         }
         .sheet(item: $addDay) { day in addSheet(day.date) }
@@ -155,6 +162,39 @@ struct WeekPlannerView: View {
 
     private func aiPlan() {
         guard subscription.isPremium else { showPaywall = true; return }
-        aiInfo = true   // 8c で Gemini Edge Function 呼び出しに置き換え
+        aiRunning = true
+        Task {
+            let fmt = DateFormatter()
+            fmt.dateFormat = "yyyy-MM-dd"
+            fmt.calendar = cal
+            fmt.locale = Locale(identifier: "en_US_POSIX")
+            let dayStrings = days.map { fmt.string(from: $0) }
+            let routineNames = routines.map(\.name)
+            let evs: [[String: Any]] = days.flatMap { d in
+                events(on: d).map { _, ev in
+                    ["title": ev.title ?? "予定", "date": fmt.string(from: ev.startDate), "allDay": ev.isAllDay]
+                }
+            }
+            let result = await auth.planWorkouts(days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal, events: evs)
+            aiRunning = false
+            if let result, !result.isEmpty {
+                applyPlan(result, formatter: fmt)
+            } else {
+                aiInfo = true   // キー未設定/失敗時は「準備中」案内
+            }
+        }
+    }
+
+    /// AI が返した計画で、今週分の計画を置き換える。
+    private func applyPlan(_ items: [SupabaseClient.PlanItem], formatter: DateFormatter) {
+        for p in planned where days.contains(where: { cal.isDate($0, inSameDayAs: p.date) }) {
+            context.delete(p)
+        }
+        for item in items {
+            guard let date = formatter.date(from: item.date),
+                  days.contains(where: { cal.isDate($0, inSameDayAs: date) }) else { continue }
+            context.insert(PlannedWorkout(userId: userId, date: cal.startOfDay(for: date), title: item.title))
+        }
+        try? context.save()
     }
 }
