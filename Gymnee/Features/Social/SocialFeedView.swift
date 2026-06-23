@@ -338,5 +338,7 @@ private struct SocialContent: View {
                 }
             }
         }
+        .listStyle(.plain)  // フィード/ランキングと容器スタイルを統一（切替時のインセット差による揺れを解消）
+        .background(Theme.groupedBackground)
     }
 }

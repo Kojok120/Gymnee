@@ -415,7 +415,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - follows
     private func encodeFollow(_ m: Follow) -> [String: Any] {
         ["id": lower(m.id), "follower_id": lower(m.followerId), "followee_id": lower(m.followeeId),
-         "followee_display_name": opt(m.followeeDisplayName), "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+         "followee_display_name": opt(m.followeeDisplayName), "notify": m.notify,
+         "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyFollow(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -425,6 +426,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.followerId = uuid(row["follower_id"]) ?? m.followerId
         m.followeeId = uuid(row["followee_id"]) ?? m.followeeId
         m.followeeDisplayName = str(row["followee_display_name"])
+        m.notify = bool(row["notify"]) ?? true
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false

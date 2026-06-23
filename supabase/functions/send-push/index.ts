@@ -169,8 +169,9 @@ Deno.serve(async (req) => {
   const visitorName = profile?.display_name ?? "フレンド";
   const gymName = (gymRes.data as { name?: string } | null)?.name;
 
+  // notify=true のフォロワーにのみ送る（フレンドごとの通知ON/OFF設定を尊重）。
   const { data: followers } = await db
-    .from("follows").select("follower_id").eq("followee_id", visitorId);
+    .from("follows").select("follower_id").eq("followee_id", visitorId).eq("notify", true);
   const followerIds = (followers ?? []).map((r: { follower_id: string }) => r.follower_id);
 
   const title = `${visitorName}さんがジムに行きました`;

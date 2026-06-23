@@ -55,8 +55,11 @@ struct DayDetailView: View {
                                 }
                             }
                             Spacer()
-                            Button("開始") { startPlan(plan) }
-                                .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+                            // 計画の開始は「今日」のみ。過去/未来は閲覧・削除のみ。
+                            if calendar.isDateInToday(date) {
+                                Button("開始") { startPlan(plan) }
+                                    .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+                            }
                         }
                         .swipeActions {
                             Button("削除", role: .destructive) { deletePlan(plan) }

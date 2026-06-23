@@ -77,10 +77,33 @@ struct UserProfileView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(isFollowing ? Color.secondary : Theme.energy)
+
+            // フォロー中のみ：このフレンドのチェックイン通知をON/OFF。
+            if isFollowing, let myFollow = myFollows.first {
+                Toggle(isOn: notifyBinding(myFollow)) {
+                    Label("チェックイン通知を受け取る", systemImage: "bell")
+                        .font(.subheadline)
+                }
+                .tint(Theme.lime)
+                .padding(.top, Theme.Spacing.xs)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(Theme.Spacing.lg)
         .gymneeCard()
+    }
+
+    private func notifyBinding(_ f: Follow) -> Binding<Bool> {
+        Binding(
+            get: { f.notify },
+            set: { newVal in
+                f.notify = newVal
+                f.updatedAt = .now
+                f.isDirty = true
+                try? context.save()
+                sync.enqueue(PendingChange(entity: "follows", recordId: f.id, operation: .upsert, updatedAt: f.updatedAt))
+            }
+        )
     }
 
     private func follow() {

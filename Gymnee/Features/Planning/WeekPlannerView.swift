@@ -134,10 +134,13 @@ struct WeekPlannerView: View {
             .buttonStyle(.plain)
             Text(p.title).strikethrough(p.isDone).foregroundStyle(p.isDone ? .secondary : .primary)
             Spacer()
-            Button { start(p) } label: {
-                Image(systemName: "play.circle.fill").font(.title3).foregroundStyle(Theme.lime)
+            // 計画の開始は「今日」のみ。過去/未来は閲覧・チェック・移動のみ。
+            if cal.isDateInToday(p.date) {
+                Button { start(p) } label: {
+                    Image(systemName: "play.circle.fill").font(.title3).foregroundStyle(Theme.lime)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             Menu {
                 Menu("別の日へ移動") {
                     ForEach(days, id: \.self) { d in
