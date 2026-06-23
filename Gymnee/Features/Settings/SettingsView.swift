@@ -119,12 +119,6 @@ struct SettingsView: View {
                 }
                 .tint(.primary)
                 .disabled(!health.isAvailable)
-
-                if auth.currentUserId != nil {
-                    NavigationLink(value: AppRoute.analytics) {
-                        Label("分析・CSVエクスポート", systemImage: "chart.bar.xaxis")
-                    }
-                }
             }
 
             Section("プラン") {

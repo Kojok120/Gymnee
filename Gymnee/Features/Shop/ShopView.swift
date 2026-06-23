@@ -18,7 +18,7 @@ struct ShopView: View {
     }
 }
 
-private struct ShopContent: View {
+struct ShopContent: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context

@@ -30,6 +30,7 @@ private struct CalendarHomeContent: View {
 
     @State private var anchor = Date.now
     @State private var selectedDate: SelectedDay?
+    @State private var showCheckIn = false
 
     /// navigationDestination(item:) は Identifiable を要求するため Date をラップする。
     private struct SelectedDay: Identifiable, Hashable {
@@ -59,12 +60,16 @@ private struct CalendarHomeContent: View {
         .navigationTitle("Gymnee")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                NavigationLink(value: AppRoute.gyms) { Image(systemName: "building.2") }
+                Button { showCheckIn = true } label: {
+                    Label("チェックイン", systemImage: "camera.fill")
+                }
+                .tint(Theme.energy)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(value: AppRoute.profile) { Image(systemName: "person.crop.circle") }
             }
         }
+        .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
         // AppRoute の destination は NavigationStack ルート（ここ）で一括宣言する。
         // push 先（ProfileView 等）の子リンクからも確実に解決できるようにするため
         // （iOS 26.5 では pushed view 上の navigationDestination が無効化される）。

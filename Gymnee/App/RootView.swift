@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum AppTab: Hashable {
-    case calendar, workout, checkin, social, shop
+    case calendar, workout, social, analytics, other
 }
 
 /// アプリのルート。未ログインは Onboarding、ログイン済みはタブ骨格を表示する（§5）。
@@ -11,9 +11,6 @@ struct RootView: View {
     @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .calendar
-    /// チェックイン起動の直前タブ。閉じたらここへ戻す（中央タブは Color.clear で空表示になるため）。
-    @State private var previousTab: AppTab = .calendar
-    @State private var showCheckIn = false
     #if DEBUG
     @State private var debugWorkout: Workout?
     @State private var debugRoutine: Routine?
@@ -103,7 +100,7 @@ struct RootView: View {
     #endif
 
     private var mainTabs: some View {
-        TabView(selection: tabBinding) {
+        TabView(selection: $selection) {
             CalendarHomeView()
                 .tabItem { Label("カレンダー", systemImage: "calendar") }
                 .tag(AppTab.calendar)
@@ -112,36 +109,36 @@ struct RootView: View {
                 .tabItem { Label("記録", systemImage: "dumbbell.fill") }
                 .tag(AppTab.workout)
 
-            Color.clear
-                .tabItem { Label("チェックイン", systemImage: "camera.fill") }
-                .tag(AppTab.checkin)
-
             SocialFeedView()
                 .tabItem { Label("ソーシャル", systemImage: "person.2.fill") }
                 .tag(AppTab.social)
 
-            ShopView()
-                .tabItem { Label("ショップ", systemImage: "bag.fill") }
-                .tag(AppTab.shop)
+            analyticsTab
+                .tabItem { Label("分析", systemImage: "chart.bar.xaxis") }
+                .tag(AppTab.analytics)
+
+            otherTab
+                .tabItem { Label("その他", systemImage: "ellipsis") }
+                .tag(AppTab.other)
         }
         .tint(Theme.energy)
-        .fullScreenCover(isPresented: $showCheckIn, onDismiss: { selection = previousTab }) {
-            CheckInView()
+    }
+
+    @ViewBuilder
+    private var analyticsTab: some View {
+        if let uid = auth.currentUserId {
+            NavigationStack { AnalyticsView(userId: uid) }
+        } else {
+            EmptyStateView(systemImage: "chart.bar", title: "未ログイン")
         }
     }
 
-    /// 中央タブ選択をチェックインフロー起動に振り替えるバインディング。
-    private var tabBinding: Binding<AppTab> {
-        Binding(
-            get: { selection },
-            set: { newValue in
-                if newValue == .checkin {
-                    previousTab = selection      // 戻り先を覚えておく
-                    showCheckIn = true
-                } else {
-                    selection = newValue
-                }
-            }
-        )
+    @ViewBuilder
+    private var otherTab: some View {
+        if let uid = auth.currentUserId {
+            OtherTabView(userId: uid)
+        } else {
+            EmptyStateView(systemImage: "ellipsis", title: "未ログイン")
+        }
     }
 }
