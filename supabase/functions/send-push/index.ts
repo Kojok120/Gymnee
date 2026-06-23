@@ -63,24 +63,86 @@ async function makeProviderToken(): Promise<string> {
   return `${signingInput}.${base64UrlFromBytes(new Uint8Array(sig))}`;
 }
 
+// deno-lint-ignore no-explicit-any
+type DB = any;
+
+/// 指定ユーザー群の端末トークンへ APNs 送信。失効(410)は掃除。送信数を返す。
+async function pushToUsers(
+  db: DB, userIds: string[], title: string, message: string, extra: Record<string, unknown>,
+): Promise<number> {
+  if (userIds.length === 0) return 0;
+  const { data: tokens } = await db.from("device_tokens").select("token").in("user_id", userIds);
+  const deviceTokens = (tokens ?? []).map((r: { token: string }) => r.token);
+  if (deviceTokens.length === 0) return 0;
+
+  const providerToken = await makeProviderToken();
+  const apsBody = JSON.stringify({ aps: { alert: { title, body: message }, sound: "default" }, ...extra });
+  let sent = 0;
+  const stale: string[] = [];
+  await Promise.all(deviceTokens.map(async (token: string) => {
+    const res = await fetch(`https://${APNS_HOST}/3/device/${token}`, {
+      method: "POST",
+      headers: {
+        "authorization": `bearer ${providerToken}`,
+        "apns-topic": APNS_BUNDLE_ID,
+        "apns-push-type": "alert",
+        "content-type": "application/json",
+      },
+      body: apsBody,
+    });
+    if (res.status === 200) sent++;
+    else if (res.status === 410) stale.push(token);
+    else console.error(`APNs ${res.status} for token ${token.slice(0, 8)}…: ${await res.text()}`);
+  }));
+  if (stale.length > 0) await db.from("device_tokens").delete().in("token", stale);
+  return sent;
+}
+
 Deno.serve(async (req) => {
   // DB トリガー以外からの呼び出しを拒否（共有シークレット照合）。
   if (PUSH_SHARED_SECRET && req.headers.get("X-Push-Secret") !== PUSH_SHARED_SECRET) {
     return new Response("forbidden", { status: 403 });
   }
 
-  let payload: { event?: string; visitId?: string };
+  let payload: { event?: string; visitId?: string; reactionId?: string };
   try {
     payload = await req.json();
   } catch {
     return new Response("bad request", { status: 400 });
   }
+
+  const db = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+  const event = payload.event ?? "friend_checkin";
+
+  // --- いいね/応援 → 投稿者へ通知 ---
+  if (event === "reaction") {
+    const reactionId = payload.reactionId;
+    if (!reactionId) return new Response("missing reactionId", { status: 400 });
+    const { data: reaction } = await db
+      .from("post_reactions").select("user_id, feed_item_id, kind").eq("id", reactionId).single();
+    if (!reaction) return new Response(JSON.stringify({ sent: 0, reason: "reaction not found" }), { status: 200 });
+    const reactorId = reaction.user_id as string;
+    const { data: item } = await db
+      .from("feed_items").select("user_id").eq("id", reaction.feed_item_id).single();
+    if (!item) return new Response(JSON.stringify({ sent: 0, reason: "feed_item not found" }), { status: 200 });
+    const authorId = item.user_id as string;
+    if (authorId === reactorId) return new Response(JSON.stringify({ sent: 0, reason: "self" }), { status: 200 });
+
+    const { data: profile } = await db.from("profiles").select("display_name").eq("id", reactorId).single();
+    const reactorName = profile?.display_name ?? "フレンド";
+    const isCheer = reaction.kind === "cheer";
+    const title = isCheer ? `${reactorName}さんが応援しました` : `${reactorName}さんがいいねしました`;
+    const message = isCheer ? "あなたの投稿を応援📣" : "あなたの投稿にいいね👍";
+    const sent = await pushToUsers(db, [authorId], title, message, {
+      type: "reaction", feedItemId: reaction.feed_item_id,
+    });
+    return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
+  // --- フレンドのチェックイン → フォロワーへ通知（既定） ---
   const visitId = payload.visitId;
   if (!visitId) return new Response("missing visitId", { status: 400 });
 
-  const db = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-
-  // 訪問・訪問者名・ジム名。
   const { data: visit } = await db
     .from("visits").select("user_id, gym_id").eq("id", visitId).single();
   if (!visit) return new Response(JSON.stringify({ sent: 0, reason: "visit not found" }), { status: 200 });
@@ -95,54 +157,14 @@ Deno.serve(async (req) => {
   const visitorName = profile?.display_name ?? "フレンド";
   const gymName = (gymRes.data as { name?: string } | null)?.name;
 
-  // フォロワー（followee_id = 訪問者）の端末トークンを集める。
   const { data: followers } = await db
     .from("follows").select("follower_id").eq("followee_id", visitorId);
-  const followerIds = (followers ?? []).map((r) => r.follower_id as string);
-  if (followerIds.length === 0) return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
+  const followerIds = (followers ?? []).map((r: { follower_id: string }) => r.follower_id);
 
-  const { data: tokens } = await db
-    .from("device_tokens").select("token").in("user_id", followerIds);
-  const deviceTokens = (tokens ?? []).map((r) => r.token as string);
-  if (deviceTokens.length === 0) return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
-
-  const providerToken = await makeProviderToken();
   const title = `${visitorName}さんがジムに行きました`;
   const message = gymName ? `${gymName} にチェックイン💪` : "チェックインしました💪";
-  const apsBody = JSON.stringify({
-    aps: { alert: { title, body: message }, sound: "default" },
-    type: "friend_checkin",
-    visitorId,
+  const sent = await pushToUsers(db, followerIds, title, message, {
+    type: "friend_checkin", visitorId,
   });
-
-  let sent = 0;
-  const stale: string[] = [];
-  await Promise.all(deviceTokens.map(async (token) => {
-    const res = await fetch(`https://${APNS_HOST}/3/device/${token}`, {
-      method: "POST",
-      headers: {
-        "authorization": `bearer ${providerToken}`,
-        "apns-topic": APNS_BUNDLE_ID,
-        "apns-push-type": "alert",
-        "content-type": "application/json",
-      },
-      body: apsBody,
-    });
-    if (res.status === 200) {
-      sent++;
-    } else if (res.status === 410) {
-      stale.push(token); // BadDeviceToken/Unregistered → 後で掃除
-    } else {
-      console.error(`APNs ${res.status} for token ${token.slice(0, 8)}…: ${await res.text()}`);
-    }
-  }));
-
-  // 失効トークンの掃除（アンインストール端末など）。
-  if (stale.length > 0) {
-    await db.from("device_tokens").delete().in("token", stale);
-  }
-
-  return new Response(JSON.stringify({ sent, stale: stale.length }), {
-    headers: { "content-type": "application/json" },
-  });
+  return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
 });
