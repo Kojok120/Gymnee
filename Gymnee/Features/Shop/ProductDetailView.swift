@@ -83,7 +83,7 @@ struct ProductDetailView: View {
     }
 
     private func logSupply() {
-        let log = SupplyLog(userId: userId, date: .now, amount: 1, productName: product.name, product: product)
+        let log = SupplyLog(userId: userId, date: .now, amount: 1, productName: product.name)
         context.insert(log)
         try? context.save()
         sync.enqueue(PendingChange(entity: "supply_logs", recordId: log.id, operation: .upsert, updatedAt: log.updatedAt))

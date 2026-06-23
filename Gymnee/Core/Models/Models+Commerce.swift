@@ -72,11 +72,12 @@ final class SupplyLog {
     var date: Date
     /// 摂取量（回数・スクープ数など）。
     var amount: Double
+    /// 商品名（denormalized）。商品との突合はこれで行う。
+    /// ※ 以前あった `product: Product?`（inverse 無し関連）はカタログ同期で参照先が削除されると
+    ///   宙ぶらりんになり SwiftData がクラッシュしたため撤去。product_id は productName から解決する。
     var productName: String?
     var updatedAt: Date
     var isDirty: Bool
-
-    var product: Product?
 
     init(
         id: UUID = UUID(),
@@ -84,7 +85,6 @@ final class SupplyLog {
         date: Date = .now,
         amount: Double = 1,
         productName: String? = nil,
-        product: Product? = nil,
         updatedAt: Date = .now,
         isDirty: Bool = true
     ) {
@@ -93,7 +93,6 @@ final class SupplyLog {
         self.date = date
         self.amount = amount
         self.productName = productName
-        self.product = product
         self.updatedAt = updatedAt
         self.isDirty = isDirty
     }

@@ -52,8 +52,25 @@ actor SupabaseClient {
         var request = restRequest(path: table, query: query)
         request.httpMethod = "POST"
         request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try JSONSerialization.data(withJSONObject: rows)
+        // NaN/Infinity を含むと JSONSerialization が Obj-C 例外を投げ try で捕捉できず即死するため、
+        // 非有限の数値を null に正規化してから JSON 化する。
+        let cleaned = rows.map { Self.sanitizeForJSON($0) as? [String: Any] ?? $0 }
+        request.httpBody = try JSONSerialization.data(withJSONObject: cleaned)
         try await send(request)
+    }
+
+    /// JSON 化前に非有限の Double/Float（NaN/Infinity）を NSNull に置換する（再帰）。
+    private static func sanitizeForJSON(_ value: Any) -> Any {
+        switch value {
+        case let d as Double: return d.isFinite ? d : NSNull()
+        case let f as Float: return f.isFinite ? f : NSNull()
+        case let n as NSNumber:
+            let dv = n.doubleValue
+            return dv.isFinite ? n : NSNull()
+        case let dict as [String: Any]: return dict.mapValues { sanitizeForJSON($0) }
+        case let arr as [Any]: return arr.map { sanitizeForJSON($0) }
+        default: return value
+        }
     }
 
     /// APNs デバイストークンを登録（token の unique 制約で衝突解決）。user_id は DB 既定の auth.uid()。
@@ -143,15 +160,16 @@ actor SupabaseClient {
     func googleAuthorizeURL(redirectTo: String) -> PKCEChallenge {
         let verifier = Self.randomCodeVerifier()
         let challenge = Self.codeChallenge(for: verifier)
-        var comps = URLComponents(url: config.url.appendingPathComponent("auth/v1/authorize"), resolvingAgainstBaseURL: false)!
-        comps.queryItems = [
+        let base = config.url.appendingPathComponent("auth/v1/authorize")
+        var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        comps?.queryItems = [
             URLQueryItem(name: "provider", value: "google"),
             URLQueryItem(name: "redirect_to", value: redirectTo),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "code_challenge_method", value: "s256"),
             URLQueryItem(name: "apikey", value: config.anonKey),
         ]
-        return PKCEChallenge(url: comps.url!, codeVerifier: verifier)
+        return PKCEChallenge(url: comps?.url ?? base, codeVerifier: verifier)
     }
 
     /// authorize 後に返る code を PKCE で session に交換する。
@@ -260,12 +278,23 @@ actor SupabaseClient {
             guard let d = row["date"] as? String, let t = row["title"] as? String else { return nil }
             let exs = (row["exercises"] as? [[String: Any]] ?? []).compactMap { e -> PlanExercise? in
                 guard let name = e["name"] as? String else { return nil }
+                // NaN/Infinity を含む Double を Int 変換すると Int(NaN) でトラップするため安全変換する。
+                func intVal(_ any: Any?, _ def: Int) -> Int {
+                    if let i = any as? Int { return i }
+                    if let d = any as? Double, d.isFinite { return Int(d) }
+                    return def
+                }
+                func dblVal(_ any: Any?, _ def: Double) -> Double {
+                    if let d = any as? Double, d.isFinite { return d }
+                    if let i = any as? Int { return Double(i) }
+                    return def
+                }
                 return PlanExercise(
                     name: name,
                     muscleGroup: e["muscleGroup"] as? String,
-                    sets: (e["sets"] as? Int) ?? Int((e["sets"] as? Double) ?? 3),
-                    reps: (e["reps"] as? Int) ?? Int((e["reps"] as? Double) ?? 10),
-                    weight: (e["weight"] as? Double) ?? Double((e["weight"] as? Int) ?? 0)
+                    sets: max(1, intVal(e["sets"], 3)),
+                    reps: max(0, intVal(e["reps"], 10)),
+                    weight: max(0, dblVal(e["weight"], 0))
                 )
             }
             return PlanItem(date: d, title: t, exercises: exs)
@@ -283,15 +312,18 @@ actor SupabaseClient {
     // MARK: - Request building
 
     private func restRequest(path: String, query: String? = nil) -> URLRequest {
-        var components = URLComponents(url: config.url.appendingPathComponent("rest/v1/\(path)"), resolvingAgainstBaseURL: false)!
-        components.percentEncodedQuery = query
-        return signed(URLRequest(url: components.url!))
+        let base = config.url.appendingPathComponent("rest/v1/\(path)")
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        components?.percentEncodedQuery = query
+        // 不正な query で url が nil でも強制アンラップでは落とさず、query を捨てた base にフォールバック。
+        return signed(URLRequest(url: components?.url ?? base))
     }
 
     private func authRequest(path: String, query: String? = nil) -> URLRequest {
-        var components = URLComponents(url: config.url.appendingPathComponent("auth/v1/\(path)"), resolvingAgainstBaseURL: false)!
-        components.percentEncodedQuery = query
-        return signed(URLRequest(url: components.url!))
+        let base = config.url.appendingPathComponent("auth/v1/\(path)")
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        components?.percentEncodedQuery = query
+        return signed(URLRequest(url: components?.url ?? base))
     }
 
     private func signed(_ request: URLRequest) -> URLRequest {
@@ -324,7 +356,11 @@ actor SupabaseClient {
             let refreshToken = dict["refresh_token"] as? String
         else { throw SupabaseError.invalidResponse }
         let user = dict["user"] as? [String: Any]
-        let userId = (user?["id"] as? String).flatMap(UUID.init) ?? UUID()
+        // userId が無効ならランダム UUID で握らず失敗させる（誤った id でセッション確立すると
+        // 以後すべての RLS が弾かれ「同期されない」深刻な不整合になるため）。
+        guard let userId = (user?["id"] as? String).flatMap(UUID.init) else {
+            throw SupabaseError.invalidResponse
+        }
         let email = user?["email"] as? String
         let meta = user?["user_metadata"] as? [String: Any]
         let fullName = (meta?["full_name"] as? String) ?? (meta?["name"] as? String)

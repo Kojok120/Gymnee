@@ -37,6 +37,11 @@ enum FeedPublisher {
                 sync.enqueue(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
                 changed = true
             } else {
+                // 同 id(=refId) の FeedItem が既に存在する場合の unique 衝突insertを避ける（保険）。
+                let rid = refId
+                if (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == rid })))?.first != nil {
+                    return
+                }
                 let item = FeedItem(id: refId, userId: userId, authorDisplayName: authorName, type: type, refId: refId, summary: summary, visibility: vis, createdAt: date)
                 context.insert(item)
                 sync.enqueue(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))

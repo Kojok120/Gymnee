@@ -97,7 +97,13 @@ final class SwiftDataSyncStore: SyncBackingStore {
             default: break
             }
         }
-        try? context.save()
+        // save 失敗（unique 衝突・制約違反等）を握り潰すと context が dirty のまま以後の save が
+        // 連鎖失敗し同期が沈黙崩壊する。失敗時は rollback して context をクリーンに戻す。
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+        }
     }
 
     /// 既存があり、ローカルの方が新しければ true（＝リモートを捨てる）。LWW（§9-7）。
@@ -544,7 +550,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
         let m = existing ?? insert(SupplyLog(id: id, userId: uuid(row["user_id"]) ?? UUID()))
         m.userId = uuid(row["user_id"]) ?? m.userId
-        m.product = uuid(row["product_id"]).flatMap(fetchProduct)
         m.date = date(row["date"]) ?? m.date
         m.amount = dbl(row["amount"]) ?? m.amount
         m.productName = str(row["product_name"])
