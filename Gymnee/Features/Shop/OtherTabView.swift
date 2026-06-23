@@ -10,8 +10,19 @@ struct OtherTabView: View {
         NavigationStack {
             List {
                 Section {
+                    NavigationLink(value: AppRoute.profile) { menuRow("プロフィール", icon: "person.crop.circle.fill", tint: Theme.lime) }
+                }
+                Section("マイデータ") {
+                    NavigationLink(value: AppRoute.photos) { menuRow("進捗写真", icon: "photo.on.rectangle.angled", tint: Theme.energy) }
+                    NavigationLink(value: AppRoute.body) { menuRow("身体メトリクス", icon: "figure", tint: Theme.energy) }
+                    NavigationLink(value: AppRoute.analytics) { menuRow("分析", icon: "chart.bar.xaxis", tint: Theme.energy) }
+                }
+                Section("メニュー") {
                     NavigationLink(value: Dest.shop) { menuRow("ショップ", icon: "bag.fill", tint: Theme.lime) }
                     NavigationLink(value: Dest.gym) { menuRow("ジム管理", icon: "building.2.fill", tint: Theme.energy) }
+                }
+                Section {
+                    NavigationLink(value: AppRoute.settings) { menuRow("設定", icon: "gearshape.fill", tint: Theme.textSecondary) }
                 }
             }
             .navigationTitle("その他")

@@ -11,6 +11,7 @@ struct RootView: View {
     @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .calendar
+    @AppStorage("gymnee.setupDone") private var setupDone = false
     #if DEBUG
     @State private var debugWorkout: Workout?
     @State private var debugRoutine: Routine?
@@ -99,6 +100,14 @@ struct RootView: View {
     }
     #endif
 
+    /// 初回サインイン後の初期設定を一度だけ提示（DEBUGデモ時は出さない）。
+    private var shouldShowSetup: Bool {
+        #if DEBUG
+        if DebugSupport.demoRequested { return false }
+        #endif
+        return auth.isSignedIn && !setupDone
+    }
+
     private var mainTabs: some View {
         TabView(selection: $selection) {
             CalendarHomeView()
@@ -122,6 +131,9 @@ struct RootView: View {
                 .tag(AppTab.other)
         }
         .tint(Theme.energy)
+        .fullScreenCover(isPresented: Binding(get: { shouldShowSetup }, set: { _ in })) {
+            SetupOnboardingView()
+        }
         // チェックイン完了後は記録タブへ（今日の計画の「開始」導線を見せる）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in
             selection = .workout
