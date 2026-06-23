@@ -22,27 +22,18 @@ struct RoutineEditorView: View {
                 }
                 Section {
                     ForEach(orderedExercises) { re in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(re.exercise?.name ?? "種目").font(.body)
-                            HStack {
-                                Stepper("\(re.targetSets)セット", value: bindingTargetSets(re), in: 1...10)
-                                    .fixedSize()
-                                Spacer()
-                            }
-                            HStack {
-                                Image(systemName: "repeat").font(.caption).foregroundStyle(.secondary)
-                                Stepper("目標 \(re.targetReps ?? 10)回", value: bindingTargetReps(re), in: 1...50)
-                                    .fixedSize()
-                            }
-                            .font(.caption)
-                            HStack {
-                                Image(systemName: "timer").font(.caption).foregroundStyle(.secondary)
-                                Stepper("レスト \(re.restSeconds ?? 90)秒", value: bindingRest(re), in: 30...300, step: 15)
-                                    .fixedSize()
-                            }
-                            .font(.caption)
+                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                            Text(re.exercise?.name ?? "種目")
+                                .font(.headline)
+                                .lineLimit(1).truncationMode(.tail)
+                            stepperRow(icon: "square.stack.3d.up.fill", label: "セット",
+                                       value: "\(re.targetSets)", binding: bindingTargetSets(re), range: 1...10)
+                            stepperRow(icon: "repeat", label: "目標レップ",
+                                       value: "\(re.targetReps ?? 10) 回", binding: bindingTargetReps(re), range: 1...50)
+                            stepperRow(icon: "timer", label: "レスト",
+                                       value: "\(re.restSeconds ?? 90) 秒", binding: bindingRest(re), range: 30...300, step: 15)
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, Theme.Spacing.xs)
                     }
                     .onDelete(perform: delete)
                     .onMove(perform: move)
@@ -72,6 +63,23 @@ struct RoutineEditorView: View {
             .sheet(isPresented: $showPicker) {
                 ExercisePickerView { addExercise($0) }
             }
+        }
+    }
+
+    /// 種目ごとの設定行（アイコン＋ラベル左、値＋コンパクトStepper右）。整然と揃える。
+    private func stepperRow(icon: String, label: String, value: String, binding: Binding<Int>, range: ClosedRange<Int>, step: Int = 1) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Label(label, systemImage: icon)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .labelStyle(.titleAndIcon)
+            Spacer(minLength: Theme.Spacing.sm)
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .foregroundStyle(Theme.textPrimary)
+            Stepper("", value: binding, in: range, step: step)
+                .labelsHidden()
+                .fixedSize()
         }
     }
 

@@ -180,18 +180,19 @@ private struct SocialContent: View {
         feedEntries = (ownEntries + otherEntries).sorted { $0.date > $1.date }
     }
 
-    // フィードは ScrollView＋カードの見た目を維持。重い構築はメモ化(feedEntries)してタブ切替のラグを排除。
+    // フレンド/ランキングと容器(List)を統一してタブ切替の描画を滑らかに。重い構築はメモ化(feedEntries)。
     private var feed: some View {
         let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
-        return ScrollView {
-            LazyVStack(spacing: Theme.Spacing.md) {
-                ForEach(feedEntries) { entry in
-                    feedRow(entry, reactions: reactionsByItem[entry.id] ?? [])
-                        .contextMenu { postMenu(entry) }
-                }
+        return List {
+            ForEach(feedEntries) { entry in
+                feedRow(entry, reactions: reactionsByItem[entry.id] ?? [])
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .contextMenu { postMenu(entry) }
             }
-            .padding(Theme.Spacing.lg)
         }
+        .listStyle(.plain)
         .background(Theme.groupedBackground)
         .overlay {
             if feedEntries.isEmpty {

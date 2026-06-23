@@ -66,13 +66,28 @@ struct RankingView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: Theme.Spacing.lg) {
+        // フィード/フレンドと容器(List)を統一してタブ切替を滑らかにする。
+        List {
+            Section {
                 streakCard
-                leaderboard
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
-            .padding(Theme.Spacing.lg)
+            Section("今週のランキング") {
+                if ranking.count <= 1 {
+                    Text("フォローすると、友達と今週のXPを競えます。")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                ForEach(Array(ranking.enumerated()), id: \.element.id) { index, rank in
+                    rankRow(index: index, rank: rank)
+                }
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
         }
+        .listStyle(.plain)
         .background(Theme.groupedBackground)
     }
 
@@ -95,33 +110,21 @@ struct RankingView: View {
         .frame(maxWidth: .infinity)
     }
 
-    @ViewBuilder
-    private var leaderboard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "今週のランキング")
-            if ranking.count <= 1 {
-                Text("フォローすると、友達と今週のXPを競えます。")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .gymneeCard()
-            }
-            ForEach(Array(ranking.enumerated()), id: \.element.id) { index, rank in
-                HStack(spacing: Theme.Spacing.md) {
-                    Text("\(index + 1)")
-                        .font(.headline.monospacedDigit())
-                        .foregroundStyle(index < 3 ? Theme.lime : Theme.textTertiary)
-                        .frame(width: 28)
-                    AvatarView(urlString: rank.avatarURL, size: 36)
-                    Text(rank.name).font(.subheadline.weight(rank.isMe ? .bold : .regular))
-                        .lineLimit(1).truncationMode(.tail)
-                    Spacer(minLength: Theme.Spacing.sm)
-                    Text("\(rank.xp) XP").font(.subheadline.bold().monospacedDigit()).foregroundStyle(Theme.energy)
-                        .lineLimit(1).layoutPriority(1)
-                }
-                .padding(.vertical, 6).padding(.horizontal, Theme.Spacing.md)
-                .background(rank.isMe ? Theme.limeSoft : Color(uiColor: .secondarySystemGroupedBackground),
-                            in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-            }
+    private func rankRow(index: Int, rank: Rank) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Text("\(index + 1)")
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(index < 3 ? Theme.lime : Theme.textTertiary)
+                .frame(width: 28)
+            AvatarView(urlString: rank.avatarURL, size: 36)
+            Text(rank.name).font(.subheadline.weight(rank.isMe ? .bold : .regular))
+                .lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: Theme.Spacing.sm)
+            Text("\(rank.xp) XP").font(.subheadline.bold().monospacedDigit()).foregroundStyle(Theme.energy)
+                .lineLimit(1).layoutPriority(1)
         }
+        .padding(.vertical, 6).padding(.horizontal, Theme.Spacing.md)
+        .background(rank.isMe ? Theme.limeSoft : Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 }
