@@ -54,8 +54,16 @@ enum GymneeSchema {
             SeedData.seedIfNeeded(container.mainContext)
             return container
         } catch {
-            // 移行不能など致命時はインメモリで起動継続（データは失わせず assert で検知）。
-            assertionFailure("ModelContainer の生成に失敗: \(error)")
+            // DEV 方針（[[gymnee-dev-db-wipe-ok]]）：移行不能ならストアを作り直す（既存データは破棄してよい）。
+            // リリース前は効率優先で、スキーマ変更のたびに移行を作らない。本番公開時はこの方針を見直す。
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: configuration.url.path + suffix))
+            }
+            if let fresh = try? ModelContainer(for: schema, migrationPlan: GymneeMigrationPlan.self, configurations: configuration) {
+                SeedData.seedIfNeeded(fresh.mainContext)
+                return fresh
+            }
+            // それでも駄目ならインメモリで起動継続。
             let fallback = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             // swiftlint:disable:next force_try
             return try! ModelContainer(for: schema, configurations: fallback)
