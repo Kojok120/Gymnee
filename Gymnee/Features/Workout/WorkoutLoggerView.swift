@@ -144,6 +144,14 @@ struct WorkoutLoggerView: View {
 
     private func exerciseMenu(_ we: WorkoutExercise) -> some View {
         Menu {
+            if let exercise = we.exercise {
+                Picker("重量の数え方", selection: Binding(
+                    get: { exercise.weightMode },
+                    set: { setWeightMode($0, for: exercise) }
+                )) {
+                    ForEach(WeightMode.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+            }
             Button { addWarmup(to: we) } label: { Label("ウォームアップを追加", systemImage: "flame") }
             Button { editingNote = we } label: { Label("メモを編集", systemImage: "note.text") }
             if we.supersetGroup != nil {
@@ -248,6 +256,15 @@ struct WorkoutLoggerView: View {
     }
 
     // MARK: - Actions
+
+    /// 種目の既定の重量の数え方を変更（両側/片側）。同期キューへ。
+    private func setWeightMode(_ mode: WeightMode, for exercise: Exercise) {
+        exercise.weightMode = mode
+        exercise.updatedAt = .now
+        exercise.isDirty = true
+        try? context.save()
+        sync.enqueue(PendingChange(entity: "exercises", recordId: exercise.id, operation: .upsert, updatedAt: exercise.updatedAt))
+    }
 
     private func addExercise(_ exercise: Exercise) {
         let we = WorkoutExercise(orderIndex: workout.exercises.count, workout: workout, exercise: exercise)

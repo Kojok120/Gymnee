@@ -233,7 +233,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func encodeExercise(_ m: Exercise) -> [String: Any] {
         var row: [String: Any] = [
             "id": lower(m.id), "name": m.name, "muscle_group": m.muscleGroupRaw,
-            "equipment": m.equipmentRaw, "is_custom": m.isCustom, "updated_at": iso(m.updatedAt),
+            "equipment": m.equipmentRaw, "is_custom": m.isCustom, "weight_mode": m.weightModeRaw,
+            "updated_at": iso(m.updatedAt),
         ]
         // RLS(exercises_insert_own) は created_by = auth.uid() を要求する。プリセット(nil)や
         // 旧 uid のままだと弾かれる。push できるのは本人のローカル種目だけなので、同期中の本人 id を
@@ -251,6 +252,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.equipmentRaw = str(row["equipment"]) ?? m.equipmentRaw
         m.isCustom = bool(row["is_custom"]) ?? m.isCustom
         m.createdBy = uuid(row["created_by"])
+        m.weightModeRaw = str(row["weight_mode"]) ?? m.weightModeRaw
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
     }
@@ -282,6 +284,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         ["id": lower(m.id), "workout_exercise_id": opt(m.workoutExercise?.id.uuidString.lowercased()),
          "set_index": m.setIndex, "weight": m.weight, "reps": m.reps, "rpe": opt(m.rpe), "rir": opt(m.rir),
          "type": m.typeRaw, "is_pr": m.isPR, "is_completed": m.isCompleted,
+         "weight_mode_override": opt(m.weightModeOverrideRaw),
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyExerciseSet(_ row: [String: Any]) {
@@ -296,6 +299,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.typeRaw = str(row["type"]) ?? m.typeRaw
         m.isPR = bool(row["is_pr"]) ?? m.isPR
         m.isCompleted = bool(row["is_completed"]) ?? m.isCompleted
+        m.weightModeOverrideRaw = str(row["weight_mode_override"])
         m.workoutExercise = uuid(row["workout_exercise_id"]).flatMap(fetchWorkoutExercise)
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt

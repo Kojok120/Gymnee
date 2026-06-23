@@ -60,6 +60,7 @@ struct SetRowView: View {
             typeButton
 
             field(value: $set.weight, suffix: "kg", width: 58)
+            weightModeBadge
             Text("×").font(.headline).foregroundStyle(Theme.textTertiary)
             intField(value: $set.reps, width: 40)
 
@@ -79,6 +80,23 @@ struct SetRowView: View {
         .padding(.vertical, 2)
         .animation(.bouncy, value: set.isPR)
         .animation(.snappy, value: set.isCompleted)
+    }
+
+    /// 重量の数え方バッジ（両/片）。タップで「種目に従う／両側／片側」を選べる。上書き時は lime。
+    private var weightModeBadge: some View {
+        Menu {
+            Button("種目に従う") { set.weightModeOverride = nil; set.updatedAt = .now; set.isDirty = true }
+            ForEach(WeightMode.allCases, id: \.self) { m in
+                Button(m.label) { set.weightModeOverride = m; set.updatedAt = .now; set.isDirty = true }
+            }
+        } label: {
+            Text(set.effectiveWeightMode.short)
+                .font(.caption2.bold())
+                .foregroundStyle(set.weightModeOverride == nil ? Theme.textTertiary : Theme.onLime)
+                .frame(width: 20, height: 20)
+                .background((set.weightModeOverride == nil ? Theme.textTertiary.opacity(0.12) : Theme.lime), in: Circle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var typeButton: some View {
