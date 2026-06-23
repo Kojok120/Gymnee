@@ -110,7 +110,20 @@ struct RankingView: View {
         .frame(maxWidth: .infinity)
     }
 
+    @ViewBuilder
     private func rankRow(index: Int, rank: Rank) -> some View {
+        if rank.isMe {
+            rowContent(index: index, rank: rank)
+        } else {
+            // 自分以外はタップでユーザー詳細へ（フレンド一覧と同じ UserRef 遷移）。
+            NavigationLink(value: UserRef(id: rank.id, name: rank.name)) {
+                rowContent(index: index, rank: rank)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func rowContent(index: Int, rank: Rank) -> some View {
         HStack(spacing: Theme.Spacing.md) {
             Text("\(index + 1)")
                 .font(.headline.monospacedDigit())
