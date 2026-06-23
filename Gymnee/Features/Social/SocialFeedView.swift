@@ -134,17 +134,22 @@ private struct SocialContent: View {
     }
 
     private var mainContent: some View {
-        Group {
-            switch tab {
-            case 1: friendsList
-            case 2: RankingView(userId: userId)
-            default: feed
-            }
+        // 3画面を常時マウントし不透明度だけ切替（switchの差し替えトランジション＝中身が畳まれ展開する動きを排除）。
+        // レイアウトは固定されるため「枠だけ」切り替わる。
+        ZStack {
+            feed
+                .opacity(tab == 0 ? 1 : 0)
+                .allowsHitTesting(tab == 0)
+            friendsList
+                .opacity(tab == 1 ? 1 : 0)
+                .allowsHitTesting(tab == 1)
+            RankingView(userId: userId)
+                .opacity(tab == 2 ? 1 : 0)
+                .allowsHitTesting(tab == 2)
         }
         .navigationTitle("ソーシャル")
         .navigationBarTitleDisplayMode(.inline)
         .task { await refreshFeed() }
-        .refreshable { await refreshFeed() }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showMyPosts = true } label: {
@@ -198,6 +203,7 @@ private struct SocialContent: View {
             }
         }
         .listStyle(.plain)
+        .refreshable { await refreshFeed() }
         .background(Theme.groupedBackground)
         .overlay {
             if feedEntries.isEmpty {
