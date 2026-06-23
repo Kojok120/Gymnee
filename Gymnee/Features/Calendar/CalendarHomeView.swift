@@ -26,6 +26,7 @@ private struct CalendarHomeContent: View {
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
     @Query private var gyms: [Gym]
+    @Query private var prs: [PersonalRecord]
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
     @State private var anchor = Date.now
@@ -45,6 +46,7 @@ private struct CalendarHomeContent: View {
         self.userId = userId
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date)
+        _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _gyms = Query(sort: \Gym.name)
     }
 
@@ -52,6 +54,7 @@ private struct CalendarHomeContent: View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
                 heroCard
+                weeklyRecapCard
                 calendarCard
                 upcomingSection
             }
@@ -113,10 +116,47 @@ private struct CalendarHomeContent: View {
         let today = calendar.startOfDay(for: .now)
         let checkedInToday = visits.contains { calendar.isDateInToday($0.visitedAt) }
         notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: checkedInToday)
+        notifications.scheduleWeeklyRecap()
         let planned = workouts
             .filter { $0.isPlanned && $0.completedAt == nil && $0.date >= today }
             .map { (id: $0.id, name: $0.name, date: $0.date) }
         notifications.schedulePlannedWorkouts(planned)
+    }
+
+    // MARK: - 今週のまとめ（達成レイヤー / T1b）
+
+    private var weekStart: Date {
+        var cal = Calendar.current
+        cal.firstWeekday = 2 // 月曜始まり（ランキングと統一）
+        return cal.dateInterval(of: .weekOfYear, for: .now)?.start ?? calendar.startOfDay(for: .now)
+    }
+    private var weekVisits: Int { visits.filter { $0.visitedAt >= weekStart }.count }
+    private var weekWorkouts: Int { workouts.filter { ($0.completedAt ?? .distantPast) >= weekStart }.count }
+    private var weekPRs: Int { prs.filter { $0.achievedAt >= weekStart }.count }
+
+    @ViewBuilder
+    private var weeklyRecapCard: some View {
+        if weekVisits + weekWorkouts + weekPRs > 0 {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Text("今週のまとめ").font(.headline).foregroundStyle(Theme.textPrimary)
+                HStack(spacing: Theme.Spacing.md) {
+                    recapStat("来店", weekVisits, "figure.walk")
+                    recapStat("ワークアウト", weekWorkouts, "dumbbell.fill")
+                    recapStat("新PR", weekPRs, "medal.fill")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gymneeCard()
+        }
+    }
+
+    private func recapStat(_ label: String, _ value: Int, _ icon: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon).font(.subheadline).foregroundStyle(Theme.lime)
+            Text("\(value)").font(.title3.bold().monospacedDigit()).foregroundStyle(Theme.textPrimary)
+            Text(label).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     /// Watch（App Group キュー）からのクイックチェックインを来店として取り込む。

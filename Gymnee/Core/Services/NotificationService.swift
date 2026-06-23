@@ -38,12 +38,23 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     /// PR 達成（アプリ内トーストの補完として通知センターにも残す）。
     func notifyPR(_ text: String) {
-        fire(id: "gymnee.pr.\(UUID().uuidString)", title: "新記録達成！🏆", body: text)
+        fire(id: "gymnee.pr.\(UUID().uuidString)", title: "新記録達成！🏆", body: text, userInfo: ["type": "analytics"])
     }
 
     /// 在庫リマインド（補給ロギングから枯渇予測）。商品ごとに 1 件（重複排除）。
     func notifySupplyLow(productId: UUID, productName: String) {
-        fire(id: "gymnee.supply.\(productId.uuidString)", title: "そろそろ無くなりそう", body: "\(productName) の在庫が少なくなっています。補充しますか？")
+        fire(id: "gymnee.supply.\(productId.uuidString)", title: "そろそろ無くなりそう", body: "\(productName) の在庫が少なくなっています。補充しますか？", userInfo: ["type": "shop"])
+    }
+
+    /// 週次リキャップ（毎週日曜 19:00）。今週の成果を振り返らせ、再訪を促す。
+    func scheduleWeeklyRecap() {
+        let id = "gymnee.weeklyRecap"
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        var comps = DateComponents()
+        comps.weekday = 1 // 日曜
+        comps.hour = 19; comps.minute = 0
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+        schedule(id: id, title: "今週のまとめ📊", body: "今週のトレーニングを振り返ってみよう。", trigger: trigger, userInfo: ["type": "recap"])
     }
 
     /// 連続記録の途切れ予告。今日の 20:00 に「まだチェックインしていない」場合の催促を予約。
@@ -55,7 +66,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         comps.hour = 20; comps.minute = 0
         guard let fireDate = Calendar.current.date(from: comps), fireDate > .now else { return }
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-        schedule(id: id, title: "連続\(streak)日が途切れそう🔥", body: "今日もチェックインして記録を伸ばそう！", trigger: trigger)
+        schedule(id: id, title: "連続\(streak)日が途切れそう🔥", body: "今日もチェックインして記録を伸ばそう！", trigger: trigger, userInfo: ["type": "checkin"])
     }
 
     /// 予定ワークアウトのリマインド（当日朝 8:00）。
@@ -67,21 +78,22 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             comps.hour = 8; comps.minute = 0
             guard let fireDate = Calendar.current.date(from: comps), fireDate > .now else { continue }
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-            schedule(id: id, title: "今日の予定: \(item.name)", body: "ワークアウトの予定があります💪", trigger: trigger)
+            schedule(id: id, title: "今日の予定: \(item.name)", body: "ワークアウトの予定があります💪", trigger: trigger, userInfo: ["type": "workout"])
         }
     }
 
     // MARK: - helpers
 
-    private func fire(id: String, title: String, body: String) {
-        schedule(id: id, title: title, body: body, trigger: nil)
+    private func fire(id: String, title: String, body: String, userInfo: [String: String] = [:]) {
+        schedule(id: id, title: title, body: body, trigger: nil, userInfo: userInfo)
     }
 
-    private func schedule(id: String, title: String, body: String, trigger: UNNotificationTrigger?) {
+    private func schedule(id: String, title: String, body: String, trigger: UNNotificationTrigger?, userInfo: [String: String] = [:]) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
+        content.userInfo = userInfo
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
     }
 
