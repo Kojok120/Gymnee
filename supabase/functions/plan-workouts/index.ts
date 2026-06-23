@@ -6,7 +6,9 @@
 // キー設定: supabase secrets set GEMINI_API_KEY=xxxx
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const MODEL = "gemini-2.0-flash";
+// モデルは GEMINI_MODEL シークレットで切替可能（既定 gemini-2.5-flash）。
+// 例: supabase secrets set GEMINI_MODEL=gemini-3.5-flash（アクセス可能なキーになったら）。
+const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
