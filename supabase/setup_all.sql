@@ -24,6 +24,8 @@ create table if not exists public.profiles (
     display_name text not null default 'ゲスト',
     avatar_url   text,
     bio          text,
+    notify_likes boolean not null default true,
+    notify_friend_checkin boolean not null default true,
     created_at   timestamptz not null default now(),
     updated_at   timestamptz not null default now()
 );
@@ -728,12 +730,12 @@ alter table public.exercise_sets add column if not exists weight_mode_override t
 -- ============================================================
 -- migrations/0010_post_reactions.sql
 -- ============================================================
--- ⑨ いいね/応援。投稿(feed_items)へのリアクション。本番には supabase db query で適用済み。
+-- ⑨ いいね。投稿(feed_items)へのリアクション。本番には supabase db query で適用済み。
 create table if not exists public.post_reactions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   feed_item_id uuid not null references public.feed_items(id) on delete cascade,
-  kind text not null check (kind in ('like','cheer')),
+  kind text not null check (kind in ('like')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, feed_item_id, kind)

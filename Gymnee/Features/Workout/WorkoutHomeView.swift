@@ -55,7 +55,7 @@ private struct WorkoutHomeContent: View {
             .padding(Theme.Spacing.lg)
         }
         .background(Theme.bg0)
-        .navigationTitle("記録")
+        .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $activeWorkout) { workout in
             WorkoutLoggerView(workout: workout)
         }

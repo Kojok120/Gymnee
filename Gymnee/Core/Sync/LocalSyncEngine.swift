@@ -105,6 +105,18 @@ final class LocalSyncEngine: SyncEngine {
         try? await push()
     }
 
+    /// 指定ユーザーのプロフィールを id 指定で取得し、ローカルへ反映する。
+    /// 差分 pull が取り込めないフォロー相手/フィード著者のプロフィール（名前・アバター）を確実に揃える。
+    func ensureProfiles(ids: Set<UUID>) async {
+        guard let remote, let store, !ids.isEmpty else { return }
+        do {
+            let rows = try await remote.fetchProfiles(ids: Array(ids))
+            if !rows.isEmpty { store.apply(table: "profiles", rows: rows) }
+        } catch {
+            // 取得失敗はフィード表示の致命ではないため握りつぶす（次回再試行）。
+        }
+    }
+
     /// ローカルの変更を Supabase へ送出する。成功分を outbox から除去する。
     func push() async throws {
         guard let remote, let store else { return } // リモート未設定＝no-op（ローカルのみ）

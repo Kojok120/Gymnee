@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
   const db = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   const event = payload.event ?? "friend_checkin";
 
-  // --- いいね/応援 → 投稿者へ通知 ---
+  // --- いいね → 投稿者へ通知 ---
   if (event === "reaction") {
     const reactionId = payload.reactionId;
     if (!reactionId) return new Response("missing reactionId", { status: 400 });
@@ -140,11 +140,16 @@ Deno.serve(async (req) => {
     const authorId = item.user_id as string;
     if (authorId === reactorId) return new Response(JSON.stringify({ sent: 0, reason: "self" }), { status: 200 });
 
+    // 投稿者が「いいね通知」をオフにしていたら送らない（列が無い場合は既定で送る）。
+    const { data: authorPref } = await db.from("profiles").select("notify_likes").eq("id", authorId).single();
+    if (authorPref && authorPref.notify_likes === false) {
+      return new Response(JSON.stringify({ sent: 0, reason: "muted" }), { status: 200 });
+    }
+
     const { data: profile } = await db.from("profiles").select("display_name").eq("id", reactorId).single();
     const reactorName = profile?.display_name ?? "フレンド";
-    const isCheer = reaction.kind === "cheer";
-    const title = isCheer ? `${reactorName}さんが応援しました` : `${reactorName}さんがいいねしました`;
-    const message = isCheer ? "あなたの投稿を応援📣" : "あなたの投稿にいいね👍";
+    const title = `${reactorName}さんがいいねしました`;
+    const message = "あなたの投稿にいいね👍";
     const sent = await pushToUsers(db, [authorId], title, message, {
       type: "reaction", feedItemId: reaction.feed_item_id,
     });
@@ -172,7 +177,20 @@ Deno.serve(async (req) => {
   // notify=true のフォロワーにのみ送る（フレンドごとの通知ON/OFF設定を尊重）。
   const { data: followers } = await db
     .from("follows").select("follower_id").eq("followee_id", visitorId).eq("notify", true);
-  const followerIds = (followers ?? []).map((r: { follower_id: string }) => r.follower_id);
+  let followerIds = (followers ?? []).map((r: { follower_id: string }) => r.follower_id);
+
+  // 受信者側の「フレンドのチェックイン通知」設定（profiles.notify_friend_checkin）を尊重。
+  // 列が無い/未取得の場合は既定で送る。
+  if (followerIds.length > 0) {
+    const { data: prefs } = await db
+      .from("profiles").select("id, notify_friend_checkin").in("id", followerIds);
+    const muted = new Set(
+      (prefs ?? [])
+        .filter((p: { notify_friend_checkin?: boolean }) => p.notify_friend_checkin === false)
+        .map((p: { id: string }) => p.id),
+    );
+    followerIds = followerIds.filter((id: string) => !muted.has(id));
+  }
 
   const title = `${visitorName}さんがジムに行きました`;
   const message = gymName ? `${gymName} にチェックイン💪` : "チェックインしました💪";

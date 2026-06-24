@@ -7,6 +7,21 @@ import Observation
 @MainActor
 @Observable
 final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
+    /// 通知の種類別 ON/OFF の保存キー（設定画面の @AppStorage と共有）。
+    /// プッシュ系（likes / friendCheckin）はサーバー側 profiles 列でも制御する。
+    enum PrefKey {
+        static let likes = "gymnee.notif.likes"
+        static let friendCheckin = "gymnee.notif.friendCheckin"
+        static let streak = "gymnee.notif.streak"
+        static let planned = "gymnee.notif.planned"
+        static let weeklyRecap = "gymnee.notif.weeklyRecap"
+    }
+
+    /// 未設定（キー無し）は ON 扱い。
+    private func prefEnabled(_ key: String) -> Bool {
+        UserDefaults.standard.object(forKey: key) == nil ? true : UserDefaults.standard.bool(forKey: key)
+    }
+
     private let center = UNUserNotificationCenter.current()
     private(set) var isAuthorized = false
     /// 生の許諾状態。プリパーミッション/再有効化の出し分けに使う。
@@ -67,6 +82,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     func scheduleWeeklyRecap() {
         let id = "gymnee.weeklyRecap"
         center.removePendingNotificationRequests(withIdentifiers: [id])
+        guard prefEnabled(PrefKey.weeklyRecap) else { return }
         var comps = DateComponents()
         comps.weekday = 1 // 日曜
         comps.hour = 19; comps.minute = 0
@@ -78,6 +94,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     func scheduleStreakReminder(streak: Int, hasCheckedInToday: Bool) {
         let id = "gymnee.streakRisk"
         center.removePendingNotificationRequests(withIdentifiers: [id])
+        guard prefEnabled(PrefKey.streak) else { return }
         guard streak > 0, !hasCheckedInToday else { return }
         var comps = Calendar.current.dateComponents([.year, .month, .day], from: .now)
         comps.hour = 20; comps.minute = 0
@@ -88,6 +105,12 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     /// 予定ワークアウトのリマインド（当日朝 8:00）。
     func schedulePlannedWorkouts(_ items: [(id: UUID, name: String, date: Date)]) {
+        guard prefEnabled(PrefKey.planned) else {
+            for item in items {
+                center.removePendingNotificationRequests(withIdentifiers: ["gymnee.planned.\(item.id.uuidString)"])
+            }
+            return
+        }
         for item in items {
             let id = "gymnee.planned.\(item.id.uuidString)"
             center.removePendingNotificationRequests(withIdentifiers: [id])
@@ -96,6 +119,23 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             guard let fireDate = Calendar.current.date(from: comps), fireDate > .now else { continue }
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
             schedule(id: id, title: "今日の予定: \(item.name)", body: "ワークアウトの予定があります💪", trigger: trigger, userInfo: ["type": "workout"])
+        }
+    }
+
+    // MARK: - 種類別トグルOFF時の即時キャンセル（設定画面から呼ぶ）
+
+    func cancelStreakReminder() {
+        center.removePendingNotificationRequests(withIdentifiers: ["gymnee.streakRisk"])
+    }
+    func cancelWeeklyRecap() {
+        center.removePendingNotificationRequests(withIdentifiers: ["gymnee.weeklyRecap"])
+    }
+    /// 予定ワークアウトは id が動的（gymnee.planned.<uuid>）なので接頭辞で一括除去。
+    func cancelPlannedReminders() {
+        center.getPendingNotificationRequests { reqs in
+            let ids = reqs.map(\.identifier).filter { $0.hasPrefix("gymnee.planned.") }
+            guard !ids.isEmpty else { return }
+            Task { @MainActor in self.center.removePendingNotificationRequests(withIdentifiers: ids) }
         }
     }
 

@@ -46,7 +46,6 @@ struct AnalyticsView: View {
             .padding(Theme.Spacing.lg)
         }
         .background(Theme.groupedBackground)
-        .navigationTitle("分析")
         .navigationBarTitleDisplayMode(.inline)
     }
 

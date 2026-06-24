@@ -50,6 +50,9 @@ private struct SocialContent: View {
     @State private var reportTarget: ReportUserTarget?
     @State private var showMyPosts = false
     @State private var editVisit: Visit?
+    @State private var workoutDetail: Workout?
+    /// ダブルタップいいね時のハート演出対象（feed_item id）。
+    @State private var burstId: UUID?
     @State private var visStore = PostVisibilityStore()
     @State private var feedEntries: [FeedEntry] = []
 
@@ -77,6 +80,12 @@ private struct SocialContent: View {
             sync: sync
         )
         await sync.syncNow()
+        // フォロー相手・フィード著者のプロフィール（名前/アバター）を id 指定で確実に取り込む。
+        // 差分 pull が後追いフォロー相手の古い行を取り込まず「ユーザー」表示になるのを防ぐ。
+        let profileIds = Set(following.map(\.followeeId))
+            .union(feedItems.map(\.userId))
+            .subtracting([userId])
+        await sync.ensureProfiles(ids: profileIds)
         rebuildFeedEntries() // 公開範囲変更/同期取り込み後に表示を確実に更新
     }
 
@@ -94,8 +103,22 @@ private struct SocialContent: View {
         let followingIds = Set(following.map(\.followeeId))
         return follows.filter { $0.followeeId == userId && !followingIds.contains($0.followerId) && !blockedIds.contains($0.followerId) }
     }
+    /// feed_items の著者名（profiles 行が無い相手でも名前を出せる安全網）。
+    private func feedAuthorName(for id: UUID) -> String? {
+        feedItems.lazy.filter { $0.userId == id }.compactMap { $0.authorDisplayName }.first { !$0.isEmpty }
+    }
     private func displayName(for id: UUID) -> String {
-        profiles.first(where: { $0.id == id })?.displayName ?? "ユーザー"
+        if let n = profiles.first(where: { $0.id == id })?.displayName, !n.isEmpty { return n }
+        if let n = feedAuthorName(for: id) { return n }
+        return "ユーザー"
+    }
+    /// フォロー相手の表示名。プロフィール→feed著者名→follow キャッシュ→既定の順。
+    /// （profiles 行が無い相手でも feed_items.author_display_name から実名を出せる）
+    private func followeeName(_ f: Follow) -> String {
+        if let n = profiles.first(where: { $0.id == f.followeeId })?.displayName, !n.isEmpty { return n }
+        if let n = feedAuthorName(for: f.followeeId) { return n }
+        if let cached = f.followeeDisplayName, !cached.isEmpty { return cached }
+        return "ユーザー"
     }
 
     /// 対象ユーザーをブロック（フォロー双方向解除＋Block作成・同期）。
@@ -217,31 +240,56 @@ private struct SocialContent: View {
         .sheet(item: $editVisit) { visit in
             CheckInEditView(visit: visit, visibilityStore: visStore)
         }
+        // ワークアウトは値ベースで詳細へ（List内クロージャNavigationLinkのシェブロン/ハングを回避）。
+        .navigationDestination(item: $workoutDetail) { workout in
+            WorkoutDetailView(workout: workout)
+        }
     }
 
-    /// カード（タップで開く）＋いいね/応援バー。
+    /// カード（シングルタップで開く／ダブルタップでいいね）＋いいねバー。
+    /// ワークアウトもチェックインも同じカード仕様（矢印なし）に統一。
     private func feedRow(_ entry: FeedEntry, reactions: [PostReaction]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            feedCard(entry)
+        let myLike = reactions.first { $0.userId == userId && $0.kindRaw == ReactionKind.like.rawValue }
+        return VStack(alignment: .leading, spacing: 4) {
+            FeedCardView(entry: entry)
+                .contentShape(Rectangle())
+                // ダブルタップでいいね。シングルタップ（詳細/編集）と両立させるため count:2 を先に宣言。
+                .onTapGesture(count: 2) { doubleTapLike(entry, existing: myLike) }
+                .onTapGesture { openEntry(entry) }
+                .overlay { burstHeart(for: entry.id) }
             ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions)
         }
     }
 
-    /// タップで開く（ワークアウト＝詳細、チェックイン＝編集）。仕様を統一。
+    /// ダブルタップいいね時に一瞬だけ表示する大きなハート。
     @ViewBuilder
-    private func feedCard(_ entry: FeedEntry) -> some View {
+    private func burstHeart(for id: UUID) -> some View {
+        if burstId == id {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 72))
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.25), radius: 12)
+                .transition(.scale(scale: 0.4).combined(with: .opacity))
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// シングルタップ：ワークアウト＝詳細、チェックイン＝編集（自分の投稿のみ実体がある）。
+    private func openEntry(_ entry: FeedEntry) {
         if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
-            NavigationLink {
-                WorkoutDetailView(workout: workout)
-            } label: {
-                FeedCardView(entry: entry)
-            }
-            .buttonStyle(.plain)
+            workoutDetail = workout
         } else if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
-            Button { editVisit = visit } label: { FeedCardView(entry: entry) }
-                .buttonStyle(.plain)
-        } else {
-            FeedCardView(entry: entry)
+            editVisit = visit
+        }
+    }
+
+    /// ダブルタップ：いいねを付ける（既にいいね済みでもハート演出だけ出す）。
+    private func doubleTapLike(_ entry: FeedEntry, existing: PostReaction?) {
+        ReactionActions.addLike(feedItemId: entry.id, userId: userId, existing: existing, context: context, sync: sync)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { burstId = entry.id }
+        Task {
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            withAnimation(.easeOut(duration: 0.25)) { if burstId == entry.id { burstId = nil } }
         }
     }
 
@@ -273,10 +321,10 @@ private struct SocialContent: View {
                     Text("まだ誰もフォローしていません。").foregroundStyle(.secondary)
                 } else {
                     ForEach(following) { f in
-                        NavigationLink(value: UserRef(id: f.followeeId, name: f.followeeDisplayName ?? "ユーザー")) {
+                        NavigationLink(value: UserRef(id: f.followeeId, name: followeeName(f))) {
                             HStack {
                                 AvatarView(urlString: avatarById[f.followeeId] ?? nil, size: 32)
-                                Text(f.followeeDisplayName ?? "ユーザー")
+                                Text(followeeName(f))
                                 Spacer()
                                 if isMutual(f) {
                                     Label("相互", systemImage: "arrow.left.arrow.right")
@@ -289,10 +337,10 @@ private struct SocialContent: View {
                         .swipeActions { Button("解除", role: .destructive) { unfollow(f) } }
                         .contextMenu {
                             Button("通報", systemImage: "flag") {
-                                reportTarget = ReportUserTarget(id: f.followeeId, displayName: f.followeeDisplayName ?? "ユーザー")
+                                reportTarget = ReportUserTarget(id: f.followeeId, displayName: followeeName(f))
                             }
                             Button("ブロック", systemImage: "hand.raised", role: .destructive) {
-                                blockUser(f.followeeId, name: f.followeeDisplayName ?? "ユーザー")
+                                blockUser(f.followeeId, name: followeeName(f))
                             }
                         }
                     }

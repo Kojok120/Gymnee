@@ -102,6 +102,19 @@ actor SupabaseClient {
         return (json as? [[String: Any]]) ?? []
     }
 
+    /// 指定 id 群のプロフィールを更新時刻に依存せず取得する。
+    /// 差分 pull（updated_at > 基準）はフォロー後追い相手の古いプロフィールを取り込めないため、
+    /// フォロー中/フィード著者のプロフィールはこの id 指定取得で確実にローカルへ反映する。
+    func fetchProfiles(ids: [UUID]) async throws -> [[String: Any]] {
+        guard !ids.isEmpty else { return [] }
+        let list = ids.map { $0.uuidString.lowercased() }.joined(separator: ",")
+        var request = restRequest(path: "profiles", query: "select=*&id=in.(\(list))")
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        let json = try JSONSerialization.jsonObject(with: data)
+        return (json as? [[String: Any]]) ?? []
+    }
+
     // MARK: - Auth (GoTrue)
 
     /// Sign in with Apple の identityToken を Supabase Auth に渡してセッションを得る。

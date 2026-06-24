@@ -153,21 +153,18 @@ enum WeightMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// 投稿へのリアクション種別（§6.11 ゲーミフィケーション）。いいねと応援。
+/// 投稿へのリアクション種別（§6.11 ゲーミフィケーション）。いいねのみ。
 enum ReactionKind: String, Codable, CaseIterable, Sendable {
     case like
-    case cheer
 
     var label: String {
         switch self {
         case .like: return "いいね"
-        case .cheer: return "応援"
         }
     }
     var icon: String {
         switch self {
         case .like: return "heart.fill"
-        case .cheer: return "hands.clap.fill"
         }
     }
 }

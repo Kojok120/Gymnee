@@ -29,7 +29,15 @@ struct UserProfileView: View {
     }
 
     private var profile: Profile? { profiles.first { $0.id == targetUserId } }
-    private var displayName: String { profile?.displayName ?? fallbackName }
+    /// feed_items は著者名を非正規化保持。profiles 行が無い相手でも名前を出せる安全網。
+    private var feedName: String? {
+        theirFeedItems.lazy.compactMap { $0.authorDisplayName }.first { !$0.isEmpty }
+    }
+    private var displayName: String {
+        if let n = profile?.displayName, !n.isEmpty { return n }
+        if let n = feedName { return n }
+        return fallbackName
+    }
     private var isFollowing: Bool { !myFollows.isEmpty }
 
     private var entries: [FeedEntry] {

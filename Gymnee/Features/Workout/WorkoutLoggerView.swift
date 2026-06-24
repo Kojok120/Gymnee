@@ -19,6 +19,8 @@ struct WorkoutLoggerView: View {
     @State private var showSummary = false
     @State private var pendingShare = false
     @State private var showShareCard = false
+    /// 「完了」を押したか。押さずに離脱した空ワークアウトは破棄するための判定に使う。
+    @State private var didFinish = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
 
@@ -38,6 +40,7 @@ struct WorkoutLoggerView: View {
         .listStyle(.insetGrouped)
         .navigationTitle(workout.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { discardIfAbandoned() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("完了") { finish() }.bold()
@@ -349,7 +352,21 @@ struct WorkoutLoggerView: View {
         }
     }
 
+    /// 「完了」を押さずに離脱し、種目を1つも追加していない（＝空の）新規ワークアウトは破棄する。
+    /// 1セットでも記録していれば（種目追加時に必ずセットが入る）残す。完了済み/予定は対象外。
+    private func discardIfAbandoned() {
+        guard !didFinish,
+              workout.completedAt == nil,
+              !workout.isPlanned,
+              workout.exercises.isEmpty
+        else { return }
+        // startEmpty 由来の空ワークアウトは sync へ未送出のため、ローカル削除のみでよい。
+        context.delete(workout)
+        try? context.save()
+    }
+
     private func finish() {
+        didFinish = true
         workout.completedAt = .now
         workout.isPlanned = false
         workout.updatedAt = .now

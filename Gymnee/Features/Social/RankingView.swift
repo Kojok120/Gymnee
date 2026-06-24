@@ -19,6 +19,12 @@ struct RankingView: View {
         _myVisits = Query(filter: #Predicate<Visit> { $0.userId == userId })
     }
 
+    /// 空文字を nil 扱いにする（プロフィール表示名が "" の時に「ユーザー」へ正しくフォールバックさせる）。
+    private static func nonEmpty(_ s: String?) -> String? {
+        guard let s, !s.isEmpty else { return nil }
+        return s
+    }
+
     private static func xp(for type: FeedItemType) -> Int {
         switch type {
         case .workout: return 30
@@ -55,10 +61,18 @@ struct RankingView: View {
         ids.formUnion(follows.map(\.followeeId))
         ids.formUnion(xpByUser.keys)
         let profileById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // feed_items は著者名を非正規化保持しているため、プロフィール未同期でも名前を出せる安全網。
+        // （差分プロフィール同期が後追いフォロー相手の古い行を取り込まず「ユーザー」化するのを防ぐ）
+        var feedNameById: [UUID: String] = [:]
+        for item in feedItems {
+            if let n = item.authorDisplayName, !n.isEmpty { feedNameById[item.userId] = n }
+        }
         let rows = ids.map { id -> Rank in
             let isMe = id == userId
-            let name = isMe ? "あなた" : (profileById[id]?.displayName
-                ?? follows.first { $0.followeeId == id }?.followeeDisplayName ?? "ユーザー")
+            let name = isMe ? "あなた" : (Self.nonEmpty(profileById[id]?.displayName)
+                ?? feedNameById[id]
+                ?? Self.nonEmpty(follows.first { $0.followeeId == id }?.followeeDisplayName)
+                ?? "ユーザー")
             let avatar = isMe ? (myAvatarURL.isEmpty ? nil : myAvatarURL) : profileById[id]?.avatarURL
             return Rank(id: id, name: name, avatarURL: avatar, xp: xpByUser[id] ?? 0, isMe: isMe)
         }

@@ -116,7 +116,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - profiles
     private func encodeProfile(_ m: Profile) -> [String: Any] {
         ["id": lower(m.id), "display_name": m.displayName, "avatar_url": opt(m.avatarURL),
-         "bio": opt(m.bio), "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+         "bio": opt(m.bio), "notify_likes": m.notifyLikes, "notify_friend_checkin": m.notifyFriendCheckin,
+         "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyProfile(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -126,6 +127,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.displayName = str(row["display_name"]) ?? m.displayName
         m.avatarURL = str(row["avatar_url"])
         m.bio = str(row["bio"])
+        m.notifyLikes = bool(row["notify_likes"]) ?? m.notifyLikes
+        m.notifyFriendCheckin = bool(row["notify_friend_checkin"]) ?? m.notifyFriendCheckin
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false

@@ -21,6 +21,12 @@ struct SettingsView: View {
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
+    // 通知の種類別 ON/OFF。ローカル通知はこの @AppStorage を NotificationService が参照。
+    @AppStorage(NotificationService.PrefKey.streak) private var notifStreak = true
+    @AppStorage(NotificationService.PrefKey.planned) private var notifPlanned = true
+    @AppStorage(NotificationService.PrefKey.weeklyRecap) private var notifWeeklyRecap = true
+    // プッシュ通知（いいね/フレンドのチェックイン）は profiles 列が真実の情報源。
+    @Query private var profiles: [Profile]
 
     var body: some View {
         Form {
@@ -69,7 +75,7 @@ struct SettingsView: View {
             Section {
                 switch notifications.status {
                 case .authorized, .provisional, .ephemeral:
-                    LabeledContent("通知", value: "オン")
+                    EmptyView()
                 case .denied:
                     Button {
                         notifications.openSystemSettings()
@@ -83,10 +89,27 @@ struct SettingsView: View {
                         Label("通知をオンにする", systemImage: "bell")
                     }
                 }
+
+                // 種類別トグル（許諾が無い間は無効表示）。
+                Group {
+                    Toggle("いいね", isOn: pushBinding(\.notifyLikes))
+                        .disabled(myProfile == nil)
+                    Toggle("フレンドのチェックイン", isOn: pushBinding(\.notifyFriendCheckin))
+                        .disabled(myProfile == nil)
+                    Toggle("連続記録の途切れ予告", isOn: $notifStreak)
+                        .onChange(of: notifStreak) { _, on in if !on { notifications.cancelStreakReminder() } }
+                    Toggle("予定ワークアウト", isOn: $notifPlanned)
+                        .onChange(of: notifPlanned) { _, on in if !on { notifications.cancelPlannedReminders() } }
+                    Toggle("今週のまとめ", isOn: $notifWeeklyRecap)
+                        .onChange(of: notifWeeklyRecap) { _, on in if !on { notifications.cancelWeeklyRecap() } }
+                }
+                .disabled(!notifAuthorized)
             } header: {
                 Text("通知")
             } footer: {
-                Text("連続記録の途切れ予告・フレンドの活動・今週のまとめを受け取れます。")
+                Text(notifAuthorized
+                     ? "受け取りたい通知の種類を選べます。"
+                     : "通知をオンにすると、種類ごとに受け取り設定ができます。")
             }
             .task { await notifications.refreshStatus() }
 
@@ -231,6 +254,35 @@ struct SettingsView: View {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
         return "\(v) (\(b))"
+    }
+
+    /// 通知が許諾済みか（種類別トグルの有効/無効の判定）。
+    private var notifAuthorized: Bool {
+        switch notifications.status {
+        case .authorized, .provisional, .ephemeral: return true
+        default: return false
+        }
+    }
+
+    /// 自分のプロフィール行（プッシュ通知設定の保存先）。
+    private var myProfile: Profile? {
+        guard let uid = auth.currentUserId else { return nil }
+        return profiles.first { $0.id == uid }
+    }
+
+    /// プッシュ通知トグル（profiles 列を直接読み書き＋同期キューへ）。
+    private func pushBinding(_ keyPath: ReferenceWritableKeyPath<Profile, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { myProfile?[keyPath: keyPath] ?? true },
+            set: { newValue in
+                guard let p = myProfile else { return }
+                p[keyPath: keyPath] = newValue
+                p.updatedAt = .now
+                p.isDirty = true
+                try? context.save()
+                sync.enqueue(PendingChange(entity: "profiles", recordId: p.id, operation: .upsert, updatedAt: p.updatedAt))
+            }
+        )
     }
 
     /// ローカルデータの全削除（§7 データ削除）。

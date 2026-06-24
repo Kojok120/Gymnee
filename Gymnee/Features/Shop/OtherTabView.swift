@@ -1,20 +1,17 @@
 import SwiftUI
 
-/// 「その他」タブ（§5 ナビ）。ショップとジムを大きなカードで選び、選択するとその画面を表示する。
+/// 「その他」タブ（§5 ナビ）。ショップを大きなカードで選び、選択するとショップ画面を表示する。
 /// （プロフィール/設定/マイデータはカレンダーのプロフィールから到達する。）
 struct OtherTabView: View {
     let userId: UUID
 
-    private enum Dest: Hashable { case shop, gym }
+    private enum Dest: Hashable { case shop }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: Theme.Spacing.lg) {
                 NavigationLink(value: Dest.shop) {
                     card(title: "ショップ", subtitle: "サプリ・ギアを探す", icon: "bag.fill", tint: Theme.lime)
-                }
-                NavigationLink(value: Dest.gym) {
-                    card(title: "ジム管理", subtitle: "通うジムを登録・管理する", icon: "building.2.fill", tint: Theme.energy)
                 }
                 Spacer()
             }
@@ -27,11 +24,8 @@ struct OtherTabView: View {
                 case .shop:
                     ShopContent(userId: userId)
                         .navigationTitle("ショップ").navigationBarTitleDisplayMode(.inline)
-                case .gym:
-                    GymListView(userId: userId)
                 }
             }
-            // ジム詳細など AppRoute 値ベース遷移をルートで宣言。
             .gymneeNavigationDestinations(userId: userId)
         }
     }
