@@ -1,4 +1,5 @@
 -- Gymnee 一括セットアップ（SQL Editor に貼って Run）。初回のみ実行。
+-- migrations/*.sql を番号順に連結したもの（手編集せず scripts で再生成すること）。
 
 -- ============================================================
 -- migrations/0001_schema.sql
@@ -370,10 +371,12 @@ create policy exercise_sets_own on public.exercise_sets for all to authenticated
     ));
 
 -- =========================================================
--- exercises : 全員参照、作成者のみ書込。
+-- exercises : 本人専用＋共有プリセット(created_by null)のみ参照、作成者のみ書込。
+-- 他人のカスタム種目が見えないようにする（プライバシー）。
 -- =========================================================
 alter table public.exercises enable row level security;
-create policy exercises_select_all on public.exercises for select to authenticated using (true);
+create policy exercises_select_own on public.exercises for select to authenticated
+    using (created_by = auth.uid() or created_by is null);
 create policy exercises_insert_own on public.exercises for insert to authenticated
     with check (created_by = auth.uid());
 create policy exercises_update_own on public.exercises for update to authenticated
@@ -600,39 +603,16 @@ create policy visit_partners_modify_owner on public.visit_partners for all to au
     using (public.owns_visit(visit_id)) with check (public.owns_visit(visit_id));
 
 -- ============================================================
--- seed.sql
--- ============================================================
--- Gymnee サーバ側プリセット投入（任意）。products は RLS でクライアント書込不可のため、
--- カタログはここ（またはEdge Function/管理）から投入する。
--- affiliate_url は楽天アフィリエイト計測リダイレクト（ID: 5519c310...）。クリック経由の購入で手数料が発生。
-
-insert into public.products (name, description, price, category, goal_tags, merchant, affiliate_url, servings_per_unit)
-values
-    ('ホエイプロテイン 1kg', '高純度ホエイ。増量・維持の基本。', 3980, 'プロテイン', array['bulk','maintain'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2F%E3%83%9B%E3%82%A8%E3%82%A4%E3%83%97%E3%83%AD%E3%83%86%E3%82%A4%E3%83%B3%201kg%2F', 33),
-    ('ソイプロテイン 1kg', '植物性。減量フェーズに。', 3580, 'プロテイン', array['cut'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2F%E3%82%BD%E3%82%A4%E3%83%97%E3%83%AD%E3%83%86%E3%82%A4%E3%83%B3%201kg%2F', 33),
-    ('クレアチン 500g', '高強度トレの定番サプリ。', 2480, 'サプリ', array['strength','bulk'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2F%E3%82%AF%E3%83%AC%E3%82%A2%E3%83%81%E3%83%B3%20%E3%83%A2%E3%83%8E%E3%83%8F%E3%82%A4%E3%83%89%E3%83%AC%E3%83%BC%E3%83%88%2F', 100),
-    ('EAA 500g', 'トレ中のアミノ酸補給。', 4280, 'サプリ', array['maintain','cut'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2FEAA%20%E3%82%A2%E3%83%9F%E3%83%8E%E9%85%B8%2F', 50),
-    ('マルトデキストリン 1kg', '増量期のカロリー補給に。', 1880, 'カーボ', array['bulk'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2F%E3%83%9E%E3%83%AB%E3%83%88%E3%83%87%E3%82%AD%E3%82%B9%E3%83%88%E3%83%AA%E3%83%B3%201kg%2F', 20),
-    ('リストラップ', '高重量プレス系の手首保護。', 1980, 'ギア', array['strength'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2F%E3%83%AA%E3%82%B9%E3%83%88%E3%83%A9%E3%83%83%E3%83%97%20%E7%AD%8B%E3%83%88%E3%83%AC%2F', null),
-    ('トレーニングベルト', 'スクワット/デッドの体幹サポート。', 5980, 'ギア', array['strength'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch.rakuten.co.jp%2Fsearch%2Fmall%2F%E3%83%88%E3%83%AC%E3%83%BC%E3%83%8B%E3%83%B3%E3%82%B0%E3%83%99%E3%83%AB%E3%83%88%2F', null),
-    ('L-カルニチン 1000mg', '脂肪をエネルギーに変える代謝サポート。減量期に。', 2680, 'サプリ', array['cut'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2FL%2D%E3%82%AB%E3%83%AB%E3%83%8B%E3%83%81%E3%83%B3%20%E3%82%B5%E3%83%97%E3%83%AA%2F', 60),
-    ('CLA 共役リノール酸', '体脂肪対策の定番サプリ。減量と併用。', 2480, 'サプリ', array['cut'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2FCLA%20%E5%85%B1%E5%BD%B9%E3%83%AA%E3%83%8E%E3%83%BC%E3%83%AB%E9%85%B8%2F', 90),
-    ('難消化性デキストリン 500g', '食物繊維。糖の吸収をおだやかに・満腹感。', 1280, 'サプリ', array['cut','maintain'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2F%E9%9B%A3%E6%B6%88%E5%8C%96%E6%80%A7%E3%83%87%E3%82%AD%E3%82%B9%E3%83%88%E3%83%AA%E3%83%B3%2F', 50),
-    ('マルチビタミン&ミネラル', '不足しがちな微量栄養素の土台。', 1980, 'サプリ', array['maintain'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2F%E3%83%9E%E3%83%AB%E3%83%81%E3%83%93%E3%82%BF%E3%83%9F%E3%83%B3%20%E3%83%9F%E3%83%8D%E3%83%A9%E3%83%AB%2F', 60),
-    ('フィッシュオイル オメガ3', 'EPA/DHA。日々のコンディション維持に。', 1780, 'サプリ', array['maintain','cut'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2F%E3%83%95%E3%82%A3%E3%83%83%E3%82%B7%E3%83%A5%E3%82%AA%E3%82%A4%E3%83%AB%20%E3%82%AA%E3%83%A1%E3%82%AC3%20EPA%20DHA%2F', 90),
-    ('ビタミンD3', '骨・免疫・ホルモンの土台。', 980, 'サプリ', array['maintain'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2F%E3%83%93%E3%82%BF%E3%83%9F%E3%83%B3D3%20%E3%82%B5%E3%83%97%E3%83%AA%2F', 120),
-    ('ウエイトゲイナー 3kg', '高カロリー。食が細い人の増量に。', 5480, 'プロテイン', array['bulk'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2F%E3%82%A6%E3%82%A8%E3%82%A4%E3%83%88%E3%82%B2%E3%82%A4%E3%83%8A%E3%83%BC%20%E5%A2%97%E9%87%8F%2F', 30),
-    ('カゼインプロテイン 1kg', '就寝前のゆっくり供給。維持・増量に。', 4280, 'プロテイン', array['bulk','maintain'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2F%E3%82%AB%E3%82%BC%E3%82%A4%E3%83%B3%E3%83%97%E3%83%AD%E3%83%86%E3%82%A4%E3%83%B3%2F', 33),
-    ('ベータアラニン 200g', '高強度の粘り。筋力・高レップに。', 2280, 'サプリ', array['strength'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2F%E3%83%99%E3%83%BC%E3%82%BF%E3%82%A2%E3%83%A9%E3%83%8B%E3%83%B3%2F', 60),
-    ('パワーグリップ', '引く種目の握力補助。背中・デッドに。', 2980, 'ギア', array['strength'], '楽天市場', 'https://hb.afl.rakuten.co.jp/hgc/5519c310.d841aa29.5519c311.eac66aa0/?pc=https%3A%2F%2Fsearch%2Erakuten%2Eco%2Ejp%2Fsearch%2Fmall%2F%E3%83%91%E3%83%AF%E3%83%BC%E3%82%B0%E3%83%AA%E3%83%83%E3%83%97%20%E7%AD%8B%E3%83%88%E3%83%AC%2F', null)
-on conflict do nothing;
-
--- ============================================================
 -- migrations/0007_moderation.sql
 -- ============================================================
--- モデレーション（UGC安全 / App Store ガイドライン1.2.5）。
--- blocks: 迷惑ユーザーのブロック。reports: 不適切なユーザー/コンテンツの通報。
+-- Gymnee モデレーション（UGC安全 / App Store ガイドライン1.2.5）
+-- 0001〜0006 の後に適用する。
+-- blocks: 迷惑ユーザーのブロック（blocker が blocked を非表示・関係遮断。クライアントで一覧/検索から除外）。
+-- reports: 不適切なユーザー/コンテンツの通報（運営が確認・対応）。
 
+-- =========================================================
+-- blocks : 実行者(blocker)本人のみ参照・作成・削除。
+-- =========================================================
 create table if not exists public.blocks (
     id                   uuid primary key default gen_random_uuid(),
     blocker_id           uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -649,6 +629,9 @@ alter table public.blocks enable row level security;
 create policy blocks_own on public.blocks for all to authenticated
     using (blocker_id = auth.uid()) with check (blocker_id = auth.uid());
 
+-- =========================================================
+-- reports : 通報者(reporter)本人のみ作成・参照（運営は service role で確認）。
+-- =========================================================
 create table if not exists public.reports (
     id               uuid primary key default gen_random_uuid(),
     reporter_id      uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -668,11 +651,26 @@ alter table public.reports enable row level security;
 create policy reports_own on public.reports for all to authenticated
     using (reporter_id = auth.uid()) with check (reporter_id = auth.uid());
 
+-- ============================================================
 -- migrations/0008_push_on_visit.sql
--- フレンドのチェックイン通知（visits insert → Edge Function send-push）。
--- 適用後に push_config(1行) を upsert する必要あり（docs/apns-push-setup.md 参照）。
+-- ============================================================
+-- フレンドのチェックイン通知（§6.10 / §6.11）。
+-- visits への新規 insert を起点に Edge Function `send-push` を非同期で呼び、
+-- 訪問者のフォロワーへ「〇〇さんがジムに行きました」を APNs 送信する。
+-- 0001〜0007 の後に適用する。
+--
+-- 接続情報（Function URL と共有シークレット）は public.push_config（1行）に持つ。
+-- Supabase の postgres ロールは `alter database ... set` が権限不足になるため GUC ではなくテーブルで保持する。
+-- 値は適用後に別途 upsert する（秘密のためコミットしない。手順は docs/apns-push-setup.md）:
+--   insert into public.push_config (id, send_push_url, push_secret)
+--   values (1, 'https://<ref>.supabase.co/functions/v1/send-push', '<PUSH_SHARED_SECRET と同じ値>')
+--   on conflict (id) do update
+--     set send_push_url = excluded.send_push_url, push_secret = excluded.push_secret;
+
 create extension if not exists pg_net;
 
+-- 接続設定（単一行）。RLS 有効かつポリシー無し＝クライアントからは不可視。
+-- 参照は security definer の関数（所有者 = postgres）だけが行う。
 create table if not exists public.push_config (
     id            int primary key default 1,
     send_push_url text,
@@ -691,12 +689,17 @@ declare
   cfg public.push_config;
 begin
   select * into cfg from public.push_config where id = 1;
+
+  -- 未設定なら何もしない（縮退：ローカル/未構成環境でも insert は成功させる）。
   if cfg.send_push_url is null or cfg.send_push_url = '' then
     return new;
   end if;
+
+  -- 過去来店の一括同期（バックフィル）で通知が暴発しないよう、直近のチェックインだけ通知する。
   if new.visited_at < now() - interval '10 minutes' then
     return new;
   end if;
+
   perform net.http_post(
     url     := cfg.send_push_url,
     headers := jsonb_build_object(
@@ -713,3 +716,135 @@ drop trigger if exists trg_notify_friend_checkin on public.visits;
 create trigger trg_notify_friend_checkin
   after insert on public.visits
   for each row execute function public.notify_friend_checkin();
+
+-- ============================================================
+-- migrations/0009_weight_mode.sql
+-- ============================================================
+-- ③ 重量の数え方（両側/片側）。種目に既定、セットで上書き。
+-- 本番には supabase db query で適用済み（ここは履歴として保持）。
+alter table public.exercises add column if not exists weight_mode text not null default 'both';
+alter table public.exercise_sets add column if not exists weight_mode_override text;
+
+-- ============================================================
+-- migrations/0010_post_reactions.sql
+-- ============================================================
+-- ⑨ いいね/応援。投稿(feed_items)へのリアクション。本番には supabase db query で適用済み。
+create table if not exists public.post_reactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  feed_item_id uuid not null references public.feed_items(id) on delete cascade,
+  kind text not null check (kind in ('like','cheer')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, feed_item_id, kind)
+);
+create index if not exists post_reactions_feed_idx on public.post_reactions(feed_item_id);
+
+alter table public.post_reactions enable row level security;
+-- 参照: 見える投稿(本人/public/friends&フォロー)へのリアクションは見える。書込は本人のみ。
+create policy post_reactions_select on public.post_reactions for select to authenticated
+  using (
+    user_id = auth.uid()
+    or exists (select 1 from public.feed_items f where f.id = feed_item_id
+      and (f.user_id = auth.uid() or f.visibility = 'public'
+           or (f.visibility = 'friends' and public.is_following(f.user_id))))
+  );
+create policy post_reactions_modify_own on public.post_reactions for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- ============================================================
+-- migrations/0011_block_rls.sql
+-- ============================================================
+-- 監査S: ブロックを RLS に連動（クライアント除外依存をやめ、サーバ側で被ブロックを遮断）。
+-- 本番には supabase db query で適用済み（ここは履歴）。
+create or replace function public.is_blocked(other uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.blocks
+    where (blocker_id = auth.uid() and blocked_id = other)
+       or (blocker_id = other and blocked_id = auth.uid())
+  );
+$$;
+
+drop policy if exists feed_items_select on public.feed_items;
+create policy feed_items_select on public.feed_items for select to authenticated using (
+  user_id = auth.uid()
+  or (not public.is_blocked(user_id) and (visibility = 'public' or (visibility = 'friends' and public.is_following(user_id))))
+);
+
+drop policy if exists progress_photos_select on public.progress_photos;
+create policy progress_photos_select on public.progress_photos for select to authenticated using (
+  user_id = auth.uid()
+  or (not public.is_blocked(user_id) and (visibility = 'public' or (visibility = 'friends' and public.is_following(user_id))))
+);
+
+-- プロフィールはブロック相手には不可視（自分は常に可視）。
+drop policy if exists profiles_select_all on public.profiles;
+create policy profiles_select_all on public.profiles for select to authenticated using (
+  id = auth.uid() or not public.is_blocked(id)
+);
+
+-- ============================================================
+-- migrations/0012_gym_rls.sql
+-- ============================================================
+-- 監査S: ユーザー作成ジム（lat/lng・メモ含む）を全公開にしない。own＋preset のみ参照可。
+-- 本番には supabase db query で適用済み（ここは履歴）。
+drop policy if exists gyms_select_all on public.gyms;
+create policy gyms_select on public.gyms for select to authenticated using (
+  created_by = auth.uid() or source = 'preset'
+);
+
+drop policy if exists gym_equipment_select_all on public.gym_equipment;
+create policy gym_equipment_select on public.gym_equipment for select to authenticated using (
+  created_by = auth.uid()
+  or exists (select 1 from public.gyms g where g.id = gym_equipment.gym_id and (g.created_by = auth.uid() or g.source = 'preset'))
+);
+
+-- ============================================================
+-- migrations/0013_push_on_reaction.sql
+-- ============================================================
+-- いいね/応援 → 投稿者へ push（監査T1c / ソーシャルループを閉じる）。
+-- post_reactions への新規 insert を起点に Edge Function `send-push` を呼び、
+-- 投稿者へ「〇〇さんがいいね/応援しました」を APNs 送信する。push_config を流用。
+create or replace function public.notify_post_reaction()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cfg public.push_config;
+begin
+  select * into cfg from public.push_config where id = 1;
+  if cfg.send_push_url is null or cfg.send_push_url = '' then
+    return new;
+  end if;
+  -- バックフィル/一括同期での暴発を防ぐため直近の反応のみ通知。
+  if new.created_at < now() - interval '10 minutes' then
+    return new;
+  end if;
+
+  perform net.http_post(
+    url     := cfg.send_push_url,
+    headers := jsonb_build_object(
+                 'Content-Type', 'application/json',
+                 'X-Push-Secret', coalesce(cfg.push_secret, '')
+               ),
+    body    := jsonb_build_object('event', 'reaction', 'reactionId', new.id)
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_post_reaction on public.post_reactions;
+create trigger trg_notify_post_reaction
+  after insert on public.post_reactions
+  for each row execute function public.notify_post_reaction();
+
+-- ============================================================
+-- migrations/0014_follow_notify.sql
+-- ============================================================
+-- フレンドごとの通知ON/OFF（監査外・ユーザー要望）。
+-- follower→followee の follow 行に notify を持たせ、send-push は notify=true のフォロワーにのみ送る。
+-- 本番には supabase db query で適用済み（ここは履歴）。
+alter table public.follows add column if not exists notify boolean not null default true;

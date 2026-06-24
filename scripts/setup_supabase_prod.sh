@@ -70,13 +70,24 @@ BODY="$(jq -n --arg gid "$GID" --arg gsec "$GSEC" --arg rkey "$RKEY" --arg tmpl 
 curl -s -w '\n[HTTP %{http_code}]\n' -X PATCH "$API/config/auth" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BODY" | jq -c '{message}' 2>/dev/null || true
 
-echo "▶ 3/4 Edge Function デプロイ＋secrets（APNS_HOST=本番）"
+echo "▶ 3/5 Edge Function: send-push デプロイ＋secrets（APNS_HOST=本番）"
 supabase functions deploy send-push --project-ref "$PROD_REF"
 supabase secrets set --project-ref "$PROD_REF" \
   APNS_KEY="$(cat "$P8")" APNS_KEY_ID="$KEYID" APNS_TEAM_ID=PG5P26J3W2 \
   APNS_BUNDLE_ID=com.gymnee.app APNS_HOST=api.push.apple.com PUSH_SHARED_SECRET="$PUSH_SECRET"
 
-echo "▶ 4/4 push_config 投入"
+echo "▶ 4/5 Edge Function: plan-workouts（AIワークアウト計画）"
+supabase functions deploy plan-workouts --project-ref "$PROD_REF"
+if [ -s "$SECRETS/gemini.env" ]; then
+  GKEY="$(grep '^GEMINI_API_KEY=' "$SECRETS/gemini.env" | cut -d= -f2- | tr -d '[:space:]')"
+  supabase secrets set --project-ref "$PROD_REF" \
+    GEMINI_API_KEY="$GKEY" GEMINI_MODEL=gemini-3.5-flash GEMINI_API_VERSION=v1
+else
+  echo "  ⚠ secrets/gemini.env が無いため GEMINI_API_KEY 未設定。AI計画を使うなら後で:"
+  echo "    supabase secrets set --project-ref $PROD_REF GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-3.5-flash GEMINI_API_VERSION=v1"
+fi
+
+echo "▶ 5/5 push_config 投入"
 runsql "insert into public.push_config (id, send_push_url, push_secret) values (1, 'https://$PROD_REF.supabase.co/functions/v1/send-push', '$PUSH_SECRET') on conflict (id) do update set send_push_url=excluded.send_push_url, push_secret=excluded.push_secret;"
 
 cat <<EOF
