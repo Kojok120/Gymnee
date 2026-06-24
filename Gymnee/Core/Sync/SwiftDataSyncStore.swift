@@ -17,6 +17,11 @@ final class SwiftDataSyncStore: SyncBackingStore {
         self.defaults = defaults
     }
 
+    /// 同期中のバックエンド本人 id（AuthService が永続化）。RLS の created_by = auth.uid() 整合用。
+    private var currentUserId: UUID? {
+        defaults.string(forKey: "gymnee.supabase.userId").flatMap(UUID.init)
+    }
+
     // MARK: - 差分基準
 
     func lastPulledAt(table: String) -> Date? {
@@ -54,6 +59,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "blocks":            return fetchBlock(id).map(encodeBlock)
         case "reports":           return fetchReport(id).map(encodeReport)
         case "feed_items":        return fetchFeedItem(id).map(encodeFeedItem)
+        case "post_reactions":    return fetchPostReaction(id).map(encodePostReaction)
         case "supply_logs":       return fetchSupplyLog(id).map(encodeSupplyLog)
         case "subscriptions":     return fetchSubscription(id).map(encodeSubscription)
         // products はサーバ管理カタログ（クライアントから push しない）。
@@ -84,13 +90,20 @@ final class SwiftDataSyncStore: SyncBackingStore {
             case "blocks":            applyBlock(row)
             case "reports":           applyReport(row)
             case "feed_items":        applyFeedItem(row)
+            case "post_reactions":    applyPostReaction(row)
             case "products":          applyProduct(row)
             case "supply_logs":       applySupplyLog(row)
             case "subscriptions":     applySubscription(row)
             default: break
             }
         }
-        try? context.save()
+        // save 失敗（unique 衝突・制約違反等）を握り潰すと context が dirty のまま以後の save が
+        // 連鎖失敗し同期が沈黙崩壊する。失敗時は rollback して context をクリーンに戻す。
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+        }
     }
 
     /// 既存があり、ローカルの方が新しければ true（＝リモートを捨てる）。LWW（§9-7）。
@@ -228,9 +241,13 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func encodeExercise(_ m: Exercise) -> [String: Any] {
         var row: [String: Any] = [
             "id": lower(m.id), "name": m.name, "muscle_group": m.muscleGroupRaw,
-            "equipment": m.equipmentRaw, "is_custom": m.isCustom, "updated_at": iso(m.updatedAt),
+            "equipment": m.equipmentRaw, "is_custom": m.isCustom, "weight_mode": m.weightModeRaw,
+            "updated_at": iso(m.updatedAt),
         ]
-        if let by = m.createdBy { row["created_by"] = lower(by) }
+        // RLS(exercises_insert_own) は created_by = auth.uid() を要求する。プリセット(nil)や
+        // 旧 uid のままだと弾かれる。push できるのは本人のローカル種目だけなので、同期中の本人 id を
+        // 所有者として送る。
+        if let owner = currentUserId ?? m.createdBy { row["created_by"] = lower(owner) }
         return row
     }
     private func applyExercise(_ row: [String: Any]) {
@@ -243,6 +260,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.equipmentRaw = str(row["equipment"]) ?? m.equipmentRaw
         m.isCustom = bool(row["is_custom"]) ?? m.isCustom
         m.createdBy = uuid(row["created_by"])
+        m.weightModeRaw = str(row["weight_mode"]) ?? m.weightModeRaw
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
     }
@@ -274,6 +292,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         ["id": lower(m.id), "workout_exercise_id": opt(m.workoutExercise?.id.uuidString.lowercased()),
          "set_index": m.setIndex, "weight": m.weight, "reps": m.reps, "rpe": opt(m.rpe), "rir": opt(m.rir),
          "type": m.typeRaw, "is_pr": m.isPR, "is_completed": m.isCompleted,
+         "weight_mode_override": opt(m.weightModeOverrideRaw),
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyExerciseSet(_ row: [String: Any]) {
@@ -288,6 +307,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.typeRaw = str(row["type"]) ?? m.typeRaw
         m.isPR = bool(row["is_pr"]) ?? m.isPR
         m.isCompleted = bool(row["is_completed"]) ?? m.isCompleted
+        m.weightModeOverrideRaw = str(row["weight_mode_override"])
         m.workoutExercise = uuid(row["workout_exercise_id"]).flatMap(fetchWorkoutExercise)
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
@@ -395,7 +415,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - follows
     private func encodeFollow(_ m: Follow) -> [String: Any] {
         ["id": lower(m.id), "follower_id": lower(m.followerId), "followee_id": lower(m.followeeId),
-         "followee_display_name": opt(m.followeeDisplayName), "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+         "followee_display_name": opt(m.followeeDisplayName), "notify": m.notify,
+         "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyFollow(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -405,6 +426,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.followerId = uuid(row["follower_id"]) ?? m.followerId
         m.followeeId = uuid(row["followee_id"]) ?? m.followeeId
         m.followeeDisplayName = str(row["followee_display_name"])
+        m.notify = bool(row["notify"]) ?? true
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
@@ -472,6 +494,24 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.isDirty = false
     }
 
+    // MARK: - post_reactions（いいね/応援）
+    private func encodePostReaction(_ m: PostReaction) -> [String: Any] {
+        ["id": lower(m.id), "user_id": lower(m.userId), "feed_item_id": lower(m.feedItemId),
+         "kind": m.kindRaw, "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+    }
+    private func applyPostReaction(_ row: [String: Any]) {
+        guard let id = uuid(row["id"]) else { return }
+        let existing = fetchPostReaction(id)
+        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
+        let m = existing ?? insert(PostReaction(id: id, userId: uuid(row["user_id"]) ?? UUID(), feedItemId: uuid(row["feed_item_id"]) ?? UUID()))
+        m.userId = uuid(row["user_id"]) ?? m.userId
+        m.feedItemId = uuid(row["feed_item_id"]) ?? m.feedItemId
+        m.kindRaw = str(row["kind"]) ?? m.kindRaw
+        m.createdAt = date(row["created_at"]) ?? m.createdAt
+        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
+        m.isDirty = false
+    }
+
     // MARK: - products（pull のみ＝サーバ管理カタログ）
     private func applyProduct(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -498,8 +538,13 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - supply_logs
     private func encodeSupplyLog(_ m: SupplyLog) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "product_id": opt(m.product?.id.uuidString.lowercased()),
-         "date": iso(m.date), "amount": m.amount, "product_name": opt(m.productName), "updated_at": iso(m.updatedAt)]
+        // m.product は inverse 無し関連。参照先(seed商品)がカタログ同期で削除されると宙ぶらりんになり、
+        // アクセスした瞬間に SwiftData がアサーションでクラッシュする（push のたびに発火）。
+        // 関連を読まず、productName から安全に product_id を解決する。
+        let productId = m.productName.flatMap { fetchProductByName($0)?.id }
+        return ["id": lower(m.id), "user_id": lower(m.userId),
+                "product_id": opt(productId?.uuidString.lowercased()),
+                "date": iso(m.date), "amount": m.amount, "product_name": opt(m.productName), "updated_at": iso(m.updatedAt)]
     }
     private func applySupplyLog(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -507,7 +552,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
         let m = existing ?? insert(SupplyLog(id: id, userId: uuid(row["user_id"]) ?? UUID()))
         m.userId = uuid(row["user_id"]) ?? m.userId
-        m.product = uuid(row["product_id"]).flatMap(fetchProduct)
         m.date = date(row["date"]) ?? m.date
         m.amount = dbl(row["amount"]) ?? m.amount
         m.productName = str(row["product_name"])
@@ -553,6 +597,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func fetchBlock(_ id: UUID) -> Block? { first(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })) }
     private func fetchReport(_ id: UUID) -> Report? { first(FetchDescriptor<Report>(predicate: #Predicate { $0.id == id })) }
     private func fetchFeedItem(_ id: UUID) -> FeedItem? { first(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == id })) }
+    private func fetchPostReaction(_ id: UUID) -> PostReaction? { first(FetchDescriptor<PostReaction>(predicate: #Predicate { $0.id == id })) }
     private func fetchProduct(_ id: UUID) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.id == id })) }
     private func fetchProductByName(_ name: String) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.name == name })) }
     private func fetchSupplyLog(_ id: UUID) -> SupplyLog? { first(FetchDescriptor<SupplyLog>(predicate: #Predicate { $0.id == id })) }

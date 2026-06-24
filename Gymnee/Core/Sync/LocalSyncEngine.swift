@@ -30,7 +30,7 @@ final class LocalSyncEngine: SyncEngine {
         "profiles", "gyms", "gym_equipment", "visits", "visit_partners",
         "workouts", "exercises", "workout_exercises", "exercise_sets",
         "routines", "routine_exercises", "personal_records",
-        "body_metrics", "progress_photos", "follows", "blocks", "reports", "feed_items",
+        "body_metrics", "progress_photos", "follows", "blocks", "reports", "feed_items", "post_reactions",
         "products", "supply_logs", "subscriptions",
     ]
 
@@ -51,8 +51,13 @@ final class LocalSyncEngine: SyncEngine {
 
     /// 同期を 1 サイクル実行（pull→push）。サインイン時・アプリ復帰時などに呼ぶ。
     /// リモート未設定なら何もしない（ローカルのみ）。
-    func syncNow() async {
+    /// 同期クールダウン。前景化やフィード再表示の連発で 21 テーブルのフルpullが乱発するのを防ぐ。
+    /// 明示同期（サインイン直後・手動「今すぐ同期」・プロフィール保存）は force:true で即時実行。
+    @ObservationIgnored private let syncCooldown: TimeInterval = 30
+
+    func syncNow(force: Bool = false) async {
         guard isRemoteEnabled, !isSyncing else { return }
+        if !force, let last = lastSyncedAt, Date().timeIntervalSince(last) < syncCooldown { return }
         isSyncing = true
         defer { isSyncing = false }
         try? await pull()   // 先にリモート差分を取り込み（商品カタログ等）

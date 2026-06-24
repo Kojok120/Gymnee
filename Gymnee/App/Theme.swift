@@ -207,12 +207,21 @@ struct EmptyStateView: View {
     let systemImage: String
     let title: String
     var message: String?
+    /// 空状態から次の一歩を促すCTA（任意）。
+    var actionTitle: String?
+    var action: (() -> Void)?
 
     var body: some View {
         ContentUnavailableView {
             Label(title, systemImage: systemImage)
         } description: {
             if let message { Text(message) }
+        } actions: {
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.lime)
+            }
         }
     }
 }

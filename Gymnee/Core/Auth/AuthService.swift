@@ -40,7 +40,7 @@ final class AuthService {
     /// バックエンド(Supabase)が構成済みで、メール/Google サインインが使えるか。
     var isBackendAvailable: Bool { supabase != nil }
     /// 永続化済みのバックエンドセッションがあるか（再起動後の復元判定／Settings 表示用）。
-    var hasPersistedBackendSession: Bool { defaults.string(forKey: refreshTokenKey) != nil }
+    var hasPersistedBackendSession: Bool { Keychain.get(refreshTokenKey) != nil }
 
     init(provider: AuthProviding = MockAuthProvider()) {
         self.provider = provider
@@ -84,7 +84,7 @@ final class AuthService {
     /// 再起動後にバックエンドセッションを復元する（refresh_token でアクセストークンを更新）。
     /// GymneeApp の起動時 task から呼ぶ。成功すると push/pull が認証付きで通る。
     func restoreBackendSession() async {
-        guard let supabase, let refresh = defaults.string(forKey: refreshTokenKey) else { return }
+        guard let supabase, let refresh = Keychain.get(refreshTokenKey) else { return }
         do {
             let remote = try await supabase.refreshSession(refreshToken: refresh)
             await supabase.setAccessToken(remote.accessToken)
@@ -162,14 +162,17 @@ final class AuthService {
     }
 
     private func persistBackendSession(access: String, refresh: String, userId: UUID, displayName: String) {
-        defaults.set(access, forKey: accessTokenKey)
-        defaults.set(refresh, forKey: refreshTokenKey)
+        // トークンは Keychain（端末外へ出ない）。非機微の id/表示名は UserDefaults。
+        Keychain.set(access, for: accessTokenKey)
+        Keychain.set(refresh, for: refreshTokenKey)
         defaults.set(userId.uuidString, forKey: backendUserIdKey)
         defaults.set(displayName, forKey: backendNameKey)
     }
 
     private func clearBackendSession() {
-        [accessTokenKey, refreshTokenKey, backendUserIdKey, backendNameKey].forEach { defaults.removeObject(forKey: $0) }
+        Keychain.delete(accessTokenKey)
+        Keychain.delete(refreshTokenKey)
+        [backendUserIdKey, backendNameKey].forEach { defaults.removeObject(forKey: $0) }
         isBackendAuthenticated = false
     }
 
@@ -234,6 +237,59 @@ final class AuthService {
     }
 
     // MARK: - Profile
+
+    /// 表示名を更新する（セッション・Profile・ローカル永続を整合）。Profile の同期は呼び出し側で enqueue する。
+    func updateDisplayName(_ name: String) {
+        guard let current = session else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != current.displayName else { return }
+        let updated = UserSession(userId: current.userId, displayName: trimmed)
+        session = updated
+        provider.persistSession(userId: current.userId, displayName: trimmed)
+        if isBackendAuthenticated { defaults.set(trimmed, forKey: backendNameKey) }
+        ensureProfile(for: updated)
+    }
+
+    /// アバター画像をストレージへアップロードし、Profile.avatar_url を更新する。
+    /// 返り値はキャッシュ無効化用のバージョン付き公開URL（同期は呼び出し側で enqueue）。
+    func uploadAvatar(_ jpeg: Data) async -> String? {
+        guard let supabase, isBackendAuthenticated, let uid = currentUserId else { return nil }
+        do {
+            let base = try await supabase.uploadAvatar(userId: uid, jpeg: jpeg)
+            let versioned = base + "?v=\(Int(Date().timeIntervalSince1970))"
+            if let context {
+                let descriptor = FetchDescriptor<Profile>(predicate: #Predicate { $0.id == uid })
+                if let profile = (try? context.fetch(descriptor))?.first {
+                    profile.avatarURL = versioned
+                    profile.updatedAt = .now
+                    profile.isDirty = true
+                    try? context.save()
+                }
+            }
+            return versioned
+        } catch {
+            return nil
+        }
+    }
+
+    /// 写真をバケットへアップロードし、参照("bucket/path")を返す（progress-photos / visit-photos）。
+    func uploadPhoto(bucket: String, filename: String, jpeg: Data) async -> String? {
+        guard let supabase, isBackendAuthenticated, let uid = currentUserId else { return nil }
+        let path = "\(uid.uuidString.lowercased())/\(filename)"
+        return try? await supabase.uploadPhoto(bucket: bucket, path: path, jpeg: jpeg)
+    }
+
+    /// 参照("bucket/path")から写真バイト列を取得（端末ローカルに無い時のフォールバック用）。
+    func downloadPhoto(ref: String) async -> Data? {
+        guard let supabase, isBackendAuthenticated else { return nil }
+        return try? await supabase.downloadPhoto(ref: ref)
+    }
+
+    /// AI ワークアウト計画（Edge Function 経由）。未構成/未認証/失敗時は nil（呼び出し側で「準備中」）。
+    func planWorkouts(days: [String], routines: [String], weeklyGoal: Int, events: [[String: Any]], history: [[String: Any]]) async -> [SupabaseClient.PlanItem]? {
+        guard let supabase, isBackendAuthenticated else { return nil }
+        return try? await supabase.planWorkouts(days: days, routines: routines, weeklyGoal: weeklyGoal, events: events, history: history)
+    }
 
     /// 認証ユーザーに対応する Profile が無ければ作成する。
     private func ensureProfile(for session: UserSession) {

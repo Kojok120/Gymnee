@@ -22,21 +22,18 @@ struct RoutineEditorView: View {
                 }
                 Section {
                     ForEach(orderedExercises) { re in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(re.exercise?.name ?? "種目").font(.body)
-                            HStack {
-                                Stepper("\(re.targetSets)セット", value: bindingTargetSets(re), in: 1...10)
-                                    .fixedSize()
-                                Spacer()
-                            }
-                            HStack {
-                                Image(systemName: "timer").font(.caption).foregroundStyle(.secondary)
-                                Stepper("レスト \(re.restSeconds ?? 90)秒", value: bindingRest(re), in: 30...300, step: 15)
-                                    .fixedSize()
-                            }
-                            .font(.caption)
+                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                            Text(re.exercise?.name ?? "種目")
+                                .font(.headline)
+                                .lineLimit(1).truncationMode(.tail)
+                            stepperRow(icon: "square.stack.3d.up.fill", label: "セット",
+                                       value: "\(re.targetSets)", binding: bindingTargetSets(re), range: 1...10)
+                            stepperRow(icon: "repeat", label: "目標レップ",
+                                       value: "\(re.targetReps ?? 10) 回", binding: bindingTargetReps(re), range: 1...50)
+                            stepperRow(icon: "timer", label: "レスト",
+                                       value: "\(re.restSeconds ?? 90) 秒", binding: bindingRest(re), range: 30...300, step: 15)
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, Theme.Spacing.xs)
                     }
                     .onDelete(perform: delete)
                     .onMove(perform: move)
@@ -53,7 +50,7 @@ struct RoutineEditorView: View {
                         EditButton().font(.caption)
                     }
                 } footer: {
-                    Text("ドラッグで並べ替え、種目別にレスト時間を設定できます。")
+                    Text("ドラッグで並べ替え、種目別に目標セット数・目標レップ・レスト時間を設定できます。")
                 }
             }
             .navigationTitle("ルーティン編集")
@@ -69,8 +66,29 @@ struct RoutineEditorView: View {
         }
     }
 
+    /// 種目ごとの設定行（アイコン＋ラベル左、値＋コンパクトStepper右）。整然と揃える。
+    private func stepperRow(icon: String, label: String, value: String, binding: Binding<Int>, range: ClosedRange<Int>, step: Int = 1) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            Label(label, systemImage: icon)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .labelStyle(.titleAndIcon)
+            Spacer(minLength: Theme.Spacing.sm)
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.semibold))
+                .foregroundStyle(Theme.textPrimary)
+            Stepper("", value: binding, in: range, step: step)
+                .labelsHidden()
+                .fixedSize()
+        }
+    }
+
     private func bindingTargetSets(_ re: RoutineExercise) -> Binding<Int> {
         Binding(get: { re.targetSets }, set: { re.targetSets = $0; re.updatedAt = .now })
+    }
+
+    private func bindingTargetReps(_ re: RoutineExercise) -> Binding<Int> {
+        Binding(get: { re.targetReps ?? 10 }, set: { re.targetReps = $0; re.updatedAt = .now })
     }
 
     private func bindingRest(_ re: RoutineExercise) -> Binding<Int> {
@@ -94,6 +112,8 @@ struct RoutineEditorView: View {
         let re = RoutineExercise(orderIndex: routine.routineExercises.count, targetSets: 3, routine: routine, exercise: exercise)
         context.insert(re)
         try? context.save()
+        // 参照する種目もサーバーへ（FK: routine_exercises.exercise_id）。
+        sync.enqueue(PendingChange(entity: "exercises", recordId: exercise.id, operation: .upsert, updatedAt: exercise.updatedAt))
         sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
     }
 

@@ -58,8 +58,15 @@ final class Exercise {
     var equipmentRaw: String
     var isCustom: Bool
     var createdBy: UUID?
+    /// この種目の既定の重量の数え方（両側/片側）。セットで上書き可能。
+    var weightModeRaw: String = WeightMode.both.rawValue
     var updatedAt: Date
     var isDirty: Bool
+
+    var weightMode: WeightMode {
+        get { WeightMode(rawValue: weightModeRaw) ?? .both }
+        set { weightModeRaw = newValue.rawValue }
+    }
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutExercise.exercise)
     var workoutExercises: [WorkoutExercise] = []
@@ -87,6 +94,7 @@ final class Exercise {
         equipment: EquipmentType,
         isCustom: Bool = false,
         createdBy: UUID? = nil,
+        weightMode: WeightMode = .both,
         updatedAt: Date = .now,
         isDirty: Bool = true
     ) {
@@ -96,6 +104,7 @@ final class Exercise {
         self.equipmentRaw = equipment.rawValue
         self.isCustom = isCustom
         self.createdBy = createdBy
+        self.weightModeRaw = weightMode.rawValue
         self.updatedAt = updatedAt
         self.isDirty = isDirty
     }
@@ -155,11 +164,23 @@ final class ExerciseSet {
     var typeRaw: String
     var isPR: Bool
     var isCompleted: Bool
+    /// セット単位で重量の数え方を上書き（nil は種目の既定に従う）。
+    var weightModeOverrideRaw: String? = nil
     var createdAt: Date
     var updatedAt: Date
     var isDirty: Bool
 
     var workoutExercise: WorkoutExercise?
+
+    var weightModeOverride: WeightMode? {
+        get { weightModeOverrideRaw.flatMap { WeightMode(rawValue: $0) } }
+        set { weightModeOverrideRaw = newValue?.rawValue }
+    }
+
+    /// 実効の数え方：セット上書き → 種目既定 → 両側。
+    var effectiveWeightMode: WeightMode {
+        weightModeOverride ?? workoutExercise?.exercise?.weightMode ?? .both
+    }
 
     var type: SetType {
         get { SetType(rawValue: typeRaw) ?? .normal }

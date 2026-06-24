@@ -19,11 +19,18 @@ struct SocialFeedView: View {
     }
 }
 
+/// 他ユーザーのプロフィールへ遷移するための値（フレンド一覧から）。
+struct UserRef: Hashable {
+    let id: UUID
+    let name: String
+}
+
 private struct SocialContent: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AuthService.self) private var auth
 
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
@@ -31,13 +38,20 @@ private struct SocialContent: View {
     @Query private var follows: [Follow]
     @Query private var blocks: [Block]
     @Query private var profiles: [Profile]
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
+    /// 自分＋フォロー中の他人の feed_items（サーバーから RLS 経由で取り込む）。
+    @Query private var feedItems: [FeedItem]
+    @Query private var allReactions: [PostReaction]
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
     /// ソーシャル初回利用時のコミュニティガイドライン同意（1.2.5）。
     @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
 
     @State private var tab = 0
     @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
+    @State private var showMyPosts = false
+    @State private var editVisit: Visit?
+    @State private var visStore = PostVisibilityStore()
+    @State private var feedEntries: [FeedEntry] = []
 
     init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
@@ -50,7 +64,21 @@ private struct SocialContent: View {
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
-    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
+
+    /// 自分の投稿を feed_items として発行し、最新差分を同期（push＋pull）する。
+    private func refreshFeed() async {
+        FeedPublisher.publishOwnPosts(
+            userId: userId,
+            authorName: auth.session?.displayName,
+            context: context,
+            visibilityStore: visStore,
+            defaultVisibility: defaultVisibility,
+            sync: sync
+        )
+        await sync.syncNow()
+        rebuildFeedEntries() // 公開範囲変更/同期取り込み後に表示を確実に更新
+    }
 
     // MARK: - フォロー関係の導出
     /// 自分がブロック中のユーザー集合（一覧・相互判定から除外）。
@@ -106,48 +134,130 @@ private struct SocialContent: View {
     }
 
     private var mainContent: some View {
-        Group {
-            switch tab {
-            case 1: friendsList
-            default: feed
-            }
+        // 3画面を常時マウントし不透明度だけ切替（switchの差し替えトランジション＝中身が畳まれ展開する動きを排除）。
+        // レイアウトは固定されるため「枠だけ」切り替わる。
+        ZStack {
+            feed
+                .opacity(tab == 0 ? 1 : 0)
+                .allowsHitTesting(tab == 0)
+            friendsList
+                .opacity(tab == 1 ? 1 : 0)
+                .allowsHitTesting(tab == 1)
+            RankingView(userId: userId)
+                .opacity(tab == 2 ? 1 : 0)
+                .allowsHitTesting(tab == 2)
         }
         .navigationTitle("ソーシャル")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await refreshFeed() }
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { showMyPosts = true } label: {
+                    Image(systemName: "person.crop.rectangle.stack")
+                }
+                .accessibilityLabel("自分の投稿")
+            }
             ToolbarItem(placement: .principal) {
                 Picker("", selection: $tab) {
                     Text("フィード").tag(0)
                     Text("フレンド").tag(1)
-                }.pickerStyle(.segmented).frame(width: 200)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("公開範囲", selection: $defaultVisibilityRaw) {
-                        ForEach(Visibility.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
-                    }
-                } label: { Image(systemName: "eye") }
+                    Text("ランキング").tag(2)
+                }.pickerStyle(.segmented)
             }
         }
+        .sheet(isPresented: $showMyPosts) {
+            NavigationStack { MyPostsView(userId: userId, visibilityStore: visStore, onClose: { showMyPosts = false }) }
+        }
+        .onChange(of: showMyPosts) { _, shown in if !shown { Task { await refreshFeed() } } }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
+        .navigationDestination(for: UserRef.self) { ref in
+            UserProfileView(targetUserId: ref.id, currentUserId: userId, fallbackName: ref.name)
+        }
     }
 
     // MARK: - Feed
 
+    /// フィード描画コストの大きい構築(FeedBuilder＋ソート)を毎描画で行わずキャッシュする。
+    /// データ件数が変わった時だけ再構築（タブ切替時の再計算ラグを排除）。
+    private func rebuildFeedEntries() {
+        let ownEntries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility, visibilityStore: visStore)
+        let profilesById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let otherEntries = FeedBuilder.othersEntries(feedItems: feedItems, excludingUser: userId, profilesById: profilesById)
+        // id 重複（自分の投稿と他者feed_itemのrefId衝突・多重ID孤児）で ForEach がアサーション落ちするのを防ぐ。
+        var seen = Set<UUID>()
+        feedEntries = (ownEntries + otherEntries)
+            .sorted { $0.date > $1.date }
+            .filter { seen.insert($0.id).inserted }
+    }
+
+    // フレンド/ランキングと容器(List)を統一してタブ切替の描画を滑らかに。重い構築はメモ化(feedEntries)。
     private var feed: some View {
-        let entries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility)
-        return ScrollView {
-            LazyVStack(spacing: Theme.Spacing.md) {
-                ForEach(entries) { entry in
-                    FeedCardView(entry: entry)
-                }
+        let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
+        return List {
+            ForEach(feedEntries) { entry in
+                feedRow(entry, reactions: reactionsByItem[entry.id] ?? [])
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .contextMenu { postMenu(entry) }
             }
-            .padding(Theme.Spacing.lg)
         }
+        .listStyle(.plain)
+        .refreshable { await refreshFeed() }
         .background(Theme.groupedBackground)
         .overlay {
-            if entries.isEmpty {
-                EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です", message: "チェックインやワークアウトが時系列で並びます。")
+            if feedEntries.isEmpty {
+                EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です",
+                               message: "フレンドを見つけると、活動が時系列で並びます。",
+                               actionTitle: "フレンドを探す", action: { showAddFriend = true })
+            }
+        }
+        .task(id: "\(visits.count)-\(workouts.count)-\(prs.count)-\(feedItems.count)-\(profiles.count)") { rebuildFeedEntries() }
+        .onChange(of: editVisit) { _, v in if v == nil { Task { await refreshFeed() } } }
+        .sheet(item: $editVisit) { visit in
+            CheckInEditView(visit: visit, visibilityStore: visStore)
+        }
+    }
+
+    /// カード（タップで開く）＋いいね/応援バー。
+    private func feedRow(_ entry: FeedEntry, reactions: [PostReaction]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            feedCard(entry)
+            ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions)
+        }
+    }
+
+    /// タップで開く（ワークアウト＝詳細、チェックイン＝編集）。仕様を統一。
+    @ViewBuilder
+    private func feedCard(_ entry: FeedEntry) -> some View {
+        if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
+            NavigationLink {
+                WorkoutDetailView(workout: workout)
+            } label: {
+                FeedCardView(entry: entry)
+            }
+            .buttonStyle(.plain)
+        } else if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
+            Button { editVisit = visit } label: { FeedCardView(entry: entry) }
+                .buttonStyle(.plain)
+        } else {
+            FeedCardView(entry: entry)
+        }
+    }
+
+    /// 投稿の長押しメニュー：公開範囲の変更（自分の投稿のみ。編集はカードのタップで開く）。
+    @ViewBuilder
+    private func postMenu(_ entry: FeedEntry) -> some View {
+        if !entry.isFromOther {
+            Menu("公開範囲") {
+                ForEach(Visibility.allCases, id: \.self) { v in
+                    Button {
+                        visStore.set(v, for: entry.id)
+                        Task { await refreshFeed() }
+                    } label: {
+                        Label(v.label, systemImage: (visStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
+                    }
+                }
             }
         }
     }
@@ -155,21 +265,25 @@ private struct SocialContent: View {
     // MARK: - Friends / 合トレ
 
     private var friendsList: some View {
-        List {
+        // 行ごとの profiles.first(O(N^2)) を避けるため id 索引を一度だけ構築。
+        let avatarById = Dictionary(profiles.map { ($0.id, $0.avatarURL) }, uniquingKeysWith: { a, _ in a })
+        return List {
             Section("フォロー中 (\(following.count))") {
                 if following.isEmpty {
                     Text("まだ誰もフォローしていません。").foregroundStyle(.secondary)
                 } else {
                     ForEach(following) { f in
-                        HStack {
-                            Image(systemName: "person.fill").foregroundStyle(Theme.energy)
-                            Text(f.followeeDisplayName ?? "ユーザー")
-                            Spacer()
-                            if isMutual(f) {
-                                Label("相互", systemImage: "arrow.left.arrow.right")
-                                    .font(.caption2.bold()).foregroundStyle(Theme.energy)
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(Theme.energy.opacity(0.15), in: Capsule())
+                        NavigationLink(value: UserRef(id: f.followeeId, name: f.followeeDisplayName ?? "ユーザー")) {
+                            HStack {
+                                AvatarView(urlString: avatarById[f.followeeId] ?? nil, size: 32)
+                                Text(f.followeeDisplayName ?? "ユーザー")
+                                Spacer()
+                                if isMutual(f) {
+                                    Label("相互", systemImage: "arrow.left.arrow.right")
+                                        .font(.caption2.bold()).foregroundStyle(Theme.energy)
+                                        .padding(.horizontal, 8).padding(.vertical, 3)
+                                        .background(Theme.energy.opacity(0.15), in: Capsule())
+                                }
                             }
                         }
                         .swipeActions { Button("解除", role: .destructive) { unfollow(f) } }
@@ -230,5 +344,7 @@ private struct SocialContent: View {
                 }
             }
         }
+        .listStyle(.plain)  // フィード/ランキングと容器スタイルを統一（切替時のインセット差による揺れを解消）
+        .background(Theme.groupedBackground)
     }
 }

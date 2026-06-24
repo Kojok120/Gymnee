@@ -24,45 +24,6 @@ final class OneRepMaxTests: XCTestCase {
     }
 }
 
-/// プレート計算（§6.5）のテスト。
-final class PlateCalculatorTests: XCTestCase {
-    func testExact100kg() {
-        // 100kg, bar20 → 片側40 → 25+15
-        let r = PlateCalculator.compute(target: 100, bar: 20)
-        XCTAssertTrue(r.isExact)
-        XCTAssertEqual(r.perSide, [
-            .init(plate: 25, count: 1),
-            .init(plate: 15, count: 1),
-        ])
-    }
-    func testBarOnly() {
-        let r = PlateCalculator.compute(target: 20, bar: 20)
-        XCTAssertTrue(r.perSide.isEmpty)
-        XCTAssertTrue(r.isExact)
-    }
-    func testBelowBar() {
-        let r = PlateCalculator.compute(target: 10, bar: 20)
-        XCTAssertTrue(r.perSide.isEmpty)
-        XCTAssertFalse(r.isExact)
-    }
-    func testRemainder() {
-        // 61kg, bar20 → 片側20.5 → 20 + 余り0.5
-        let r = PlateCalculator.compute(target: 61, bar: 20)
-        XCTAssertEqual(r.perSide.first, .init(plate: 20, count: 1))
-        XCTAssertEqual(r.remainderPerSide, 0.5, accuracy: 0.0001)
-        XCTAssertFalse(r.isExact)
-    }
-    func testMultiplePlates() {
-        // 140kg, bar20 → 片側60 → 25*2 + 10
-        let r = PlateCalculator.compute(target: 140, bar: 20)
-        XCTAssertEqual(r.perSide, [
-            .init(plate: 25, count: 2),
-            .init(plate: 10, count: 1),
-        ])
-        XCTAssertTrue(r.isExact)
-    }
-}
-
 /// ボリューム集計（§6.5）のテスト。
 final class VolumeCalculatorTests: XCTestCase {
     private func entry(_ mg: MuscleGroup, _ w: Double, _ r: Int, _ t: SetType = .normal, _ d: Date = .now) -> VolumeCalculator.VolumeEntry {

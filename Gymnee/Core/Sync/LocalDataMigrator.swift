@@ -21,6 +21,7 @@ enum LocalDataMigrator {
         reassignOwned(SupplyLog.self, entity: "supply_logs", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(Subscription.self, entity: "subscriptions", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(FeedItem.self, entity: "feed_items", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
+        reassignOwned(PostReaction.self, entity: "post_reactions", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         // フォローは follower 側を付け替え。
         reassignOwned(Follow.self, entity: "follows", context: context, into: &pending) { $0.followerId == old } set: { $0.followerId = new }
         // ブロック/通報は実行者(blocker / reporter)側を付け替え。

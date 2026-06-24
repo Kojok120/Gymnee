@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum AppTab: Hashable {
-    case calendar, workout, checkin, social, shop
+    case calendar, workout, social, analytics, other
 }
 
 /// アプリのルート。未ログインは Onboarding、ログイン済みはタブ骨格を表示する（§5）。
@@ -11,7 +11,7 @@ struct RootView: View {
     @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .calendar
-    @State private var showCheckIn = false
+    @AppStorage("gymnee.setupDone") private var setupDone = false
     #if DEBUG
     @State private var debugWorkout: Workout?
     @State private var debugRoutine: Routine?
@@ -69,7 +69,8 @@ struct RootView: View {
         case "gym": NavigationStack { GymListView(userId: userId) }
         case "addgym": AddGymView(userId: userId)
         case "checkin": CheckInView()
-        case "profile": NavigationStack { ProfileView(userId: userId) }
+        case "profile": NavigationStack { ProfileView(userId: userId).gymneeNavigationDestinations(userId: userId) }
+        case "settings": NavigationStack { SettingsView() }
         case "social": SocialFeedView()
         case "friends": SocialFeedView(initialTab: 1)
         case "shop": ShopView()
@@ -81,6 +82,7 @@ struct RootView: View {
             }
         case "analytics": NavigationStack { AnalyticsView(userId: userId) }
         case "body": NavigationStack { BodyMetricsView(userId: userId) }
+        case "photos": NavigationStack { ProgressPhotosView(userId: userId) }
         case "share":
             ShareCardEditorView(content: ShareCardContent(
                 image: nil, gymName: "Gymnee 渋谷", streak: 3,
@@ -98,8 +100,16 @@ struct RootView: View {
     }
     #endif
 
+    /// 初回サインイン後の初期設定を一度だけ提示（DEBUGデモ時は出さない）。
+    private var shouldShowSetup: Bool {
+        #if DEBUG
+        if DebugSupport.demoRequested { return false }
+        #endif
+        return auth.isSignedIn && !setupDone
+    }
+
     private var mainTabs: some View {
-        TabView(selection: tabBinding) {
+        TabView(selection: $selection) {
             CalendarHomeView()
                 .tabItem { Label("カレンダー", systemImage: "calendar") }
                 .tag(AppTab.calendar)
@@ -108,35 +118,58 @@ struct RootView: View {
                 .tabItem { Label("記録", systemImage: "dumbbell.fill") }
                 .tag(AppTab.workout)
 
-            Color.clear
-                .tabItem { Label("チェックイン", systemImage: "camera.fill") }
-                .tag(AppTab.checkin)
-
             SocialFeedView()
                 .tabItem { Label("ソーシャル", systemImage: "person.2.fill") }
                 .tag(AppTab.social)
 
-            ShopView()
-                .tabItem { Label("ショップ", systemImage: "bag.fill") }
-                .tag(AppTab.shop)
+            analyticsTab
+                .tabItem { Label("分析", systemImage: "chart.bar.xaxis") }
+                .tag(AppTab.analytics)
+
+            otherTab
+                .tabItem { Label("その他", systemImage: "ellipsis") }
+                .tag(AppTab.other)
         }
         .tint(Theme.energy)
-        .fullScreenCover(isPresented: $showCheckIn) {
-            CheckInView()
+        .fullScreenCover(isPresented: Binding(get: { shouldShowSetup }, set: { _ in })) {
+            SetupOnboardingView()
+        }
+        // チェックイン完了後は記録タブへ（今日の計画の「開始」導線を見せる）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in
+            selection = .workout
+        }
+        // 完了サマリー「分析を見る」から分析タブへ。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeShowAnalytics)) { _ in
+            selection = .analytics
+        }
+        // 通知タップのルーティング（type に応じて該当タブへ）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
+            switch note.userInfo?["type"] as? String {
+            case "reaction", "friend_checkin": selection = .social
+            case "workout": selection = .workout
+            case "analytics": selection = .analytics
+            case "recap", "checkin": selection = .calendar
+            case "shop": selection = .other
+            default: break
+            }
         }
     }
 
-    /// 中央タブ選択をチェックインフロー起動に振り替えるバインディング。
-    private var tabBinding: Binding<AppTab> {
-        Binding(
-            get: { selection },
-            set: { newValue in
-                if newValue == .checkin {
-                    showCheckIn = true
-                } else {
-                    selection = newValue
-                }
-            }
-        )
+    @ViewBuilder
+    private var analyticsTab: some View {
+        if let uid = auth.currentUserId {
+            NavigationStack { AnalyticsView(userId: uid) }
+        } else {
+            EmptyStateView(systemImage: "chart.bar", title: "未ログイン")
+        }
+    }
+
+    @ViewBuilder
+    private var otherTab: some View {
+        if let uid = auth.currentUserId {
+            OtherTabView(userId: uid)
+        } else {
+            EmptyStateView(systemImage: "ellipsis", title: "未ログイン")
+        }
     }
 }

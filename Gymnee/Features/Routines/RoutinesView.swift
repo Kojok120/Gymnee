@@ -98,6 +98,10 @@ struct RoutinesView: View {
     private func enqueueRoutine(_ routine: Routine) {
         sync.enqueue(PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt))
         for re in routine.routineExercises {
+            // 参照する種目もサーバーへ（FK: routine_exercises.exercise_id）。
+            if let ex = re.exercise {
+                sync.enqueue(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
+            }
             sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
         }
     }

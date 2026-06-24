@@ -46,6 +46,7 @@ enum SeedData {
         .init(name: "chocoZAP", chain: "chocoZAP"),
         .init(name: "FASTGYM24", chain: "FASTGYM24"),
         .init(name: "JOYFIT", chain: "JOYFIT"),
+        .init(name: "FIT PLACE24", chain: "FitPlace"),
         .init(name: "エクスパンドジム", chain: "Expand"),
     ]
 
@@ -166,5 +167,19 @@ enum SeedData {
         .init(name: "マルトデキストリン 1kg", description: "増量期のカロリー補給に。", price: 1880, category: "カーボ", goalTags: ["bulk"], servings: 20, merchant: "楽天市場", keyword: "マルトデキストリン 1kg"),
         .init(name: "リストラップ", description: "高重量プレス系の手首保護。", price: 1980, category: "ギア", goalTags: ["strength"], servings: nil, merchant: "楽天市場", keyword: "リストラップ 筋トレ"),
         .init(name: "トレーニングベルト", description: "スクワット/デッドの体幹サポート。", price: 5980, category: "ギア", goalTags: ["strength"], servings: nil, merchant: "楽天市場", keyword: "トレーニングベルト"),
+        // 減量向け（脂肪代謝・低カロリー・食欲/糖質コントロール）。
+        .init(name: "L-カルニチン 1000mg", description: "脂肪をエネルギーに変える代謝サポート。減量期に。", price: 2680, category: "サプリ", goalTags: ["cut"], servings: 60, merchant: "楽天市場", keyword: "L-カルニチン サプリ"),
+        .init(name: "CLA 共役リノール酸", description: "体脂肪対策の定番サプリ。減量と併用。", price: 2480, category: "サプリ", goalTags: ["cut"], servings: 90, merchant: "楽天市場", keyword: "CLA 共役リノール酸"),
+        .init(name: "難消化性デキストリン 500g", description: "食物繊維。糖の吸収をおだやかに・満腹感。", price: 1280, category: "サプリ", goalTags: ["cut", "maintain"], servings: 50, merchant: "楽天市場", keyword: "難消化性デキストリン"),
+        // 維持向け（健康ベース・コンディション）。
+        .init(name: "マルチビタミン&ミネラル", description: "不足しがちな微量栄養素の土台。", price: 1980, category: "サプリ", goalTags: ["maintain"], servings: 60, merchant: "楽天市場", keyword: "マルチビタミン ミネラル"),
+        .init(name: "フィッシュオイル オメガ3", description: "EPA/DHA。日々のコンディション維持に。", price: 1780, category: "サプリ", goalTags: ["maintain", "cut"], servings: 90, merchant: "楽天市場", keyword: "フィッシュオイル オメガ3 EPA DHA"),
+        .init(name: "ビタミンD3", description: "骨・免疫・ホルモンの土台。", price: 980, category: "サプリ", goalTags: ["maintain"], servings: 120, merchant: "楽天市場", keyword: "ビタミンD3 サプリ"),
+        // 増量向け（高カロリー・就寝前）。
+        .init(name: "ウエイトゲイナー 3kg", description: "高カロリー。食が細い人の増量に。", price: 5480, category: "プロテイン", goalTags: ["bulk"], servings: 30, merchant: "楽天市場", keyword: "ウエイトゲイナー 増量"),
+        .init(name: "カゼインプロテイン 1kg", description: "就寝前のゆっくり供給。維持・増量に。", price: 4280, category: "プロテイン", goalTags: ["bulk", "maintain"], servings: 33, merchant: "楽天市場", keyword: "カゼインプロテイン"),
+        // 筋力向け（出力・握力補助）。
+        .init(name: "ベータアラニン 200g", description: "高強度の粘り。筋力・高レップに。", price: 2280, category: "サプリ", goalTags: ["strength"], servings: 60, merchant: "楽天市場", keyword: "ベータアラニン"),
+        .init(name: "パワーグリップ", description: "引く種目の握力補助。背中・デッドに。", price: 2980, category: "ギア", goalTags: ["strength"], servings: nil, merchant: "楽天市場", keyword: "パワーグリップ 筋トレ"),
     ]
 }

@@ -26,10 +26,16 @@ private struct CalendarHomeContent: View {
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
     @Query private var gyms: [Gym]
+    @Query private var prs: [PersonalRecord]
+    @Query private var planned: [PlannedWorkout]
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
     @State private var anchor = Date.now
     @State private var selectedDate: SelectedDay?
+    @State private var showCheckIn = false
+    @State private var editingWorkout: Workout?
+    @State private var showNotifPrePrompt = false
+    @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
     /// navigationDestination(item:) は Identifiable を要求するため Date をラップする。
     private struct SelectedDay: Identifiable, Hashable {
@@ -43,6 +49,8 @@ private struct CalendarHomeContent: View {
         self.userId = userId
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date)
+        _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
+        _planned = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone }, sort: \PlannedWorkout.date)
         _gyms = Query(sort: \Gym.name)
     }
 
@@ -50,6 +58,7 @@ private struct CalendarHomeContent: View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
                 heroCard
+                weeklyRecapCard
                 calendarCard
                 upcomingSection
             }
@@ -59,18 +68,32 @@ private struct CalendarHomeContent: View {
         .navigationTitle("Gymnee")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                NavigationLink {
-                    GymListView(userId: userId)
-                } label: {
-                    Image(systemName: "building.2")
+                Button { showCheckIn = true } label: {
+                    Label("チェックイン", systemImage: "camera.fill")
                 }
+                .tint(Theme.energy)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { ProfileView(userId: userId) } label: { Image(systemName: "person.crop.circle") }
+                NavigationLink(value: AppRoute.profile) { Image(systemName: "person.crop.circle") }
             }
         }
+        .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
+        .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
+            Button("オンにする") { notifPrePrompted = true; Task { await notifications.requestAuthorization() } }
+            Button("あとで", role: .cancel) { notifPrePrompted = true }
+        } message: {
+            Text("連続記録の途切れ予告・フレンドの活動・今週のまとめをお届けします。")
+        }
+        // AppRoute の destination は NavigationStack ルート（ここ）で一括宣言する。
+        // push 先（ProfileView 等）の子リンクからも確実に解決できるようにするため
+        // （iOS 26.5 では pushed view 上の navigationDestination が無効化される）。
+        .gymneeNavigationDestinations(userId: userId)
         .navigationDestination(item: $selectedDate) { selection in
-            DayDetailView(userId: userId, date: selection.date)
+            DayDetailView(userId: userId, date: selection.date, onEditWorkout: { editingWorkout = $0 })
+        }
+        // ロガーへの遷移はルートで宣言（pushed view 上の navigationDestination は 26.5 で無効のため）。
+        .navigationDestination(item: $editingWorkout) { workout in
+            WorkoutLoggerView(workout: workout)
         }
         // Watch 保留チェックインの取り込みは「一度だけ」。visits.count トリガに乗せると
         // 挿入→count変化→再実行→再挿入 の無限ループになる（特に App Group 破損時）。
@@ -94,19 +117,60 @@ private struct CalendarHomeContent: View {
     }
 
     private func scheduleReminders() {
+        // プリパーミッション：いきなりOSダイアログを出さず、価値説明の後に許諾を取る。
+        // 拒否済み(.denied)では何も出さない（再有効化は設定画面から）。
         #if DEBUG
-        // デモ/スクショ用ハーネス起動時は許諾ダイアログを出さない（自動撮影をクリーンに保つ）。
-        if !DebugSupport.demoRequested { Task { await notifications.requestAuthorization() } }
+        let allowPrompt = !DebugSupport.demoRequested
         #else
-        Task { await notifications.requestAuthorization() }
+        let allowPrompt = true
         #endif
+        if allowPrompt, notifications.status == .notDetermined, !notifPrePrompted {
+            showNotifPrePrompt = true
+        }
         let today = calendar.startOfDay(for: .now)
-        let checkedInToday = visits.contains { calendar.isDateInToday($0.visitedAt) }
-        notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: checkedInToday)
+        let activeToday = activeDays.contains { calendar.isDateInToday($0) }
+        notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: activeToday)
+        notifications.scheduleWeeklyRecap()
         let planned = workouts
             .filter { $0.isPlanned && $0.completedAt == nil && $0.date >= today }
             .map { (id: $0.id, name: $0.name, date: $0.date) }
         notifications.schedulePlannedWorkouts(planned)
+    }
+
+    // MARK: - 今週のまとめ（達成レイヤー / T1b）
+
+    private var weekStart: Date {
+        var cal = Calendar.current
+        cal.firstWeekday = 2 // 月曜始まり（ランキングと統一）
+        return cal.dateInterval(of: .weekOfYear, for: .now)?.start ?? calendar.startOfDay(for: .now)
+    }
+    private var weekVisits: Int { visits.filter { $0.visitedAt >= weekStart }.count }
+    private var weekWorkouts: Int { workouts.filter { ($0.completedAt ?? .distantPast) >= weekStart }.count }
+    private var weekPRs: Int { prs.filter { $0.achievedAt >= weekStart }.count }
+
+    @ViewBuilder
+    private var weeklyRecapCard: some View {
+        if weekVisits + weekWorkouts + weekPRs > 0 {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                Text("今週のまとめ").font(.headline).foregroundStyle(Theme.textPrimary)
+                HStack(spacing: Theme.Spacing.md) {
+                    recapStat("来店", weekVisits, "figure.walk")
+                    recapStat("ワークアウト", weekWorkouts, "dumbbell.fill")
+                    recapStat("新PR", weekPRs, "medal.fill")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gymneeCard()
+        }
+    }
+
+    private func recapStat(_ label: String, _ value: Int, _ icon: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon).font(.subheadline).foregroundStyle(Theme.lime)
+            Text("\(value)").font(.title3.bold().monospacedDigit()).foregroundStyle(Theme.textPrimary)
+            Text(label).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     /// Watch（App Group キュー）からのクイックチェックインを来店として取り込む。
@@ -246,10 +310,14 @@ private struct CalendarHomeContent: View {
 
     private var grid: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+        // Set は 42 セルで使い回す（セル毎の再生成＝O(visits)×42 を回避）。
+        let vDays = visitDays
+        let wDays = workoutDays
+        let pDays = plannedDays
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(Array(displayedDays.enumerated()), id: \.offset) { _, day in
                 if let day {
-                    dayCell(day)
+                    dayCell(day, visitDays: vDays, workoutDays: wDays, plannedDays: pDays)
                 } else {
                     Color.clear.frame(height: 46)
                 }
@@ -257,10 +325,14 @@ private struct CalendarHomeContent: View {
         }
     }
 
-    private func dayCell(_ date: Date) -> some View {
+    /// 計画(未消化)のある日。グリッドにマーカーを出す。
+    private var plannedDays: Set<Date> { Set(planned.map { calendar.startOfDay(for: $0.date) }) }
+
+    private func dayCell(_ date: Date, visitDays: Set<Date>, workoutDays: Set<Date>, plannedDays: Set<Date>) -> some View {
         let start = calendar.startOfDay(for: date)
         let hasVisit = visitDays.contains(start)
         let hasWorkout = workoutDays.contains(start)
+        let hasPlan = plannedDays.contains(start)
         let isToday = calendar.isDateInToday(date)
         let inMonth = calendar.isDate(date, equalTo: anchor, toGranularity: .month)
         return Button {
@@ -269,6 +341,7 @@ private struct CalendarHomeContent: View {
             VStack(spacing: 4) {
                 Text("\(calendar.component(.day, from: date))")
                     .font(.subheadline.weight(isToday ? .bold : .regular))
+                    .lineLimit(1).minimumScaleFactor(0.6)
                     .foregroundStyle(isToday ? Theme.onLime : (inMonth ? Theme.textPrimary : Theme.textTertiary))
                     .frame(width: 30, height: 30)
                     .background {
@@ -276,11 +349,15 @@ private struct CalendarHomeContent: View {
                             Circle().fill(Theme.limeFill)
                         } else if hasVisit {
                             Circle().fill(Theme.limeSoft)
+                        } else if hasPlan {
+                            // 計画日は枠線で示す（実績の塗りと区別）。
+                            Circle().strokeBorder(Theme.energy.opacity(0.6), lineWidth: 1.5)
                         }
                     }
                 HStack(spacing: 3) {
                     Circle().fill(hasVisit && !isToday ? Theme.lime : .clear).frame(width: 5, height: 5)
                     Circle().fill(hasWorkout ? Theme.warning : .clear).frame(width: 5, height: 5)
+                    Circle().fill(hasPlan ? Theme.energy : .clear).frame(width: 5, height: 5)
                 }
                 .frame(height: 5)
             }
@@ -343,14 +420,18 @@ private struct CalendarHomeContent: View {
     private var workoutDays: Set<Date> {
         Set(workouts.filter { $0.completedAt != nil || !$0.isPlanned }.map { calendar.startOfDay(for: $0.date) })
     }
+    /// 連続記録・週次達成の対象日。来店だけでなく完了ワークアウトも算入（記録派も報われるように）。
+    private var activeDays: [Date] {
+        visits.map(\.visitedAt) + workouts.filter { $0.completedAt != nil }.map { $0.completedAt ?? $0.date }
+    }
     private var currentStreak: Int {
-        StreakCalculator.currentStreak(visitDays: visits.map(\.visitedAt), calendar: calendar)
+        StreakCalculator.currentStreak(visitDays: activeDays, calendar: calendar)
     }
     private var longestStreak: Int {
-        StreakCalculator.longestStreak(visitDays: visits.map(\.visitedAt), calendar: calendar)
+        StreakCalculator.longestStreak(visitDays: activeDays, calendar: calendar)
     }
     private var weekCount: Int {
-        StreakCalculator.weeklyVisitDays(visitDays: visits.map(\.visitedAt), calendar: calendar)
+        StreakCalculator.weeklyVisitDays(visitDays: activeDays, calendar: calendar)
     }
     private var goalProgress: Double {
         guard weeklyGoal > 0 else { return 0 }

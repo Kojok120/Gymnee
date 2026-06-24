@@ -103,10 +103,12 @@ create policy exercise_sets_own on public.exercise_sets for all to authenticated
     ));
 
 -- =========================================================
--- exercises : 全員参照、作成者のみ書込。
+-- exercises : 本人専用＋共有プリセット(created_by null)のみ参照、作成者のみ書込。
+-- 他人のカスタム種目が見えないようにする（プライバシー）。
 -- =========================================================
 alter table public.exercises enable row level security;
-create policy exercises_select_all on public.exercises for select to authenticated using (true);
+create policy exercises_select_own on public.exercises for select to authenticated
+    using (created_by = auth.uid() or created_by is null);
 create policy exercises_insert_own on public.exercises for insert to authenticated
     with check (created_by = auth.uid());
 create policy exercises_update_own on public.exercises for update to authenticated

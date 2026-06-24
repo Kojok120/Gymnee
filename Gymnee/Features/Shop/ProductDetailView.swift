@@ -32,10 +32,13 @@ struct ProductDetailView: View {
                     Text(desc).font(.body).foregroundStyle(.secondary)
                 }
                 if !product.goalTags.isEmpty {
-                    HStack {
-                        ForEach(product.goalTags, id: \.self) { tag in
-                            Text(goalLabel(tag)).font(.caption).padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(Theme.energy.opacity(0.15), in: Capsule())
+                    // タグ数が多くても画面外へはみ出さないよう横スクロールに。
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(product.goalTags, id: \.self) { tag in
+                                Text(goalLabel(tag)).font(.caption).padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(Theme.energy.opacity(0.15), in: Capsule())
+                            }
                         }
                     }
                 }
@@ -83,7 +86,7 @@ struct ProductDetailView: View {
     }
 
     private func logSupply() {
-        let log = SupplyLog(userId: userId, date: .now, amount: 1, productName: product.name, product: product)
+        let log = SupplyLog(userId: userId, date: .now, amount: 1, productName: product.name)
         context.insert(log)
         try? context.save()
         sync.enqueue(PendingChange(entity: "supply_logs", recordId: log.id, operation: .upsert, updatedAt: log.updatedAt))

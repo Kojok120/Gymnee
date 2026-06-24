@@ -26,6 +26,9 @@ struct AddFriendView: View {
         _myBlocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
+    /// 招待リンク（公式サイト。将来 App Store / ディープリンクへ差し替え）。
+    private static let inviteURL = URL(string: "https://gymnee.app")!
+
     private var followingIds: Set<UUID> { Set(myFollows.map(\.followeeId)) }
     private var blockedIds: Set<UUID> { Set(myBlocks.map(\.blockedId)) }
     /// ブロック中のユーザーは検索結果から除外する。
@@ -72,6 +75,15 @@ struct AddFriendView: View {
                 }
             }
 
+            // コールドスタート対策：知り合いをGymneeに招待する導線。
+            Section {
+                ShareLink(item: Self.inviteURL, message: Text("Gymneeで一緒にトレーニングを記録しよう！")) {
+                    Label("友達を招待", systemImage: "person.badge.plus")
+                }
+            } footer: {
+                Text("リンクを送って、フレンドとモチベーションを共有しましょう。")
+            }
+
             if let searchError {
                 Section {
                     Label(searchError, systemImage: "wifi.exclamationmark")
@@ -85,7 +97,7 @@ struct AddFriendView: View {
                 Section("検索結果") {
                     ForEach(visibleResults) { profile in
                         HStack {
-                            Image(systemName: "person.circle.fill").foregroundStyle(Theme.energy)
+                            AvatarView(urlString: profile.avatarURL, size: 32)
                             Text(profile.displayName)
                             Spacer()
                             if followingIds.contains(profile.id) {
@@ -135,6 +147,19 @@ struct AddFriendView: View {
         guard !followingIds.contains(profile.id) else { return }
         let follow = Follow(followerId: userId, followeeId: profile.id, followeeDisplayName: profile.displayName)
         context.insert(follow)
+        // 相手プロフィールを表示用にローカル保存（フィード等でアバター/名前を引くため）。
+        // 他人の profile は push できない（RLS）ので isDirty=false・enqueue しない。
+        let targetId = profile.id
+        let existingProfile = (try? context.fetch(FetchDescriptor<Profile>(predicate: #Predicate { $0.id == targetId })))?.first
+        if let existingProfile {
+            existingProfile.displayName = profile.displayName
+            existingProfile.avatarURL = profile.avatarURL
+            existingProfile.isDirty = false
+        } else {
+            let p = Profile(id: profile.id, displayName: profile.displayName, avatarURL: profile.avatarURL)
+            p.isDirty = false
+            context.insert(p)
+        }
         try? context.save()
         sync.enqueue(PendingChange(entity: "follows", recordId: follow.id, operation: .upsert, updatedAt: follow.updatedAt))
     }

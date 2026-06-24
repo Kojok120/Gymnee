@@ -8,13 +8,14 @@ enum RoutineTemplates {
         let name: String
         let detail: String
         let sets: Int
+        var reps: Int = 10
         let exerciseNames: [String]
     }
 
     static let all: [Template] = [
-        .init(name: "5x5 ストレングス A", detail: "スクワット/ベンチ/ロウ", sets: 5,
+        .init(name: "5x5 ストレングス A", detail: "スクワット/ベンチ/ロウ", sets: 5, reps: 5,
               exerciseNames: ["スクワット", "ベンチプレス", "ベントオーバーロウ"]),
-        .init(name: "5x5 ストレングス B", detail: "スクワット/ショルダー/デッド", sets: 5,
+        .init(name: "5x5 ストレングス B", detail: "スクワット/ショルダー/デッド", sets: 5, reps: 5,
               exerciseNames: ["スクワット", "ショルダープレス", "デッドリフト"]),
         .init(name: "PPL プッシュ", detail: "胸・肩・三頭", sets: 4,
               exerciseNames: ["ベンチプレス", "インクラインベンチプレス", "ショルダープレス", "サイドレイズ", "トライセプスプレスダウン"]),
@@ -33,7 +34,7 @@ enum RoutineTemplates {
         context.insert(routine)
         for (i, name) in template.exerciseNames.enumerated() {
             guard let ex = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == name })))?.first else { continue }
-            let re = RoutineExercise(orderIndex: i, targetSets: template.sets, restSeconds: 90, routine: routine, exercise: ex)
+            let re = RoutineExercise(orderIndex: i, targetSets: template.sets, targetReps: template.reps, restSeconds: 90, routine: routine, exercise: ex)
             context.insert(re)
         }
         try? context.save()

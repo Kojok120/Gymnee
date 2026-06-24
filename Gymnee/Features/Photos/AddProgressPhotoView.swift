@@ -9,6 +9,8 @@ struct AddProgressPhotoView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AuthService.self) private var auth
+    @Environment(AppErrorCenter.self) private var errors
 
     @State private var image: UIImage?
     @State private var photoItem: PhotosPickerItem?
@@ -64,18 +66,41 @@ struct AddProgressPhotoView: View {
             }
             .onChange(of: photoItem) { _, item in
                 Task {
-                    if let data = try? await item?.loadTransferable(type: Data.self) { image = UIImage(data: data) }
+                    guard let data = try? await item?.loadTransferable(type: Data.self) else { return }
+                    // フルデコードせず背景でダウンサンプル（巨大画像の OOM 回避）。
+                    image = await Task.detached(priority: .userInitiated) {
+                        PhotoStore.downsample(data: data, maxPixel: 1280)
+                    }.value
                 }
             }
         }
     }
 
     private func save() {
-        guard let image, let filename = PhotoStore.save(image) else { return }
+        guard let image, let filename = PhotoStore.save(image) else {
+            errors.report("写真を保存できませんでした。")
+            return
+        }
         let photo = ProgressPhoto(userId: userId, date: date, localPhotoFilename: filename, visibility: visibility, note: note.isEmpty ? nil : note)
         context.insert(photo)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            errors.report("写真を保存できませんでした。\(error.localizedDescription)")
+            return
+        }
         sync.enqueue(PendingChange(entity: "progress_photos", recordId: photo.id, operation: .upsert, updatedAt: photo.updatedAt))
+        // リモートにもアップロードして再インストール後の消失を防ぐ（best-effort）。
+        let pid = photo.id
+        Task {
+            guard let jpeg = image.jpegData(compressionQuality: 0.8),
+                  let ref = await auth.uploadPhoto(bucket: "progress-photos", filename: filename, jpeg: jpeg) else { return }
+            // 画面破棄/削除後に元オブジェクトを触らない（id で再取得し、存在する時だけ書く）。
+            guard let fresh = (try? context.fetch(FetchDescriptor<ProgressPhoto>(predicate: #Predicate { $0.id == pid })))?.first else { return }
+            fresh.photoURL = ref; fresh.updatedAt = .now; fresh.isDirty = true
+            try? context.save()
+            sync.enqueue(PendingChange(entity: "progress_photos", recordId: pid, operation: .upsert, updatedAt: fresh.updatedAt))
+        }
         dismiss()
     }
 }

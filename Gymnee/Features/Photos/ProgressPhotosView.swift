@@ -70,15 +70,13 @@ struct ProgressPhotosView: View {
 
     private func thumb(_ photo: ProgressPhoto) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            if let image = PhotoStore.load(photo.localPhotoFilename) {
-                Image(uiImage: image)
-                    .resizable().scaledToFill()
-                    .frame(width: 110, height: 140)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
-            } else {
-                RoundedRectangle(cornerRadius: Theme.Radius.sm).fill(.secondary.opacity(0.2)).frame(width: 110, height: 140)
+            SyncedPhoto(filename: photo.localPhotoFilename, ref: photo.photoURL) {
+                RoundedRectangle(cornerRadius: Theme.Radius.sm).fill(.secondary.opacity(0.2))
             }
+            .scaledToFill()
+            .frame(width: 110, height: 140)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
             if photo.visibility == .private {
                 Image(systemName: "lock.fill")
                     .font(.caption2).padding(4)
@@ -98,9 +96,10 @@ struct ProgressPhotosView: View {
     private func photoFullscreen(_ photo: ProgressPhoto) -> some View {
         NavigationStack {
             VStack {
-                if let image = PhotoStore.load(photo.localPhotoFilename) {
-                    Image(uiImage: image).resizable().scaledToFit()
+                SyncedPhoto(filename: photo.localPhotoFilename, ref: photo.photoURL) {
+                    ProgressView()
                 }
+                .scaledToFit()
             }
             .navigationTitle(photo.date.formatted(date: .abbreviated, time: .omitted))
             .navigationBarTitleDisplayMode(.inline)
@@ -125,10 +124,14 @@ struct ProgressPhotosView: View {
     private var monthKeys: [String] {
         grouped.keys.sorted(by: >)
     }
-    private func monthKey(_ photo: ProgressPhoto) -> String {
+    /// 写真ごとに DateFormatter を新規生成しないよう共有（生成コストは高い）。
+    private static let monthFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
         f.dateFormat = "yyyy年 M月"
-        return f.string(from: photo.date)
+        return f
+    }()
+    private func monthKey(_ photo: ProgressPhoto) -> String {
+        Self.monthFormatter.string(from: photo.date)
     }
 }

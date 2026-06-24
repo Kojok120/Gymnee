@@ -8,6 +8,8 @@ final class Follow {
     var followerId: UUID
     var followeeId: UUID
     var followeeDisplayName: String?
+    /// このフレンド(followee)のチェックイン通知を受け取るか。フォロワー側の設定。
+    var notify: Bool
     var createdAt: Date
     var updatedAt: Date
     var isDirty: Bool
@@ -17,6 +19,7 @@ final class Follow {
         followerId: UUID,
         followeeId: UUID,
         followeeDisplayName: String? = nil,
+        notify: Bool = true,
         createdAt: Date = .now,
         updatedAt: Date = .now,
         isDirty: Bool = true
@@ -25,6 +28,7 @@ final class Follow {
         self.followerId = followerId
         self.followeeId = followeeId
         self.followeeDisplayName = followeeDisplayName
+        self.notify = notify
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDirty = isDirty
@@ -147,6 +151,41 @@ final class FeedItem {
         self.refId = refId
         self.summary = summary
         self.visibilityRaw = visibility.rawValue
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isDirty = isDirty
+    }
+}
+
+/// 投稿（feed_items）へのいいね/応援（§6.11）。1ユーザー1投稿1種別。
+@Model
+final class PostReaction {
+    @Attribute(.unique) var id: UUID
+    var userId: UUID
+    var feedItemId: UUID
+    var kindRaw: String
+    var createdAt: Date
+    var updatedAt: Date
+    var isDirty: Bool
+
+    var kind: ReactionKind {
+        get { ReactionKind(rawValue: kindRaw) ?? .like }
+        set { kindRaw = newValue.rawValue }
+    }
+
+    init(
+        id: UUID = UUID(),
+        userId: UUID,
+        feedItemId: UUID,
+        kind: ReactionKind = .like,
+        createdAt: Date = .now,
+        updatedAt: Date = .now,
+        isDirty: Bool = true
+    ) {
+        self.id = id
+        self.userId = userId
+        self.feedItemId = feedItemId
+        self.kindRaw = kind.rawValue
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDirty = isDirty

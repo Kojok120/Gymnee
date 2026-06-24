@@ -9,14 +9,34 @@ struct SettingsView: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(HealthKitService.self) private var health
     @Environment(AppErrorCenter.self) private var errors
+    @Environment(SubscriptionService.self) private var subscription
+    @Environment(NotificationService.self) private var notifications
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
     @State private var showEmailSignIn = false
+    @State private var showProfileEdit = false
+    @State private var showPaywall = false
+    @State private var browserURL: IdentifiableURL?
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
+    @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
+    @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
     var body: some View {
         Form {
             Section("プロフィール") {
-                LabeledContent("表示名", value: auth.session?.displayName ?? "—")
+                Button { showProfileEdit = true } label: {
+                    HStack(spacing: Theme.Spacing.md) {
+                        AvatarView(filename: avatarFilename, urlString: avatarURLString, size: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(auth.session?.displayName ?? "—").foregroundStyle(.primary)
+                            Text("プロフィールを編集").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .tint(.primary)
                 if let id = auth.currentUserId {
                     LabeledContent("ユーザーID") {
                         Text(id.uuidString.prefix(8) + "…")
@@ -25,6 +45,50 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section {
+                Picker("投稿の既定の公開範囲", selection: $defaultVisibilityRaw) {
+                    ForEach(Visibility.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
+                }
+            } header: {
+                Text("ソーシャル")
+            } footer: {
+                Text("チェックインやワークアウトを共有するときの初期の公開範囲。投稿ごとに個別変更もできます。")
+            }
+
+            Section {
+                Stepper(value: $weeklyGoal, in: 1...7) {
+                    LabeledContent("週のワークアウト目標", value: "\(weeklyGoal) 日")
+                }
+            } header: {
+                Text("ワークアウト")
+            } footer: {
+                Text("ホームの「今週の達成」リングの目標日数。")
+            }
+
+            Section {
+                switch notifications.status {
+                case .authorized, .provisional, .ephemeral:
+                    LabeledContent("通知", value: "オン")
+                case .denied:
+                    Button {
+                        notifications.openSystemSettings()
+                    } label: {
+                        Label("通知をオンにする（設定を開く）", systemImage: "bell.badge")
+                    }
+                default:
+                    Button {
+                        Task { await notifications.requestAuthorization() }
+                    } label: {
+                        Label("通知をオンにする", systemImage: "bell")
+                    }
+                }
+            } header: {
+                Text("通知")
+            } footer: {
+                Text("連続記録の途切れ予告・フレンドの活動・今週のまとめを受け取れます。")
+            }
+            .task { await notifications.refreshStatus() }
 
             Section("同期") {
                 LabeledContent("バックエンド", value: sync.isRemoteEnabled ? "接続済み" : "ローカルのみ")
@@ -39,7 +103,7 @@ struct SettingsView: View {
                             .font(.caption).foregroundStyle(.orange)
                     }
                     Button {
-                        Task { await sync.syncNow() }
+                        Task { await sync.syncNow(force: true) }
                     } label: {
                         Label("今すぐ同期", systemImage: "arrow.triangle.2.circlepath")
                     }
@@ -80,21 +144,34 @@ struct SettingsView: View {
                 }
                 .tint(.primary)
                 .disabled(!health.isAvailable)
-
-                if let uid = auth.currentUserId {
-                    NavigationLink {
-                        AnalyticsView(userId: uid)
-                    } label: {
-                        Label("分析・CSVエクスポート", systemImage: "chart.bar.xaxis")
-                    }
-                }
             }
 
             Section("プラン") {
-                LabeledContent("現在のプラン", value: "Free")
-                Text("サブスク採用可否は要決定（§9-5）。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                LabeledContent("現在のプラン", value: subscription.isPremium ? "Premium" : "Free")
+                if !subscription.isPremium {
+                    Button { showPaywall = true } label: {
+                        Label("Premium にアップグレード", systemImage: "crown.fill")
+                    }
+                    .tint(Theme.lime)
+                } else {
+                    Button("購入を復元") { Task { await subscription.restore() } }
+                        .tint(.primary)
+                }
+            }
+
+            Section("規約・サポート") {
+                Button { browserURL = IdentifiableURL(url: Self.termsURL) } label: {
+                    legalRow("利用規約", systemImage: "doc.text")
+                }
+                .tint(.primary)
+                Button { browserURL = IdentifiableURL(url: Self.privacyURL) } label: {
+                    legalRow("プライバシーポリシー", systemImage: "hand.raised")
+                }
+                .tint(.primary)
+                Link(destination: Self.contactURL) {
+                    legalRow("お問い合わせ", systemImage: "envelope")
+                }
+                .tint(.primary)
             }
 
             Section {
@@ -122,6 +199,31 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showEmailSignIn) {
             EmailSignInSheet()
+        }
+        .sheet(isPresented: $showProfileEdit) {
+            ProfileEditView()
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView()
+        }
+        .sheet(item: $browserURL) { item in
+            SafariView(url: item.url).ignoresSafeArea()
+        }
+    }
+
+    // 規約・サポートの遷移先（公式ドメイン gymnee.app）。
+    private static let termsURL = URL(string: "https://gymnee.app/terms-of-service.html")!
+    private static let privacyURL = URL(string: "https://gymnee.app/privacy-policy.html")!
+    // 件名「Gymnee お問い合わせ」を percent-encode（生の日本語だと URL(string:) が nil になり得るため）。
+    private static let contactURL = URL(string: "mailto:kojokamo120@gmail.com?subject=Gymnee%20%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B")!
+
+    /// 規約・サポート行（左ラベル＋右に外部リンクの示唆アイコン）。
+    private func legalRow(_ title: String, systemImage: String) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            Image(systemName: "arrow.up.right")
+                .font(.caption).foregroundStyle(.tertiary)
         }
     }
 

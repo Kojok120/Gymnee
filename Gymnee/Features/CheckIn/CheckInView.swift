@@ -12,15 +12,24 @@ struct CheckInView: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AppErrorCenter.self) private var errors
     @Query(sort: \Gym.name) private var gyms: [Gym]
+    @Query private var follows: [Follow]
+    @Query private var profiles: [Profile]
 
     @State private var image: UIImage?
     @State private var photoItem: PhotosPickerItem?
+    @State private var lastPlacesLocation: CLLocation?
     @State private var showCamera = false
     @State private var selectedGym: Gym?
     @State private var showGymPicker = false
     @State private var note = ""
-    @State private var partnerNames: [String] = []
+    /// 合トレ相手。フレンド選択なら実 userId、手入力ならランダム UUID を id に持つ。
+    @State private var partners: [PartnerDraft] = []
     @State private var newPartner = ""
+
+    struct PartnerDraft: Identifiable, Hashable {
+        let id: UUID
+        let name: String
+    }
     @State private var visitedAt = Date.now
     @State private var savedVisit: Visit?
 
@@ -40,7 +49,11 @@ struct CheckInView: View {
     var body: some View {
         NavigationStack {
             if let savedVisit {
-                CheckInSuccessView(visit: savedVisit) { dismiss() }
+                CheckInSuccessView(visit: savedVisit) {
+                    // 記録タブへ誘導（今日の計画の「開始」が自然に見えるように）。
+                    NotificationCenter.default.post(name: .gymneeDidCheckIn, object: nil)
+                    dismiss()
+                }
             } else {
                 form
             }
@@ -53,6 +66,10 @@ struct CheckInView: View {
         }
         .onChange(of: location.current?.timestamp) { _, _ in
             autoSelectNearestGym()
+            // GPSティック毎の MapKit 再検索を抑止（80m以上動いた時のみ再検索）。
+            guard let loc = location.current else { return }
+            if let last = lastPlacesLocation, loc.distance(from: last) < 80 { return }
+            lastPlacesLocation = loc
             Task { await loadNearbyPlaces() }
         }
     }
@@ -218,21 +235,42 @@ struct CheckInView: View {
 
     private var partnerSection: some View {
         Section("合トレ相手（任意）") {
-            ForEach(partnerNames, id: \.self) { name in
-                Label(name, systemImage: "person.fill")
+            ForEach(partners) { p in
+                Label(p.name, systemImage: "person.fill")
             }
-            .onDelete { partnerNames.remove(atOffsets: $0) }
+            .onDelete { partners.remove(atOffsets: $0) }
+            if !friendOptions.isEmpty {
+                Menu {
+                    ForEach(friendOptions) { f in
+                        Button(f.name) { partners.append(f) }
+                    }
+                } label: {
+                    Label("フレンドから追加", systemImage: "person.2.fill")
+                }
+            }
             HStack {
-                TextField("名前を追加", text: $newPartner)
+                TextField("名前を手入力", text: $newPartner)
                 Button("追加") {
                     let trimmed = newPartner.trimmingCharacters(in: .whitespaces)
                     guard !trimmed.isEmpty else { return }
-                    partnerNames.append(trimmed)
+                    partners.append(PartnerDraft(id: UUID(), name: trimmed))
                     newPartner = ""
                 }
                 .disabled(newPartner.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+    }
+
+    /// フォロー中で、まだ追加していないフレンド（合トレ相手の候補）。
+    private var friendOptions: [PartnerDraft] {
+        guard let myId = auth.currentUserId else { return [] }
+        let added = Set(partners.map(\.id))
+        let nameById = Dictionary(profiles.map { ($0.id, $0.displayName) }, uniquingKeysWith: { a, _ in a })
+        return follows
+            .filter { $0.followerId == myId }
+            .map(\.followeeId)
+            .filter { !added.contains($0) }
+            .map { PartnerDraft(id: $0, name: nameById[$0] ?? "ユーザー") }
     }
 
     // MARK: - Auto select
@@ -307,11 +345,14 @@ struct CheckInView: View {
     // MARK: - Actions
 
     private func loadPhoto(_ item: PhotosPickerItem?) async {
-        guard let item else { return }
-        if let data = try? await item.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
-            image = ui
-            autoSelectNearestGym()
-        }
+        guard let item, let data = try? await item.loadTransferable(type: Data.self) else { return }
+        // フルデコードせず背景でダウンサンプル（巨大画像の OOM 回避）。
+        let ui = await Task.detached(priority: .userInitiated) {
+            PhotoStore.downsample(data: data, maxPixel: 1280)
+        }.value
+        guard let ui else { return }
+        image = ui
+        autoSelectNearestGym()
     }
 
     private func save() {
@@ -328,8 +369,8 @@ struct CheckInView: View {
             note: note.isEmpty ? nil : note
         )
         context.insert(visit)
-        for name in partnerNames {
-            let partner = VisitPartner(partnerUserId: UUID(), partnerDisplayName: name, visit: visit)
+        for p in partners {
+            let partner = VisitPartner(partnerUserId: p.id, partnerDisplayName: p.name, visit: visit)
             context.insert(partner)
         }
         do {
@@ -339,6 +380,19 @@ struct CheckInView: View {
             return
         }
         sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
+        // 来店写真をリモートにもアップロード（再インストール後の消失を防ぐ・best-effort）。
+        if let filename, let img = image {
+            let vid = visit.id
+            Task {
+                guard let jpeg = img.jpegData(compressionQuality: 0.8),
+                      let ref = await auth.uploadPhoto(bucket: "visit-photos", filename: filename, jpeg: jpeg) else { return }
+                // 画面破棄/削除後に元オブジェクトを触らない（id で再取得し、存在する時だけ書く）。
+                guard let fresh = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == vid })))?.first else { return }
+                fresh.photoURL = ref; fresh.updatedAt = .now; fresh.isDirty = true
+                try? context.save()
+                sync.enqueue(PendingChange(entity: "visits", recordId: vid, operation: .upsert, updatedAt: fresh.updatedAt))
+            }
+        }
         savedVisit = visit
     }
 }

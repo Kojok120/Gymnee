@@ -6,6 +6,12 @@ import WatchConnectivity
 extension Notification.Name {
     /// iOS 本体：Watch からクイックチェックイン要求を受信した。
     static let gymneeWatchCheckInReceived = Notification.Name("gymnee.watchCheckInReceived")
+    /// チェックイン完了。記録タブへ誘導するために RootView が購読する。
+    static let gymneeDidCheckIn = Notification.Name("gymnee.didCheckIn")
+    /// 完了サマリー等から分析タブへ切替えるための要求。
+    static let gymneeShowAnalytics = Notification.Name("gymnee.showAnalytics")
+    /// 通知タップ等から目的地（タブ）へ遷移する要求（userInfo: type/feedItemId）。
+    static let gymneeOpenDestination = Notification.Name("gymnee.openDestination")
     /// Watch：本体から最新スナップショットを受信した。
     static let gymneeSnapshotUpdated = Notification.Name("gymnee.snapshotUpdated")
 }
@@ -19,7 +25,9 @@ extension Notification.Name {
 ///
 /// 受信側はいずれも従来どおり `SharedStore` を介して処理するので、既存の取り込み導線をそのまま使える。
 /// ※ アプリ拡張(Widget)では WatchConnectivity が使えないため、このファイルは本体/Watch ターゲットにのみ含める。
-final class WatchConnector: NSObject {
+// WCSessionDelegate のコールバックは WC 専用のバックグラウンドスレッドで届く。共有状態
+// (SharedStore/NotificationCenter) へのアクセスは main に直列化して競合を避ける。
+final class WatchConnector: NSObject, @unchecked Sendable {
     static let shared = WatchConnector()
 
     private let checkInKey = "checkInAt"
@@ -68,7 +76,8 @@ final class WatchConnector: NSObject {
         #if canImport(WatchConnectivity)
         guard WCSession.isSupported() else { return }
         let session = WCSession.default
-        guard session.activationState == .activated,
+        // Watch 未ペアリング/未インストール時の DeviceNotPaired エラーログを避ける。
+        guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled,
               let data = try? JSONEncoder().encode(snapshot) else { return }
         try? session.updateApplicationContext([snapshotKey: data])
         #endif
@@ -95,8 +104,9 @@ extension WatchConnector: WCSessionDelegate {
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         guard let data = applicationContext[snapshotKey] as? Data,
               let snapshot = try? JSONDecoder().decode(GymneeSnapshot.self, from: data) else { return }
-        SharedStore.save(snapshot)
+        // 共有状態の書込と通知を main に直列化（WC のBGスレッドからの競合を回避）。
         DispatchQueue.main.async {
+            SharedStore.save(snapshot)
             NotificationCenter.default.post(name: .gymneeSnapshotUpdated, object: nil)
         }
     }
@@ -104,9 +114,9 @@ extension WatchConnector: WCSessionDelegate {
     private func handleIncomingCheckIn(_ payload: [String: Any]) {
         guard let ts = payload[checkInKey] as? Double else { return }
         let date = Date(timeIntervalSince1970: ts)
-        // アプリ未起動時の受信にも備え、まず App Group キューに積む（既存の取り込み導線が拾う）。
-        SharedStore.addPendingCheckIn(at: date)
+        // App Group キュー書込と通知を main に直列化（既存の取り込み導線が拾う）。
         DispatchQueue.main.async {
+            SharedStore.addPendingCheckIn(at: date)
             NotificationCenter.default.post(name: .gymneeWatchCheckInReceived, object: nil)
         }
     }

@@ -24,9 +24,11 @@ struct AnalyticsView: View {
 
     init(userId: UUID) {
         self.userId = userId
-        _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date)
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt)
-        _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
+        // 最大表示期間(1年=52週)＋バッファ分だけ取得し、多年履歴の全ロードを避ける。
+        let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -53, to: Date()) ?? .distantPast
+        _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.date >= cutoff }, sort: \Workout.date)
+        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId && $0.visitedAt >= cutoff }, sort: \Visit.visitedAt)
+        _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId && $0.achievedAt >= cutoff }, sort: \PersonalRecord.achievedAt, order: .reverse)
     }
 
     var body: some View {
@@ -188,7 +190,7 @@ struct AnalyticsView: View {
 
     private var prTimelineCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "PR タイムライン")
+            SectionHeader(title: "自己ベストの記録")
             let recent = prs.filter { $0.achievedAt >= periodStart }
             if recent.isEmpty {
                 Text("この期間の自己ベスト更新はありません。").font(.caption).foregroundStyle(.secondary)
@@ -233,16 +235,26 @@ struct AnalyticsView: View {
             }
             ForEach(statuses) { status in
                 HStack {
-                    Text(status.muscle.label).frame(width: 48, alignment: .leading)
+                    Text(status.muscle.label)
+                        .frame(minWidth: 48, alignment: .leading)
+                        .lineLimit(1).minimumScaleFactor(0.7).fixedSize(horizontal: true, vertical: false)
                     ProgressView(value: status.recoveryProgress)
                         .tint(status.isRecovered ? Theme.energy : .orange)
                     Text(status.isRecovered ? "回復" : "回復中")
                         .font(.caption2)
                         .foregroundStyle(status.isRecovered ? Theme.energy : .orange)
-                        .frame(width: 40)
+                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 }
                 .font(.caption)
             }
+            // 分析→行動の循環を閉じる：回復済みの部位を踏まえて記録を開始。
+            Button {
+                NotificationCenter.default.post(name: .gymneeOpenDestination, object: nil, userInfo: ["type": "workout"])
+            } label: {
+                Label("記録を開始", systemImage: "plus.circle.fill").font(.subheadline.bold())
+            }
+            .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+            .padding(.top, Theme.Spacing.xs)
         }
         .gymneeCard()
     }

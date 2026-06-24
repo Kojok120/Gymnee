@@ -22,12 +22,19 @@ private struct WorkoutHomeContent: View {
     @Environment(\.modelContext) private var context
     @Query private var routines: [Routine]
     @Query private var recentWorkouts: [Workout]
+    @Query private var todayPlanned: [PlannedWorkout]
     @State private var activeWorkout: Workout?
-    @State private var showPlateCalc = false
+    @State private var editRoutine: Routine?
 
     init(userId: UUID) {
         self.userId = userId
         _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
+        let dayStart = Calendar.current.startOfDay(for: Date())
+        let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        _todayPlanned = Query(
+            filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone && $0.date >= dayStart && $0.date < dayEnd },
+            sort: \PlannedWorkout.date
+        )
         var desc = FetchDescriptor<Workout>(
             predicate: #Predicate { $0.userId == userId && $0.completedAt != nil },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
@@ -39,6 +46,7 @@ private struct WorkoutHomeContent: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
+                todayPlanSection
                 startHero
                 toolsRow
                 routinesSection
@@ -55,16 +63,55 @@ private struct WorkoutHomeContent: View {
             switch target {
             case .routines: RoutinesView(userId: userId)
             case .library: ExerciseLibraryView(userId: userId)
+            case .planner: WeekPlannerView(userId: userId, onStart: { activeWorkout = $0 })
             }
         }
-        .sheet(isPresented: $showPlateCalc) {
-            PlateCalculatorView(initialTarget: 60)
+        .sheet(item: $editRoutine) { routine in
+            RoutineEditorView(routine: routine)
         }
     }
 
-    private enum NavTarget: Hashable { case routines, library }
+    private enum NavTarget: Hashable { case routines, library, planner }
 
     // MARK: - Sections
+
+    /// 今日の計画（あれば最上部に表示）。「開始」で実記録へ。チェックイン直後に自然に見える位置。
+    @ViewBuilder
+    private var todayPlanSection: some View {
+        if !todayPlanned.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                SectionHeader(title: "今日の計画")
+                ForEach(todayPlanned) { plan in
+                    HStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "calendar.badge.clock")
+                            .foregroundStyle(Theme.lime)
+                            .frame(width: 40, height: 40)
+                            .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(plan.title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                            if let n = planExerciseCount(plan) {
+                                Text("\(n)種目").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("開始") {
+                            activeWorkout = PlanStarter.start(plan, userId: userId, routines: routines, context: context)
+                        }
+                        .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+                    }
+                    .gymneeCard(padding: Theme.Spacing.md)
+                }
+            }
+        }
+    }
+
+    /// 計画に含まれる種目数（AI詳細があればその数）。
+    private func planExerciseCount(_ plan: PlannedWorkout) -> Int? {
+        guard let json = plan.detailJSON, let data = json.data(using: .utf8),
+              let exs = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data), !exs.isEmpty
+        else { return nil }
+        return exs.count
+    }
 
     private var startHero: some View {
         Button { startEmpty() } label: {
@@ -95,7 +142,7 @@ private struct WorkoutHomeContent: View {
         HStack(spacing: Theme.Spacing.md) {
             NavigationLink(value: NavTarget.routines) { toolCard(icon: "list.bullet.rectangle.fill", label: "ルーティン") }
             NavigationLink(value: NavTarget.library) { toolCard(icon: "figure.strengthtraining.traditional", label: "種目") }
-            Button { showPlateCalc = true } label: { toolCard(icon: "circle.hexagongrid.fill", label: "プレート") }
+            NavigationLink(value: NavTarget.planner) { toolCard(icon: "calendar", label: "計画") }
         }
         .buttonStyle(.plain)
     }
@@ -139,6 +186,9 @@ private struct WorkoutHomeContent: View {
                         .gymneeCard(padding: Theme.Spacing.md)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { editRoutine = routine } label: { Label("編集", systemImage: "pencil") }
+                    }
                 }
             }
         }
@@ -167,9 +217,34 @@ private struct WorkoutHomeContent: View {
                         .gymneeCard(padding: Theme.Spacing.md)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button { repeatWorkout(from: workout) } label: {
+                            Label("同じ内容で開始", systemImage: "arrow.clockwise")
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// 過去のワークアウトと同じ種目構成で新規に開始（前回値プレフィル）。ルーティン化せず再実行したい時に。
+    private func repeatWorkout(from source: Workout) {
+        let workout = Workout(userId: userId, date: .now, name: source.name)
+        context.insert(workout)
+        let ordered = source.exercises.sorted { $0.orderIndex < $1.orderIndex }
+        for (i, se) in ordered.enumerated() {
+            guard let exercise = se.exercise else { continue }
+            let we = WorkoutExercise(orderIndex: i, restSeconds: se.restSeconds, workout: workout, exercise: exercise)
+            context.insert(we)
+            let prev = WorkoutMetrics.previousSets(for: exercise, userId: userId, excludingWorkoutId: workout.id)
+            let setCount = max(max(se.sets.count, prev.count), 1)
+            for s in 0..<setCount {
+                let p = s < prev.count ? prev[s] : nil
+                context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: p?.reps ?? 0, type: p?.type ?? .normal, workoutExercise: we))
+            }
+        }
+        try? context.save()
+        activeWorkout = workout
     }
 
     // MARK: - Start actions
@@ -193,7 +268,9 @@ private struct WorkoutHomeContent: View {
             let setCount = max(re.targetSets, prev.count)
             for s in 0..<setCount {
                 let p = s < prev.count ? prev[s] : nil
-                context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: p?.reps ?? 0, type: p?.type ?? .normal, workoutExercise: we))
+                // レップは「前回実績 → ルーティンの目標レップ → 0」の順で初期値に。
+                let reps = p?.reps ?? re.targetReps ?? 0
+                context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: reps, type: p?.type ?? .normal, workoutExercise: we))
             }
         }
         try? context.save()

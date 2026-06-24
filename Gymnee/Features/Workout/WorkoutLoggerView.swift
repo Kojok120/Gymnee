@@ -14,9 +14,13 @@ struct WorkoutLoggerView: View {
 
     @State private var restTimer = RestTimer()
     @State private var showExercisePicker = false
-    @State private var plateTarget: Double?
     @State private var prToast: String?
     @State private var editingNote: WorkoutExercise?
+    @State private var showSummary = false
+    @State private var pendingShare = false
+    @State private var showShareCard = false
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
 
     private var userId: UUID { auth.currentUserId ?? UUID() }
     private var orderedExercises: [WorkoutExercise] {
@@ -43,10 +47,23 @@ struct WorkoutLoggerView: View {
         .sheet(isPresented: $showExercisePicker) {
             ExercisePickerView { addExercise($0) }
         }
-        .sheet(item: Binding(get: { plateTarget.map { PlateTarget(weight: $0) } }, set: { plateTarget = $0?.weight })) { target in
-            PlateCalculatorView(initialTarget: target.weight)
-        }
         .overlay(alignment: .top) { prToastView }
+        .sheet(isPresented: $showSummary, onDismiss: { if pendingShare { pendingShare = false; showShareCard = true } }) {
+            WorkoutSummaryView(
+                workout: workout,
+                streak: currentStreak,
+                onShare: { pendingShare = true; showSummary = false },
+                onAnalytics: {
+                    showSummary = false
+                    NotificationCenter.default.post(name: .gymneeShowAnalytics, object: nil)
+                    dismiss()
+                },
+                onClose: { showSummary = false; dismiss() }
+            )
+        }
+        .sheet(isPresented: $showShareCard) {
+            ShareCardEditorView(content: shareContent)
+        }
         .sheet(item: $editingNote) { we in
             NavigationStack {
                 Form {
@@ -68,8 +85,6 @@ struct WorkoutLoggerView: View {
             .presentationDetents([.height(220)])
         }
     }
-
-    private struct PlateTarget: Identifiable { let weight: Double; var id: Double { weight } }
 
     private func noteBinding(_ we: WorkoutExercise) -> Binding<String> {
         Binding(get: { we.note ?? "" }, set: { we.note = $0.isEmpty ? nil : $0; we.updatedAt = .now })
@@ -134,10 +149,12 @@ struct WorkoutLoggerView: View {
                     Image(systemName: "link").font(.caption2).foregroundStyle(supersetColor(we))
                 }
                 Text(we.exercise?.name ?? "種目")
+                    .lineLimit(1).truncationMode(.tail)
                 if let hint = previousHint(for: we) {
                     Text(hint).font(.caption2).foregroundStyle(.secondary)
+                        .lineLimit(1).layoutPriority(-1)
                 }
-                Spacer()
+                Spacer(minLength: Theme.Spacing.sm)
                 exerciseMenu(we)
             }
         } footer: {
@@ -150,8 +167,15 @@ struct WorkoutLoggerView: View {
 
     private func exerciseMenu(_ we: WorkoutExercise) -> some View {
         Menu {
+            if let exercise = we.exercise {
+                Picker("重量の数え方", selection: Binding(
+                    get: { exercise.weightMode },
+                    set: { setWeightMode($0, for: exercise) }
+                )) {
+                    ForEach(WeightMode.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+            }
             Button { addWarmup(to: we) } label: { Label("ウォームアップを追加", systemImage: "flame") }
-            Button { plateTarget = topWeight(of: we) } label: { Label("プレート計算", systemImage: "circle.hexagongrid.fill") }
             Button { editingNote = we } label: { Label("メモを編集", systemImage: "note.text") }
             if we.supersetGroup != nil {
                 Button { clearSuperset(we) } label: { Label("スーパーセット解除", systemImage: "link") }
@@ -256,6 +280,15 @@ struct WorkoutLoggerView: View {
 
     // MARK: - Actions
 
+    /// 種目の既定の重量の数え方を変更（両側/片側）。同期キューへ。
+    private func setWeightMode(_ mode: WeightMode, for exercise: Exercise) {
+        exercise.weightMode = mode
+        exercise.updatedAt = .now
+        exercise.isDirty = true
+        try? context.save()
+        sync.enqueue(PendingChange(entity: "exercises", recordId: exercise.id, operation: .upsert, updatedAt: exercise.updatedAt))
+    }
+
     private func addExercise(_ exercise: Exercise) {
         let we = WorkoutExercise(orderIndex: workout.exercises.count, workout: workout, exercise: exercise)
         context.insert(we)
@@ -268,6 +301,8 @@ struct WorkoutLoggerView: View {
             }
         }
         try? context.save()
+        // 参照する種目もサーバーへ（FK: workout_exercises.exercise_id）。
+        sync.enqueue(PendingChange(entity: "exercises", recordId: exercise.id, operation: .upsert, updatedAt: exercise.updatedAt))
         sync.enqueue(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
     }
 
@@ -334,7 +369,35 @@ struct WorkoutLoggerView: View {
             }
         }
         restTimer.stop()
-        dismiss()
+        // 完了時にフィード発行（従来はSocialタブを開くまで遅延していた）。PR等を即座に届ける。
+        FeedPublisher.publishOwnPosts(
+            userId: userId, authorName: auth.session?.displayName, context: context,
+            visibilityStore: PostVisibilityStore(), defaultVisibility: defaultVisibility, sync: sync
+        )
+        // 即dismissせず達成サマリーを提示（共有/分析/閉じるへ分岐）。
+        showSummary = true
+    }
+
+    /// 連続日数（来店＋完了ワークアウト）。サマリーの祝祭表示用。
+    private var currentStreak: Int {
+        let uid = userId
+        let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == uid }))) ?? []
+        let completed = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil }))) ?? []
+        let days = visits.map(\.visitedAt) + completed.map { $0.completedAt ?? $0.date }
+        return StreakCalculator.currentStreak(visitDays: days, calendar: .current)
+    }
+
+    /// 共有カード内容（このワークアウト）。
+    private var shareContent: ShareCardContent {
+        let prNames = Set(workout.exercises.flatMap(\.sets).filter(\.isPR).compactMap { $0.workoutExercise?.exercise?.name })
+        let exNames = workout.exercises.compactMap { $0.exercise?.name }.prefix(3).joined(separator: "・")
+        return ShareCardContent(
+            image: nil,
+            gymName: workout.name,
+            streak: currentStreak,
+            prText: prNames.isEmpty ? nil : prNames.joined(separator: "・"),
+            exerciseSummary: exNames.isEmpty ? nil : "\(exNames) \(workout.exercises.count)種目"
+        )
     }
 
     // MARK: - Derived
@@ -352,10 +415,6 @@ struct WorkoutLoggerView: View {
 
     private var completedSets: Int {
         orderedExercises.flatMap(\.sets).filter { $0.type != .warmup && $0.isCompleted }.count
-    }
-
-    private func topWeight(of we: WorkoutExercise) -> Double {
-        we.sets.map(\.weight).max() ?? 60
     }
 
     private func estimated1RM(for we: WorkoutExercise) -> Double? {

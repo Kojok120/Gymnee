@@ -52,8 +52,25 @@ actor SupabaseClient {
         var request = restRequest(path: table, query: query)
         request.httpMethod = "POST"
         request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try JSONSerialization.data(withJSONObject: rows)
+        // NaN/Infinity を含むと JSONSerialization が Obj-C 例外を投げ try で捕捉できず即死するため、
+        // 非有限の数値を null に正規化してから JSON 化する。
+        let cleaned = rows.map { Self.sanitizeForJSON($0) as? [String: Any] ?? $0 }
+        request.httpBody = try JSONSerialization.data(withJSONObject: cleaned)
         try await send(request)
+    }
+
+    /// JSON 化前に非有限の Double/Float（NaN/Infinity）を NSNull に置換する（再帰）。
+    private static func sanitizeForJSON(_ value: Any) -> Any {
+        switch value {
+        case let d as Double: return d.isFinite ? d : NSNull()
+        case let f as Float: return f.isFinite ? f : NSNull()
+        case let n as NSNumber:
+            let dv = n.doubleValue
+            return dv.isFinite ? n : NSNull()
+        case let dict as [String: Any]: return dict.mapValues { sanitizeForJSON($0) }
+        case let arr as [Any]: return arr.map { sanitizeForJSON($0) }
+        default: return value
+        }
     }
 
     /// APNs デバイストークンを登録（token の unique 制約で衝突解決）。user_id は DB 既定の auth.uid()。
@@ -143,15 +160,16 @@ actor SupabaseClient {
     func googleAuthorizeURL(redirectTo: String) -> PKCEChallenge {
         let verifier = Self.randomCodeVerifier()
         let challenge = Self.codeChallenge(for: verifier)
-        var comps = URLComponents(url: config.url.appendingPathComponent("auth/v1/authorize"), resolvingAgainstBaseURL: false)!
-        comps.queryItems = [
+        let base = config.url.appendingPathComponent("auth/v1/authorize")
+        var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        comps?.queryItems = [
             URLQueryItem(name: "provider", value: "google"),
             URLQueryItem(name: "redirect_to", value: redirectTo),
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "code_challenge_method", value: "s256"),
             URLQueryItem(name: "apikey", value: config.anonKey),
         ]
-        return PKCEChallenge(url: comps.url!, codeVerifier: verifier)
+        return PKCEChallenge(url: comps?.url ?? base, codeVerifier: verifier)
     }
 
     /// authorize 後に返る code を PKCE で session に交換する。
@@ -182,13 +200,19 @@ actor SupabaseClient {
     struct RemoteProfile: Sendable, Identifiable {
         let id: UUID
         let displayName: String
+        let avatarURL: String?
     }
 
     func searchProfiles(nameQuery: String, excluding selfId: UUID?, limit: Int = 20) async throws -> [RemoteProfile] {
         let trimmed = nameQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        let pattern = "*\(trimmed)*".addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? trimmed
-        var query = "select=id,display_name&display_name=ilike.\(pattern)&limit=\(limit)"
+        // 日本語など非 ASCII を確実に percent-encode する（.alphanumerics は Unicode 文字を
+        // 「英数」とみなし生のまま残すため、日本語検索で不正リクエストになっていた）。
+        // PostgREST のワイルドカード `*` は残す。
+        var allowed = CharacterSet()
+        allowed.insert(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~*")
+        let pattern = "*\(trimmed)*".addingPercentEncoding(withAllowedCharacters: allowed) ?? trimmed
+        var query = "select=id,display_name,avatar_url&display_name=ilike.\(pattern)&limit=\(limit)"
         if let selfId { query += "&id=neq.\(selfId.uuidString.lowercased())" }
         var request = restRequest(path: "profiles", query: query)
         request.httpMethod = "GET"
@@ -197,7 +221,106 @@ actor SupabaseClient {
         return rows.compactMap { row in
             guard let idStr = row["id"] as? String, let id = UUID(uuidString: idStr) else { return nil }
             let name = (row["display_name"] as? String) ?? "ユーザー"
-            return RemoteProfile(id: id, displayName: name)
+            return RemoteProfile(id: id, displayName: name, avatarURL: row["avatar_url"] as? String)
+        }
+    }
+
+    /// アバター画像を avatars バケットへアップロードし、公開URL（バージョン無し）を返す。
+    /// パス先頭フォルダ = uid で storage の RLS（本人のみ書込）を通過する。bucket は public。
+    func uploadAvatar(userId: UUID, jpeg: Data) async throws -> String {
+        let path = "\(userId.uuidString.lowercased())/avatar.jpg"
+        let url = config.url.appendingPathComponent("storage/v1/object/avatars/\(path)")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        req.setValue("true", forHTTPHeaderField: "x-upsert")
+        req.httpBody = jpeg
+        try await send(req)
+        return config.url.appendingPathComponent("storage/v1/object/public/avatars/\(path)").absoluteString
+    }
+
+    /// 任意バケットへ写真をアップロード（private バケット可）。戻り値は "bucket/path"（photoURL に保存）。
+    func uploadPhoto(bucket: String, path: String, jpeg: Data) async throws -> String {
+        let url = config.url.appendingPathComponent("storage/v1/object/\(bucket)/\(path)")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        req.setValue("true", forHTTPHeaderField: "x-upsert")
+        req.httpBody = jpeg
+        try await send(req)
+        return "\(bucket)/\(path)"
+    }
+
+    /// "bucket/path" 形式の参照から写真バイト列を取得（private バケットは認証付きGET）。
+    func downloadPhoto(ref: String) async throws -> Data {
+        let url = config.url.appendingPathComponent("storage/v1/object/\(ref)")
+        var req = URLRequest(url: url)
+        req.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        return try await send(req)
+    }
+
+    struct PlanExercise: Codable, Sendable {
+        let name: String
+        let muscleGroup: String?
+        let sets: Int
+        let reps: Int
+        let weight: Double
+    }
+    struct PlanItem: Sendable {
+        let date: String
+        let title: String
+        let exercises: [PlanExercise]
+    }
+
+    /// AI ワークアウト計画（Edge Function plan-workouts → Gemini）。
+    /// 過去記録(history)・予定・ルーティン・目標日数を渡し、種目＋セット＋重量/レップまで組ませる。
+    /// 503(not_configured) など非2xx は send が throw する（呼び出し側で「準備中」扱い）。
+    func planWorkouts(
+        days: [String], routines: [String], weeklyGoal: Int,
+        events: [[String: Any]], history: [[String: Any]]
+    ) async throws -> [PlanItem] {
+        let url = config.url.appendingPathComponent("functions/v1/plan-workouts")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "days": days, "routines": routines, "weeklyGoal": weeklyGoal,
+            "events": events, "history": history,
+        ])
+        let data = try await send(request)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let plan = (obj?["plan"] as? [[String: Any]]) ?? []
+        return plan.compactMap { row in
+            guard let d = row["date"] as? String, let t = row["title"] as? String else { return nil }
+            let exs = (row["exercises"] as? [[String: Any]] ?? []).compactMap { e -> PlanExercise? in
+                guard let name = e["name"] as? String else { return nil }
+                // NaN/Infinity を含む Double を Int 変換すると Int(NaN) でトラップするため安全変換する。
+                func intVal(_ any: Any?, _ def: Int) -> Int {
+                    if let i = any as? Int { return i }
+                    if let d = any as? Double, d.isFinite { return Int(d) }
+                    return def
+                }
+                func dblVal(_ any: Any?, _ def: Double) -> Double {
+                    if let d = any as? Double, d.isFinite { return d }
+                    if let i = any as? Int { return Double(i) }
+                    return def
+                }
+                return PlanExercise(
+                    name: name,
+                    muscleGroup: e["muscleGroup"] as? String,
+                    sets: max(1, intVal(e["sets"], 3)),
+                    reps: max(0, intVal(e["reps"], 10)),
+                    weight: max(0, dblVal(e["weight"], 0))
+                )
+            }
+            return PlanItem(date: d, title: t, exercises: exs)
         }
     }
 
@@ -212,15 +335,18 @@ actor SupabaseClient {
     // MARK: - Request building
 
     private func restRequest(path: String, query: String? = nil) -> URLRequest {
-        var components = URLComponents(url: config.url.appendingPathComponent("rest/v1/\(path)"), resolvingAgainstBaseURL: false)!
-        components.percentEncodedQuery = query
-        return signed(URLRequest(url: components.url!))
+        let base = config.url.appendingPathComponent("rest/v1/\(path)")
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        components?.percentEncodedQuery = query
+        // 不正な query で url が nil でも強制アンラップでは落とさず、query を捨てた base にフォールバック。
+        return signed(URLRequest(url: components?.url ?? base))
     }
 
     private func authRequest(path: String, query: String? = nil) -> URLRequest {
-        var components = URLComponents(url: config.url.appendingPathComponent("auth/v1/\(path)"), resolvingAgainstBaseURL: false)!
-        components.percentEncodedQuery = query
-        return signed(URLRequest(url: components.url!))
+        let base = config.url.appendingPathComponent("auth/v1/\(path)")
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        components?.percentEncodedQuery = query
+        return signed(URLRequest(url: components?.url ?? base))
     }
 
     private func signed(_ request: URLRequest) -> URLRequest {
@@ -253,7 +379,11 @@ actor SupabaseClient {
             let refreshToken = dict["refresh_token"] as? String
         else { throw SupabaseError.invalidResponse }
         let user = dict["user"] as? [String: Any]
-        let userId = (user?["id"] as? String).flatMap(UUID.init) ?? UUID()
+        // userId が無効ならランダム UUID で握らず失敗させる（誤った id でセッション確立すると
+        // 以後すべての RLS が弾かれ「同期されない」深刻な不整合になるため）。
+        guard let userId = (user?["id"] as? String).flatMap(UUID.init) else {
+            throw SupabaseError.invalidResponse
+        }
         let email = user?["email"] as? String
         let meta = user?["user_metadata"] as? [String: Any]
         let fullName = (meta?["full_name"] as? String) ?? (meta?["name"] as? String)

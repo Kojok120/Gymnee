@@ -7,6 +7,9 @@ struct ProfileView: View {
     let userId: UUID
 
     @Environment(AuthService.self) private var auth
+    @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
+    @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
+    @State private var showProfileEdit = false
     @Query private var visits: [Visit]
 
     init(userId: UUID) {
@@ -22,16 +25,18 @@ struct ProfileView: View {
             Section {
                 VStack(spacing: Theme.Spacing.lg) {
                     HStack(spacing: Theme.Spacing.md) {
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(Theme.lime)
+                        AvatarView(filename: avatarFilename, urlString: avatarURLString, size: 60)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(auth.session?.displayName ?? "ゲスト").font(.title2.bold())
-                            Text("トレーニングを続けています")
+                                .lineLimit(1).truncationMode(.tail)
+                            Text("プロフィールを編集")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { showProfileEdit = true }
                     HStack(spacing: Theme.Spacing.md) {
                         StatPill(value: "\(visits.count)", label: "来店", tint: Theme.lime, systemImage: "mappin.and.ellipse")
                         StatPill(value: "\(currentStreak)", label: "連続日", tint: Theme.warning, systemImage: "flame.fill")
@@ -44,24 +49,22 @@ struct ProfileView: View {
             }
 
             Section("マイデータ") {
-                NavigationLink { ProgressPhotosView(userId: userId) } label: {
-                    Label("進捗写真", systemImage: "photo.stack")
-                }
-                NavigationLink { BodyMetricsView(userId: userId) } label: {
-                    Label("身体メトリクス", systemImage: "ruler")
-                }
-                NavigationLink { AnalyticsView(userId: userId) } label: {
-                    Label("分析ダッシュボード", systemImage: "chart.bar.xaxis")
-                }
+                NavigationLink(value: AppRoute.photos) { Label("進捗写真", systemImage: "photo.stack") }
+                NavigationLink(value: AppRoute.body) { Label("身体メトリクス", systemImage: "ruler") }
+                // 分析は専用タブに集約したためここからは外す。
             }
 
             Section {
-                NavigationLink { SettingsView() } label: {
-                    Label("設定", systemImage: "gearshape")
-                }
+                NavigationLink(value: AppRoute.settings) { Label("設定", systemImage: "gearshape") }
             }
         }
         .navigationTitle("マイページ")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showProfileEdit) { ProfileEditView() }
+        // 遷移先は値ベース（AppRoute）。destination は NavigationStack ルート側
+        // （CalendarHomeView の gymneeNavigationDestinations）で一括宣言しており、
+        // ここ（push されたビュー）では宣言しない。クロージャ型リンクで遷移先を先行生成すると
+        // 各遷移先の init が #Predicate 付き @Query を作り直し更新サイクル→ハング（iOS 26 系）に
+        // なるため、必ず値ベース＋ルート宣言にする。
     }
 }

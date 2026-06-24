@@ -22,6 +22,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>予定に合わせてワークアウト計画を立て、自動で組み替えるために使用します。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>予定に合わせてワークアウト計画を立てるために使用します。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>ジムでの写真チェックインと進捗写真の撮影に使用します。</string>
 	<key>NSHealthShareUsageDescription</key>
