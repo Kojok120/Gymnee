@@ -16,8 +16,18 @@ struct DayDetailView: View {
     @Query private var planned: [PlannedWorkout]
     @Query private var routines: [Routine]
     @State private var showAddVisit = false
+    @State private var showAddPlan = false
 
     private let calendar = Calendar.current
+
+    /// 過去日（計画追加の可否に使う。今日・未来で計画追加可）。
+    private var isPast: Bool {
+        calendar.startOfDay(for: date) < calendar.startOfDay(for: .now)
+    }
+    /// 未来日（来店/ワークアウト追加の可否に使う。過去・今日で追加可）。
+    private var isFuture: Bool {
+        calendar.startOfDay(for: date) > calendar.startOfDay(for: .now)
+    }
 
     init(userId: UUID, date: Date, onEditWorkout: @escaping (Workout) -> Void = { _ in }) {
         self.userId = userId
@@ -43,7 +53,7 @@ struct DayDetailView: View {
 
     var body: some View {
         List {
-            if !planned.isEmpty {
+            if !planned.isEmpty || !isPast {
                 Section("計画") {
                     ForEach(planned) { plan in
                         HStack(spacing: Theme.Spacing.md) {
@@ -66,6 +76,12 @@ struct DayDetailView: View {
                             Button("削除", role: .destructive) { deletePlan(plan) }
                         }
                     }
+                    // 計画の追加は「今日・未来」のみ（過去日には不要）。
+                    if !isPast {
+                        Button { showAddPlan = true } label: {
+                            Label("この日に計画を追加", systemImage: "plus.circle")
+                        }
+                    }
                 }
             }
 
@@ -80,8 +96,11 @@ struct DayDetailView: View {
                             }
                     }
                 }
-                Button { showAddVisit = true } label: {
-                    Label("この日に来店を追加", systemImage: "plus.circle")
+                // 来店の追加は「未来日」では不可（過去・今日のみ）。
+                if !isFuture {
+                    Button { showAddVisit = true } label: {
+                        Label("この日に来店を追加", systemImage: "plus.circle")
+                    }
                 }
             }
 
@@ -100,8 +119,11 @@ struct DayDetailView: View {
                         }
                     }
                 }
-                Button { addWorkout() } label: {
-                    Label("この日にワークアウトを追加", systemImage: "plus.circle")
+                // ワークアウトの追加は「未来日」では不可（過去・今日のみ）。
+                if !isFuture {
+                    Button { addWorkout() } label: {
+                        Label("この日にワークアウトを追加", systemImage: "plus.circle")
+                    }
                 }
             }
         }
@@ -113,6 +135,30 @@ struct DayDetailView: View {
                 showAddVisit = false
             }
         }
+        .sheet(isPresented: $showAddPlan) { addPlanSheet }
+    }
+
+    /// 計画追加シート（ルーティンから or 自由入力）。WeekPlannerView の追加シートと同形。
+    private var addPlanSheet: some View {
+        NavigationStack {
+            List {
+                Section("ルーティンから") {
+                    if routines.isEmpty { Text("ルーティン未作成").foregroundStyle(.secondary) }
+                    ForEach(routines) { r in
+                        Button(r.name) { addPlan(title: r.name, routineId: r.id) }
+                    }
+                }
+                Section("自由入力") {
+                    ForEach(["胸の日", "背中の日", "脚の日", "肩・腕", "有酸素", "休養"], id: \.self) { t in
+                        Button(t) { addPlan(title: t, routineId: nil) }
+                    }
+                }
+            }
+            .navigationTitle(titleText)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showAddPlan = false } } }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     /// その日に来店を追加（ジムを選択して作成）。過去/未来の後追い記録に。
@@ -146,6 +192,15 @@ struct DayDetailView: View {
               let exs = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data), !exs.isEmpty
         else { return nil }
         return exs.count
+    }
+
+    /// その日に計画を追加（今日・未来のみ）。PlannedWorkout は端末ローカルのみ（同期対象外）。
+    private func addPlan(title: String, routineId: UUID?) {
+        let day = calendar.startOfDay(for: date) // plannedDays/クエリは startOfDay 基準
+        let plan = PlannedWorkout(userId: userId, date: day, title: title, routineId: routineId)
+        context.insert(plan)
+        try? context.save()
+        showAddPlan = false
     }
 
     private func deletePlan(_ plan: PlannedWorkout) {
