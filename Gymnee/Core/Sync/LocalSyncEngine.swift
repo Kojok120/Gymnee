@@ -121,12 +121,24 @@ final class LocalSyncEngine: SyncEngine {
     func push() async throws {
         guard let remote, let store else { return } // リモート未設定＝no-op（ローカルのみ）
 
-        let snapshot = outbox
+        // FK 親依存（visits→gyms 等）を補完。未enqueue/詰まりの親も先に送れ、既存の詰まりを自己修復する。
+        var snapshot = outbox
+        for change in outbox {
+            for dep in store.dependencies(for: change)
+            where !snapshot.contains(where: { $0.recordId == dep.recordId && $0.entity == dep.entity }) {
+                snapshot.append(dep)
+            }
+        }
+
         var succeeded: [UUID] = []  // PendingChange.id
         var lastErr: String?
 
+        // FK 依存順（親→子）で処理する。Dictionary の反復順は不定で、visits が gyms より先に
+        // 送られると FK 違反(23503)になるため、syncedTables の依存順を明示的に使う。
         let byEntity = Dictionary(grouping: snapshot, by: { $0.entity })
-        for (table, changes) in byEntity {
+        let orderedTables = syncedTables + byEntity.keys.filter { !syncedTables.contains($0) }
+        for table in orderedTables {
+            guard let changes = byEntity[table] else { continue }
             // 削除
             let deletes = changes.filter { $0.operation == .delete }
             if !deletes.isEmpty {
@@ -227,4 +239,10 @@ protocol SyncBackingStore: AnyObject {
     func lastPulledAt(table: String) -> Date?
     /// 最終 pull 時刻を更新する。
     func setLastPulledAt(_ date: Date, table: String)
+    /// FK 親依存（例: visits→gyms）。push 時にこれらを先に送って外部キー違反(23503)を防ぐ。既定は依存なし。
+    func dependencies(for change: PendingChange) -> [PendingChange]
+}
+
+extension SyncBackingStore {
+    func dependencies(for change: PendingChange) -> [PendingChange] { [] }
 }

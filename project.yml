@@ -21,6 +21,13 @@ configFiles:
   Debug: Config/Secrets.dev.xcconfig
   Release: Config/Secrets.prod.xcconfig
 
+# 外部パッケージ。Google カレンダー連携は GoogleSignIn(認証)＋Calendar REST(自前) で行う
+# （GTLRCalendar の重い Obj-C パッケージは入れず、Supabase 同様に REST を自前で叩く）。
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "7.1.0"
+
 targets:
   Gymnee:
     type: application
@@ -32,6 +39,8 @@ targets:
       - path: SharedConnectivity
     dependencies:
       - target: GymneeWidgets
+      - package: GoogleSignIn
+        product: GoogleSignIn
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app
@@ -61,6 +70,11 @@ targets:
         # 環境別シークレット（xcconfig → ビルド設定 → ここ → 実行時に Bundle から読む）。
         SUPABASE_HOST: "$(SUPABASE_HOST)"
         SUPABASE_KEY: "$(SUPABASE_KEY)"
+        # Google サインイン（カレンダー連携）。Google Cloud の iOS OAuth クライアント設定。
+        GIDClientID: "$(GOOGLE_IOS_CLIENT_ID)"
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - "$(GOOGLE_REVERSED_CLIENT_ID)"
         NSCameraUsageDescription: "ジムでの写真チェックインと進捗写真の撮影に使用します。"
         NSPhotoLibraryUsageDescription: "進捗写真やチェックイン写真の選択・保存に使用します。"
         NSPhotoLibraryAddUsageDescription: "生成した共有カードを写真ライブラリに保存するために使用します。"

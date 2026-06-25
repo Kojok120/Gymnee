@@ -16,6 +16,7 @@ final class AppEnvironment {
     let errors: AppErrorCenter
     let subscription: SubscriptionService
     let calendar: CalendarService
+    let googleCalendar: GoogleCalendarService
 
     init(container: ModelContainer? = nil) {
         let resolved = container ?? GymneeSchema.makeContainer()
@@ -28,6 +29,8 @@ final class AppEnvironment {
         self.errors = AppErrorCenter()
         self.subscription = SubscriptionService()
         self.calendar = CalendarService()
+        self.googleCalendar = GoogleCalendarService()
+        self.googleCalendar.restore()
         self.auth.bootstrap(context: resolved.mainContext)
         self.notifications.configure()
         // Apple Watch との WCSession を起動（手首からのチェックイン受信・スナップショット配布）。

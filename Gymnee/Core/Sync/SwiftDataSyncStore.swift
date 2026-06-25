@@ -22,6 +22,11 @@ final class SwiftDataSyncStore: SyncBackingStore {
         defaults.string(forKey: "gymnee.supabase.userId").flatMap(UUID.init)
     }
 
+    /// push 時の所有者 id。outbox は常に自分の変更なので、現在の認証 uid で stamp する。
+    /// サインイン前のローカル uid や別サインイン方法の旧 uid で作った孤児データでも
+    /// RLS(42501: user_id = auth.uid()) で弾かれないようにする（gym の created_by と同方針）。
+    private func ownerId(_ stored: UUID) -> UUID { currentUserId ?? stored }
+
     // MARK: - 差分基準
 
     func lastPulledAt(table: String) -> Date? {
@@ -65,6 +70,33 @@ final class SwiftDataSyncStore: SyncBackingStore {
         // products はサーバ管理カタログ（クライアントから push しない）。
         default: return nil
         }
+    }
+
+    /// FK/RLS 親依存。子を送る前に親を先に送る（親不在だと FK 23503、親未所有だと RLS 42501 で失敗）。
+    /// - visits → 参照先ジム（preset も created_by 既定 auth.uid() で通る）。
+    /// - exercise_sets → 親 workout_exercise と workout（RLS は workout.user_id=auth.uid() を要求）。
+    /// - workout_exercises → 親 workout。
+    func dependencies(for change: PendingChange) -> [PendingChange] {
+        guard change.operation == .upsert else { return [] }
+        switch change.entity {
+        case "visits":
+            guard let gym = fetchVisit(change.recordId)?.gym else { return [] }
+            return [dep("gyms", gym.id, gym.updatedAt)]
+        case "exercise_sets":
+            guard let we = fetchExerciseSet(change.recordId)?.workoutExercise else { return [] }
+            var deps = [dep("workout_exercises", we.id, we.updatedAt)]
+            if let w = we.workout { deps.append(dep("workouts", w.id, w.updatedAt)) }
+            return deps
+        case "workout_exercises":
+            guard let w = fetchWorkoutExercise(change.recordId)?.workout else { return [] }
+            return [dep("workouts", w.id, w.updatedAt)]
+        default:
+            return []
+        }
+    }
+
+    private func dep(_ entity: String, _ id: UUID, _ updatedAt: Date) -> PendingChange {
+        PendingChange(entity: entity, recordId: id, operation: .upsert, updatedAt: updatedAt)
     }
 
     // MARK: - 復号（pull）
@@ -180,7 +212,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - visits
     private func encodeVisit(_ m: Visit) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "gym_id": opt(m.gym?.id.uuidString.lowercased()),
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "gym_id": opt(m.gym?.id.uuidString.lowercased()),
          "visited_at": iso(m.visitedAt), "photo_url": opt(m.photoURL),
          "lat": opt(m.lat), "lng": opt(m.lng), "note": opt(m.note), "updated_at": iso(m.updatedAt)]
     }
@@ -218,7 +250,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - workouts
     private func encodeWorkout(_ m: Workout) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "visit_id": opt(m.visit?.id.uuidString.lowercased()),
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "visit_id": opt(m.visit?.id.uuidString.lowercased()),
          "date": iso(m.date), "name": m.name, "routine_id": opt(m.routineId?.uuidString.lowercased()),
          "note": opt(m.note), "is_planned": m.isPlanned, "completed_at": opt(m.completedAt.map(iso)),
          "updated_at": iso(m.updatedAt)]
@@ -317,7 +349,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - routines
     private func encodeRoutine(_ m: Routine) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "name": m.name, "note": opt(m.note), "updated_at": iso(m.updatedAt)]
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "name": m.name, "note": opt(m.note), "updated_at": iso(m.updatedAt)]
     }
     private func applyRoutine(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -355,7 +387,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - personal_records
     private func encodePersonalRecord(_ m: PersonalRecord) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "exercise_id": opt(m.exercise?.id.uuidString.lowercased()),
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "exercise_id": opt(m.exercise?.id.uuidString.lowercased()),
          "type": m.typeRaw, "value": m.value, "achieved_at": iso(m.achievedAt),
          "workout_id": opt(m.workoutId?.uuidString.lowercased()), "updated_at": iso(m.updatedAt)]
     }
@@ -376,7 +408,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - body_metrics
     private func encodeBodyMetric(_ m: BodyMetric) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "date": iso(m.date),
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "date": iso(m.date),
          "weight": opt(m.weight), "body_fat": opt(m.bodyFat), "measurements": m.measurements,
          "from_health_kit": m.fromHealthKit, "updated_at": iso(m.updatedAt)]
     }
@@ -396,7 +428,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - progress_photos
     private func encodeProgressPhoto(_ m: ProgressPhoto) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "date": iso(m.date),
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "date": iso(m.date),
          "photo_url": opt(m.photoURL), "visibility": m.visibilityRaw, "note": opt(m.note), "updated_at": iso(m.updatedAt)]
     }
     private func applyProgressPhoto(_ row: [String: Any]) {
@@ -475,7 +507,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - feed_items
     private func encodeFeedItem(_ m: FeedItem) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "author_display_name": opt(m.authorDisplayName),
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "author_display_name": opt(m.authorDisplayName),
          "type": m.typeRaw, "ref_id": lower(m.refId), "summary": opt(m.summary), "visibility": m.visibilityRaw,
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
@@ -497,7 +529,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - post_reactions（いいね/応援）
     private func encodePostReaction(_ m: PostReaction) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "feed_item_id": lower(m.feedItemId),
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "feed_item_id": lower(m.feedItemId),
          "kind": m.kindRaw, "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyPostReaction(_ row: [String: Any]) {
@@ -543,7 +575,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         // アクセスした瞬間に SwiftData がアサーションでクラッシュする（push のたびに発火）。
         // 関連を読まず、productName から安全に product_id を解決する。
         let productId = m.productName.flatMap { fetchProductByName($0)?.id }
-        return ["id": lower(m.id), "user_id": lower(m.userId),
+        return ["id": lower(m.id), "user_id": lower(ownerId(m.userId)),
                 "product_id": opt(productId?.uuidString.lowercased()),
                 "date": iso(m.date), "amount": m.amount, "product_name": opt(m.productName), "updated_at": iso(m.updatedAt)]
     }
@@ -562,7 +594,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - subscriptions
     private func encodeSubscription(_ m: Subscription) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(m.userId), "tier": m.tierRaw, "status": m.statusRaw,
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "tier": m.tierRaw, "status": m.statusRaw,
          "started_at": iso(m.startedAt), "updated_at": iso(m.updatedAt)]
     }
     private func applySubscription(_ row: [String: Any]) {

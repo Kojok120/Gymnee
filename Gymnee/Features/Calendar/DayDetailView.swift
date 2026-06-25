@@ -11,6 +11,7 @@ struct DayDetailView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(GoogleCalendarService.self) private var googleCalendar
     @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
     @Query private var planned: [PlannedWorkout]
@@ -240,6 +241,11 @@ struct DayDetailView: View {
         let plan = PlannedWorkout(userId: userId, date: day, title: title, routineId: routineId)
         context.insert(plan)
         try? context.save()
+        // 計画作成時に Google カレンダーへ終日予定として自動追加（連携中のみ）。
+        if googleCalendar.isConnected {
+            let end = calendar.date(byAdding: .day, value: 1, to: day) ?? day
+            Task { await googleCalendar.addEvent(title: "Gymnee: \(title)", start: day, end: end, allDay: true) }
+        }
     }
 
     private func deletePlan(_ plan: PlannedWorkout) {
