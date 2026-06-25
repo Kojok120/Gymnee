@@ -27,7 +27,7 @@ struct WatchHomeView: View {
                     WatchConnector.shared.sendCheckIn()
                     checkedIn = true
                 } label: {
-                    Label(checkedIn ? "リクエスト済み" : "クイックチェックイン", systemImage: checkedIn ? "checkmark" : "camera.fill")
+                    Label(checkedIn ? "リクエスト済み" : "クイックチェックイン", systemImage: checkedIn ? "checkmark" : "door.right.hand.open")
                         .frame(maxWidth: .infinity)
                 }
                 .tint(watchGreen)

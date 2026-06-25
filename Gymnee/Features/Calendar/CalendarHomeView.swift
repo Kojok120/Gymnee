@@ -70,7 +70,7 @@ private struct CalendarHomeContent: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showCheckIn = true } label: {
-                    Label("チェックイン", systemImage: "camera.fill")
+                    Label("チェックイン", systemImage: "door.right.hand.open")
                 }
                 .tint(Theme.energy)
             }
@@ -390,8 +390,8 @@ private struct CalendarHomeContent: View {
                     .frame(width: 36, height: 36)
                     .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("ルーティンを管理する").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                    Text("ルーティンの追加・編集・削除").font(.caption).foregroundStyle(.secondary)
+                    Text("カスタムセットを管理する").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                    Text("カスタムセットの追加・編集・削除").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)

@@ -10,11 +10,11 @@ struct RoutineEditSession: Identifiable {
     let context: ModelContext
     let isNew: Bool
 
-    /// 新規（空のルーティン）。
+    /// 新規（空のカスタムセット）。
     static func new(userId: UUID, container: ModelContainer) -> RoutineEditSession {
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
-        let r = Routine(userId: userId, name: "新しいルーティン")
+        let r = Routine(userId: userId, name: "新しいカスタムセット")
         ctx.insert(r)
         return .init(routine: r, context: ctx, isNew: true)
     }
@@ -56,7 +56,7 @@ struct RoutineEditorView: View {
         NavigationStack {
             Form {
                 Section("名前") {
-                    TextField("ルーティン名", text: $routine.name)
+                    TextField("カスタムセット名", text: $routine.name)
                 }
                 Section {
                     ForEach(orderedExercises) { re in
@@ -79,7 +79,7 @@ struct RoutineEditorView: View {
                     Text("重量・回数の値は記録画面のルーラーで選びます（履歴/既定から自動表示）。ここでは種目・順番・目標セット数だけ設定します。")
                 }
             }
-            .navigationTitle(isNew ? "新しいルーティン" : "ルーティン編集")
+            .navigationTitle(isNew ? "新しいカスタムセット" : "カスタムセット編集")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

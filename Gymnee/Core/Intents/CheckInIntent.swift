@@ -51,7 +51,7 @@ struct GymneeShortcuts: AppShortcutsProvider {
                 "ジムに着いた\(.applicationName)",
             ],
             shortTitle: "チェックイン",
-            systemImageName: "camera.fill"
+            systemImageName: "door.right.hand.open"
         )
     }
 }

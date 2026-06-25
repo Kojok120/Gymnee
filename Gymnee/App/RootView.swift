@@ -142,6 +142,10 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowAnalytics)) { _ in
             selection = .analytics
         }
+        // 記録のキャンセルからカレンダータブへ。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCalendar)) { _ in
+            selection = .calendar
+        }
         // 通知タップのルーティング（type に応じて該当タブへ）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
