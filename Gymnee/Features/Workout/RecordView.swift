@@ -72,7 +72,6 @@ struct RecordContent: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
-    @Environment(NotificationService.self) private var notifications
     @Environment(AppErrorCenter.self) private var errors
 
     @Query private var routines: [Routine]
@@ -89,7 +88,6 @@ struct RecordContent: View {
     /// reps / 秒 ルーラーの中央値（種目ごと・セッション中保持。再描画でスクロール位置を保つ）。
     @State private var repCenters: [UUID: Int] = [:]
     @State private var durCenters: [UUID: Int] = [:]
-    @State private var prToast: String?
     @State private var showSummary = false
     @State private var showModePicker = false
     @State private var showExercisePicker = false
@@ -140,14 +138,13 @@ struct RecordContent: View {
                 }
             }
         }
-        .confirmationDialog("この記録を破棄しますか？", isPresented: $showCancelConfirm, titleVisibility: .visible) {
+        .alert("この記録を破棄しますか？", isPresented: $showCancelConfirm) {
             Button("破棄してカレンダーへ", role: .destructive) { cancelRecording() }
             Button("続ける", role: .cancel) {}
         } message: {
             Text("記録した内容は保存されません。")
         }
         .safeAreaInset(edge: .bottom) { timerBar }
-        .overlay(alignment: .top) { prToastView }
         .sheet(isPresented: $showModePicker) { modePickerSheet }
         .sheet(isPresented: $showExercisePicker) {
             ExercisePickerView { ex in freeAdded.insert(ex.id) }
@@ -412,26 +409,6 @@ struct RecordContent: View {
         }
     }
 
-    @ViewBuilder
-    private var prToastView: some View {
-        if let prToast {
-            HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "medal.fill").font(.headline)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("NEW PR").font(.overline).tracking(1.5)
-                    Text(prToast).font(.subheadline.bold())
-                }
-            }
-            .padding(.horizontal, Theme.Spacing.lg).padding(.vertical, Theme.Spacing.md)
-            .background(Theme.celebration, in: Capsule())
-            .foregroundStyle(Theme.onLime)
-            .shadow(color: Theme.limeGlow, radius: 16, y: 4)
-            .padding(.top, Theme.Spacing.sm)
-            .transition(.scale(scale: 0.8).combined(with: .move(edge: .top)).combined(with: .opacity))
-            .sensoryFeedback(.success, trigger: prToast)
-        }
-    }
-
     // MARK: - モード選択シート
 
     private var modePickerSheet: some View {
@@ -599,17 +576,7 @@ struct RecordContent: View {
                               isCompleted: true, durationSeconds: duration, workoutExercise: we)
         context.insert(set)
         try? context.save()   // 下書きはローカルのみ。同期は完了時。
-
-        // PR は表示のみ（確定は完了時。中断したワークアウトでは PR を残さない）。
-        if exercise.measurementType != .time, weight > 0, reps > 0 {
-            let bests = WorkoutMetrics.bests(for: exercise, userId: userId, excludingSetId: set.id)
-            let detected = PRDetector.detect(weight: weight, reps: reps, against: bests)
-            if !detected.isEmpty {
-                let labels = detected.map(\.type.label).joined(separator: "・")
-                showPRToast("PR更新！ \(labels)")
-                notifications.notifyPR("\(exercise.name) \(labels)")
-            }
-        }
+        // PR の確定・表示は完了時にまとめて（タップ毎のトースト/通知は廃止）。
         restTimer.exerciseName = exercise.name
         restTimer.start()
     }
@@ -650,14 +617,6 @@ struct RecordContent: View {
             }
         }
         return nil
-    }
-
-    private func showPRToast(_ message: String) {
-        withAnimation { prToast = message }
-        Task {
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            withAnimation { prToast = nil }
-        }
     }
 
     // MARK: - 完了 / セッション終了

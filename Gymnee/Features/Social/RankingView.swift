@@ -129,11 +129,13 @@ struct RankingView: View {
         if rank.isMe {
             rowContent(index: index, rank: rank)
         } else {
-            // 自分以外はタップでユーザー詳細へ（フレンド一覧と同じ UserRef 遷移）。
-            NavigationLink(value: UserRef(id: rank.id, name: rank.name)) {
+            // 自分以外はタップでユーザー詳細へ（値ベース遷移）。
+            // List 既定のシェブロンを隠し、「あなた」行と同じ見た目にする（透明 NavigationLink を重ねるだけ）。
+            ZStack {
                 rowContent(index: index, rank: rank)
+                NavigationLink(value: UserRef(id: rank.id, name: rank.name)) { EmptyView() }
+                    .opacity(0)
             }
-            .buttonStyle(.plain)
         }
     }
 

@@ -68,11 +68,6 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - 通知種別
 
-    /// PR 達成（アプリ内トーストの補完として通知センターにも残す）。
-    func notifyPR(_ text: String) {
-        fire(id: "gymnee.pr.\(UUID().uuidString)", title: "新記録達成！🏆", body: text, userInfo: ["type": "analytics"])
-    }
-
     /// 在庫リマインド（補給ロギングから枯渇予測）。商品ごとに 1 件（重複排除）。
     func notifySupplyLow(productId: UUID, productName: String) {
         fire(id: "gymnee.supply.\(productId.uuidString)", title: "そろそろ無くなりそう", body: "\(productName) の在庫が少なくなっています。補充しますか？", userInfo: ["type": "shop"])
