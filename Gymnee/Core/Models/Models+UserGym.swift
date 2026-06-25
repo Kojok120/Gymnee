@@ -11,6 +11,7 @@ final class Profile {
     /// プッシュ通知の種類別 ON/OFF（サーバー側 send-push が参照）。既定 ON。
     var notifyLikes: Bool = true
     var notifyFriendCheckin: Bool = true
+    var notifyComments: Bool = true
     var createdAt: Date
     var updatedAt: Date
     var isDirty: Bool
@@ -22,6 +23,7 @@ final class Profile {
         bio: String? = nil,
         notifyLikes: Bool = true,
         notifyFriendCheckin: Bool = true,
+        notifyComments: Bool = true,
         createdAt: Date = .now,
         updatedAt: Date = .now,
         isDirty: Bool = true
@@ -32,6 +34,7 @@ final class Profile {
         self.bio = bio
         self.notifyLikes = notifyLikes
         self.notifyFriendCheckin = notifyFriendCheckin
+        self.notifyComments = notifyComments
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDirty = isDirty

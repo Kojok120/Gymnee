@@ -25,6 +25,12 @@ struct UserRef: Hashable {
     let name: String
 }
 
+/// コメントシート提示用ターゲット（`sheet(item:)` 用）。
+struct CommentSheetTarget: Identifiable {
+    let feedItemId: UUID
+    var id: UUID { feedItemId }
+}
+
 private struct SocialContent: View {
     let userId: UUID
 
@@ -41,7 +47,8 @@ private struct SocialContent: View {
     /// 自分＋フォロー中の他人の feed_items（サーバーから RLS 経由で取り込む）。
     @Query private var feedItems: [FeedItem]
     @Query private var allReactions: [PostReaction]
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    @Query private var allComments: [Comment]
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     /// ソーシャル初回利用時のコミュニティガイドライン同意（1.2.5）。
     @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
 
@@ -55,6 +62,8 @@ private struct SocialContent: View {
     @State private var workoutDetail: Workout?
     /// ダブルタップいいね時のハート演出対象（feed_item id）。
     @State private var burstId: UUID?
+    /// コメントシートの対象（feed_item id）。
+    @State private var commentTarget: CommentSheetTarget?
     @State private var visStore = PostVisibilityStore()
     @State private var feedEntries: [FeedEntry] = []
 
@@ -218,9 +227,11 @@ private struct SocialContent: View {
     // フレンド/ランキングと容器(List)を統一してタブ切替の描画を滑らかに。重い構築はメモ化(feedEntries)。
     private var feed: some View {
         let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
+        // コメント件数（ブロック相手のコメントは数えない）。
+        let commentsByItem = Dictionary(grouping: allComments.filter { !blockedIds.contains($0.userId) }, by: \.feedItemId)
         return List {
             ForEach(feedEntries) { entry in
-                feedRow(entry, reactions: reactionsByItem[entry.id] ?? [])
+                feedRow(entry, reactions: reactionsByItem[entry.id] ?? [], commentCount: commentsByItem[entry.id]?.count ?? 0)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -242,6 +253,11 @@ private struct SocialContent: View {
         .sheet(item: $editVisit) { visit in
             CheckInEditView(visit: visit, visibilityStore: visStore)
         }
+        .sheet(item: $commentTarget) { target in
+            CommentsView(feedItemId: target.feedItemId, currentUserId: userId,
+                         currentUserName: auth.session?.displayName,
+                         onClose: { commentTarget = nil })
+        }
         // ワークアウトは値ベースで詳細へ（List内クロージャNavigationLinkのシェブロン/ハングを回避）。
         .navigationDestination(item: $workoutDetail) { workout in
             WorkoutDetailView(workout: workout)
@@ -250,16 +266,19 @@ private struct SocialContent: View {
 
     /// カード（シングルタップで開く／ダブルタップでいいね）＋いいねバー。
     /// ワークアウトもチェックインも同じカード仕様（矢印なし）に統一。
-    private func feedRow(_ entry: FeedEntry, reactions: [PostReaction]) -> some View {
-        let myLike = reactions.first { $0.userId == userId && $0.kindRaw == ReactionKind.like.rawValue }
+    private func feedRow(_ entry: FeedEntry, reactions: [PostReaction], commentCount: Int) -> some View {
+        // 自分のリアクション（種別問わず1つ）。ダブルタップの二重付与防止にも使う。
+        let myReaction = reactions.first { $0.userId == userId }
         return VStack(alignment: .leading, spacing: 4) {
             FeedCardView(entry: entry)
                 .contentShape(Rectangle())
                 // ダブルタップでいいね。シングルタップ（詳細/編集）と両立させるため count:2 を先に宣言。
-                .onTapGesture(count: 2) { doubleTapLike(entry, existing: myLike) }
+                .onTapGesture(count: 2) { doubleTapLike(entry, existing: myReaction) }
                 .onTapGesture { openEntry(entry) }
                 .overlay { burstHeart(for: entry.id) }
-            ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions)
+            ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions,
+                        commentCount: commentCount,
+                        onComment: { commentTarget = CommentSheetTarget(feedItemId: entry.id) })
         }
     }
 

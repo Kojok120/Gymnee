@@ -31,7 +31,7 @@ final class LocalSyncEngine: SyncEngine {
         "workouts", "exercises", "workout_exercises", "exercise_sets",
         "routines", "routine_exercises", "personal_records",
         "body_metrics", "progress_photos", "follows", "blocks", "reports", "feed_items", "post_reactions",
-        "products", "supply_logs", "subscriptions",
+        "comments", "products", "supply_logs", "subscriptions",
     ]
 
     init(persistenceURL: URL? = nil) {

@@ -91,6 +91,27 @@ struct ShareCardEditorView: View {
 }
 
 extension ShareCardContent {
+    /// 完了ワークアウトからカード内容を構築する（完了画面の共有導線）。
+    @MainActor
+    static func from(workout: Workout, streak: Int?) -> ShareCardContent {
+        let sets = workout.exercises.flatMap(\.sets)
+        let vol = sets.reduce(0.0) { $0 + $1.volume }
+        let totalVolume = vol.isFinite ? Int(vol) : 0
+        let prCount = workout.exercises
+            .compactMap(\.exercise)
+            .flatMap(\.personalRecords)
+            .filter { $0.workoutId == workout.id }
+            .count
+        return ShareCardContent(
+            image: nil,
+            date: workout.completedAt ?? workout.date,
+            gymName: nil,
+            streak: streak,
+            prText: prCount > 0 ? "PR \(prCount)" : nil,
+            exerciseSummary: "\(workout.name)・\(workout.exercises.count)種目・\(totalVolume)kg"
+        )
+    }
+
     /// 来店からカード内容を構築する。
     @MainActor
     static func from(visit: Visit, streak: Int?, prText: String?) -> ShareCardContent {

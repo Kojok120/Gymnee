@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
     return new Response("forbidden", { status: 403 });
   }
 
-  let payload: { event?: string; visitId?: string; reactionId?: string };
+  let payload: { event?: string; visitId?: string; reactionId?: string; commentId?: string };
   try {
     payload = await req.json();
   } catch {
@@ -148,10 +148,45 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await db.from("profiles").select("display_name").eq("id", reactorId).single();
     const reactorName = profile?.display_name ?? "フレンド";
-    const title = `${reactorName}さんがいいねしました`;
-    const message = "あなたの投稿にいいね👍";
+    // 筋トレ絵文字リアクション（like/strong/fire/clap）に応じて文面を変える。
+    const kind = (reaction.kind as string) ?? "like";
+    const emoji = kind === "fire" ? "🔥" : kind === "strong" ? "💪" : kind === "clap" ? "👏" : "❤️";
+    const verb = kind === "like" ? "いいね" : "応援";
+    const title = `${reactorName}さんが${verb}しました`;
+    const message = `あなたの投稿に${emoji}`;
     const sent = await pushToUsers(db, [authorId], title, message, {
       type: "reaction", feedItemId: reaction.feed_item_id,
+    });
+    return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
+  // --- コメント → 投稿者へ通知 ---
+  if (event === "comment") {
+    const commentId = payload.commentId;
+    if (!commentId) return new Response("missing commentId", { status: 400 });
+    const { data: comment } = await db
+      .from("comments").select("user_id, feed_item_id, text").eq("id", commentId).single();
+    if (!comment) return new Response(JSON.stringify({ sent: 0, reason: "comment not found" }), { status: 200 });
+    const commenterId = comment.user_id as string;
+    const { data: item } = await db
+      .from("feed_items").select("user_id").eq("id", comment.feed_item_id).single();
+    if (!item) return new Response(JSON.stringify({ sent: 0, reason: "feed_item not found" }), { status: 200 });
+    const authorId = item.user_id as string;
+    if (authorId === commenterId) return new Response(JSON.stringify({ sent: 0, reason: "self" }), { status: 200 });
+
+    // 投稿者が「コメント通知」をオフにしていたら送らない（列が無い場合は既定で送る）。
+    const { data: authorPref } = await db.from("profiles").select("notify_comments").eq("id", authorId).single();
+    if (authorPref && authorPref.notify_comments === false) {
+      return new Response(JSON.stringify({ sent: 0, reason: "muted" }), { status: 200 });
+    }
+
+    const { data: profile } = await db.from("profiles").select("display_name").eq("id", commenterId).single();
+    const commenterName = profile?.display_name ?? "フレンド";
+    const preview = ((comment.text as string) ?? "").slice(0, 40);
+    const title = `${commenterName}さんがコメントしました`;
+    const message = preview.length > 0 ? preview : "あなたの投稿にコメント💬";
+    const sent = await pushToUsers(db, [authorId], title, message, {
+      type: "comment", feedItemId: comment.feed_item_id,
     });
     return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
   }
