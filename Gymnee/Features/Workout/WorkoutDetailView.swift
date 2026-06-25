@@ -7,6 +7,13 @@ struct WorkoutDetailView: View {
 
     var body: some View {
         List {
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(workout.date, format: .dateTime.year().month().day().weekday(.wide))
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                    Text(headerStats).font(.caption).foregroundStyle(.secondary)
+                }
+            }
             if let visit = workout.visit {
                 Section("来店") {
                     Label(visit.gym?.name ?? "ジム", systemImage: "building.2.fill")
@@ -21,7 +28,7 @@ struct WorkoutDetailView: View {
                             HStack {
                                 Text("セット\(set.setIndex + 1)").foregroundStyle(.secondary)
                                 Spacer()
-                                Text("\(set.weight, format: .number)kg × \(set.reps)")
+                                Text(set.detailText).monospacedDigit()
                                 if set.isPR {
                                     Image(systemName: "trophy.fill").foregroundStyle(.yellow)
                                 }
@@ -44,5 +51,24 @@ struct WorkoutDetailView: View {
                 }
             }
         }
+    }
+
+    private var totalSets: Int {
+        workout.exercises.reduce(0) { $0 + $1.sets.count }
+    }
+
+    private var totalVolume: Int {
+        let v = workout.exercises.flatMap(\.sets).reduce(0.0) { $0 + $1.volume }
+        return v.isFinite ? Int(v) : 0   // 非有限混入時も Int(∞) でトラップしない
+    }
+
+    /// ヘッダの集計行（種目数・セット数・総容量・所要時間）。
+    private var headerStats: String {
+        var parts = ["\(workout.exercises.count)種目", "\(totalSets)セット", "総容量 \(totalVolume)kg"]
+        if let end = workout.completedAt {
+            let mins = max(1, Int(end.timeIntervalSince(workout.date) / 60))
+            parts.append("\(mins)分")
+        }
+        return parts.joined(separator: "・")
     }
 }

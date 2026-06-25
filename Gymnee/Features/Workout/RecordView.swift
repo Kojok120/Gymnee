@@ -15,7 +15,7 @@ struct RecordView: View {
                 if gateOpen {
                     RecordContent(userId: uid, onEnd: { gateOpen = false })
                 } else {
-                    StartGateView(onStart: { gateOpen = true })
+                    StartGateView(userId: uid, onStart: { gateOpen = true })
                 }
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
@@ -28,7 +28,11 @@ struct RecordView: View {
 
 /// 「記録を開始する」ゲート（記録タブから入った時に一度挟む）。
 private struct StartGateView: View {
+    let userId: UUID
     let onStart: () -> Void
+
+    private enum Route: Hashable { case history }
+
     var body: some View {
         VStack(spacing: Theme.Spacing.lg) {
             Spacer()
@@ -42,11 +46,21 @@ private struct StartGateView: View {
                     .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
             }
             .padding(.horizontal, Theme.Spacing.lg)
+            // これまでの記録を一覧で振り返る導線（記録一覧＝日付/種目ごと）。
+            NavigationLink(value: Route.history) {
+                Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.top, Theme.Spacing.xs)
             .padding(.bottom, Theme.Spacing.xl)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg0)
         .navigationTitle("記録").navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: Route.self) { _ in
+            HistoryView(userId: userId)
+        }
     }
 }
 
@@ -903,13 +917,7 @@ private struct LogRowView: View {
         }
     }
 
-    private var detail: String {
-        if let d = set.durationSeconds, set.workoutExercise?.exercise?.measurementType == .time {
-            return "\(d)秒"
-        }
-        let w = set.weight == set.weight.rounded() ? String(Int(set.weight)) : String(format: "%.1f", set.weight)
-        return "\(w)kg × \(set.reps)"
-    }
+    private var detail: String { self.set.detailText }
 }
 
 // MARK: - キーパッド
