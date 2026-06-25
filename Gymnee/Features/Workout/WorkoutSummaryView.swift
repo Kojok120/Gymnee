@@ -20,8 +20,17 @@ struct WorkoutSummaryView: View {
     }
     private var totalSets: Int { workingSets.count }
     private var exerciseCount: Int { workout.exercises.count }
-    private var prNames: [String] {
-        Array(Set(workout.exercises.flatMap(\.sets).filter(\.isPR).compactMap { $0.workoutExercise?.exercise?.name }))
+    /// このワークアウトで更新した PR を種目ごとにまとめる（種類ラベルを PRType.allCases 順で連結）。
+    /// 完了時に upsertPR が PersonalRecord.workoutId = workout.id をセットするのを利用する。
+    private var prItems: [(name: String, types: String)] {
+        let wid = workout.id
+        return workout.exercises.compactMap { we in
+            guard let ex = we.exercise else { return nil }
+            let labels = PRType.allCases
+                .filter { t in ex.personalRecords.contains { $0.workoutId == wid && $0.typeRaw == t.rawValue } }
+                .map(\.label)
+            return labels.isEmpty ? nil : (ex.name, labels.joined(separator: "・"))
+        }
     }
     private var durationText: String? {
         guard let end = workout.completedAt else { return nil }
@@ -35,7 +44,7 @@ struct WorkoutSummaryView: View {
                 VStack(spacing: Theme.Spacing.lg) {
                     header
                     statGrid
-                    if !prNames.isEmpty { prCard }
+                    if !prItems.isEmpty { prCard }
                     actions
                 }
                 .padding(Theme.Spacing.lg)
@@ -86,12 +95,16 @@ struct WorkoutSummaryView: View {
     }
 
     private var prCard: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Label("自己ベスト更新！", systemImage: "medal.fill")
                 .font(.subheadline.bold()).foregroundStyle(Theme.lime)
-            Text(prNames.joined(separator: "・"))
-                .font(.caption).foregroundStyle(.secondary)
-                .lineLimit(2)
+            ForEach(prItems, id: \.name) { item in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.name).font(.caption.bold()).foregroundStyle(Theme.textPrimary)
+                    Text(item.types).font(.caption2).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
