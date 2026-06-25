@@ -1,6 +1,13 @@
 import SwiftUI
 import SwiftData
 
+/// 録画中の暫定PRスパーク 1 件（その場表示用・非永続）。
+struct PRSpark: Identifiable, Equatable {
+    let id = UUID()
+    let exerciseName: String
+    let typesLabel: String
+}
+
 /// 記録（リデザイン）。タップ式ロガー。
 /// 種目カード（重量3/種目名/reps3）を「重量を固定→repsタップで1セット」で記録する。
 /// 詳細仕様は docs/record-redesign-spec.md。
@@ -113,9 +120,11 @@ struct RecordContent: View {
     @State private var jumpTarget: MuscleGroup?
     @State private var showOnboarding = false
     @State private var showCancelConfirm = false
+    /// 録画中の暫定PRスパーク（その場の「更新ペース！」表示・非永続。確定は完了時）。
+    @State private var prSpark: PRSpark?
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
 
     init(userId: UUID, resuming: Workout? = nil, onEnd: (() -> Void)? = nil) {
@@ -140,6 +149,7 @@ struct RecordContent: View {
             cardsArea
         }
         .background(Theme.bg0)
+        .overlay(alignment: .top) { prSparkBanner }
         .navigationTitle("記録")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -173,7 +183,6 @@ struct RecordContent: View {
                 WorkoutSummaryView(
                     workout: w,
                     streak: currentStreak,
-                    onShare: { showSummary = false },
                     onAnalytics: {
                         showSummary = false
                         NotificationCenter.default.post(name: .gymneeShowAnalytics, object: nil)
@@ -590,9 +599,53 @@ struct RecordContent: View {
                               isCompleted: true, durationSeconds: duration, workoutExercise: we)
         context.insert(set)
         try? context.save()   // 下書きはローカルのみ。同期は完了時。
-        // PR の確定・表示は完了時にまとめて（タップ毎のトースト/通知は廃止）。
+        // PR の確定・永続は完了時にまとめて。ここでは履歴ベストとの純粋比較で「更新ペース！」を
+        // その場表示するだけ（非永続。中断したワークアウトに PR を残さない設計を壊さない）。
+        showProvisionalPRIfNeeded(set: set, exercise: exercise)
         restTimer.exerciseName = exercise.name
         restTimer.start()
+    }
+
+    /// 録画中の暫定PRスパーク表示（上端からスライドイン）。
+    @ViewBuilder private var prSparkBanner: some View {
+        if let spark = prSpark {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "trophy.fill").foregroundStyle(Theme.onLime)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("自己ベスト更新ペース！").font(.subheadline.bold()).foregroundStyle(Theme.onLime)
+                    Text("\(spark.exerciseName) · \(spark.typesLabel)")
+                        .font(.caption).foregroundStyle(Theme.onLime.opacity(0.85))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg).padding(.vertical, Theme.Spacing.md)
+            .background(Theme.limeFill, in: Capsule())
+            .shadow(color: Theme.limeGlow, radius: 16, y: 4)
+            .padding(.top, Theme.Spacing.sm)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .allowsHitTesting(false)
+            .sensoryFeedback(.success, trigger: spark.id)
+        }
+    }
+
+    /// 履歴ベスト（この set を除く）を上回ったら暫定スパークを出す。永続化はしない。
+    private func showProvisionalPRIfNeeded(set: ExerciseSet, exercise: Exercise) {
+        let bests = WorkoutMetrics.bests(for: exercise, userId: userId, excludingSetId: set.id)
+        let detected = PRDetector.detect(
+            measurementType: exercise.measurementType,
+            weight: set.weight, reps: set.reps, durationSeconds: set.durationSeconds,
+            against: bests
+        )
+        guard !detected.isEmpty else { return }
+        let label = detected.map(\.type.label).joined(separator: "・")
+        let spark = PRSpark(exerciseName: exercise.name, typesLabel: label)
+        withAnimation(.bouncy) { prSpark = spark }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.25)) { if prSpark?.id == spark.id { prSpark = nil } }
+            }
+        }
     }
 
     private func deleteSet(_ set: ExerciseSet) {

@@ -10,12 +10,16 @@ struct ShareCardView: View {
     var body: some View {
         ZStack {
             background
-            LinearGradient(
-                colors: [.black.opacity(0), .black.opacity(theme == .light ? 0 : 0.7)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
+            if !theme.isTransparent {
+                LinearGradient(
+                    colors: [.black.opacity(0), .black.opacity(theme == .light ? 0 : 0.7)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+            }
             content_overlay
+                // 透過テンプレは下地が分からないので、文字に影を付けて可読性を担保。
+                .shadow(color: theme.isTransparent ? .black.opacity(0.55) : .clear, radius: 4, y: 1)
         }
         .frame(width: side, height: side)
         .clipped()
@@ -23,7 +27,9 @@ struct ShareCardView: View {
 
     @ViewBuilder
     private var background: some View {
-        if let image = content.image {
+        if theme.isTransparent {
+            Color.clear   // 背景透過：ユーザーが自分の写真に重ねる
+        } else if let image = content.image {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()

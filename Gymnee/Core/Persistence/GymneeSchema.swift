@@ -25,6 +25,7 @@ enum GymneeSchemaV1: VersionedSchema {
             Report.self,
             FeedItem.self,
             PostReaction.self,
+            Comment.self,
             PlannedWorkout.self,
             Product.self,
             SupplyLog.self,

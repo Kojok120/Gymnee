@@ -25,12 +25,14 @@ enum FeedPublisher {
         for item in existing { byRef[item.refId] = item }
         var changed = false
 
-        func upsert(refId: UUID, type: FeedItemType, summary: String, date: Date) {
+        func upsert(refId: UUID, type: FeedItemType, summary: String, date: Date, statsJSON: String? = nil) {
             let vis = visibilityStore.visibility(for: refId) ?? defaultVisibility
             if let item = byRef.removeValue(forKey: refId) {
-                guard item.visibilityRaw != vis.rawValue || item.summary != summary || item.authorDisplayName != authorName else { return }
+                guard item.visibilityRaw != vis.rawValue || item.summary != summary
+                        || item.statsJSON != statsJSON || item.authorDisplayName != authorName else { return }
                 item.visibility = vis
                 item.summary = summary
+                item.statsJSON = statsJSON
                 item.authorDisplayName = authorName
                 item.updatedAt = .now
                 item.isDirty = true
@@ -42,7 +44,7 @@ enum FeedPublisher {
                 if (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == rid })))?.first != nil {
                     return
                 }
-                let item = FeedItem(id: refId, userId: userId, authorDisplayName: authorName, type: type, refId: refId, summary: summary, visibility: vis, createdAt: date)
+                let item = FeedItem(id: refId, userId: userId, authorDisplayName: authorName, type: type, refId: refId, summary: summary, statsJSON: statsJSON, visibility: vis, createdAt: date)
                 context.insert(item)
                 sync.enqueue(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
                 changed = true
@@ -53,8 +55,17 @@ enum FeedPublisher {
             upsert(refId: v.id, type: .visit, summary: v.gym?.name ?? "チェックイン", date: v.visitedAt)
         }
         for w in workouts {
-            let sets = w.exercises.reduce(0) { $0 + $1.sets.count }
-            upsert(refId: w.id, type: .workout, summary: "\(w.name)・\(w.exercises.count)種目・\(sets)セット", date: w.date)
+            // サマリは種目名のみ（数値は stats_json が運ぶ）。フォロワー側もリッチカードを描ける。
+            let allSets = w.exercises.flatMap(\.sets)
+            let vol = allSets.reduce(0.0) { $0 + $1.volume }
+            let totalVolume = vol.isFinite ? Int(vol) : 0
+            let minutes = w.completedAt.map { max(1, Int($0.timeIntervalSince(w.date) / 60)) }
+            let prCount = prs.filter { $0.workoutId == w.id }.count
+            var seenMuscle = Set<MuscleGroup>()
+            let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }.map(\.rawValue)
+            let stats = FeedItemStats(exercises: w.exercises.count, sets: allSets.count, volume: totalVolume,
+                                      minutes: minutes, prCount: prCount, muscles: muscles)
+            upsert(refId: w.id, type: .workout, summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
         }
         // PR はフィードを荒らさないよう「種目 × 日」で 1 件に集約する。初回の種目は
         // 最大重量/レップ…と乱発せず「新しい種目に挑戦」1件、以降は「自己ベスト更新」1件。

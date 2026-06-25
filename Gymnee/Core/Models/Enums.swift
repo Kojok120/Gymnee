@@ -25,6 +25,16 @@ enum PRType: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// 計測タイプ別トロフィー/バッジのアイコン（祝福演出・フィード・実績で共用）。
+    var symbol: String {
+        switch self {
+        case .maxWeight: return "dumbbell.fill"
+        case .est1RM: return "bolt.fill"
+        case .maxReps: return "flame.fill"
+        case .maxDuration: return "stopwatch.fill"
+        }
+    }
+
     /// PR 値の表示用フォーマット（種別ごとに単位が違う）。各 View の重複を集約。
     func formatted(_ value: Double) -> String {
         switch self {
@@ -174,17 +184,38 @@ enum MeasurementType: String, Codable, CaseIterable, Sendable {
 }
 
 /// 投稿へのリアクション種別（§6.11 ゲーミフィケーション）。いいねのみ。
+/// 投稿への応援リアクション（筋トレ文脈の絵文字）。1ユーザー1投稿につき1種別（タップで切替/取消）。
+/// `like` は旧データ互換のため先頭に残す。サーバ側 CHECK 制約と同期させること（migration 0018）。
 enum ReactionKind: String, Codable, CaseIterable, Sendable {
     case like
+    case strong
+    case fire
+    case clap
 
     var label: String {
         switch self {
         case .like: return "いいね"
+        case .strong: return "ナイスバルク"
+        case .fire: return "熱い"
+        case .clap: return "ナイス"
         }
     }
+    /// 表示用絵文字（バーのチップに使う）。
+    var emoji: String {
+        switch self {
+        case .like: return "❤️"
+        case .strong: return "💪"
+        case .fire: return "🔥"
+        case .clap: return "👏"
+        }
+    }
+    /// SF Symbol フォールバック（旧UI互換）。
     var icon: String {
         switch self {
         case .like: return "heart.fill"
+        case .strong: return "figure.strengthtraining.traditional"
+        case .fire: return "flame.fill"
+        case .clap: return "hands.clap.fill"
         }
     }
 }

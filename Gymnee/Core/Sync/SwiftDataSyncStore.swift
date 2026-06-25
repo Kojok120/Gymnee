@@ -65,6 +65,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "reports":           return fetchReport(id).map(encodeReport)
         case "feed_items":        return fetchFeedItem(id).map(encodeFeedItem)
         case "post_reactions":    return fetchPostReaction(id).map(encodePostReaction)
+        case "comments":          return fetchComment(id).map(encodeComment)
         case "supply_logs":       return fetchSupplyLog(id).map(encodeSupplyLog)
         case "subscriptions":     return fetchSubscription(id).map(encodeSubscription)
         // products はサーバ管理カタログ（クライアントから push しない）。
@@ -90,6 +91,17 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "workout_exercises":
             guard let w = fetchWorkoutExercise(change.recordId)?.workout else { return [] }
             return [dep("workouts", w.id, w.updatedAt)]
+        case "post_reactions":
+            // リアクション → 親 feed_item。自分の投稿への反応のときだけ親を先送り（FK 23503 自己修復）。
+            // 他人の投稿の feed_item はサーバ既存＆未所有（push すると RLS 42501）なので送らない。
+            guard let r = fetchPostReaction(change.recordId),
+                  let fi = fetchFeedItem(r.feedItemId), fi.userId == r.userId else { return [] }
+            return [dep("feed_items", fi.id, fi.updatedAt)]
+        case "comments":
+            // コメント → 親 feed_item。同上、自分の投稿へのコメントのみ親を先送り。
+            guard let c = fetchComment(change.recordId),
+                  let fi = fetchFeedItem(c.feedItemId), fi.userId == c.userId else { return [] }
+            return [dep("feed_items", fi.id, fi.updatedAt)]
         default:
             return []
         }
@@ -123,6 +135,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
             case "reports":           applyReport(row)
             case "feed_items":        applyFeedItem(row)
             case "post_reactions":    applyPostReaction(row)
+            case "comments":          applyComment(row)
             case "products":          applyProduct(row)
             case "supply_logs":       applySupplyLog(row)
             case "subscriptions":     applySubscription(row)
@@ -149,6 +162,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func encodeProfile(_ m: Profile) -> [String: Any] {
         ["id": lower(m.id), "display_name": m.displayName, "avatar_url": opt(m.avatarURL),
          "bio": opt(m.bio), "notify_likes": m.notifyLikes, "notify_friend_checkin": m.notifyFriendCheckin,
+         "notify_comments": m.notifyComments,
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyProfile(_ row: [String: Any]) {
@@ -161,6 +175,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.bio = str(row["bio"])
         m.notifyLikes = bool(row["notify_likes"]) ?? m.notifyLikes
         m.notifyFriendCheckin = bool(row["notify_friend_checkin"]) ?? m.notifyFriendCheckin
+        m.notifyComments = bool(row["notify_comments"]) ?? m.notifyComments
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
@@ -508,7 +523,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - feed_items
     private func encodeFeedItem(_ m: FeedItem) -> [String: Any] {
         ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "author_display_name": opt(m.authorDisplayName),
-         "type": m.typeRaw, "ref_id": lower(m.refId), "summary": opt(m.summary), "visibility": m.visibilityRaw,
+         "type": m.typeRaw, "ref_id": lower(m.refId), "summary": opt(m.summary), "stats_json": opt(m.statsJSON),
+         "visibility": m.visibilityRaw,
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyFeedItem(_ row: [String: Any]) {
@@ -521,6 +537,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.typeRaw = str(row["type"]) ?? m.typeRaw
         m.refId = uuid(row["ref_id"]) ?? m.refId
         m.summary = str(row["summary"])
+        m.statsJSON = str(row["stats_json"])
         m.visibilityRaw = str(row["visibility"]) ?? m.visibilityRaw
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
@@ -540,6 +557,26 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.userId = uuid(row["user_id"]) ?? m.userId
         m.feedItemId = uuid(row["feed_item_id"]) ?? m.feedItemId
         m.kindRaw = str(row["kind"]) ?? m.kindRaw
+        m.createdAt = date(row["created_at"]) ?? m.createdAt
+        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
+        m.isDirty = false
+    }
+
+    // MARK: - comments
+    private func encodeComment(_ m: Comment) -> [String: Any] {
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "feed_item_id": lower(m.feedItemId),
+         "author_display_name": opt(m.authorDisplayName), "text": m.text,
+         "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+    }
+    private func applyComment(_ row: [String: Any]) {
+        guard let id = uuid(row["id"]) else { return }
+        let existing = fetchComment(id)
+        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
+        let m = existing ?? insert(Comment(id: id, feedItemId: uuid(row["feed_item_id"]) ?? UUID(), userId: uuid(row["user_id"]) ?? UUID(), text: str(row["text"]) ?? ""))
+        m.feedItemId = uuid(row["feed_item_id"]) ?? m.feedItemId
+        m.userId = uuid(row["user_id"]) ?? m.userId
+        m.authorDisplayName = str(row["author_display_name"]) ?? m.authorDisplayName
+        m.text = str(row["text"]) ?? m.text
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
@@ -631,6 +668,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func fetchReport(_ id: UUID) -> Report? { first(FetchDescriptor<Report>(predicate: #Predicate { $0.id == id })) }
     private func fetchFeedItem(_ id: UUID) -> FeedItem? { first(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == id })) }
     private func fetchPostReaction(_ id: UUID) -> PostReaction? { first(FetchDescriptor<PostReaction>(predicate: #Predicate { $0.id == id })) }
+    private func fetchComment(_ id: UUID) -> Comment? { first(FetchDescriptor<Comment>(predicate: #Predicate { $0.id == id })) }
     private func fetchProduct(_ id: UUID) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.id == id })) }
     private func fetchProductByName(_ name: String) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.name == name })) }
     private func fetchSupplyLog(_ id: UUID) -> SupplyLog? { first(FetchDescriptor<SupplyLog>(predicate: #Predicate { $0.id == id })) }

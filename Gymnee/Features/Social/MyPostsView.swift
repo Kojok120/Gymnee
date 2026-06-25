@@ -15,7 +15,7 @@ struct MyPostsView: View {
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @Query private var allReactions: [PostReaction]
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     @State private var editVisit: Visit?
 
     init(userId: UUID, visibilityStore: PostVisibilityStore, onClose: @escaping () -> Void) {

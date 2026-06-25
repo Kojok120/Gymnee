@@ -117,6 +117,8 @@ final class FeedItem {
     var typeRaw: String
     var refId: UUID
     var summary: String?
+    /// 構造化スタッツ(JSON文字列)。ワークアウト投稿のみ。フォロワー側でリッチカードを描くため。
+    var statsJSON: String?
     var visibilityRaw: String
     var createdAt: Date
     var updatedAt: Date
@@ -139,6 +141,7 @@ final class FeedItem {
         type: FeedItemType,
         refId: UUID,
         summary: String? = nil,
+        statsJSON: String? = nil,
         visibility: Visibility = .friends,
         createdAt: Date = .now,
         updatedAt: Date = .now,
@@ -150,6 +153,7 @@ final class FeedItem {
         self.typeRaw = type.rawValue
         self.refId = refId
         self.summary = summary
+        self.statsJSON = statsJSON
         self.visibilityRaw = visibility.rawValue
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -186,6 +190,40 @@ final class PostReaction {
         self.userId = userId
         self.feedItemId = feedItemId
         self.kindRaw = kind.rawValue
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isDirty = isDirty
+    }
+}
+
+/// 投稿（feed_items）への公開コメント（③）。可視な投稿にのみ付き、参照可否は post_reactions と同条件。
+/// 1対1の私信（DM）ではなく不特定/多数が読む「オープンな場」の投稿。author_display_name は profiles 未同期時の安全網。
+@Model
+final class Comment {
+    @Attribute(.unique) var id: UUID
+    var feedItemId: UUID
+    var userId: UUID
+    var authorDisplayName: String?
+    var text: String
+    var createdAt: Date
+    var updatedAt: Date
+    var isDirty: Bool
+
+    init(
+        id: UUID = UUID(),
+        feedItemId: UUID,
+        userId: UUID,
+        authorDisplayName: String? = nil,
+        text: String,
+        createdAt: Date = .now,
+        updatedAt: Date = .now,
+        isDirty: Bool = true
+    ) {
+        self.id = id
+        self.feedItemId = feedItemId
+        self.userId = userId
+        self.authorDisplayName = authorDisplayName
+        self.text = text
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDirty = isDirty

@@ -19,7 +19,7 @@ struct SettingsView: View {
     @State private var showProfileEdit = false
     @State private var showPaywall = false
     @State private var browserURL: IdentifiableURL?
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
@@ -100,6 +100,8 @@ struct SettingsView: View {
                 // 種類別トグル（許諾が無い間は無効表示）。
                 Group {
                     Toggle("いいね", isOn: pushBinding(\.notifyLikes))
+                        .disabled(myProfile == nil)
+                    Toggle("コメント", isOn: pushBinding(\.notifyComments))
                         .disabled(myProfile == nil)
                     Toggle("フレンドのチェックイン", isOn: pushBinding(\.notifyFriendCheckin))
                         .disabled(myProfile == nil)

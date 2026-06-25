@@ -20,7 +20,7 @@ struct CheckInEditView: View {
     init(visit: Visit, visibilityStore: PostVisibilityStore) {
         self.visit = visit
         self.visibilityStore = visibilityStore
-        let fallback = Visibility(rawValue: UserDefaults.standard.string(forKey: "gymnee.defaultVisibility") ?? "") ?? .public
+        let fallback = Visibility(rawValue: UserDefaults.standard.string(forKey: "gymnee.defaultVisibility") ?? "") ?? .friends
         _visibility = State(initialValue: visibilityStore.visibility(for: visit.id) ?? fallback)
         _partners = State(initialValue: visit.partners.map {
             CheckInView.PartnerDraft(id: $0.partnerUserId, name: $0.partnerDisplayName ?? "ユーザー")

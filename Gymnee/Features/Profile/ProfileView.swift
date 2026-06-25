@@ -9,7 +9,9 @@ struct ProfileView: View {
     @Environment(AuthService.self) private var auth
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
+    @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @State private var showProfileEdit = false
+    @State private var showWrapped = false
     @Query private var visits: [Visit]
 
     init(userId: UUID) {
@@ -17,8 +19,30 @@ struct ProfileView: View {
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId })
     }
 
-    private var currentStreak: Int { StreakCalculator.currentStreak(visitDays: visits.map(\.visitedAt)) }
-    private var longestStreak: Int { StreakCalculator.longestStreak(visitDays: visits.map(\.visitedAt)) }
+    /// 週次ストリーク（筋トレは休息が正義のため日次でなく「週N回×連続週」を主指標に）。
+    private var weeklyStreak: StreakCalculator.WeeklyStreak {
+        StreakCalculator.currentWeeklyStreak(visitDays: visits.map(\.visitedAt), weeklyGoal: weeklyGoal)
+    }
+    private var longestWeekly: Int {
+        StreakCalculator.longestWeeklyStreak(visitDays: visits.map(\.visitedAt), weeklyGoal: weeklyGoal)
+    }
+
+    /// 週次ストリークの補足（今週の進捗・フリーズ使用）。日次と違い「休んだ罪悪感」を出さない文面に。
+    @ViewBuilder private var weeklyStreakCaption: some View {
+        let s = weeklyStreak
+        HStack(spacing: Theme.Spacing.sm) {
+            Label("週\(weeklyGoal)回 · 今週 \(s.visitsThisWeek)/\(weeklyGoal)",
+                  systemImage: s.metThisWeek ? "checkmark.seal.fill" : "target")
+                .foregroundStyle(s.metThisWeek ? Theme.lime : Theme.textSecondary)
+            if s.freezesUsed > 0 {
+                Label("フリーズ\(s.freezesUsed)", systemImage: "snowflake")
+                    .foregroundStyle(Theme.info)
+            }
+            Spacer()
+        }
+        .font(.caption)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
     var body: some View {
         List {
@@ -39,9 +63,10 @@ struct ProfileView: View {
                     .onTapGesture { showProfileEdit = true }
                     HStack(spacing: Theme.Spacing.md) {
                         StatPill(value: "\(visits.count)", label: "来店", tint: Theme.lime, systemImage: "mappin.and.ellipse")
-                        StatPill(value: "\(currentStreak)", label: "連続日", tint: Theme.warning, systemImage: "flame.fill")
-                        StatPill(value: "\(longestStreak)", label: "最長", tint: Theme.textPrimary, systemImage: "trophy.fill")
+                        StatPill(value: "\(weeklyStreak.weeks)", label: "連続週", tint: Theme.warning, systemImage: "flame.fill")
+                        StatPill(value: "\(longestWeekly)", label: "最長週", tint: Theme.textPrimary, systemImage: "trophy.fill")
                     }
+                    weeklyStreakCaption
                 }
                 .padding(.vertical, Theme.Spacing.sm)
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -52,6 +77,11 @@ struct ProfileView: View {
                 NavigationLink(value: AppRoute.photos) { Label("進捗写真", systemImage: "photo.stack") }
                 NavigationLink(value: AppRoute.body) { Label("身体メトリクス", systemImage: "ruler") }
                 // 分析は専用タブに集約したためここからは外す。
+                // Wrapped は sheet で提示（クロージャ型 NavigationLink の遷移先 init 連鎖ハングを回避）。
+                Button { showWrapped = true } label: {
+                    Label("\(Calendar.current.component(.year, from: .now)) のまとめ", systemImage: "sparkles")
+                        .foregroundStyle(Theme.lime)
+                }
             }
 
             Section {
@@ -61,6 +91,7 @@ struct ProfileView: View {
         .navigationTitle("マイページ")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showProfileEdit) { ProfileEditView() }
+        .sheet(isPresented: $showWrapped) { GymneeWrappedView(userId: userId, onClose: { showWrapped = false }) }
         // 遷移先は値ベース（AppRoute）。destination は NavigationStack ルート側
         // （CalendarHomeView の gymneeNavigationDestinations）で一括宣言しており、
         // ここ（push されたビュー）では宣言しない。クロージャ型リンクで遷移先を先行生成すると
