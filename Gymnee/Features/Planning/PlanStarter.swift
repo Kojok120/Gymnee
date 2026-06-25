@@ -32,7 +32,7 @@ enum PlanStarter {
                 let setCount = max(re.targetSets, prev.count)
                 for s in 0..<setCount {
                     let p = s < prev.count ? prev[s] : nil
-                    context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: p?.reps ?? 0, type: p?.type ?? .normal, workoutExercise: we))
+                    context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: p?.reps ?? 0, workoutExercise: we))
                 }
             }
         }

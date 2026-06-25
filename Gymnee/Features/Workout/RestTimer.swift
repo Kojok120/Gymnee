@@ -11,7 +11,11 @@ final class RestTimer {
     private(set) var remaining: Int = 0
     private(set) var total: Int = 0
     private(set) var isRunning = false
-    var presetDuration: Int = 90
+    /// 既定レスト秒数。設定 `gymnee.restSeconds` が真実（未設定は90）。
+    var presetDuration: Int {
+        let v = UserDefaults.standard.integer(forKey: "gymnee.restSeconds")
+        return v > 0 ? v : 90
+    }
 
     private var task: Task<Void, Never>?
     private let notificationId = "gymnee.restTimer"

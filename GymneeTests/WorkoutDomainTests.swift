@@ -26,14 +26,13 @@ final class OneRepMaxTests: XCTestCase {
 
 /// ボリューム集計（§6.5）のテスト。
 final class VolumeCalculatorTests: XCTestCase {
-    private func entry(_ mg: MuscleGroup, _ w: Double, _ r: Int, _ t: SetType = .normal, _ d: Date = .now) -> VolumeCalculator.VolumeEntry {
-        .init(muscleGroup: mg, weight: w, reps: r, type: t, date: d)
+    private func entry(_ mg: MuscleGroup, _ w: Double, _ r: Int, _ d: Date = .now) -> VolumeCalculator.VolumeEntry {
+        .init(muscleGroup: mg, weight: w, reps: r, date: d)
     }
 
-    func testTotalVolumeExcludesWarmup() {
+    func testTotalVolume() {
         let entries = [
             entry(.chest, 100, 5),       // 500
-            entry(.chest, 40, 10, .warmup), // 除外
             entry(.chest, 80, 8),        // 640
         ]
         XCTAssertEqual(VolumeCalculator.totalVolume(entries), 1140, accuracy: 0.0001)
@@ -50,10 +49,9 @@ final class VolumeCalculatorTests: XCTestCase {
         XCTAssertEqual(byMuscle[.legs] ?? 0, 750, accuracy: 0.0001)
     }
 
-    func testSetCountByMuscleExcludesWarmup() {
+    func testSetCountByMuscle() {
         let entries = [
             entry(.chest, 100, 5),
-            entry(.chest, 40, 10, .warmup),
             entry(.chest, 80, 8),
         ]
         XCTAssertEqual(VolumeCalculator.setCountByMuscle(entries)[.chest], 2)
@@ -75,10 +73,6 @@ final class PRDetectorTests: XCTestCase {
         let prs = PRDetector.detect(weight: 95, reps: 3, against: bests)
         XCTAssertEqual(prs.map(\.type), [.maxWeight])
         XCTAssertEqual(prs.first?.value, 95)
-    }
-
-    func testWarmupIgnored() {
-        XCTAssertTrue(PRDetector.detect(weight: 999, reps: 99, type: .warmup, against: .init()).isEmpty)
     }
 
     func testNoPRWhenNothingBeaten() {

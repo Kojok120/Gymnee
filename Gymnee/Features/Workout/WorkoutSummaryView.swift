@@ -12,7 +12,7 @@ struct WorkoutSummaryView: View {
     var onClose: () -> Void
 
     private var workingSets: [ExerciseSet] {
-        workout.exercises.flatMap(\.sets).filter { $0.type != .warmup }
+        workout.exercises.flatMap(\.sets)
     }
     private var totalVolume: Int {
         let v = workingSets.reduce(0) { $0 + $1.volume }

@@ -76,7 +76,7 @@ struct ExerciseDetailView: View {
             .filter { $0.workout?.userId == userId }
             .compactMap { we -> Point? in
                 guard let date = we.workout?.date else { return nil }
-                let valid = we.sets.filter { $0.type != .warmup && $0.weight > 0 && $0.reps > 0 }
+                let valid = we.sets.filter { $0.weight > 0 && $0.reps > 0 }
                 guard !valid.isEmpty else { return nil }
                 let est = valid.map { OneRepMax.estimate(weight: $0.weight, reps: $0.reps) }.max() ?? 0
                 let top = valid.map(\.weight).max() ?? 0

@@ -58,6 +58,7 @@ struct RootView: View {
         }
         if DebugSupport.screen == "routine", debugRoutine == nil {
             debugRoutine = RoutineTemplates.create(RoutineTemplates.all[0], userId: uid, context: context)
+            try? context.save()
         }
         #endif
     }
@@ -75,7 +76,7 @@ struct RootView: View {
         case "shop": ShopView()
         case "routine":
             if let r = debugRoutine {
-                NavigationStack { RoutineEditorView(routine: r) }
+                NavigationStack { RoutineEditorView(routine: r, editorContext: context) }
             } else {
                 NavigationStack { RoutinesView(userId: userId) }
             }
@@ -87,12 +88,12 @@ struct RootView: View {
                 image: nil, gymName: "Gymnee 渋谷", streak: 3,
                 prText: "ベンチ 80kg", exerciseSummary: "胸・三頭 3種目"
             ))
-        case "workout": WorkoutHomeView()
+        case "workout", "record": RecordView()
         case "logger":
             if let w = debugWorkout {
-                NavigationStack { WorkoutLoggerView(workout: w) }
+                NavigationStack { RecordContent(userId: userId, resuming: w) }
             } else {
-                WorkoutHomeView()
+                RecordView()
             }
         default: mainTabs
         }
@@ -113,7 +114,7 @@ struct RootView: View {
                 .tabItem { Label("カレンダー", systemImage: "calendar") }
                 .tag(AppTab.calendar)
 
-            WorkoutHomeView()
+            RecordView()
                 .tabItem { Label("記録", systemImage: "dumbbell.fill") }
                 .tag(AppTab.workout)
 

@@ -728,6 +728,13 @@ alter table public.exercises add column if not exists weight_mode text not null 
 alter table public.exercise_sets add column if not exists weight_mode_override text;
 
 -- ============================================================
+-- migrations/0017_record_redesign.sql
+-- ============================================================
+-- 記録リデザイン（タップ式）。計測タイプ(weight/bodyweight/time)と時間種目の継続秒数。
+alter table public.exercises add column if not exists measurement_type text not null default 'weight';
+alter table public.exercise_sets add column if not exists duration_seconds integer;
+
+-- ============================================================
 -- migrations/0010_post_reactions.sql
 -- ============================================================
 -- ⑨ いいね。投稿(feed_items)へのリアクション。本番には supabase db query で適用済み。

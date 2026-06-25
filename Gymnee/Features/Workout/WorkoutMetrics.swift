@@ -29,7 +29,7 @@ enum WorkoutMetrics {
             .filter { $0.workout?.userId == userId && $0.workout?.id != excludingWorkoutId }
             .compactMap { we -> (date: Date, weight: Double, reps: Int)? in
                 guard let date = we.workout?.date else { return nil }
-                let working = we.sets.filter { $0.type != .warmup && $0.weight > 0 }
+                let working = we.sets.filter { $0.weight > 0 }
                 guard let top = working.max(by: { $0.weight < $1.weight }) else { return nil }
                 return (date, top.weight, top.reps)
             }
@@ -41,7 +41,7 @@ enum WorkoutMetrics {
     static func bestE1RM(for exercise: Exercise, userId: UUID, excludingWorkoutId: UUID?) -> Double {
         var best = 0.0
         for we in exercise.workoutExercises where we.workout?.userId == userId && we.workout?.id != excludingWorkoutId {
-            for s in we.sets where s.type != .warmup && s.weight > 0 && s.reps > 0 {
+            for s in we.sets where s.weight > 0 && s.reps > 0 {
                 best = max(best, OneRepMax.estimate(weight: s.weight, reps: s.reps))
             }
         }
@@ -52,7 +52,7 @@ enum WorkoutMetrics {
     static func bests(for exercise: Exercise, userId: UUID, excludingSetId: UUID?) -> PRDetector.Bests {
         var b = PRDetector.Bests()
         for s in allSets(for: exercise, userId: userId)
-        where s.id != excludingSetId && s.type != .warmup && s.weight > 0 && s.reps > 0 {
+        where s.id != excludingSetId && s.weight > 0 && s.reps > 0 {
             b.maxWeight = max(b.maxWeight, s.weight)
             b.maxReps = max(b.maxReps, Double(s.reps))
             b.est1RM = max(b.est1RM, OneRepMax.estimate(weight: s.weight, reps: s.reps))
@@ -72,7 +72,7 @@ enum WorkoutMetrics {
         sync: LocalSyncEngine
     ) -> [PRDetector.DetectedPR] {
         let bests = bests(for: exercise, userId: userId, excludingSetId: set.id)
-        let detected = PRDetector.detect(weight: set.weight, reps: set.reps, type: set.type, against: bests)
+        let detected = PRDetector.detect(weight: set.weight, reps: set.reps, against: bests)
         set.isPR = !detected.isEmpty
         for pr in detected {
             upsertPR(type: pr.type, value: pr.value, exercise: exercise, workout: workout, userId: userId, context: context, sync: sync)

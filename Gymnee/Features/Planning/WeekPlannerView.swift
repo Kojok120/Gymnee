@@ -232,7 +232,8 @@ struct WeekPlannerView: View {
                 }
             }
             let history = buildHistory(formatter: fmt)
-            let result = await auth.planWorkouts(days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal, events: evs, history: history)
+            let recovery = buildRecovery()
+            let result = await auth.planWorkouts(days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal, events: evs, history: history, recovery: recovery)
             aiRunning = false
             if let result, !result.isEmpty {
                 applyPlan(result, formatter: fmt)
@@ -257,6 +258,23 @@ struct WeekPlannerView: View {
             context.insert(plan)
         }
         try? context.save()
+    }
+
+    /// 部位ごとの回復状況を AI 用に要約（RecoveryAnalyzer）。連日同部位を避ける根拠にする。
+    private func buildRecovery() -> [[String: Any]] {
+        var lastTrained: [MuscleGroup: Date] = [:]
+        for w in recentWorkouts where w.completedAt != nil {
+            for we in w.exercises where !we.sets.isEmpty {
+                guard let mg = we.exercise?.muscleGroup else { continue }
+                let d = w.completedAt ?? w.date
+                if let e = lastTrained[mg] { lastTrained[mg] = max(e, d) } else { lastTrained[mg] = d }
+            }
+        }
+        return RecoveryAnalyzer.statuses(lastTrained: lastTrained).map { s in
+            ["muscle": s.muscle.rawValue,
+             "hoursSince": Int(s.hoursSince ?? 9999),
+             "recovered": s.isRecovered]
+        }
     }
 
     /// 直近4週間の記録を AI 用に要約（種目・部位・トップセットの重量/レップ）。

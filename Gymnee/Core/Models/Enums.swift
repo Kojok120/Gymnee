@@ -6,23 +6,6 @@ enum GymSource: String, Codable, CaseIterable, Sendable {
     case user
 }
 
-/// セット種別（§6.5）。
-enum SetType: String, Codable, CaseIterable, Sendable {
-    case normal
-    case warmup
-    case drop
-    case superset
-
-    var label: String {
-        switch self {
-        case .normal: return "通常"
-        case .warmup: return "ウォームアップ"
-        case .drop: return "ドロップ"
-        case .superset: return "スーパーセット"
-        }
-    }
-}
-
 /// PR の種別（§4.2 / §6.5）。
 enum PRType: String, Codable, CaseIterable, Sendable {
     case maxWeight = "max_weight"
@@ -151,6 +134,29 @@ enum WeightMode: String, Codable, CaseIterable, Sendable {
         case .perSide: return "片"
         }
     }
+}
+
+/// 計測タイプ（記録リデザイン）。種目をどの軸で記録するか。
+/// - weight: 重量 × reps（バーベル/マシン等）
+/// - bodyweight: 自重（任意の加重 × reps。懸垂・ディップス等）
+/// - time: 時間（秒。プランク等）
+enum MeasurementType: String, Codable, CaseIterable, Sendable {
+    case weight
+    case bodyweight
+    case time
+
+    var label: String {
+        switch self {
+        case .weight: return "ウェイト"
+        case .bodyweight: return "自重"
+        case .time: return "時間"
+        }
+    }
+
+    /// 重量（加重）軸を持つか。time のみ false。
+    var hasWeightAxis: Bool { self != .time }
+    /// reps 軸を持つか。time のみ false（秒で記録）。
+    var hasRepsAxis: Bool { self != .time }
 }
 
 /// 投稿へのリアクション種別（§6.11 ゲーミフィケーション）。いいねのみ。

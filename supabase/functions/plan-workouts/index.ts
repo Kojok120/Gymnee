@@ -69,6 +69,8 @@ Deno.serve(async (req) => {
   const goal: number = Math.max(0, Math.min(14, Number(body.weeklyGoal ?? 3) || 0));
   const busy: any[] = (Array.isArray(body.events) ? body.events : []).slice(0, 100);
   const history: any[] = (Array.isArray(body.history) ? body.history : []).slice(0, 200);
+  // 部位ごとの回復状況（recovered=false の部位は避ける根拠）。
+  const recovery: any[] = (Array.isArray(body.recovery) ? body.recovery : []).slice(0, 12);
 
   const prompt = [
     "あなたは熟練のパーソナルトレーナーです。以下の条件で今週のワークアウト計画を、種目・セット数・目標重量(kg)・レップまで具体的に組んでください。",
@@ -77,7 +79,9 @@ Deno.serve(async (req) => {
     `今週の目標トレーニング日数: ${goal}`,
     `既存の予定(避けるべき多忙日の参考): ${JSON.stringify(busy)}`,
     `直近4週間の記録(頻度・部位バランス・前回重量の参考。空なら初心者想定で控えめに): ${JSON.stringify(history)}`,
-    "方針: 予定で忙しい日は休養または軽め。連続して同じ部位を高頻度で組まない。目標日数に合わせる。",
+    `部位ごとの回復状況(recovered=false=未回復。hoursSince=最終トレからの経過時間): ${JSON.stringify(recovery)}`,
+    "方針: 予定で忙しい日は休養または軽め。回復していない部位(recovered=false)は連日に入れない。目標日数に合わせる。",
+    "種目構成はハイブリッド: 可能な限り『利用可能なルーティン名』を各トレ日に割り当て、title をそのルーティン名にする。ルーティンで埋まらない日や不足部位だけ個別種目で補う。",
     "重量は過去記録の前回値を基準に漸進的過負荷(無理のない範囲で微増)。記録が無い種目は控えめな初期値。",
     'JSONのみを返す。形式: {"plan":[{"date":"<対象日>","title":"<部位/ルーティン名 or 休養>","exercises":[{"name":"種目名","muscleGroup":"chest|back|legs|shoulders|arms|core|fullBody のいずれか","sets":3,"reps":8,"weight":60}]}]}。休養日は exercises を空配列に。',
   ].join("\n");

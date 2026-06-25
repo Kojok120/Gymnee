@@ -37,7 +37,7 @@ enum RoutineTemplates {
             let re = RoutineExercise(orderIndex: i, targetSets: template.sets, targetReps: template.reps, restSeconds: 90, routine: routine, exercise: ex)
             context.insert(re)
         }
-        try? context.save()
+        // 保存は呼び出し側（ルーティン編集の「完了」）に委ねる＝完了まで永続化しない。
         return routine
     }
 }

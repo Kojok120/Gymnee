@@ -33,6 +33,8 @@ private struct CalendarHomeContent: View {
     @State private var selectedDate: SelectedDay?
     @State private var showCheckIn = false
     @State private var editingWorkout: Workout?
+    @State private var showPlanner = false
+    @State private var showRoutines = false
     @State private var showNotifPrePrompt = false
     @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
@@ -57,6 +59,8 @@ private struct CalendarHomeContent: View {
             VStack(spacing: Theme.Spacing.lg) {
                 heroCard
                 calendarCard
+                plannerButton
+                routinesButton
                 upcomingSection
             }
             .padding(Theme.Spacing.lg)
@@ -75,6 +79,18 @@ private struct CalendarHomeContent: View {
             }
         }
         .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
+        .sheet(isPresented: $showPlanner) {
+            NavigationStack {
+                WeekPlannerView(userId: userId, onStart: { w in showPlanner = false; editingWorkout = w })
+                    .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showPlanner = false } } }
+            }
+        }
+        .sheet(isPresented: $showRoutines) {
+            NavigationStack {
+                RoutinesView(userId: userId)
+                    .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showRoutines = false } } }
+            }
+        }
         .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
             Button("オンにする") { notifPrePrompted = true; Task { await notifications.requestAuthorization() } }
             Button("あとで", role: .cancel) { notifPrePrompted = true }
@@ -90,7 +106,7 @@ private struct CalendarHomeContent: View {
         }
         // ロガーへの遷移はルートで宣言（pushed view 上の navigationDestination は 26.5 で無効のため）。
         .navigationDestination(item: $editingWorkout) { workout in
-            WorkoutLoggerView(workout: workout)
+            RecordContent(userId: userId, resuming: workout)
         }
         // Watch 保留チェックインの取り込みは「一度だけ」。visits.count トリガに乗せると
         // 挿入→count変化→再実行→再挿入 の無限ループになる（特に App Group 破損時）。
@@ -344,6 +360,48 @@ private struct CalendarHomeContent: View {
         }
     }
 
+    // MARK: - 計画を立てる（AIプランナー導線）
+
+    private var plannerButton: some View {
+        Button { showPlanner = true } label: {
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "calendar.badge.plus")
+                    .foregroundStyle(Theme.lime)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("計画を立てる").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                    Text("予定・回復をみてAIが期間のメニューを提案").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gymneeCard(padding: Theme.Spacing.md)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var routinesButton: some View {
+        Button { showRoutines = true } label: {
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .foregroundStyle(Theme.lime)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ルーティンを管理する").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                    Text("ルーティンの追加・編集・削除").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gymneeCard(padding: Theme.Spacing.md)
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Upcoming (予定→実績)
 
     private var upcomingSection: some View {
@@ -379,7 +437,8 @@ private struct CalendarHomeContent: View {
         Set(visits.map { calendar.startOfDay(for: $0.visitedAt) })
     }
     private var workoutDays: Set<Date> {
-        Set(workouts.filter { $0.completedAt != nil || !$0.isPlanned }.map { calendar.startOfDay(for: $0.date) })
+        // 完了したワークアウトのみマーカー表示（進行中の下書きは記録扱いしない）。
+        Set(workouts.filter { $0.completedAt != nil }.map { calendar.startOfDay(for: $0.date) })
     }
     /// 連続記録・週次達成の対象日。来店だけでなく完了ワークアウトも算入（記録派も報われるように）。
     private var activeDays: [Date] {

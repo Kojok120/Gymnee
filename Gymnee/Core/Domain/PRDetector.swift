@@ -20,17 +20,15 @@ enum PRDetector {
     /// - Parameters:
     ///   - weight: セット重量。
     ///   - reps: セットレップ。
-    ///   - type: セット種別（warmup は無視）。
     ///   - bests: 現在のベスト。
     ///   - formula: 1RM 推定式。
     static func detect(
         weight: Double,
         reps: Int,
-        type: SetType = .normal,
         against bests: Bests,
         formula: OneRepMax.Formula = .epley
     ) -> [DetectedPR] {
-        guard type != .warmup, weight > 0, reps >= 1 else { return [] }
+        guard weight > 0, reps >= 1 else { return [] }
 
         var results: [DetectedPR] = []
 

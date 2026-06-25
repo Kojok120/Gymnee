@@ -295,7 +295,7 @@ actor SupabaseClient {
     /// 503(not_configured) など非2xx は send が throw する（呼び出し側で「準備中」扱い）。
     func planWorkouts(
         days: [String], routines: [String], weeklyGoal: Int,
-        events: [[String: Any]], history: [[String: Any]]
+        events: [[String: Any]], history: [[String: Any]], recovery: [[String: Any]]
     ) async throws -> [PlanItem] {
         let url = config.url.appendingPathComponent("functions/v1/plan-workouts")
         var request = URLRequest(url: url)
@@ -305,7 +305,7 @@ actor SupabaseClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "days": days, "routines": routines, "weeklyGoal": weeklyGoal,
-            "events": events, "history": history,
+            "events": events, "history": history, "recovery": recovery,
         ])
         let data = try await send(request)
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]

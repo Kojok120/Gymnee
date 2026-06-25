@@ -38,7 +38,7 @@ final class RoutineExercise {
     var orderIndex: Int
     var targetSets: Int
     var targetReps: Int?
-    /// 種目別のレスト秒数（nil は既定値を使用）。
+    /// 種目別のレスト秒数（nil は既定値を使用）。記録UIでは未使用（計画用に保持）。
     var restSeconds: Int?
     var updatedAt: Date
     var isDirty: Bool

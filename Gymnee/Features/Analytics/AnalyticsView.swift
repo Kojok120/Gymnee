@@ -176,7 +176,7 @@ struct AnalyticsView: View {
             for we in wes {
                 guard let date = we.workout?.date else { continue }
                 let best = we.sets
-                    .filter { $0.type != .warmup && $0.weight > 0 && $0.reps > 0 }
+                    .filter { $0.weight > 0 && $0.reps > 0 }
                     .map { OneRepMax.estimate(weight: $0.weight, reps: $0.reps) }
                     .max()
                 if let best { points.append(StrengthPoint(date: date, e1RM: best, exercise: name)) }
@@ -263,7 +263,7 @@ struct AnalyticsView: View {
         for w in workouts where w.completedAt != nil {
             for we in w.exercises {
                 guard let mg = we.exercise?.muscleGroup else { continue }
-                if we.sets.contains(where: { $0.type != .warmup }) {
+                if !we.sets.isEmpty {
                     if let existing = lastTrained[mg] { lastTrained[mg] = max(existing, w.date) }
                     else { lastTrained[mg] = w.date }
                 }
@@ -305,7 +305,7 @@ struct AnalyticsView: View {
             for we in w.exercises {
                 guard let mg = we.exercise?.muscleGroup else { continue }
                 for set in we.sets {
-                    entries.append(.init(muscleGroup: mg, weight: set.weight, reps: set.reps, type: set.type, date: w.date))
+                    entries.append(.init(muscleGroup: mg, weight: set.weight, reps: set.reps, date: w.date))
                 }
             }
         }

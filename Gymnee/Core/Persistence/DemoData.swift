@@ -68,14 +68,14 @@ enum DemoData {
                 let weights = [topWeight - 20, topWeight - 10, topWeight]
                 let reps = [10, 8, 6]
                 for i in 0..<3 {
-                    context.insert(ExerciseSet(setIndex: i, weight: weights[i], reps: reps[i], type: .normal, isPR: i == 2 && off == 2, isCompleted: true, workoutExercise: we, isDirty: false))
+                    context.insert(ExerciseSet(setIndex: i, weight: weights[i], reps: reps[i], isPR: i == 2 && off == 2, isCompleted: true, workoutExercise: we, isDirty: false))
                 }
             }
             if let squat, off == 2 {
                 let we = WorkoutExercise(orderIndex: 1, workout: workout, exercise: squat, isDirty: false)
                 context.insert(we)
                 for i in 0..<3 {
-                    context.insert(ExerciseSet(setIndex: i, weight: 100, reps: 5, type: .normal, isCompleted: true, workoutExercise: we, isDirty: false))
+                    context.insert(ExerciseSet(setIndex: i, weight: 100, reps: 5, isCompleted: true, workoutExercise: we, isDirty: false))
                 }
             }
         }
@@ -119,7 +119,7 @@ enum DemoData {
                 context.insert(ExerciseSet(setIndex: 1, weight: 60, reps: 8, workoutExercise: we, isDirty: false))
             } else {
                 for (s, p) in prev.enumerated() {
-                    context.insert(ExerciseSet(setIndex: s, weight: p.weight, reps: p.reps, type: p.type, workoutExercise: we, isDirty: false))
+                    context.insert(ExerciseSet(setIndex: s, weight: p.weight, reps: p.reps, workoutExercise: we, isDirty: false))
                 }
             }
         }

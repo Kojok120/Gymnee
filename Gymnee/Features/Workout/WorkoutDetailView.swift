@@ -38,7 +38,7 @@ struct WorkoutDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 // 編集はロガー画面を再利用（セット・種目の追加/修正、完了の付け直しが可能）。
                 NavigationLink {
-                    WorkoutLoggerView(workout: workout)
+                    RecordContent(userId: workout.userId, resuming: workout)
                 } label: {
                     Text("編集")
                 }

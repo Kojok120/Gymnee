@@ -58,14 +58,21 @@ final class Exercise {
     var equipmentRaw: String
     var isCustom: Bool
     var createdBy: UUID?
-    /// この種目の既定の重量の数え方（両側/片側）。セットで上書き可能。
+    /// この種目の既定の重量の数え方（両側/片側）。
     var weightModeRaw: String = WeightMode.both.rawValue
+    /// 計測タイプ（weight / bodyweight / time）。記録カードの形を決める。
+    var measurementTypeRaw: String = MeasurementType.weight.rawValue
     var updatedAt: Date
     var isDirty: Bool
 
     var weightMode: WeightMode {
         get { WeightMode(rawValue: weightModeRaw) ?? .both }
         set { weightModeRaw = newValue.rawValue }
+    }
+
+    var measurementType: MeasurementType {
+        get { MeasurementType(rawValue: measurementTypeRaw) ?? .weight }
+        set { measurementTypeRaw = newValue.rawValue }
     }
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutExercise.exercise)
@@ -95,6 +102,7 @@ final class Exercise {
         isCustom: Bool = false,
         createdBy: UUID? = nil,
         weightMode: WeightMode = .both,
+        measurementType: MeasurementType = .weight,
         updatedAt: Date = .now,
         isDirty: Bool = true
     ) {
@@ -105,6 +113,7 @@ final class Exercise {
         self.isCustom = isCustom
         self.createdBy = createdBy
         self.weightModeRaw = weightMode.rawValue
+        self.measurementTypeRaw = measurementType.rawValue
         self.updatedAt = updatedAt
         self.isDirty = isDirty
     }
@@ -116,9 +125,7 @@ final class WorkoutExercise {
     @Attribute(.unique) var id: UUID
     var orderIndex: Int
     var note: String?
-    /// スーパーセットのグループ識別子。同じ値同士が 1 つのスーパーセット（nil は単独）。
-    var supersetGroup: Int?
-    /// 種目別レスト秒数（nil は既定値）。ルーティンから引き継ぐ。
+    /// 種目別レスト秒数（nil は既定値）。記録UIでは未使用（計画/同期互換のため保持）。
     var restSeconds: Int?
     var updatedAt: Date
     var isDirty: Bool
@@ -133,7 +140,6 @@ final class WorkoutExercise {
         id: UUID = UUID(),
         orderIndex: Int,
         note: String? = nil,
-        supersetGroup: Int? = nil,
         restSeconds: Int? = nil,
         workout: Workout? = nil,
         exercise: Exercise? = nil,
@@ -143,7 +149,6 @@ final class WorkoutExercise {
         self.id = id
         self.orderIndex = orderIndex
         self.note = note
-        self.supersetGroup = supersetGroup
         self.restSeconds = restSeconds
         self.workout = workout
         self.exercise = exercise
@@ -159,35 +164,17 @@ final class ExerciseSet {
     var setIndex: Int
     var weight: Double
     var reps: Int
-    var rpe: Double?
-    var rir: Int?
-    var typeRaw: String
     var isPR: Bool
     var isCompleted: Bool
-    /// セット単位で重量の数え方を上書き（nil は種目の既定に従う）。
-    var weightModeOverrideRaw: String? = nil
+    /// 時間種目の継続秒数（time のみ。weight/bodyweight は nil）。
+    var durationSeconds: Int? = nil
     var createdAt: Date
     var updatedAt: Date
     var isDirty: Bool
 
     var workoutExercise: WorkoutExercise?
 
-    var weightModeOverride: WeightMode? {
-        get { weightModeOverrideRaw.flatMap { WeightMode(rawValue: $0) } }
-        set { weightModeOverrideRaw = newValue?.rawValue }
-    }
-
-    /// 実効の数え方：セット上書き → 種目既定 → 両側。
-    var effectiveWeightMode: WeightMode {
-        weightModeOverride ?? workoutExercise?.exercise?.weightMode ?? .both
-    }
-
-    var type: SetType {
-        get { SetType(rawValue: typeRaw) ?? .normal }
-        set { typeRaw = newValue.rawValue }
-    }
-
-    /// このセットのボリューム（重量 × レップ）。ウォームアップは集計から除外する想定。
+    /// このセットのボリューム（重量 × レップ）。
     var volume: Double { weight * Double(reps) }
 
     init(
@@ -195,11 +182,9 @@ final class ExerciseSet {
         setIndex: Int,
         weight: Double = 0,
         reps: Int = 0,
-        rpe: Double? = nil,
-        rir: Int? = nil,
-        type: SetType = .normal,
         isPR: Bool = false,
         isCompleted: Bool = false,
+        durationSeconds: Int? = nil,
         workoutExercise: WorkoutExercise? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
@@ -209,11 +194,9 @@ final class ExerciseSet {
         self.setIndex = setIndex
         self.weight = weight
         self.reps = reps
-        self.rpe = rpe
-        self.rir = rir
-        self.typeRaw = type.rawValue
         self.isPR = isPR
         self.isCompleted = isCompleted
+        self.durationSeconds = durationSeconds
         self.workoutExercise = workoutExercise
         self.createdAt = createdAt
         self.updatedAt = updatedAt

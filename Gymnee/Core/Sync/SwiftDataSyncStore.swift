@@ -245,6 +245,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         var row: [String: Any] = [
             "id": lower(m.id), "name": m.name, "muscle_group": m.muscleGroupRaw,
             "equipment": m.equipmentRaw, "is_custom": m.isCustom, "weight_mode": m.weightModeRaw,
+            "measurement_type": m.measurementTypeRaw,
             "updated_at": iso(m.updatedAt),
         ]
         // RLS(exercises_insert_own) は created_by = auth.uid() を要求する。プリセット(nil)や
@@ -264,6 +265,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.isCustom = bool(row["is_custom"]) ?? m.isCustom
         m.createdBy = uuid(row["created_by"])
         m.weightModeRaw = str(row["weight_mode"]) ?? m.weightModeRaw
+        m.measurementTypeRaw = str(row["measurement_type"]) ?? m.measurementTypeRaw
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
     }
@@ -272,7 +274,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func encodeWorkoutExercise(_ m: WorkoutExercise) -> [String: Any] {
         ["id": lower(m.id), "workout_id": opt(m.workout?.id.uuidString.lowercased()),
          "exercise_id": opt(m.exercise?.id.uuidString.lowercased()), "order_index": m.orderIndex,
-         "note": opt(m.note), "superset_group": opt(m.supersetGroup), "rest_seconds": opt(m.restSeconds),
+         "note": opt(m.note), "rest_seconds": opt(m.restSeconds),
          "updated_at": iso(m.updatedAt)]
     }
     private func applyWorkoutExercise(_ row: [String: Any]) {
@@ -282,7 +284,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         let m = existing ?? insert(WorkoutExercise(id: id, orderIndex: int(row["order_index"]) ?? 0))
         m.orderIndex = int(row["order_index"]) ?? m.orderIndex
         m.note = str(row["note"])
-        m.supersetGroup = int(row["superset_group"])
         m.restSeconds = int(row["rest_seconds"])
         m.workout = uuid(row["workout_id"]).flatMap(fetchWorkout)
         m.exercise = uuid(row["exercise_id"]).flatMap(fetchExercise)
@@ -293,9 +294,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - exercise_sets（追記型）
     private func encodeExerciseSet(_ m: ExerciseSet) -> [String: Any] {
         ["id": lower(m.id), "workout_exercise_id": opt(m.workoutExercise?.id.uuidString.lowercased()),
-         "set_index": m.setIndex, "weight": m.weight, "reps": m.reps, "rpe": opt(m.rpe), "rir": opt(m.rir),
-         "type": m.typeRaw, "is_pr": m.isPR, "is_completed": m.isCompleted,
-         "weight_mode_override": opt(m.weightModeOverrideRaw),
+         "set_index": m.setIndex, "weight": m.weight, "reps": m.reps,
+         "duration_seconds": opt(m.durationSeconds), "is_pr": m.isPR, "is_completed": m.isCompleted,
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyExerciseSet(_ row: [String: Any]) {
@@ -306,11 +306,9 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.setIndex = int(row["set_index"]) ?? m.setIndex
         m.weight = dbl(row["weight"]) ?? m.weight
         m.reps = int(row["reps"]) ?? m.reps
-        m.rpe = dbl(row["rpe"]); m.rir = int(row["rir"])
-        m.typeRaw = str(row["type"]) ?? m.typeRaw
+        m.durationSeconds = int(row["duration_seconds"])
         m.isPR = bool(row["is_pr"]) ?? m.isPR
         m.isCompleted = bool(row["is_completed"]) ?? m.isCompleted
-        m.weightModeOverrideRaw = str(row["weight_mode_override"])
         m.workoutExercise = uuid(row["workout_exercise_id"]).flatMap(fetchWorkoutExercise)
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt

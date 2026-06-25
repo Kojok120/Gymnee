@@ -1,14 +1,15 @@
 import SwiftUI
 import SwiftData
 
-/// ルーティン管理（§6.5 ルーティン/テンプレ）。
+/// ルーティン管理（§6.5）。一覧で追加・編集・削除。
+/// 追加/編集は隔離コンテキストで行い「完了」まで保存しない（[[RoutineEditSession]]）。
 struct RoutinesView: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
     @Query(sort: \Routine.name) private var routines: [Routine]
-    @State private var editing: Routine?
+    @State private var session: RoutineEditSession?
     @State private var showTemplates = false
 
     init(userId: UUID) {
@@ -20,7 +21,7 @@ struct RoutinesView: View {
         List {
             ForEach(routines) { routine in
                 Button {
-                    editing = routine
+                    session = .edit(routine.id, container: context.container)
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -33,15 +34,13 @@ struct RoutinesView: View {
                     }
                 }
                 .swipeActions {
-                    Button("削除", role: .destructive) {
-                        deleteRoutine(routine)
-                    }
+                    Button("削除", role: .destructive) { deleteRoutine(routine) }
                 }
             }
         }
         .overlay {
             if routines.isEmpty {
-                EmptyStateView(systemImage: "list.bullet.rectangle", title: "ルーティンがありません", message: "右上の＋でテンプレを作成できます。")
+                EmptyStateView(systemImage: "list.bullet.rectangle", title: "ルーティンがありません", message: "右上の＋で追加できます。")
             }
         }
         .navigationTitle("ルーティン")
@@ -49,27 +48,27 @@ struct RoutinesView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button { createRoutine() } label: { Label("空のルーティン", systemImage: "doc") }
-                    Button { showTemplates = true } label: { Label("テンプレから作成", systemImage: "square.grid.2x2") }
+                    Button { session = .new(userId: userId, container: context.container) } label: {
+                        Label("空のルーティン", systemImage: "doc")
+                    }
+                    Button { showTemplates = true } label: {
+                        Label("テンプレから作成", systemImage: "square.grid.2x2")
+                    }
                 } label: { Image(systemName: "plus") }
             }
         }
-        .sheet(item: $editing) { routine in
-            RoutineEditorView(routine: routine)
+        .sheet(item: $session) { s in
+            RoutineEditorView(routine: s.routine, editorContext: s.context, isNew: s.isNew)
         }
-        .sheet(isPresented: $showTemplates) {
-            templatePicker
-        }
+        .sheet(isPresented: $showTemplates) { templatePicker }
     }
 
     private var templatePicker: some View {
         NavigationStack {
             List(RoutineTemplates.all) { template in
                 Button {
-                    let routine = RoutineTemplates.create(template, userId: userId, context: context)
-                    enqueueRoutine(routine)
                     showTemplates = false
-                    editing = routine
+                    session = .template(template, userId: userId, container: context.container)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(template.name).font(.body).foregroundStyle(.primary)
@@ -86,27 +85,7 @@ struct RoutinesView: View {
         }
     }
 
-    private func createRoutine() {
-        let routine = Routine(userId: userId, name: "新しいルーティン")
-        context.insert(routine)
-        try? context.save()
-        sync.enqueue(PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt))
-        editing = routine
-    }
-
-    /// テンプレ生成済みルーティンと配下種目をまとめて送出キューへ。
-    private func enqueueRoutine(_ routine: Routine) {
-        sync.enqueue(PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt))
-        for re in routine.routineExercises {
-            // 参照する種目もサーバーへ（FK: routine_exercises.exercise_id）。
-            if let ex = re.exercise {
-                sync.enqueue(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
-            }
-            sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
-        }
-    }
-
-    /// ルーティン削除＝本体と配下種目の削除を送出（サーバ側 FK でも連鎖するが明示的に積む）。
+    /// ルーティン削除＝本体と配下種目の削除を送出（即時。サーバ側 FK でも連鎖するが明示的に積む）。
     private func deleteRoutine(_ routine: Routine) {
         let routineId = routine.id
         let exerciseIds = routine.routineExercises.map(\.id)

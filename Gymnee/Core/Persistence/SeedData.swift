@@ -54,17 +54,23 @@ enum SeedData {
 
     @MainActor
     private static func seedExercises(_ context: ModelContext) {
-        let existing = (try? context.fetchCount(
+        // 既存プリセット名を集め、未収録のものだけ追加（名前でべき等）。
+        // これで後からプリセットを足しても、DB を消さずに反映される。
+        let existingPresets = (try? context.fetch(
             FetchDescriptor<Exercise>(predicate: #Predicate { $0.isCustom == false })
-        )) ?? 0
-        guard existing == 0 else { return }
+        )) ?? []
+        let existingNames = Set(existingPresets.map { $0.name })
 
-        for preset in presetExercises {
+        for preset in presetExercises where !existingNames.contains(preset.0) {
+            // 片側/両側の既定は器具で決める（ダンベル/ケトルベル＝片側、他＝両側）。
+            let weightMode: WeightMode = (preset.2 == .dumbbell || preset.2 == .kettlebell) ? .perSide : .both
             let exercise = Exercise(
                 name: preset.0,
                 muscleGroup: preset.1,
                 equipment: preset.2,
                 isCustom: false,
+                weightMode: weightMode,
+                measurementType: preset.3,
                 isDirty: false
             )
             context.insert(exercise)
@@ -72,42 +78,47 @@ enum SeedData {
     }
 
     /// 主要種目の最小マスタ（プリセット＋ユーザー作成、§6.5）。
-    private static let presetExercises: [(String, MuscleGroup, EquipmentType)] = [
+    /// 4要素目は計測タイプ：自重種目は .bodyweight、時間種目は .time、それ以外は .weight。
+    private static let presetExercises: [(String, MuscleGroup, EquipmentType, MeasurementType)] = [
         // 胸
-        ("ベンチプレス", .chest, .barbell),
-        ("インクラインベンチプレス", .chest, .barbell),
-        ("ダンベルプレス", .chest, .dumbbell),
-        ("チェストプレス", .chest, .machine),
-        ("ペックフライ", .chest, .machine),
-        ("ディップス", .chest, .bodyweight),
+        ("ベンチプレス", .chest, .barbell, .weight),
+        ("インクラインベンチプレス", .chest, .barbell, .weight),
+        ("ダンベルプレス", .chest, .dumbbell, .weight),
+        ("チェストプレス", .chest, .machine, .weight),
+        ("ペックフライ", .chest, .machine, .weight),
+        ("ディップス", .chest, .bodyweight, .bodyweight),
         // 背中
-        ("デッドリフト", .back, .barbell),
-        ("ベントオーバーロウ", .back, .barbell),
-        ("ラットプルダウン", .back, .cable),
-        ("シーテッドロウ", .back, .cable),
-        ("懸垂", .back, .bodyweight),
+        ("デッドリフト", .back, .barbell, .weight),
+        ("ベントオーバーロウ", .back, .barbell, .weight),
+        ("ラットプルダウン", .back, .cable, .weight),
+        ("シーテッドロウ", .back, .cable, .weight),
+        ("懸垂", .back, .bodyweight, .bodyweight),
         // 脚
-        ("スクワット", .legs, .barbell),
-        ("レッグプレス", .legs, .machine),
-        ("レッグエクステンション", .legs, .machine),
-        ("レッグカール", .legs, .machine),
-        ("ルーマニアンデッドリフト", .legs, .barbell),
-        ("カーフレイズ", .legs, .machine),
+        ("スクワット", .legs, .barbell, .weight),
+        ("レッグプレス", .legs, .machine, .weight),
+        ("レッグエクステンション", .legs, .machine, .weight),
+        ("レッグカール", .legs, .machine, .weight),
+        ("ルーマニアンデッドリフト", .legs, .barbell, .weight),
+        ("カーフレイズ", .legs, .machine, .weight),
         // 肩
-        ("ショルダープレス", .shoulders, .dumbbell),
-        ("サイドレイズ", .shoulders, .dumbbell),
-        ("リアレイズ", .shoulders, .dumbbell),
-        ("アップライトロウ", .shoulders, .barbell),
+        ("ショルダープレス", .shoulders, .dumbbell, .weight),
+        ("サイドレイズ", .shoulders, .dumbbell, .weight),
+        ("リアレイズ", .shoulders, .dumbbell, .weight),
+        ("アップライトロウ", .shoulders, .barbell, .weight),
         // 腕
-        ("バーベルカール", .biceps, .barbell),
-        ("ダンベルカール", .biceps, .dumbbell),
-        ("ハンマーカール", .biceps, .dumbbell),
-        ("トライセプスプレスダウン", .triceps, .cable),
-        ("スカルクラッシャー", .triceps, .barbell),
+        ("バーベルカール", .biceps, .barbell, .weight),
+        ("ダンベルカール", .biceps, .dumbbell, .weight),
+        ("ハンマーカール", .biceps, .dumbbell, .weight),
+        ("トライセプスプレスダウン", .triceps, .cable, .weight),
+        ("スカルクラッシャー", .triceps, .barbell, .weight),
         // 体幹・臀部
-        ("プランク", .core, .bodyweight),
-        ("アブローラー", .core, .other),
-        ("ヒップスラスト", .glutes, .barbell),
+        ("プランク", .core, .bodyweight, .time),
+        ("アブローラー", .core, .other, .bodyweight),
+        ("ヒップスラスト", .glutes, .barbell, .weight),
+        // 全身
+        ("バーピー", .fullBody, .bodyweight, .bodyweight),
+        ("ケトルベルスイング", .fullBody, .kettlebell, .weight),
+        ("クリーン&ジャーク", .fullBody, .barbell, .weight),
     ]
 
     // MARK: - Products

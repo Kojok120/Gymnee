@@ -30,7 +30,8 @@ struct DayDetailView: View {
             sort: \Visit.visitedAt, order: .reverse
         )
         _workouts = Query(
-            filter: #Predicate<Workout> { $0.userId == userId && $0.date >= start && $0.date < end },
+            // 完了したワークアウトのみ（進行中の下書きは記録扱いしない）。
+            filter: #Predicate<Workout> { $0.userId == userId && $0.date >= start && $0.date < end && $0.completedAt != nil },
             sort: \Workout.date, order: .reverse
         )
         _planned = Query(

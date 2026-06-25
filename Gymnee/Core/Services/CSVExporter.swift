@@ -6,7 +6,7 @@ import SwiftData
 enum CSVExporter {
     /// ワークアウト記録（セット単位）を CSV 文字列に変換する。
     static func workoutsCSV(userId: UUID, context: ModelContext) -> String {
-        var rows = ["date,workout,exercise,muscle_group,set_index,type,weight_kg,reps,rpe,is_pr"]
+        var rows = ["date,workout,exercise,muscle_group,set_index,weight_kg,reps,is_pr"]
         let descriptor = FetchDescriptor<Workout>(
             predicate: #Predicate { $0.userId == userId },
             sortBy: [SortDescriptor(\.date)]
@@ -22,10 +22,8 @@ enum CSVExporter {
                         escape(we.exercise?.name ?? ""),
                         we.exercise?.muscleGroup.rawValue ?? "",
                         "\(set.setIndex + 1)",
-                        set.type.rawValue,
                         "\(set.weight)",
                         "\(set.reps)",
-                        set.rpe.map { "\($0)" } ?? "",
                         set.isPR ? "1" : "0",
                     ]
                     rows.append(cols.joined(separator: ","))

@@ -7,23 +7,20 @@ enum VolumeCalculator {
         let muscleGroup: MuscleGroup
         let weight: Double
         let reps: Int
-        let type: SetType
         let date: Date
 
         var volume: Double { weight * Double(reps) }
-        /// ウォームアップはボリューム集計から除外する。
-        var countsTowardVolume: Bool { type != .warmup }
     }
 
-    /// 合計ボリューム（ウォームアップ除外）。
+    /// 合計ボリューム。
     static func totalVolume(_ entries: [VolumeEntry]) -> Double {
-        entries.filter(\.countsTowardVolume).reduce(0) { $0 + $1.volume }
+        entries.reduce(0) { $0 + $1.volume }
     }
 
-    /// 部位別ボリューム（ウォームアップ除外）。
+    /// 部位別ボリューム。
     static func volumeByMuscle(_ entries: [VolumeEntry]) -> [MuscleGroup: Double] {
         var result: [MuscleGroup: Double] = [:]
-        for entry in entries where entry.countsTowardVolume {
+        for entry in entries {
             result[entry.muscleGroup, default: 0] += entry.volume
         }
         return result
@@ -36,10 +33,10 @@ enum VolumeCalculator {
         return volumeByMuscle(inWeek)
     }
 
-    /// 部位別の総セット数（ウォームアップ除外）。部位バランス可視化に使用。
+    /// 部位別の総セット数。部位バランス可視化に使用。
     static func setCountByMuscle(_ entries: [VolumeEntry]) -> [MuscleGroup: Int] {
         var result: [MuscleGroup: Int] = [:]
-        for entry in entries where entry.countsTowardVolume {
+        for entry in entries {
             result[entry.muscleGroup, default: 0] += 1
         }
         return result

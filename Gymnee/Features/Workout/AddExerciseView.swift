@@ -11,6 +11,8 @@ struct AddExerciseView: View {
     @State private var name = ""
     @State private var muscleGroup: MuscleGroup = .chest
     @State private var equipment: EquipmentType = .barbell
+    @State private var measurementType: MeasurementType = .weight
+    @State private var weightMode: WeightMode = .both
 
     var body: some View {
         NavigationStack {
@@ -23,11 +25,9 @@ struct AddExerciseView: View {
                         ForEach(MuscleGroup.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                 }
-                Section("器具") {
-                    Picker("器具", selection: $equipment) {
-                        ForEach(EquipmentType.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                }
+                equipmentSection
+                typeSection
+                if measurementType == .weight { weightModeSection }
             }
             .navigationTitle("カスタム種目")
             .navigationBarTitleDisplayMode(.inline)
@@ -41,13 +41,55 @@ struct AddExerciseView: View {
         }
     }
 
+    private var equipmentSection: some View {
+        Section("器具") {
+            Picker("器具", selection: $equipment) {
+                ForEach(EquipmentType.allCases, id: \.self) { (e: EquipmentType) in
+                    Text(e.label).tag(e)
+                }
+            }
+            .onChange(of: equipment) { _, eq in
+                weightMode = Self.defaultWeightMode(for: eq)
+            }
+        }
+    }
+
+    /// 既定の片側/両側を器具から推定（ダンベル/ケトルベル＝片側）。
+    private static func defaultWeightMode(for eq: EquipmentType) -> WeightMode {
+        (eq == .dumbbell || eq == .kettlebell) ? .perSide : .both
+    }
+
+    private var typeSection: some View {
+        Section("計測タイプ") {
+            Picker("計測タイプ", selection: $measurementType) {
+                ForEach(MeasurementType.allCases, id: \.self) { (t: MeasurementType) in
+                    Text(t.label).tag(t)
+                }
+            }
+            Text("ウェイト＝重量×回数 / 自重＝加重×回数 / 時間＝秒。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var weightModeSection: some View {
+        Section("重量の数え方") {
+            Picker("重量の数え方", selection: $weightMode) {
+                ForEach(WeightMode.allCases, id: \.self) { (m: WeightMode) in
+                    Text(m.label).tag(m)
+                }
+            }
+        }
+    }
+
     private func save() {
         let exercise = Exercise(
             name: name.trimmingCharacters(in: .whitespaces),
             muscleGroup: muscleGroup,
             equipment: equipment,
             isCustom: true,
-            createdBy: auth.currentUserId
+            createdBy: auth.currentUserId,
+            weightMode: weightMode,
+            measurementType: measurementType
         )
         context.insert(exercise)
         try? context.save()
