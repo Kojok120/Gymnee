@@ -13,6 +13,14 @@ struct ExerciseDetailView: View {
         let topWeight: Double
     }
 
+    /// 1セッション分の履歴（日付＋その日の全セット）。
+    private struct Session: Identifiable {
+        let id: UUID
+        let date: Date
+        let sets: [ExerciseSet]
+        let hasPR: Bool
+    }
+
     var body: some View {
         List {
             Section("推定1RM 推移") {
@@ -41,17 +49,25 @@ struct ExerciseDetailView: View {
             }
 
             Section("履歴") {
-                if history.isEmpty {
+                if sessions.isEmpty {
                     Text("記録なし").foregroundStyle(.secondary)
                 } else {
-                    ForEach(history) { point in
-                        HStack {
-                            Text(point.date, format: .dateTime.year().month().day())
-                                .font(.subheadline)
-                            Spacer()
-                            Text(String(format: "推定1RM %.1fkg", point.est1RM))
-                                .font(.caption).foregroundStyle(.secondary)
+                    ForEach(sessions) { session in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Text(session.date, format: .dateTime.year().month().day())
+                                    .font(.subheadline.weight(.semibold))
+                                if session.hasPR {
+                                    Image(systemName: "trophy.fill").font(.caption).foregroundStyle(.yellow)
+                                }
+                                Spacer()
+                            }
+                            // その日に実施した全セット（重さ×回数／秒）を内訳表示。
+                            Text(session.sets.map(\.detailText).joined(separator: "  "))
+                                .font(.subheadline).foregroundStyle(Theme.textSecondary)
+                                .monospacedDigit()
                         }
+                        .padding(.vertical, 2)
                     }
                 }
             }
@@ -85,7 +101,20 @@ struct ExerciseDetailView: View {
             .sorted { $0.date < $1.date }
     }
 
-    private var history: [Point] { points.reversed() }
+    /// セッション別の履歴（新しい順）。各セッションの全セットを保持する。
+    private var sessions: [Session] {
+        exercise.workoutExercises
+            .filter { $0.workout?.userId == userId && $0.workout?.completedAt != nil }
+            .compactMap { we -> Session? in
+                guard let date = we.workout?.date else { return nil }
+                let valid = we.sets
+                    .filter { $0.reps > 0 || ($0.durationSeconds ?? 0) > 0 }
+                    .sorted { $0.setIndex < $1.setIndex }
+                guard !valid.isEmpty else { return nil }
+                return Session(id: we.id, date: date, sets: valid, hasPR: valid.contains { $0.isPR })
+            }
+            .sorted { $0.date > $1.date }
+    }
 
     private var personalRecords: [PersonalRecord] {
         exercise.personalRecords.filter { $0.userId == userId }.sorted { $0.typeRaw < $1.typeRaw }

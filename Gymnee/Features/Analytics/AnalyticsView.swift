@@ -22,6 +22,8 @@ struct AnalyticsView: View {
         var weeks: Int { self == .month ? 4 : self == .quarter ? 12 : 52 }
     }
 
+    private enum Route: Hashable { case history }
+
     init(userId: UUID) {
         self.userId = userId
         // 最大表示期間(1年=52週)＋バッファ分だけ取得し、多年履歴の全ロードを避ける。
@@ -34,6 +36,7 @@ struct AnalyticsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
+                historyLink
                 periodPicker
                 heatmapCard
                 frequencyCard
@@ -47,6 +50,32 @@ struct AnalyticsView: View {
         }
         .background(Theme.groupedBackground)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: Route.self) { route in
+            switch route {
+            case .history: HistoryView(userId: userId)
+            }
+        }
+    }
+
+    /// 集計の手前に置く「記録を一覧で見る」導線（日付/種目ごとの履歴へ）。
+    private var historyLink: some View {
+        NavigationLink(value: Route.history) {
+            HStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.title2).foregroundStyle(Theme.lime)
+                    .frame(width: 52, height: 52)
+                    .background(Theme.lime.opacity(0.15), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("記録を一覧で見る").font(.headline).foregroundStyle(Theme.textPrimary)
+                    Text("日付・種目ごとの履歴").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.subheadline).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gymneeCard()
+        }
+        .buttonStyle(.plain)
     }
 
     private var periodPicker: some View {

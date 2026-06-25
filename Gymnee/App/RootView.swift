@@ -81,6 +81,7 @@ struct RootView: View {
                 NavigationStack { RoutinesView(userId: userId) }
             }
         case "analytics": NavigationStack { AnalyticsView(userId: userId) }
+        case "history": NavigationStack { HistoryView(userId: userId) }
         case "body": NavigationStack { BodyMetricsView(userId: userId) }
         case "photos": NavigationStack { ProgressPhotosView(userId: userId) }
         case "share":
