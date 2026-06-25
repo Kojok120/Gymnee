@@ -1,8 +1,7 @@
 import SwiftUI
 import SwiftData
-import EventKit
 
-/// ワークアウト計画（§6.5）。今後7日間に、Apple カレンダーの予定とワークアウト計画を重ねて表示。
+/// ワークアウト計画（§6.5）。今後7日間に、Apple/Google カレンダーの予定とワークアウト計画を重ねて表示。
 /// 予定を見ながら手動で配置・移動でき、AI計画（Premium）で自動提案も行う（8c）。
 struct WeekPlannerView: View {
     let userId: UUID
@@ -11,6 +10,7 @@ struct WeekPlannerView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(CalendarService.self) private var calendarService
+    @Environment(GoogleCalendarService.self) private var googleCalendar
     @Environment(SubscriptionService.self) private var subscription
     @Environment(AuthService.self) private var auth
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
@@ -27,7 +27,7 @@ struct WeekPlannerView: View {
     @State private var aiInfo = false
     @State private var aiRunning = false
     /// カレンダー予定のキャッシュ（startOfDay→予定）。body 毎の同期列挙(hang)を避けるため一度だけ取得。
-    @State private var eventsByDay: [Date: [EKEvent]] = [:]
+    @State private var eventsByDay: [Date: [CalendarEvent]] = [:]
 
     init(userId: UUID, onStart: @escaping (Workout) -> Void = { _ in }) {
         self.userId = userId
@@ -72,7 +72,7 @@ struct WeekPlannerView: View {
             }
             if !calendarService.authorized {
                 Section {
-                    Button { Task { await calendarService.requestAccess(); loadEvents() } } label: {
+                    Button { Task { await calendarService.requestAccess(); await loadEvents() } } label: {
                         Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
                     }
                 } footer: {
@@ -81,16 +81,17 @@ struct WeekPlannerView: View {
             }
             ForEach(days, id: \.self) { day in
                 Section(day.formatted(.dateTime.month().day().weekday(.abbreviated))) {
-                    ForEach(events(on: day), id: \.0) { _, ev in
+                    ForEach(events(on: day)) { ev in
                         Label {
                             HStack {
-                                Text(ev.title ?? "予定").lineLimit(1)
+                                Text(ev.title).lineLimit(1)
                                 Spacer()
-                                Text(ev.isAllDay ? "終日" : ev.startDate.formatted(date: .omitted, time: .shortened))
+                                Text(ev.isAllDay ? "終日" : ev.start.formatted(date: .omitted, time: .shortened))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         } icon: {
-                            Image(systemName: "calendar").foregroundStyle(.secondary)
+                            Image(systemName: ev.source == .google ? "calendar.circle.fill" : "calendar")
+                                .foregroundStyle(ev.source == .google ? Theme.lime : .secondary)
                         }
                     }
                     ForEach(plannedItems(on: day)) { p in
@@ -104,8 +105,10 @@ struct WeekPlannerView: View {
         }
         .navigationTitle("計画")
         .navigationBarTitleDisplayMode(.inline)
-        .task { loadEvents() }
-        .onChange(of: calendarService.authorized) { _, _ in loadEvents() }
+        .task { await loadEvents() }
+        .onChange(of: calendarService.authorized) { _, _ in Task { await loadEvents() } }
+        .onChange(of: calendarService.isEnabled) { _, _ in Task { await loadEvents() } }
+        .onChange(of: googleCalendar.isConnected) { _, _ in Task { await loadEvents() } }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if aiRunning {
@@ -210,16 +213,18 @@ struct WeekPlannerView: View {
 
     // MARK: - Helpers
 
-    private func events(on day: Date) -> [(Int, EKEvent)] {
-        Array((eventsByDay[cal.startOfDay(for: day)] ?? []).enumerated())
+    private func events(on day: Date) -> [CalendarEvent] {
+        eventsByDay[cal.startOfDay(for: day)] ?? []
     }
 
-    /// 週分の予定を一度だけ取得して startOfDay 単位にキャッシュ（body 内の同期列挙を排除）。
-    private func loadEvents() {
-        guard calendarService.authorized, let first = days.first, let last = days.last,
+    /// 週分の予定（Apple＋Google）を取得して startOfDay 単位にキャッシュ（body 内の同期列挙を排除）。
+    private func loadEvents() async {
+        guard let first = days.first, let last = days.last,
               let end = cal.date(byAdding: .day, value: 1, to: last) else { eventsByDay = [:]; return }
-        let all = calendarService.events(from: first, to: end)
-        eventsByDay = Dictionary(grouping: all) { cal.startOfDay(for: $0.startDate) }
+        var all: [CalendarEvent] = []
+        if calendarService.isActive { all += calendarService.calendarEvents(from: first, to: end) }
+        if googleCalendar.isConnected { all += await googleCalendar.events(from: first, to: end) }
+        eventsByDay = Dictionary(grouping: all) { cal.startOfDay(for: $0.start) }
     }
 
     private func plannedItems(on day: Date) -> [PlannedWorkout] {
@@ -246,6 +251,12 @@ struct WeekPlannerView: View {
         context.insert(p)
         try? context.save()
         addDay = nil
+        // 計画作成時に Google カレンダーへ終日予定として自動追加（連携中のみ）。
+        if googleCalendar.isConnected {
+            let start = cal.startOfDay(for: day)
+            let end = cal.date(byAdding: .day, value: 1, to: start) ?? start
+            Task { await googleCalendar.addEvent(title: "Gymnee: \(title)", start: start, end: end, allDay: true) }
+        }
     }
 
     /// 計画を「開始」：共通ロジックで実記録を作成し（AI詳細→ルーティン→空）ロガーを開く。
@@ -268,8 +279,8 @@ struct WeekPlannerView: View {
             let dayStrings = days.map { fmt.string(from: $0) }
             let routineNames = routines.map(\.name)
             let evs: [[String: Any]] = days.flatMap { d in
-                events(on: d).map { _, ev in
-                    ["title": ev.title ?? "予定", "date": fmt.string(from: ev.startDate), "allDay": ev.isAllDay]
+                events(on: d).map { ev in
+                    ["title": ev.title, "date": fmt.string(from: ev.start), "allDay": ev.isAllDay]
                 }
             }
             let history = buildHistory(formatter: fmt)

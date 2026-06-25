@@ -11,6 +11,8 @@ struct SettingsView: View {
     @Environment(AppErrorCenter.self) private var errors
     @Environment(SubscriptionService.self) private var subscription
     @Environment(NotificationService.self) private var notifications
+    @Environment(CalendarService.self) private var calendarService
+    @Environment(GoogleCalendarService.self) private var googleCalendar
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
     @State private var showEmailSignIn = false
@@ -174,8 +176,12 @@ struct SettingsView: View {
                 .disabled(!health.isAvailable)
             }
 
-            Section("プラン") {
+            Section {
                 LabeledContent("現在のプラン", value: subscription.isPremium ? "Premium" : "Free")
+                if SubscriptionService.planOverrideAvailable {
+                    Toggle("Premium として表示（テスト用）", isOn: Bindable(subscription).planOverride)
+                        .tint(Theme.lime)
+                }
                 if !subscription.isPremium {
                     Button { showPaywall = true } label: {
                         Label("Premium にアップグレード", systemImage: "crown.fill")
@@ -185,6 +191,58 @@ struct SettingsView: View {
                     Button("購入を復元") { Task { await subscription.restore() } }
                         .tint(.primary)
                 }
+            } header: {
+                Text("プラン")
+            } footer: {
+                if SubscriptionService.planOverrideAvailable {
+                    Text("TestFlight・開発ビルドのみ表示。Free/Premium を切り替えて動作確認できます（本番では表示されません）。")
+                }
+            }
+
+            Section {
+                if calendarService.authorized {
+                    if calendarService.isEnabled {
+                        LabeledContent("Apple カレンダー", value: "連携中")
+                        Button("Apple 連携を解除", role: .destructive) { calendarService.isEnabled = false }
+                    } else {
+                        LabeledContent("Apple カレンダー", value: "オフ")
+                        Button { calendarService.isEnabled = true } label: {
+                            Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
+                        }
+                        .tint(Theme.lime)
+                    }
+                } else {
+                    Button { Task { await calendarService.requestAccess() } } label: {
+                        Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
+                    }
+                    .tint(Theme.lime)
+                }
+                if googleCalendar.isConfigured {
+                    if googleCalendar.isSignedIn {
+                        LabeledContent("Google カレンダー", value: googleCalendar.email ?? "連携済み")
+                        if !googleCalendar.isConnected {
+                            Button { Task { await googleCalendar.connect() } } label: {
+                                Label("カレンダー権限を許可（再連携）", systemImage: "exclamationmark.triangle")
+                            }
+                            .tint(.orange)
+                        }
+                        Button("Google 連携を解除", role: .destructive) { googleCalendar.disconnect() }
+                    } else {
+                        Button { Task { await googleCalendar.connect() } } label: {
+                            Label("Google カレンダーと連携", systemImage: "calendar.badge.plus")
+                        }
+                        .tint(Theme.lime)
+                    }
+                } else {
+                    LabeledContent("Google カレンダー", value: "未設定")
+                }
+                if let err = googleCalendar.lastError {
+                    Text(err).font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("カレンダー連携")
+            } footer: {
+                Text("予定を週プランナーに重ねて表示し、計画作成時に Google カレンダーへ自動で予定を追加します。Apple の「連携を解除」はアプリ内で予定を非表示にするだけです（OS の許可取り消しは iOS の設定 → プライバシーから）。")
             }
 
             Section("規約・サポート") {

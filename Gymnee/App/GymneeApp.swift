@@ -22,7 +22,10 @@ struct GymneeApp: App {
                 .environment(env.errors)
                 .environment(env.subscription)
                 .environment(env.calendar)
+                .environment(env.googleCalendar)
                 .modelContainer(env.container)
+                // Google サインインの OAuth コールバック（reversed client id スキーム）を処理。
+                .onOpenURL { url in _ = env.googleCalendar.handleURL(url) }
                 // 起動時にバックエンドセッションを復元（トークン更新）→ その後の同期が認証付きで通る。
                 .task { await env.bootstrapBackend() }
                 // Premium 商品取得＋権限同期。

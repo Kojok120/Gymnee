@@ -17,17 +17,39 @@ final class SubscriptionService {
     private(set) var isLoading = false
     private var entitled = false
 
+    /// TestFlight/DEBUG でのプラン手動切替の保存キー。
+    static let planOverrideKey = "gymnee.planOverride"
+
+    /// プラン手動切替が使えるビルドか（DEBUG か TestFlight 配信）。本番 App Store では false。
+    static var planOverrideAvailable: Bool {
+        #if DEBUG
+        return true
+        #else
+        return isTestFlight
+        #endif
+    }
+
+    /// TestFlight 配信か（本番 App Store は "receipt"、TestFlight/サンドボックスは "sandboxReceipt"）。
+    static var isTestFlight: Bool {
+        Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    }
+
+    /// プラン手動切替の値（TestFlight/DEBUG のみ有効・設定トグルと双方向バインド）。
+    var planOverride: Bool = false {
+        didSet { UserDefaults.standard.set(planOverride, forKey: Self.planOverrideKey) }
+    }
+
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
 
-    /// Premium 権限があるか（機能ゲートはこれだけを見る）。DEBUG はテスト用に強制ONできる。
+    /// Premium 権限があるか（機能ゲートはこれだけを見る）。
+    /// TestFlight/DEBUG では設定トグル(planOverride)が優先。本番は実際の購入権限。
     var isPremium: Bool {
-        #if DEBUG
-        if UserDefaults.standard.bool(forKey: "gymnee.debugPremium") { return true }
-        #endif
+        if Self.planOverrideAvailable { return planOverride }
         return entitled
     }
 
     init() {
+        planOverride = UserDefaults.standard.bool(forKey: Self.planOverrideKey)
         // 別端末購入・更新・返金などのトランザクション更新を購読。
         updatesTask = Task { [weak self] in
             for await update in Transaction.updates {
