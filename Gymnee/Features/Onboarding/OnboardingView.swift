@@ -10,7 +10,7 @@ struct OnboardingView: View {
     @State private var appeared = false
 
     private let features: [(icon: String, title: String, sub: String)] = [
-        ("camera.fill", "写真でチェックイン", "撮るだけで来店が記録され、共有導線が立ち上がる"),
+        ("door.right.hand.open", "写真でチェックイン", "撮るだけで来店が記録され、共有導線が立ち上がる"),
         ("dumbbell.fill", "セット・レップ・重量をフル記録", "前回値オートフィルと自動 PR 検出で、続く"),
         ("flame.fill", "ヒートマップで継続を可視化", "ジムを変えても1本のタイムラインに残る")
     ]

@@ -323,7 +323,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         guard let id = uuid(row["id"]) else { return }
         let existing = fetchRoutine(id)
         if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
-        let m = existing ?? insert(Routine(id: id, userId: uuid(row["user_id"]) ?? UUID(), name: str(row["name"]) ?? "ルーティン"))
+        let m = existing ?? insert(Routine(id: id, userId: uuid(row["user_id"]) ?? UUID(), name: str(row["name"]) ?? "カスタムセット"))
         m.userId = uuid(row["user_id"]) ?? m.userId
         m.name = str(row["name"]) ?? m.name
         m.note = str(row["note"])

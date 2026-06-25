@@ -10,6 +10,8 @@ extension Notification.Name {
     static let gymneeDidCheckIn = Notification.Name("gymnee.didCheckIn")
     /// 完了サマリー等から分析タブへ切替えるための要求。
     static let gymneeShowAnalytics = Notification.Name("gymnee.showAnalytics")
+    /// 記録のキャンセル等からカレンダータブへ切替えるための要求。
+    static let gymneeShowCalendar = Notification.Name("gymnee.showCalendar")
     /// 通知タップ等から目的地（タブ）へ遷移する要求（userInfo: type/feedItemId）。
     static let gymneeOpenDestination = Notification.Name("gymnee.openDestination")
     /// Watch：本体から最新スナップショットを受信した。

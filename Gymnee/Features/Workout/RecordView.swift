@@ -100,6 +100,7 @@ struct RecordContent: View {
     @State private var freeAdded: Set<UUID> = []
     @State private var jumpTarget: MuscleGroup?
     @State private var showOnboarding = false
+    @State private var showCancelConfirm = false
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.public.rawValue
@@ -130,11 +131,20 @@ struct RecordContent: View {
         .navigationTitle("記録")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("キャンセル") { attemptCancel() }
+            }
             if activeWorkout != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完了") { finish() }.bold()
                 }
             }
+        }
+        .confirmationDialog("この記録を破棄しますか？", isPresented: $showCancelConfirm, titleVisibility: .visible) {
+            Button("破棄してカレンダーへ", role: .destructive) { cancelRecording() }
+            Button("続ける", role: .cancel) {}
+        } message: {
+            Text("記録した内容は保存されません。")
         }
         .safeAreaInset(edge: .bottom) { timerBar }
         .overlay(alignment: .top) { prToastView }
@@ -232,7 +242,7 @@ struct RecordContent: View {
         switch mode {
         case .free: return "フリー"
         case .plan: return todayPlan.map { "本日の計画: \($0.title)" } ?? "本日の計画"
-        case .routine(let id): return routines.first { $0.id == id }?.name ?? "ルーティン"
+        case .routine(let id): return routines.first { $0.id == id }?.name ?? "カスタムセット"
         }
     }
 
@@ -317,7 +327,7 @@ struct RecordContent: View {
         let specs = orderedCardSpecs
         if specs.isEmpty {
             EmptyStateView(systemImage: "calendar.badge.exclamationmark", title: "種目がありません",
-                           message: mode == .plan ? "今日の計画に種目がありません。" : "このルーティンに種目がありません。")
+                           message: mode == .plan ? "今日の計画に種目がありません。" : "このカスタムセットに種目がありません。")
         } else {
             cardGrid(specs)
         }
@@ -431,7 +441,7 @@ struct RecordContent: View {
                 if let plan = todayPlan {
                     Button { select(.plan) } label: { modeRow("本日の計画: \(plan.title)", system: "calendar", selected: mode == .plan) }
                 }
-                Section("ルーティン") {
+                Section("カスタムセット") {
                     ForEach(routines) { r in
                         HStack {
                             Button { select(.routine(r.id)) } label: {
@@ -442,7 +452,7 @@ struct RecordContent: View {
                                 .buttonStyle(.plain).foregroundStyle(Theme.textSecondary)
                         }
                     }
-                    Button { createRoutine() } label: { Label("ルーティンを作る", systemImage: "plus") }
+                    Button { createRoutine() } label: { Label("カスタムセットを作る", systemImage: "plus") }
                 }
             }
             .navigationTitle("表示する種目").navigationBarTitleDisplayMode(.inline)
@@ -512,7 +522,8 @@ struct RecordContent: View {
         }
     }
 
-    /// フリーのカード：部位ごとにまとめた配列。
+    /// フリーのカード：部位ごとにまとめた配列。仕様書「最近中心＋全種目」。
+    /// セッション/履歴/手動追加の種目を各部位の先頭に、続けて残りの全カタログ種目（名前順）を並べる。
     private var freeGroupedByMuscle: [(MuscleGroup, [Exercise])] {
         let sessionEx = activeWorkout?.exercises.compactMap { $0.exercise } ?? []
         let recent = allExercises.filter { ex in
@@ -520,12 +531,17 @@ struct RecordContent: View {
         }
         let added = allExercises.filter { freeAdded.contains($0.id) }
         var seen = Set<UUID>()
-        var result: [Exercise] = []
+        var ordered: [Exercise] = []
+        // ①最近中心（セッション→履歴→手動追加）を先頭に。
         for ex in sessionEx + recent + added where seen.insert(ex.id).inserted {
-            result.append(ex)
+            ordered.append(ex)
+        }
+        // ②残りの全種目を名前順（allExercises は @Query で name ソート済み）で追加。
+        for ex in allExercises where seen.insert(ex.id).inserted {
+            ordered.append(ex)
         }
         return MuscleGroup.allCases.compactMap { mg in
-            let items = result.filter { $0.muscleGroup == mg }
+            let items = ordered.filter { $0.muscleGroup == mg }
             return items.isEmpty ? nil : (mg, items)
         }
     }
@@ -692,6 +708,37 @@ struct RecordContent: View {
     }
 
     /// サマリーを閉じた後：待機状態へ戻す。
+    /// 左上「キャンセル」。記録済みセットがあれば確認、無ければ即キャンセル。
+    private func attemptCancel() {
+        let hasSets = !(activeWorkout?.exercises.flatMap { $0.sets } ?? []).isEmpty
+        if hasSets { showCancelConfirm = true } else { cancelRecording() }
+    }
+
+    /// 記録を破棄してカレンダーへ。未完了の下書きはローカル削除（未同期）。
+    /// 計画から開始していた場合は、その計画を未消化に戻して計画リストへ復帰させる。
+    private func cancelRecording() {
+        if let w = activeWorkout, w.completedAt == nil {
+            let wid = w.id
+            let descriptor = FetchDescriptor<PlannedWorkout>(predicate: #Predicate { $0.completedWorkoutId == wid })
+            for plan in (try? context.fetch(descriptor)) ?? [] {
+                plan.isDone = false
+                plan.completedWorkoutId = nil
+                plan.updatedAt = .now
+            }
+            context.delete(w)
+            try? context.save()
+        }
+        activeWorkout = nil
+        activePlanId = nil
+        armed = [:]
+        repCenters = [:]
+        durCenters = [:]
+        freeAdded = []
+        // カレンダータブへ切替え、タブのゲート/pushed view を閉じる。
+        NotificationCenter.default.post(name: .gymneeShowCalendar, object: nil)
+        if resuming != nil { dismiss() } else { onEnd?() }
+    }
+
     private func endSession() {
         if resuming != nil { dismiss(); return }
         if let onEnd { onEnd(); return }   // タブのゲートへ戻す（state は再生成でリセット）

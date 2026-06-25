@@ -17,6 +17,9 @@ struct DayDetailView: View {
     @Query private var routines: [Routine]
     @State private var showAddVisit = false
     @State private var showAddPlan = false
+    // 計画追加の下書き選択（保存するまで永続化しない）。
+    @State private var planDraftTitle: String?
+    @State private var planDraftRoutineId: UUID?
 
     private let calendar = Calendar.current
 
@@ -138,27 +141,50 @@ struct DayDetailView: View {
         .sheet(isPresented: $showAddPlan) { addPlanSheet }
     }
 
-    /// 計画追加シート（ルーティンから or 自由入力）。WeekPlannerView の追加シートと同形。
+    /// 計画追加シート（カスタムセットから or 自由入力）。WeekPlannerView の追加シートと同形。
+    /// 行タップは「選択」のみ。右上「保存」を押すまで永続化しない。
     private var addPlanSheet: some View {
         NavigationStack {
             List {
-                Section("ルーティンから") {
-                    if routines.isEmpty { Text("ルーティン未作成").foregroundStyle(.secondary) }
+                Section("カスタムセットから") {
+                    if routines.isEmpty { Text("カスタムセット未作成").foregroundStyle(.secondary) }
                     ForEach(routines) { r in
-                        Button(r.name) { addPlan(title: r.name, routineId: r.id) }
+                        planSelectRow(title: r.name, routineId: r.id)
                     }
                 }
                 Section("自由入力") {
                     ForEach(["胸の日", "背中の日", "脚の日", "肩・腕", "有酸素", "休養"], id: \.self) { t in
-                        Button(t) { addPlan(title: t, routineId: nil) }
+                        planSelectRow(title: t, routineId: nil)
                     }
                 }
             }
             .navigationTitle(titleText)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showAddPlan = false } } }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { closeAddPlan() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("保存") { savePlan() }.bold().disabled(planDraftTitle == nil)
+                }
+            }
+            .interactiveDismissDisabled()
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// 計画追加シートの選択行（タップで選択、チェックマーク表示。保存まで永続化しない）。
+    @ViewBuilder
+    private func planSelectRow(title: String, routineId: UUID?) -> some View {
+        let isSelected = planDraftRoutineId == routineId && planDraftTitle == title
+        Button {
+            planDraftTitle = title
+            planDraftRoutineId = routineId
+        } label: {
+            HStack {
+                Text(title).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                if isSelected { Image(systemName: "checkmark").foregroundStyle(Theme.lime) }
+            }
+        }
     }
 
     /// その日に来店を追加（ジムを選択して作成）。過去/未来の後追い記録に。
@@ -194,13 +220,26 @@ struct DayDetailView: View {
         return exs.count
     }
 
+    /// 「保存」押下時のみ永続化。下書き選択をクリアしてシートを閉じる。
+    private func savePlan() {
+        guard let title = planDraftTitle else { return }
+        addPlan(title: title, routineId: planDraftRoutineId)
+        closeAddPlan()
+    }
+
+    /// シートを閉じて下書き選択を破棄（保存せず）。
+    private func closeAddPlan() {
+        showAddPlan = false
+        planDraftTitle = nil
+        planDraftRoutineId = nil
+    }
+
     /// その日に計画を追加（今日・未来のみ）。PlannedWorkout は端末ローカルのみ（同期対象外）。
     private func addPlan(title: String, routineId: UUID?) {
         let day = calendar.startOfDay(for: date) // plannedDays/クエリは startOfDay 基準
         let plan = PlannedWorkout(userId: userId, date: day, title: title, routineId: routineId)
         context.insert(plan)
         try? context.save()
-        showAddPlan = false
     }
 
     private func deletePlan(_ plan: PlannedWorkout) {

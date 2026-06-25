@@ -40,16 +40,16 @@ struct RoutinesView: View {
         }
         .overlay {
             if routines.isEmpty {
-                EmptyStateView(systemImage: "list.bullet.rectangle", title: "ルーティンがありません", message: "右上の＋で追加できます。")
+                EmptyStateView(systemImage: "list.bullet.rectangle", title: "カスタムセットがありません", message: "右上の＋で追加できます。")
             }
         }
-        .navigationTitle("ルーティン")
+        .navigationTitle("カスタムセット")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button { session = .new(userId: userId, container: context.container) } label: {
-                        Label("空のルーティン", systemImage: "doc")
+                        Label("空のカスタムセット", systemImage: "doc")
                     }
                     Button { showTemplates = true } label: {
                         Label("テンプレから作成", systemImage: "square.grid.2x2")
