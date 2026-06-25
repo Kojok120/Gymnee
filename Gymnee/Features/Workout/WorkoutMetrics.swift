@@ -49,14 +49,20 @@ enum WorkoutMetrics {
     }
 
     /// 現在ベスト（PR 検出の基準）。候補セットを除外して履歴から算出。
+    /// 計測タイプによって使う軸が違うため、利用可能な軸はすべて集計し detect 側で取捨する。
     static func bests(for exercise: Exercise, userId: UUID, excludingSetId: UUID?) -> PRDetector.Bests {
         var b = PRDetector.Bests()
-        for s in allSets(for: exercise, userId: userId)
-        where s.id != excludingSetId && s.weight > 0 && s.reps > 0 {
-            b.maxWeight = max(b.maxWeight, s.weight)
-            b.maxReps = max(b.maxReps, Double(s.reps))
-            b.est1RM = max(b.est1RM, OneRepMax.estimate(weight: s.weight, reps: s.reps))
-            b.maxVolume = max(b.maxVolume, s.volume)
+        for s in allSets(for: exercise, userId: userId) where s.id != excludingSetId {
+            if s.weight > 0 && s.reps > 0 {
+                b.maxWeight = max(b.maxWeight, s.weight)
+                b.est1RM = max(b.est1RM, OneRepMax.estimate(weight: s.weight, reps: s.reps))
+            }
+            if s.reps > 0 {
+                b.maxReps = max(b.maxReps, Double(s.reps))
+            }
+            if let d = s.durationSeconds, d > 0 {
+                b.maxDuration = max(b.maxDuration, Double(d))
+            }
         }
         return b
     }
@@ -72,7 +78,13 @@ enum WorkoutMetrics {
         sync: LocalSyncEngine
     ) -> [PRDetector.DetectedPR] {
         let bests = bests(for: exercise, userId: userId, excludingSetId: set.id)
-        let detected = PRDetector.detect(weight: set.weight, reps: set.reps, against: bests)
+        let detected = PRDetector.detect(
+            measurementType: exercise.measurementType,
+            weight: set.weight,
+            reps: set.reps,
+            durationSeconds: set.durationSeconds,
+            against: bests
+        )
         set.isPR = !detected.isEmpty
         for pr in detected {
             upsertPR(type: pr.type, value: pr.value, exercise: exercise, workout: workout, userId: userId, context: context, sync: sync)

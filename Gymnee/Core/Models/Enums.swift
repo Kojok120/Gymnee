@@ -6,19 +6,33 @@ enum GymSource: String, Codable, CaseIterable, Sendable {
     case user
 }
 
-/// PR の種別（§4.2 / §6.5）。
+/// PR の種別（§4.2 / §6.5）。計測タイプごとに意味のある指標へ絞る。
+/// - ウェイト種目: maxWeight ＋ est1RM の 2 本。
+/// - 自重種目: maxReps。
+/// - 時間種目: maxDuration（最長秒数）。
 enum PRType: String, Codable, CaseIterable, Sendable {
     case maxWeight = "max_weight"
-    case maxReps = "max_reps"
     case est1RM = "est_1rm"
-    case maxVolume = "max_volume"
+    case maxReps = "max_reps"
+    case maxDuration = "max_duration"
 
     var label: String {
         switch self {
         case .maxWeight: return "最大重量"
-        case .maxReps: return "最大レップ"
         case .est1RM: return "推定1RM"
-        case .maxVolume: return "最大ボリューム"
+        case .maxReps: return "最大レップ"
+        case .maxDuration: return "最長時間"
+        }
+    }
+
+    /// PR 値の表示用フォーマット（種別ごとに単位が違う）。各 View の重複を集約。
+    func formatted(_ value: Double) -> String {
+        switch self {
+        case .maxWeight, .est1RM: return String(format: "%.1f kg", value)
+        case .maxReps: return "\(Int(value)) reps"
+        case .maxDuration:
+            let s = Int(value)
+            return String(format: "%d:%02d", s / 60, s % 60)
         }
     }
 }

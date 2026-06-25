@@ -242,11 +242,7 @@ struct AnalyticsView: View {
     }
 
     private func prValue(_ pr: PersonalRecord) -> String {
-        switch pr.type {
-        case .maxReps: return "\(Int(pr.value)) reps"
-        case .maxVolume: return String(format: "%.0f kg", pr.value)
-        default: return String(format: "%.1f kg", pr.value)
-        }
+        pr.type.formatted(pr.value)
     }
 
     // MARK: - Recovery

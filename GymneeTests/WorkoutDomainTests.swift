@@ -58,25 +58,61 @@ final class VolumeCalculatorTests: XCTestCase {
     }
 }
 
-/// PR 自動検出（§6.5）のテスト。
+/// PR 自動検出（§6.5）のテスト。計測タイプごとに意味のある指標のみ判定する。
 final class PRDetectorTests: XCTestCase {
-    func testDetectsAllOnFirstSet() {
-        let prs = PRDetector.detect(weight: 100, reps: 5, against: .init())
-        let types = Set(prs.map(\.type))
-        XCTAssertEqual(types, [.maxWeight, .maxReps, .est1RM, .maxVolume])
+    func testWeightDetectsMaxWeightAndEst1RMOnFirstSet() {
+        let prs = PRDetector.detect(measurementType: .weight, weight: 100, reps: 5, durationSeconds: nil, against: .init())
+        XCTAssertEqual(Set(prs.map(\.type)), [.maxWeight, .est1RM])
     }
 
-    func testDetectsOnlyWeightWhenOthersLower() {
-        // 既存: maxWeight90, maxReps10, est1RM130, maxVolume900
-        let bests = PRDetector.Bests(maxWeight: 90, maxReps: 10, est1RM: 130, maxVolume: 900)
-        // 新セット 95kg×3 → 重量更新(95>90), reps3<10, est=95*(1+3/30)=104.5<130, vol=285<900
-        let prs = PRDetector.detect(weight: 95, reps: 3, against: bests)
+    func testWeightDetectsOnlyMaxWeightWhenEst1RMLower() {
+        // 既存: maxWeight90, est1RM130。新セット 95kg×3 → 重量更新(95>90), est=95*(1+3/30)=104.5<130
+        let bests = PRDetector.Bests(maxWeight: 90, est1RM: 130)
+        let prs = PRDetector.detect(measurementType: .weight, weight: 95, reps: 3, durationSeconds: nil, against: bests)
         XCTAssertEqual(prs.map(\.type), [.maxWeight])
         XCTAssertEqual(prs.first?.value, 95)
     }
 
+    func testWeightDetectsOnlyEst1RMWhenWeightTied() {
+        // 同じ重量でレップが伸びた → 最大重量は更新しないが推定1RMは更新する
+        let bests = PRDetector.Bests(maxWeight: 100, est1RM: 110)
+        let prs = PRDetector.detect(measurementType: .weight, weight: 100, reps: 6, durationSeconds: nil, against: bests)
+        XCTAssertEqual(prs.map(\.type), [.est1RM])
+    }
+
+    func testWeightIgnoresRepsAndDuration() {
+        // ウェイト種目では、レップ/時間が大きくても maxReps・maxDuration は出さない。
+        // 重量・推定1RM は十分高いベストを置いて発火させず、軸が無視されることだけを検証する。
+        let bests = PRDetector.Bests(maxWeight: 999, est1RM: 9999)
+        let prs = PRDetector.detect(measurementType: .weight, weight: 80, reps: 99, durationSeconds: 9999, against: bests)
+        XCTAssertFalse(prs.contains { $0.type == .maxReps || $0.type == .maxDuration })
+        XCTAssertTrue(prs.isEmpty)
+    }
+
+    func testBodyweightDetectsOnlyMaxReps() {
+        let prs = PRDetector.detect(measurementType: .bodyweight, weight: 0, reps: 12, durationSeconds: nil, against: .init())
+        XCTAssertEqual(prs.map(\.type), [.maxReps])
+        XCTAssertEqual(prs.first?.value, 12)
+    }
+
+    func testBodyweightNoPRWhenRepsNotBeaten() {
+        let bests = PRDetector.Bests(maxReps: 20)
+        XCTAssertTrue(PRDetector.detect(measurementType: .bodyweight, weight: 0, reps: 15, durationSeconds: nil, against: bests).isEmpty)
+    }
+
+    func testTimeDetectsMaxDuration() {
+        let prs = PRDetector.detect(measurementType: .time, weight: 0, reps: 0, durationSeconds: 90, against: .init())
+        XCTAssertEqual(prs.map(\.type), [.maxDuration])
+        XCTAssertEqual(prs.first?.value, 90)
+    }
+
+    func testTimeNoPRWhenDurationNotBeaten() {
+        let bests = PRDetector.Bests(maxDuration: 120)
+        XCTAssertTrue(PRDetector.detect(measurementType: .time, weight: 0, reps: 0, durationSeconds: 90, against: bests).isEmpty)
+    }
+
     func testNoPRWhenNothingBeaten() {
-        let bests = PRDetector.Bests(maxWeight: 200, maxReps: 50, est1RM: 300, maxVolume: 5000)
-        XCTAssertTrue(PRDetector.detect(weight: 100, reps: 5, against: bests).isEmpty)
+        let bests = PRDetector.Bests(maxWeight: 200, est1RM: 300)
+        XCTAssertTrue(PRDetector.detect(measurementType: .weight, weight: 100, reps: 5, durationSeconds: nil, against: bests).isEmpty)
     }
 }

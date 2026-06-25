@@ -121,11 +121,6 @@ struct ExerciseDetailView: View {
     }
 
     private func formatPR(_ pr: PersonalRecord) -> String {
-        switch pr.type {
-        case .maxWeight: return String(format: "%.1f kg", pr.value)
-        case .maxReps: return "\(Int(pr.value)) reps"
-        case .est1RM: return String(format: "%.1f kg", pr.value)
-        case .maxVolume: return String(format: "%.0f kg", pr.value)
-        }
+        pr.type.formatted(pr.value)
     }
 }
