@@ -15,6 +15,7 @@ enum PRType: String, Codable, CaseIterable, Sendable {
     case est1RM = "est_1rm"
     case maxReps = "max_reps"
     case maxDuration = "max_duration"
+    case minAssist = "min_assist"      // 補助種目: 最小補助（軽いほど強い）
 
     var label: String {
         switch self {
@@ -22,6 +23,7 @@ enum PRType: String, Codable, CaseIterable, Sendable {
         case .est1RM: return "推定1RM"
         case .maxReps: return "最大レップ"
         case .maxDuration: return "最長時間"
+        case .minAssist: return "最小補助"
         }
     }
 
@@ -32,13 +34,14 @@ enum PRType: String, Codable, CaseIterable, Sendable {
         case .est1RM: return "bolt.fill"
         case .maxReps: return "flame.fill"
         case .maxDuration: return "stopwatch.fill"
+        case .minAssist: return "minus.circle.fill"
         }
     }
 
     /// PR 値の表示用フォーマット（種別ごとに単位が違う）。各 View の重複を集約。
     func formatted(_ value: Double) -> String {
         switch self {
-        case .maxWeight, .est1RM: return String(format: "%.1f kg", value)
+        case .maxWeight, .est1RM, .minAssist: return String(format: "%.1f kg", value)
         case .maxReps: return "\(Int(value)) reps"
         case .maxDuration:
             let s = Int(value)
@@ -156,6 +159,49 @@ enum WeightMode: String, Codable, CaseIterable, Sendable {
         switch self {
         case .both: return "両"
         case .perSide: return "片"
+        }
+    }
+}
+
+/// 自重種目の荷重スタイル（種目ごとの既定。bodyweight のときだけ意味を持つ）。
+/// 懸垂等で「荷重(自重＋kg)」と「補助(自重−kg / バンド・アシストマシン)」を明示的に区別する。
+/// 記録される `weight` は常に正の大きさで、符号/意味はこの mode が解釈する。
+enum LoadMode: String, Codable, CaseIterable, Sendable {
+    case none        // 自重のみ（腕立て等）
+    case weighted    // 荷重（自重＋kg。加重懸垂等）
+    case assisted    // 補助（自重−kg。アシスト懸垂等）
+
+    var label: String {
+        switch self {
+        case .none: return "自重のみ"
+        case .weighted: return "荷重"
+        case .assisted: return "補助"
+        }
+    }
+    /// 重量軸の入力を持つか（自重のみは reps だけ）。
+    var hasLoadInput: Bool { self != .none }
+    /// 入力値（正の大きさ）の符号表現。荷重=＋, 補助=−, 自重=空。
+    var signPrefix: String {
+        switch self {
+        case .none: return ""
+        case .weighted: return "＋"
+        case .assisted: return "−"
+        }
+    }
+    /// 記録カード等の重量軸ラベル。
+    var loadAxisLabel: String {
+        switch self {
+        case .none: return "自重"
+        case .weighted: return "荷重 ＋"
+        case .assisted: return "補助 −"
+        }
+    }
+    /// セットの加重大きさ(magnitude≥0)を表示用テキストに。荷重「＋20kg」/ 補助「補助20kg」/ 自重「自重」。
+    func loadText(_ magnitude: Double) -> String {
+        switch self {
+        case .none: return "自重"
+        case .weighted: return magnitude > 0 ? String(format: "＋%gkg", magnitude) : "自重"
+        case .assisted: return magnitude > 0 ? String(format: "補助%gkg", magnitude) : "自重"
         }
     }
 }
