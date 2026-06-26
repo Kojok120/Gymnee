@@ -327,14 +327,15 @@ private struct CalendarHomeContent: View {
                         } else if hasVisit {
                             Circle().fill(Theme.limeSoft)
                         } else if hasPlan {
-                            // 計画日は枠線で示す（実績の塗りと区別）。
-                            Circle().strokeBorder(Theme.energy.opacity(0.6), lineWidth: 1.5)
+                            // 計画日は青の枠線で示す（来店=lime の実績と明確に区別）。
+                            Circle().strokeBorder(Theme.info.opacity(0.7), lineWidth: 1.5)
                         }
                     }
                 HStack(spacing: 3) {
                     Circle().fill(hasVisit && !isToday ? Theme.lime : .clear).frame(width: 5, height: 5)
                     Circle().fill(hasWorkout ? Theme.warning : .clear).frame(width: 5, height: 5)
-                    Circle().fill(hasPlan ? Theme.energy : .clear).frame(width: 5, height: 5)
+                    // 計画は青ポチ（来店の緑と混同しないように）。
+                    Circle().fill(hasPlan ? Theme.info : .clear).frame(width: 5, height: 5)
                 }
                 .frame(height: 5)
             }
@@ -348,6 +349,7 @@ private struct CalendarHomeContent: View {
         HStack(spacing: Theme.Spacing.lg) {
             legendItem(color: Theme.lime, label: "来店")
             legendItem(color: Theme.warning, label: "ワークアウト")
+            legendItem(color: Theme.info, label: "計画")
             Spacer()
         }
         .padding(.top, Theme.Spacing.xs)
