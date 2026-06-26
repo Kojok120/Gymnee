@@ -9,6 +9,10 @@ actor SupabaseClient {
     private let config: SupabaseConfig
     private let session: URLSession
     private var accessToken: String?
+    /// 401(JWT expired)時に自動でアクセストークンを更新するための refresh_token。
+    private var refreshToken: String?
+    /// トークン自動更新時の永続化フック（AuthService が Keychain に保存。refresh はローテーションするため必須）。
+    private var onTokenRefresh: (@Sendable (String, String) -> Void)?
 
     init(config: SupabaseConfig, session: URLSession? = nil) {
         self.config = config
@@ -28,6 +32,19 @@ actor SupabaseClient {
     /// サインイン後のユーザーアクセストークン（JWT）を設定する。未設定時は anon キーのみ。
     func setAccessToken(_ token: String?) {
         self.accessToken = token
+    }
+
+    /// アクセストークン＋リフレッシュトークンをまとめて設定する。
+    /// refresh_token を保持することで、アクセストークン期限切れ(401 JWT expired)時に自動更新できる。
+    func setSession(accessToken: String?, refreshToken: String?) {
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+    }
+
+    /// トークン自動更新が起きたときの永続化フック（access, refresh）。
+    /// Supabase の refresh_token はローテーションするため、新トークンを必ず保存し直す。
+    func setTokenRefreshHandler(_ handler: @escaping @Sendable (String, String) -> Void) {
+        self.onTokenRefresh = handler
     }
 
     enum SupabaseError: Error, LocalizedError {
@@ -142,7 +159,8 @@ actor SupabaseClient {
         var request = authRequest(path: "token", query: "grant_type=refresh_token")
         request.httpMethod = "POST"
         request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": refreshToken])
-        let data = try await send(request)
+        // 更新リクエスト自身が 401 でも再帰更新しない（無限ループ防止）。
+        let data = try await send(request, allowRefresh: false)
         return try Self.parseAuthSession(data)
     }
 
@@ -376,13 +394,48 @@ actor SupabaseClient {
     }
 
     @discardableResult
-    private func send(_ request: URLRequest) async throws -> Data {
+    private func send(_ request: URLRequest, allowRefresh: Bool = true) async throws -> Data {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SupabaseError.invalidResponse }
+
+        // 401 はアクセストークン(JWT)期限切れの可能性。refresh_token があれば一度だけ更新して再試行する。
+        // これが無いと、起動から ~1h でトークンが切れて以降すべての同期/AI計画が 401 で止まる。
+        if http.statusCode == 401, allowRefresh, refreshToken != nil {
+            let usedAuth = request.value(forHTTPHeaderField: "Authorization")
+            let currentAuth = accessToken.map { "Bearer \($0)" }
+            // 自分のトークンがまだ最新なら本当に期限切れ → 更新。別リクエストが既に更新済みなら更新せず再試行。
+            let refreshed = (usedAuth == currentAuth) ? await refreshAccessTokenIfPossible() : true
+            if refreshed, let token = accessToken {
+                var retry = request
+                retry.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                let (data2, response2) = try await session.data(for: retry)
+                guard let http2 = response2 as? HTTPURLResponse else { throw SupabaseError.invalidResponse }
+                guard (200..<300).contains(http2.statusCode) else {
+                    throw SupabaseError.http(status: http2.statusCode, body: String(data: data2, encoding: .utf8) ?? "")
+                }
+                return data2
+            }
+        }
+
         guard (200..<300).contains(http.statusCode) else {
             throw SupabaseError.http(status: http.statusCode, body: String(data: data, encoding: .utf8) ?? "")
         }
         return data
+    }
+
+    /// refresh_token でアクセストークンを更新し、新トークンを保持＋永続化フックへ通知する。
+    /// 更新できれば true。refresh_token も失効していれば false（呼び出し元で 401 を伝播 → 再ログインが必要）。
+    private func refreshAccessTokenIfPossible() async -> Bool {
+        guard let refresh = refreshToken else { return false }
+        do {
+            let s = try await refreshSession(refreshToken: refresh)
+            accessToken = s.accessToken
+            refreshToken = s.refreshToken
+            onTokenRefresh?(s.accessToken, s.refreshToken)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private static func parseAuthSession(_ data: Data) throws -> AuthSession {

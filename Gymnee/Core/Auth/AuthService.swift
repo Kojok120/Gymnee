@@ -58,6 +58,20 @@ final class AuthService {
     /// Supabase クライアントを差し込む（リモート同期と認証を有効化）。
     func configureSupabase(_ client: SupabaseClient?) {
         self.supabase = client
+        guard let client else { return }
+        // トークン期限切れ(401)時にクライアントが自動更新したら、新トークンを Keychain に保存し直す
+        // （Supabase の refresh_token はローテーションするため、保存しないと次回起動で失効する）。
+        Task {
+            await client.setTokenRefreshHandler { [weak self] access, refresh in
+                Task { @MainActor in self?.persistRefreshedTokens(access: access, refresh: refresh) }
+            }
+        }
+    }
+
+    /// クライアントの自動トークン更新を Keychain へ反映（access/refresh とも保存）。
+    private func persistRefreshedTokens(access: String, refresh: String) {
+        Keychain.set(access, for: accessTokenKey)
+        Keychain.set(refresh, for: refreshTokenKey)
     }
 
     /// 表示名で他ユーザーを検索する（相互フォローの相手探し）。バックエンド未認証なら空。
@@ -77,7 +91,7 @@ final class AuthService {
         provider.signOut()
         clearBackendSession()
         let client = supabase
-        Task { await client?.setAccessToken(nil) }
+        Task { await client?.setSession(accessToken: nil, refreshToken: nil) }
         session = nil
     }
 
@@ -87,7 +101,7 @@ final class AuthService {
         guard let supabase, let refresh = Keychain.get(refreshTokenKey) else { return }
         do {
             let remote = try await supabase.refreshSession(refreshToken: refresh)
-            await supabase.setAccessToken(remote.accessToken)
+            await supabase.setSession(accessToken: remote.accessToken, refreshToken: remote.refreshToken)
             let name = defaults.string(forKey: backendNameKey) ?? session?.displayName ?? "Apple ユーザー"
             persistBackendSession(access: remote.accessToken, refresh: remote.refreshToken, userId: remote.userId, displayName: name)
             provider.persistSession(userId: remote.userId, displayName: name)
@@ -105,7 +119,7 @@ final class AuthService {
     /// バックエンド認証成功（Apple / メール / Google 共通）後のセッション確立。
     /// アクセストークン設定・永続化・ローカル識別統一・Profile 整合・移行フックまでを一手に行う。
     private func establishBackendSession(_ remote: SupabaseClient.AuthSession, displayName: String?, oldUserId: UUID?) async {
-        await supabase?.setAccessToken(remote.accessToken)
+        await supabase?.setSession(accessToken: remote.accessToken, refreshToken: remote.refreshToken)
         let name = [displayName, remote.fullName, session?.displayName, remote.email]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty } ?? "ユーザー"
