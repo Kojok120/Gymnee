@@ -45,6 +45,18 @@ struct ExerciseEditView: View {
                         Text("ダンベル等は「片側」。合計挙上量の計算に使います。")
                     }
                 }
+                if exercise.measurementType == .bodyweight {
+                    Section {
+                        Picker("荷重", selection: Binding(get: { exercise.loadMode }, set: { exercise.loadMode = $0 })) {
+                            ForEach(LoadMode.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    } header: {
+                        Text("荷重モード")
+                    } footer: {
+                        Text("懸垂・ディップス等で「荷重（自重＋kg）」と「補助（自重−kg・バンド/アシストマシン）」を区別します。自重のみは回数だけ記録。自己ベストは 荷重=最大荷重 / 補助=最小補助 / 自重=最大回数。")
+                    }
+                }
                 if exercise.isCustom {
                     Section {
                         Button("この種目を削除", role: .destructive) { showDeleteConfirm = true }

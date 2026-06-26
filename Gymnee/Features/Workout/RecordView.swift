@@ -584,7 +584,9 @@ struct RecordContent: View {
     private func logReps(_ reps: Int, spec: CardSpec) {
         let w = weightCenter(for: spec)
         armed[spec.exercise.id] = w   // ルーラー位置を確定（記録後のジャンプ防止）
-        commitSet(exercise: spec.exercise, weight: w, reps: reps, duration: nil)
+        // 自重のみは重量軸が無いので weight=0 を記録（過去セットの値を引きずらない）。
+        let bodyweightOnly = spec.exercise.measurementType == .bodyweight && spec.exercise.loadMode == .none
+        commitSet(exercise: spec.exercise, weight: bodyweightOnly ? 0 : w, reps: reps, duration: nil)
     }
 
     /// time：秒を1セット記録。
@@ -634,7 +636,7 @@ struct RecordContent: View {
         let detected = PRDetector.detect(
             measurementType: exercise.measurementType,
             weight: set.weight, reps: set.reps, durationSeconds: set.durationSeconds,
-            against: bests
+            against: bests, loadMode: exercise.loadMode
         )
         guard !detected.isEmpty else { return }
         let label = detected.map(\.type.label).joined(separator: "・")
@@ -697,7 +699,9 @@ struct RecordContent: View {
         // 完了時に PR を確定（中断したワークアウトでは PR を残さない）。
         for we in w.exercises {
             guard let ex = we.exercise, ex.measurementType != .time else { continue }
-            for set in we.sets where set.weight > 0 && set.reps > 0 {
+            // 自重(自重のみ/補助は weight=0/補助量)も PR 対象。ウェイト種目だけ weight>0 を要求。
+            let isBW = ex.measurementType == .bodyweight
+            for set in we.sets where set.reps > 0 && (isBW || set.weight > 0) {
                 WorkoutMetrics.evaluatePR(set: set, exercise: ex, workout: w, userId: userId, context: context, sync: sync)
             }
         }
@@ -831,11 +835,17 @@ private struct ExerciseCardView: View {
     let onCustomReps: () -> Void
     let onEdit: () -> Void
 
+    /// 自重のみ（重量軸を出さない）。
+    private var bodyweightOnly: Bool {
+        exercise.measurementType == .bodyweight && exercise.loadMode == .none
+    }
+
     var body: some View {
         VStack(spacing: Theme.Spacing.sm) {
             if exercise.measurementType == .time {
                 durationRuler
-            } else {
+            } else if !bodyweightOnly {
+                // 自重のみ(loadMode == none)は重量軸なし。荷重/補助/ウェイトは重量ルーラー。
                 weightRuler
             }
             VStack(spacing: 1) {
@@ -846,7 +856,7 @@ private struct ExerciseCardView: View {
                 if exercise.measurementType == .weight {
                     Text(exercise.weightMode.label).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
                 } else if exercise.measurementType == .bodyweight {
-                    Text("自重＋加重").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+                    Text(exercise.loadMode.loadAxisLabel).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
                 }
             }
             if exercise.measurementType != .time { repsRuler }

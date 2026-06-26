@@ -59,6 +59,7 @@ enum WorkoutMetrics {
             }
             if s.reps > 0 {
                 b.maxReps = max(b.maxReps, Double(s.reps))
+                b.minAssist = min(b.minAssist, s.weight)  // 補助種目のみ detect で使用（軽いほど良い）
             }
             if let d = s.durationSeconds, d > 0 {
                 b.maxDuration = max(b.maxDuration, Double(d))
@@ -83,7 +84,8 @@ enum WorkoutMetrics {
             weight: set.weight,
             reps: set.reps,
             durationSeconds: set.durationSeconds,
-            against: bests
+            against: bests,
+            loadMode: exercise.loadMode
         )
         set.isPR = !detected.isEmpty
         for pr in detected {

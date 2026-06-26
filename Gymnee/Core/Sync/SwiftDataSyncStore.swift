@@ -292,7 +292,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         var row: [String: Any] = [
             "id": lower(m.id), "name": m.name, "muscle_group": m.muscleGroupRaw,
             "equipment": m.equipmentRaw, "is_custom": m.isCustom, "weight_mode": m.weightModeRaw,
-            "measurement_type": m.measurementTypeRaw,
+            "measurement_type": m.measurementTypeRaw, "load_mode": m.loadModeRaw,
             "updated_at": iso(m.updatedAt),
         ]
         // RLS(exercises_insert_own) は created_by = auth.uid() を要求する。プリセット(nil)や
@@ -313,6 +313,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.createdBy = uuid(row["created_by"])
         m.weightModeRaw = str(row["weight_mode"]) ?? m.weightModeRaw
         m.measurementTypeRaw = str(row["measurement_type"]) ?? m.measurementTypeRaw
+        m.loadModeRaw = str(row["load_mode"]) ?? m.loadModeRaw
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
     }

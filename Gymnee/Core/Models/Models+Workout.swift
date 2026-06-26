@@ -62,6 +62,8 @@ final class Exercise {
     var weightModeRaw: String = WeightMode.both.rawValue
     /// 計測タイプ（weight / bodyweight / time）。記録カードの形を決める。
     var measurementTypeRaw: String = MeasurementType.weight.rawValue
+    /// 自重種目の荷重スタイル（自重のみ/荷重/補助）。bodyweight のときだけ意味を持つ。
+    var loadModeRaw: String = LoadMode.none.rawValue
     var updatedAt: Date
     var isDirty: Bool
 
@@ -73,6 +75,11 @@ final class Exercise {
     var measurementType: MeasurementType {
         get { MeasurementType(rawValue: measurementTypeRaw) ?? .weight }
         set { measurementTypeRaw = newValue.rawValue }
+    }
+
+    var loadMode: LoadMode {
+        get { LoadMode(rawValue: loadModeRaw) ?? .none }
+        set { loadModeRaw = newValue.rawValue }
     }
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutExercise.exercise)
@@ -103,6 +110,7 @@ final class Exercise {
         createdBy: UUID? = nil,
         weightMode: WeightMode = .both,
         measurementType: MeasurementType = .weight,
+        loadMode: LoadMode = .none,
         updatedAt: Date = .now,
         isDirty: Bool = true
     ) {
@@ -114,6 +122,7 @@ final class Exercise {
         self.createdBy = createdBy
         self.weightModeRaw = weightMode.rawValue
         self.measurementTypeRaw = measurementType.rawValue
+        self.loadModeRaw = loadMode.rawValue
         self.updatedAt = updatedAt
         self.isDirty = isDirty
     }
@@ -175,7 +184,12 @@ final class ExerciseSet {
     var workoutExercise: WorkoutExercise?
 
     /// このセットのボリューム（重量 × レップ）。
-    var volume: Double { weight * Double(reps) }
+    /// トレーニングボリューム。補助(アシスト)は自重を軽くする方向なので加重をボリュームに数えない。
+    /// 荷重/通常ウェイトは weight×reps、自重のみは weight=0 で 0。
+    var volume: Double {
+        if workoutExercise?.exercise?.loadMode == .assisted { return 0 }
+        return weight * Double(reps)
+    }
 
     init(
         id: UUID = UUID(),

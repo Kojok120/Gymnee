@@ -100,6 +100,40 @@ final class PRDetectorTests: XCTestCase {
         XCTAssertTrue(PRDetector.detect(measurementType: .bodyweight, weight: 0, reps: 15, durationSeconds: nil, against: bests).isEmpty)
     }
 
+    // MARK: - 自重の荷重モード（荷重/補助）
+
+    func testBodyweightWeightedDetectsMaxLoad() {
+        let prs = PRDetector.detect(measurementType: .bodyweight, weight: 20, reps: 5, durationSeconds: nil, against: .init(), loadMode: .weighted)
+        XCTAssertEqual(prs.map(\.type), [.maxWeight])
+        XCTAssertEqual(prs.first?.value, 20)
+    }
+
+    func testBodyweightWeightedNoPRWhenLoadNotBeaten() {
+        let bests = PRDetector.Bests(maxWeight: 25)
+        XCTAssertTrue(PRDetector.detect(measurementType: .bodyweight, weight: 20, reps: 8, durationSeconds: nil, against: bests, loadMode: .weighted).isEmpty)
+    }
+
+    func testBodyweightWeightedZeroLoadNoPR() {
+        // 荷重モードでも 0kg(=ただの自重)は最大荷重PRにしない。
+        XCTAssertTrue(PRDetector.detect(measurementType: .bodyweight, weight: 0, reps: 30, durationSeconds: nil, against: .init(), loadMode: .weighted).isEmpty)
+    }
+
+    func testBodyweightAssistedDetectsLessAssist() {
+        // 初回(∞より小)はPR。さらに軽い補助で更新。
+        let first = PRDetector.detect(measurementType: .bodyweight, weight: 20, reps: 6, durationSeconds: nil, against: .init(), loadMode: .assisted)
+        XCTAssertEqual(first.map(\.type), [.minAssist])
+        XCTAssertEqual(first.first?.value, 20)
+        let bests = PRDetector.Bests(minAssist: 20)
+        let lighter = PRDetector.detect(measurementType: .bodyweight, weight: 12, reps: 5, durationSeconds: nil, against: bests, loadMode: .assisted)
+        XCTAssertEqual(lighter.map(\.type), [.minAssist])
+        XCTAssertEqual(lighter.first?.value, 12)
+    }
+
+    func testBodyweightAssistedNoPRWhenHeavierAssist() {
+        let bests = PRDetector.Bests(minAssist: 10)
+        XCTAssertTrue(PRDetector.detect(measurementType: .bodyweight, weight: 15, reps: 8, durationSeconds: nil, against: bests, loadMode: .assisted).isEmpty)
+    }
+
     func testTimeDetectsMaxDuration() {
         let prs = PRDetector.detect(measurementType: .time, weight: 0, reps: 0, durationSeconds: 90, against: .init())
         XCTAssertEqual(prs.map(\.type), [.maxDuration])
