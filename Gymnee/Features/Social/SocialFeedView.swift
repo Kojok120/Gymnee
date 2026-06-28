@@ -25,12 +25,6 @@ struct UserRef: Hashable {
     let name: String
 }
 
-/// コメントシート提示用ターゲット（`sheet(item:)` 用）。
-struct CommentSheetTarget: Identifiable {
-    let feedItemId: UUID
-    var id: UUID { feedItemId }
-}
-
 private struct SocialContent: View {
     let userId: UUID
 
@@ -58,12 +52,10 @@ private struct SocialContent: View {
     @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
     @State private var showMyPosts = false
-    @State private var editVisit: Visit?
-    @State private var workoutDetail: Workout?
+    /// タップで開く投稿詳細（全投稿共通：リッチ詳細＋リアクションした人＋コメント）。
+    @State private var postDetail: FeedEntry?
     /// ダブルタップいいね時のハート演出対象（feed_item id）。
     @State private var burstId: UUID?
-    /// コメントシートの対象（feed_item id）。
-    @State private var commentTarget: CommentSheetTarget?
     @State private var visStore = PostVisibilityStore()
     @State private var feedEntries: [FeedEntry] = []
 
@@ -249,18 +241,13 @@ private struct SocialContent: View {
             }
         }
         .task(id: "\(visits.count)-\(workouts.count)-\(prs.count)-\(feedItems.count)-\(profiles.count)") { rebuildFeedEntries() }
-        .onChange(of: editVisit) { _, v in if v == nil { Task { await refreshFeed() } } }
-        .sheet(item: $editVisit) { visit in
-            CheckInEditView(visit: visit, visibilityStore: visStore)
-        }
-        .sheet(item: $commentTarget) { target in
-            CommentsView(feedItemId: target.feedItemId, currentUserId: userId,
-                         currentUserName: auth.session?.displayName,
-                         onClose: { commentTarget = nil })
-        }
-        // ワークアウトは値ベースで詳細へ（List内クロージャNavigationLinkのシェブロン/ハングを回避）。
-        .navigationDestination(item: $workoutDetail) { workout in
-            WorkoutDetailView(workout: workout)
+        // カードのタップは全投稿で統一の詳細（リッチ詳細＋リアクションした人＋コメント）を開く。
+        // 閉じたら編集/コメント/リアクションを反映するためフィードを作り直す。
+        .onChange(of: postDetail?.id) { _, v in if v == nil { Task { await refreshFeed() } } }
+        .sheet(item: $postDetail) { entry in
+            PostDetailView(entry: entry, currentUserId: userId,
+                           currentUserName: auth.session?.displayName,
+                           onClose: { postDetail = nil })
         }
     }
 
@@ -278,7 +265,7 @@ private struct SocialContent: View {
                 .overlay { burstHeart(for: entry.id) }
             ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions,
                         commentCount: commentCount,
-                        onComment: { commentTarget = CommentSheetTarget(feedItemId: entry.id) })
+                        onComment: { postDetail = entry })
         }
     }
 
@@ -295,13 +282,9 @@ private struct SocialContent: View {
         }
     }
 
-    /// シングルタップ：ワークアウト＝詳細、チェックイン＝編集（自分の投稿のみ実体がある）。
+    /// シングルタップ：全投稿で統一の詳細を開く（種別別リッチ詳細＋リアクションした人＋コメント）。
     private func openEntry(_ entry: FeedEntry) {
-        if entry.kind == .workout, let workout = workouts.first(where: { $0.id == entry.id }) {
-            workoutDetail = workout
-        } else if entry.kind == .visit, let visit = visits.first(where: { $0.id == entry.id }) {
-            editVisit = visit
-        }
+        postDetail = entry
     }
 
     /// ダブルタップ：いいねを付ける（既にいいね済みでもハート演出だけ出す）。

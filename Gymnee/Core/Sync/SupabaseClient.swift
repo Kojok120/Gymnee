@@ -90,9 +90,16 @@ actor SupabaseClient {
         }
     }
 
-    /// APNs デバイストークンを登録（token の unique 制約で衝突解決）。user_id は DB 既定の auth.uid()。
+    /// APNs デバイストークンを「現在ログイン中のユーザー」へ確実に紐付け直す（RPC `set_device_token`）。
+    /// 旧実装は token だけを upsert していたため user_id が最初の登録者に固定され、
+    /// 後発サインイン/アカウント切替で現在ユーザーへ付け替わらず push が不達だった（0022 で是正）。
+    /// RPC は SECURITY DEFINER で同一トークンの他ユーザー行を剥がして auth.uid() に再割り当てする。
     func registerDeviceToken(_ token: String, platform: String = "ios") async throws {
-        try await upsert(table: "device_tokens", rows: [["token": token, "platform": platform]], onConflict: "token")
+        var request = restRequest(path: "rpc/set_device_token")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["p_token": token, "p_platform": platform])
+        try await send(request)
     }
 
     /// 指定 id 群を削除。
