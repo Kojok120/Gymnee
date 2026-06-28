@@ -14,10 +14,10 @@ dev/beta プロジェクト（ref `bdeaeykruwxazdoewxmg`）はそのまま開発
 
 | 要素 | prod での扱い |
 |---|---|
-| APNs `.p8`（`secrets/AuthKey_B5U25H7746.p8`）/ Key ID / Team ID `PG5P26J3W2` / bundle `com.gymnee.app` | **再利用**（Apple アカウント単位） |
-| Resend ドメイン `gymnee.app` / API key（`secrets/resend.env`） | **再利用**（ドメイン単位） |
-| Gemini API key（AI計画 plan-workouts 用） | **再利用**。prod スクリプトで設定するなら `secrets/gemini.env` に `GEMINI_API_KEY=...` を置く（dev と同じ鍵で可） |
-| Google OAuth client id/secret（`secrets/google_oauth.env`） | **再利用**。ただし★Google Cloud の Authorized redirect URIs に **prod の callback** を追加する |
+| APNs `.p8`（`secrets/AuthKey_B5U25H7746_APNs.p8`）/ Key ID `B5U25H7746` / Team ID `PG5P26J3W2` / bundle `com.gymnee.app` | **再利用**（Apple アカウント単位） |
+| Resend ドメイン `gymnee.app` / API key（`secrets/.env` の `RESEND_API_KEY`） | **再利用**（ドメイン単位） |
+| Gemini API key（AI計画 plan-workouts 用） | **再利用**。prod スクリプトで設定するなら `secrets/.env` に `GEMINI_API_KEY=...` を置く（dev と同じ鍵で可） |
+| Google OAuth client id/secret（`secrets/.env` の `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`） | **再利用**。ただし★Google Cloud の Authorized redirect URIs に **prod の callback** を追加する |
 | Sign in with Apple の client id（`com.gymnee.app`） | **再利用**（native は id_token 検証なので secret 不要） |
 | Supabase project / anon(publishable) key / service role key / DB パスワード | **新規**（プロジェクト作成時に発行） |
 | `PUSH_SHARED_SECRET`（DB↔Function 認証） | **新規生成**（スクリプトが自動生成し push_config に投入） |
@@ -28,7 +28,7 @@ dev/beta プロジェクト（ref `bdeaeykruwxazdoewxmg`）はそのまま開発
 ## 手順
 
 ### 0. 前提
-- `secrets/` に dev で使った 3 つがある：`AuthKey_*.p8` / `google_oauth.env` / `resend.env`。
+- `secrets/` に dev で使ったものがある：`AuthKey_*.p8` と `.env`（統合シークレット: `GOOGLE_*` / `RESEND_API_KEY` / `RAKUTEN_*` / 任意で `GEMINI_API_KEY`）。
 - `supabase` CLI がログイン済み、または `SUPABASE_ACCESS_TOKEN`（ダッシュボード → Account → Access Tokens で発行した `sbp_...`）を環境変数に設定。
 - `jq` / `openssl` / `supabase` CLI が入っている。
 
@@ -56,7 +56,7 @@ scripts/setup_supabase_prod.sh <PROD_REF>
 - **Auth 設定**（Management API PATCH）：Apple 有効化、Google 有効化（id/secret）、email 有効化、Resend SMTP、`uri_allow_list=gymnee://auth-callback`、OTP メール本文（6桁 `{{ .Token }}`）
 - **Edge Function**：
   - `send-push`（チェックイン通知＋いいね/応援通知）を deploy ＋ secrets（APNS_*、`APNS_HOST=api.push.apple.com`、新規 `PUSH_SHARED_SECRET`）
-  - `plan-workouts`（AIワークアウト計画）を deploy ＋ secrets（`secrets/gemini.env` があれば `GEMINI_API_KEY`/`GEMINI_MODEL=gemini-3.5-flash`/`GEMINI_API_VERSION=v1`。無ければ警告して後回し）
+  - `plan-workouts`（AIワークアウト計画）を deploy ＋ secrets（`secrets/.env` に `GEMINI_API_KEY` があれば `GEMINI_API_KEY`/`GEMINI_MODEL=gemini-3.5-flash`/`GEMINI_API_VERSION=v1`。無ければ警告して後回し）
 - **push_config**：prod の Function URL ＋ 新 secret を 1 行 upsert
 
 ### ★4. iOS の prod 接続先を差し替え（手動）

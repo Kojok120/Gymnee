@@ -24,6 +24,11 @@ Gymnee/Resources/Supabase.plist
 # APNs auth key (.p8) and any secrets dir — never commit private keys
 secrets/
 *.p8
+# 統合 .env を含むあらゆる .env は秘密。どこに置いても commit しない（保険）
+.env
+*.env
+# 署名証明書（配布用）も秘密
+*.p12
 
 # Misc
 *.log

@@ -7,7 +7,7 @@
 #   - 引数に本番の Project Ref
 #   - 環境変数 SUPABASE_ACCESS_TOKEN（ダッシュボードの PAT, sbp_...）。未設定なら macOS keychain の
 #     `supabase login` トークンを使う（このマシン限定のフォールバック）。
-#   - secrets/ に AuthKey_*.p8 / google_oauth.env / resend.env がある
+#   - secrets/ に AuthKey_*APNs*.p8（APNs配信鍵。ASC用 .p8 と混在可）と .env（GOOGLE_*/RESEND_API_KEY/RAKUTEN_*/任意で GEMINI_API_KEY）がある
 #   - jq / openssl / supabase CLI
 #
 # 流すもの: スキーマ(setup_all.sql) → auth設定(Apple/Google/email/SMTP/redirect/OTP) →
@@ -24,9 +24,10 @@ SECRETS="$ROOT/secrets"
 
 # --- 依存チェック ---
 for c in jq openssl supabase curl; do command -v "$c" >/dev/null || { echo "missing: $c"; exit 1; }; done
-for f in "$SECRETS/google_oauth.env" "$SECRETS/resend.env"; do [ -s "$f" ] || { echo "missing secret file: $f"; exit 1; }; done
-P8="$(ls "$SECRETS"/AuthKey_*.p8 2>/dev/null | head -1)"
-[ -n "$P8" ] || { echo "missing APNs key: $SECRETS/AuthKey_*.p8"; exit 1; }
+for f in "$SECRETS/.env"; do [ -s "$f" ] || { echo "missing secret file: $f"; exit 1; }; done
+# APNs 鍵を明示選択（secrets/ に ASC 用 .p8 も置かれ得るため *APNs* で限定）。
+P8="$(ls "$SECRETS"/AuthKey_*APNs*.p8 2>/dev/null | head -1)"
+[ -n "$P8" ] || { echo "missing APNs key: $SECRETS/AuthKey_*APNs*.p8"; exit 1; }
 
 # --- access token ---
 TOKEN="${SUPABASE_ACCESS_TOKEN:-}"
@@ -46,10 +47,10 @@ runsql() { # $1 = SQL。Management API の query エンドポイントで postgr
 }
 
 # --- secrets 読み出し（値は echo しない） ---
-GID="$(grep '^GOOGLE_CLIENT_ID=' "$SECRETS/google_oauth.env" | cut -d= -f2- | tr -d '[:space:]')"
-GSEC="$(grep '^GOOGLE_CLIENT_SECRET=' "$SECRETS/google_oauth.env" | cut -d= -f2- | tr -d '[:space:]')"
-RKEY="$(grep '^RESEND_API_KEY=' "$SECRETS/resend.env" | cut -d= -f2- | tr -d '[:space:]')"
-KEYID="$(basename "$P8" | sed -E 's/AuthKey_(.*)\.p8/\1/')"
+GID="$(grep '^GOOGLE_CLIENT_ID=' "$SECRETS/.env" | cut -d= -f2- | tr -d '[:space:]')"
+GSEC="$(grep '^GOOGLE_CLIENT_SECRET=' "$SECRETS/.env" | cut -d= -f2- | tr -d '[:space:]')"
+RKEY="$(grep '^RESEND_API_KEY=' "$SECRETS/.env" | cut -d= -f2- | tr -d '[:space:]')"
+KEYID="$(basename "$P8" | sed -E 's/.*AuthKey_([A-Za-z0-9]{10}).*/\1/')"   # 10桁の Key ID のみ（_APNs 等の接尾辞を除去）
 PUSH_SECRET="$(openssl rand -hex 24)"
 TMPL='<div style="font-family:-apple-system,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px"><h2 style="color:#111">Gymnee サインイン</h2><p>確認コード:</p><p style="font-size:32px;font-weight:700;letter-spacing:6px;color:#111">{{ .Token }}</p><p style="color:#555">このコードをアプリに入力してください（1時間で失効します）。</p><p style="color:#999;font-size:12px">心当たりがない場合はこのメールを無視してください。</p></div>'
 
@@ -78,12 +79,12 @@ supabase secrets set --project-ref "$PROD_REF" \
 
 echo "▶ 4/5 Edge Function: plan-workouts（AIワークアウト計画）"
 supabase functions deploy plan-workouts --project-ref "$PROD_REF"
-if [ -s "$SECRETS/gemini.env" ]; then
-  GKEY="$(grep '^GEMINI_API_KEY=' "$SECRETS/gemini.env" | cut -d= -f2- | tr -d '[:space:]')"
+GKEY="$(grep '^GEMINI_API_KEY=' "$SECRETS/.env" | cut -d= -f2- | tr -d '[:space:]')"
+if [ -n "$GKEY" ]; then
   supabase secrets set --project-ref "$PROD_REF" \
     GEMINI_API_KEY="$GKEY" GEMINI_MODEL=gemini-3.5-flash GEMINI_API_VERSION=v1
 else
-  echo "  ⚠ secrets/gemini.env が無いため GEMINI_API_KEY 未設定。AI計画を使うなら後で:"
+  echo "  ⚠ secrets/.env に GEMINI_API_KEY が無いため未設定。AI計画を使うなら後で:"
   echo "    supabase secrets set --project-ref $PROD_REF GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-3.5-flash GEMINI_API_VERSION=v1"
 fi
 
