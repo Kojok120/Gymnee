@@ -61,6 +61,11 @@ final class AppEnvironment {
             if let oldUserId, oldUserId != newUserId {
                 LocalDataMigrator.reassign(from: oldUserId, to: newUserId, context: self.container.mainContext, sync: self.sync)
             }
+            // サインイン（特に後発サインイン/アカウント切替）時に、取得済み APNs トークンを
+            // 現在のユーザーへ紐付け直す。これが無いと device_tokens が旧/別ユーザーに残り push が不達。
+            if let token = PushTokenCenter.shared.apnsToken {
+                Task { try? await client.registerDeviceToken(token) }
+            }
             Task { await self.sync.syncNow(force: true) }
         }
     }

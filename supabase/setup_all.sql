@@ -1,5 +1,5 @@
 -- Gymnee 一括セットアップ（SQL Editor に貼って Run）。初回のみ実行。
--- migrations/*.sql を番号順に連結したもの（手編集せず scripts で再生成すること）。
+-- migrations/*.sql を番号順に取り込んだ手保守ファイル（専用の生成スクリプトは無い）。【ルール】新しい migration を追加/変更したら、必ずここへ番号順で同内容を追記し、dev DB にも適用すること。
 
 -- ============================================================
 -- migrations/0001_schema.sql
@@ -857,3 +857,170 @@ create trigger trg_notify_post_reaction
 -- follower→followee の follow 行に notify を持たせ、send-push は notify=true のフォロワーにのみ送る。
 -- 本番には supabase db query で適用済み（ここは履歴）。
 alter table public.follows add column if not exists notify boolean not null default true;
+
+
+-- ============================================================
+-- migrations/0015_reactions_like_only.sql
+-- ============================================================
+-- 応援(cheer)を廃止し、いいね(like)のみにする（ユーザー要望）。
+-- 既存の cheer 行を削除し、CHECK 制約を like のみに付け替える。
+delete from public.post_reactions where kind = 'cheer';
+
+alter table public.post_reactions drop constraint if exists post_reactions_kind_check;
+alter table public.post_reactions add constraint post_reactions_kind_check check (kind in ('like'));
+
+
+-- ============================================================
+-- migrations/0016_notify_prefs.sql
+-- ============================================================
+-- プッシュ通知の種類別 ON/OFF（ユーザー要望）。
+-- send-push は投稿者/受信者の profiles 設定を見て、いいね/フレンドのチェックイン通知を抑制する。
+alter table public.profiles add column if not exists notify_likes boolean not null default true;
+alter table public.profiles add column if not exists notify_friend_checkin boolean not null default true;
+
+
+-- ============================================================
+-- migrations/0018_reactions_multi_and_comments.sql
+-- ============================================================
+-- ③ マルチリアクション（筋トレ絵文字）＋ 公開コメント
+-- 公開投稿(feed_items)への反応/コメント。1対1の私信(DM)ではない＝「オープンな場」。
+
+-- 1) リアクション種別を like のみ → like/strong/fire/clap に拡張（0015 の制約を付け替え）。
+--    クライアントは 1ユーザー1投稿1種別（付け替えは旧削除＋新規）なので unique(user,feed,kind) は維持で衝突しない。
+alter table public.post_reactions drop constraint if exists post_reactions_kind_check;
+alter table public.post_reactions add constraint post_reactions_kind_check
+  check (kind in ('like','strong','fire','clap'));
+
+-- 2) 公開コメント。可視な feed_item にのみ付与でき、参照可否は post_reactions と同条件
+--    （本人 / public / friends かつフォロー中）。書込は本人のみ。
+create table if not exists public.comments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  feed_item_id uuid not null references public.feed_items(id) on delete cascade,
+  author_display_name text,
+  text text not null check (char_length(text) between 1 and 500),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists comments_feed_idx on public.comments(feed_item_id, created_at);
+
+alter table public.comments enable row level security;
+
+create policy comments_select on public.comments for select to authenticated
+  using (
+    user_id = auth.uid()
+    or exists (
+      select 1 from public.feed_items f
+      where f.id = feed_item_id
+        and (f.user_id = auth.uid()
+             or f.visibility = 'public'
+             or (f.visibility = 'friends' and public.is_following(f.user_id)))
+    )
+  );
+
+create policy comments_modify_own on public.comments for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+
+-- ============================================================
+-- migrations/0019_push_on_comment.sql
+-- ============================================================
+-- コメント → 投稿者へ push（ソーシャルループ）。post_reactions の通知（0013）をミラー。
+-- comments への新規 insert を起点に Edge Function `send-push` を { event:'comment', commentId } で呼ぶ。
+
+-- コメント通知の ON/OFF（send-push が投稿者の設定を見て抑制）。既定 ON。
+alter table public.profiles add column if not exists notify_comments boolean not null default true;
+
+create or replace function public.notify_comment()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cfg public.push_config;
+begin
+  select * into cfg from public.push_config where id = 1;
+  if cfg.send_push_url is null or cfg.send_push_url = '' then
+    return new;
+  end if;
+  -- バックフィル/一括同期での暴発を防ぐため直近のコメントのみ通知。
+  if new.created_at < now() - interval '10 minutes' then
+    return new;
+  end if;
+
+  perform net.http_post(
+    url     := cfg.send_push_url,
+    headers := jsonb_build_object(
+                 'Content-Type', 'application/json',
+                 'X-Push-Secret', coalesce(cfg.push_secret, '')
+               ),
+    body    := jsonb_build_object('event', 'comment', 'commentId', new.id)
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_comment on public.comments;
+create trigger trg_notify_comment
+  after insert on public.comments
+  for each row execute function public.notify_comment();
+
+
+-- ============================================================
+-- migrations/0020_feed_items_stats.sql
+-- ============================================================
+-- ⑦E フィードの構造化スタッツ。ワークアウト投稿の種目/セット/ボリューム/時間/PR/部位を
+-- JSON 文字列で保持し、フォロワー側でもリッチカードを描けるようにする。
+-- text で持つ（サーバ側で検索しないため jsonb 不要・PostgREST 型の取り回しも単純）。
+alter table public.feed_items add column if not exists stats_json text;
+
+
+-- ============================================================
+-- migrations/0021_exercise_load_mode.sql
+-- ============================================================
+-- 自重種目の荷重スタイル（自重のみ/荷重/補助）。懸垂等で「荷重(自重＋kg)」と「補助(自重−kg)」を
+-- 明示的に区別する。bodyweight のときだけ意味を持つ。記録される weight は常に正の大きさ。
+alter table public.exercises add column if not exists load_mode text not null default 'none';
+
+
+-- ============================================================
+-- migrations/0022_device_token_rebind.sql
+-- ============================================================
+-- デバイストークンを「現在ログイン中のユーザー」へ確実に紐付け直す（いいね/コメント/チェックイン通知の不達修正）。
+--
+-- 背景: device_tokens.token は全体 unique かつ RLS は本人行のみ更新可。
+-- クライアントが token だけを upsert(on_conflict=token) していたため、
+--   ① user_id は最初の登録者に固定され、後からサインイン/別アカウント切替で現在のユーザーへ付け替わらない
+--   ② 他ユーザーの行は RLS で更新できず upsert が実質失敗
+-- → 後発アカウントの device_tokens が作られず、そのユーザー宛の push が一切届かない欠陥だった。
+--
+-- 対策: SECURITY DEFINER 関数で「同一トークンの他ユーザー行を剥がして auth.uid() に付け替える」。
+-- 1端末＝現在ログイン中の1アカウントに通知を寄せる（バックグラウンドの旧アカウントには送らない）。
+-- 0021 までの後に適用する。Edge Function の再デプロイは不要（SQL のみ）。
+create or replace function public.set_device_token(p_token text, p_platform text default 'ios')
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+
+  -- 同じトークンが別ユーザーに紐付いていたら剥がす（端末を現在のアカウントへ移譲）。
+  delete from public.device_tokens where token = p_token and user_id <> auth.uid();
+
+  -- 現在のユーザーへ upsert（既に自分の行があれば更新）。
+  insert into public.device_tokens (user_id, token, platform, updated_at)
+  values (auth.uid(), p_token, coalesce(p_platform, 'ios'), now())
+  on conflict (token) do update
+    set user_id    = excluded.user_id,
+        platform   = excluded.platform,
+        updated_at = now();
+end;
+$$;
+
+revoke all on function public.set_device_token(text, text) from public;
+grant execute on function public.set_device_token(text, text) to authenticated;
