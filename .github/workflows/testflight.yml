@@ -137,12 +137,12 @@ jobs:
       - name: Export IPA
         run: |
           set -euo pipefail
-          # Archive 時の -allowProvisioningUpdates が App Store 用プロファイルを
-          # ~/Library/MobileDevice/Provisioning Profiles/ に取得済み。Export は
-          # それと持ち込みの配布証明書(.p12)をローカルで使う。Export に auth key を
-          # 渡すと xcodebuild が「クラウド署名(Apple管理証明書)」を試みて
-          # "Cloud signing permission error / No profiles found" になるため、
-          # Export には auth key を渡さず signingCertificate を明示してローカル署名に固定する。
+          # 「Install provisioning profiles」で App Store 配布プロファイル(Xcode管理)を
+          # ~/Library/MobileDevice/Provisioning Profiles/ へ復元済み。Export は
+          # signingStyle=automatic でそれをローカル発見し、持ち込みの配布証明書(.p12)で署名する。
+          # Export に auth key を渡すとクラウド署名(Apple管理証明書)を試みて権限エラーに
+          # なるため渡さない（= 既存のオンディスク・プロファイル＋ローカル証明書に固定）。
+          # ※ manual は「手動管理プロファイル」を要求し Xcode管理プロファイルを弾くため automatic を使う。
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -150,13 +150,8 @@ jobs:
           <dict>
             <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>$TEAM_ID</string>
-            <key>signingStyle</key><string>manual</string>
+            <key>signingStyle</key><string>automatic</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>com.gymnee.app</key><string>iOS Team Store Provisioning Profile: com.gymnee.app</string>
-              <key>com.gymnee.app.widgets</key><string>iOS Team Store Provisioning Profile: com.gymnee.app.widgets</string>
-            </dict>
             <key>destination</key><string>export</string>
             <key>uploadSymbols</key><true/>
           </dict>
