@@ -41,7 +41,9 @@ jobs:
     name: Build & Upload to TestFlight
     # TESTFLIGHT_ENABLED=true を設定するまではスキップ（シークレット未投入時の誤fail防止）。
     if: ${{ vars.TESTFLIGHT_ENABLED == 'true' }}
-    runs-on: macos-15
+    # Apple は App Store Connect アップロードに iOS 26 SDK (Xcode 26+) を必須化。
+    # macos-26 イメージに同梱の Xcode 26 を使う。
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       SCHEME: Gymnee
@@ -49,8 +51,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select Xcode (latest stable = Xcode 26+)
+        run: |
+          set -euo pipefail
+          # macos-26 既定が 26 系でない場合に備え、明示的に最新の Xcode_26 を選択。
+          latest="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -n "$latest" ]; then sudo xcode-select -s "$latest/Contents/Developer"; fi
+
       - name: Show toolchain
-        run: xcodebuild -version
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios || true
 
       - name: Install XcodeGen
         run: brew install xcodegen
