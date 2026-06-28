@@ -119,6 +119,10 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -o pipefail
+          # ビルド番号は run number に下駄(+100)を履かせ、既存 TestFlight ビルド(=8)を
+          # 常に上回らせる。run number は実行毎に単調増加するので以後も衝突しない。
+          BUILD_NUMBER=$(( ${{ github.run_number }} + 100 ))
+          echo "CFBundleVersion = $BUILD_NUMBER"
           xcodebuild archive \
             -project Gymnee.xcodeproj \
             -scheme "$SCHEME" \
@@ -131,7 +135,7 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
             | tee "$RUNNER_TEMP/archive.log"
 
       - name: Export IPA
