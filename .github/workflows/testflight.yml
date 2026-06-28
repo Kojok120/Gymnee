@@ -9,13 +9,18 @@ name: TestFlight
 #   ASC_API_KEY_P8        同 API キー(.p8) の中身を base64 化した文字列  例) base64 -i AuthKey_XXXX.p8 | pbcopy
 #   DIST_CERT_P12         Apple Distribution 証明書(.p12) を base64 化した文字列（Xcode/Keychain から書き出し。秘密鍵込み）
 #   DIST_CERT_PASSWORD    その .p12 のパスワード
+#   PROV_PROFILE_APP      com.gymnee.app の App Store 配布プロビジョニングプロファイル(.mobileprovision)を base64 化した文字列
+#   PROV_PROFILE_WIDGET   com.gymnee.app.widgets の App Store 配布プロファイルを base64 化した文字列
 #   SECRETS_PROD_XCCONFIG （任意）Config/Secrets.prod.xcconfig の中身を base64 化した文字列。未設定だと example で配信＝バックエンド未接続ビルドになる
 #
 # 必要な「Repository variable」(同画面 → Variables):
 #   TESTFLIGHT_ENABLED = true   ← これを設定するまでこの job はスキップ（=シークレット未設定での赤failを防ぐ安全弁）
 #
-# 署名は ASC API キーによる自動署名（-allowProvisioningUpdates）。App ID/能力/配信証明書は
-# 既存の TestFlight 配信実績のものを再利用する。ビルド番号は GitHub の run number を使い毎回インクリメントする。
+# 署名: Archive は ASC API キーによる自動署名（-allowProvisioningUpdates）、Export は持ち込みの
+# 配布証明書(.p12)＋明示プロビジョニングプロファイル(PROV_PROFILE_*)による手動署名。
+# （Export に ASC キーを渡すとクラウド署名を試みて権限エラーになるため分離している。）
+# App ID/能力/配信証明書は既存の TestFlight 配信実績のものを再利用する。
+# ビルド番号は GitHub の run number を使い毎回インクリメントする。
 
 on:
   push:
@@ -84,6 +89,18 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
           rm -f "$RUNNER_TEMP/cert.p12"
 
+      - name: Install provisioning profiles
+        # Export の手動署名用に App Store 配布プロファイルを所定の場所へ復元。
+        env:
+          PROV_PROFILE_APP: ${{ secrets.PROV_PROFILE_APP }}
+          PROV_PROFILE_WIDGET: ${{ secrets.PROV_PROFILE_WIDGET }}
+        run: |
+          set -euo pipefail
+          PP="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PP"
+          echo "$PROV_PROFILE_APP" | base64 --decode > "$PP/gymnee_app_appstore.mobileprovision"
+          echo "$PROV_PROFILE_WIDGET" | base64 --decode > "$PP/gymnee_widgets_appstore.mobileprovision"
+
       - name: Place App Store Connect API key
         env:
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
@@ -133,8 +150,13 @@ jobs:
           <dict>
             <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>$TEAM_ID</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.gymnee.app</key><string>iOS Team Store Provisioning Profile: com.gymnee.app</string>
+              <key>com.gymnee.app.widgets</key><string>iOS Team Store Provisioning Profile: com.gymnee.app.widgets</string>
+            </dict>
             <key>destination</key><string>export</string>
             <key>uploadSymbols</key><true/>
           </dict>
