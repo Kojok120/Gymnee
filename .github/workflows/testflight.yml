@@ -9,13 +9,18 @@ name: TestFlight
 #   ASC_API_KEY_P8        同 API キー(.p8) の中身を base64 化した文字列  例) base64 -i AuthKey_XXXX.p8 | pbcopy
 #   DIST_CERT_P12         Apple Distribution 証明書(.p12) を base64 化した文字列（Xcode/Keychain から書き出し。秘密鍵込み）
 #   DIST_CERT_PASSWORD    その .p12 のパスワード
+#   PROV_PROFILE_APP      com.gymnee.app の App Store 配布プロビジョニングプロファイル(.mobileprovision)を base64 化した文字列
+#   PROV_PROFILE_WIDGET   com.gymnee.app.widgets の App Store 配布プロファイルを base64 化した文字列
 #   SECRETS_PROD_XCCONFIG （任意）Config/Secrets.prod.xcconfig の中身を base64 化した文字列。未設定だと example で配信＝バックエンド未接続ビルドになる
 #
 # 必要な「Repository variable」(同画面 → Variables):
 #   TESTFLIGHT_ENABLED = true   ← これを設定するまでこの job はスキップ（=シークレット未設定での赤failを防ぐ安全弁）
 #
-# 署名は ASC API キーによる自動署名（-allowProvisioningUpdates）。App ID/能力/配信証明書は
-# 既存の TestFlight 配信実績のものを再利用する。ビルド番号は GitHub の run number を使い毎回インクリメントする。
+# 署名: Archive は ASC API キーによる自動署名（-allowProvisioningUpdates）、Export は持ち込みの
+# 配布証明書(.p12)＋明示プロビジョニングプロファイル(PROV_PROFILE_*)による手動署名。
+# （Export に ASC キーを渡すとクラウド署名を試みて権限エラーになるため分離している。）
+# App ID/能力/配信証明書は既存の TestFlight 配信実績のものを再利用する。
+# ビルド番号は GitHub の run number を使い毎回インクリメントする。
 
 on:
   push:
@@ -36,7 +41,9 @@ jobs:
     name: Build & Upload to TestFlight
     # TESTFLIGHT_ENABLED=true を設定するまではスキップ（シークレット未投入時の誤fail防止）。
     if: ${{ vars.TESTFLIGHT_ENABLED == 'true' }}
-    runs-on: macos-15
+    # Apple は App Store Connect アップロードに iOS 26 SDK (Xcode 26+) を必須化。
+    # macos-26 イメージに同梱の Xcode 26 を使う。
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       SCHEME: Gymnee
@@ -44,8 +51,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select Xcode (latest stable = Xcode 26+)
+        run: |
+          set -euo pipefail
+          # macos-26 既定が 26 系でない場合に備え、明示的に最新の Xcode_26 を選択。
+          latest="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -n "$latest" ]; then sudo xcode-select -s "$latest/Contents/Developer"; fi
+
       - name: Show toolchain
-        run: xcodebuild -version
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios || true
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -84,6 +100,18 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
           rm -f "$RUNNER_TEMP/cert.p12"
 
+      - name: Install provisioning profiles
+        # Export の手動署名用に App Store 配布プロファイルを所定の場所へ復元。
+        env:
+          PROV_PROFILE_APP: ${{ secrets.PROV_PROFILE_APP }}
+          PROV_PROFILE_WIDGET: ${{ secrets.PROV_PROFILE_WIDGET }}
+        run: |
+          set -euo pipefail
+          PP="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PP"
+          echo "$PROV_PROFILE_APP" | base64 --decode > "$PP/gymnee_app_appstore.mobileprovision"
+          echo "$PROV_PROFILE_WIDGET" | base64 --decode > "$PP/gymnee_widgets_appstore.mobileprovision"
+
       - name: Place App Store Connect API key
         env:
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
@@ -102,6 +130,10 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -o pipefail
+          # ビルド番号は run number に下駄(+100)を履かせ、既存 TestFlight ビルド(=8)を
+          # 常に上回らせる。run number は実行毎に単調増加するので以後も衝突しない。
+          BUILD_NUMBER=$(( ${{ github.run_number }} + 100 ))
+          echo "CFBundleVersion = $BUILD_NUMBER"
           xcodebuild archive \
             -project Gymnee.xcodeproj \
             -scheme "$SCHEME" \
@@ -114,23 +146,27 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
             | tee "$RUNNER_TEMP/archive.log"
 
       - name: Export IPA
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           set -euo pipefail
+          # 「Install provisioning profiles」で App Store 配布プロファイル(Xcode管理)を
+          # ~/Library/MobileDevice/Provisioning Profiles/ へ復元済み。Export は
+          # signingStyle=automatic でそれをローカル発見し、持ち込みの配布証明書(.p12)で署名する。
+          # Export に auth key を渡すとクラウド署名(Apple管理証明書)を試みて権限エラーに
+          # なるため渡さない（= 既存のオンディスク・プロファイル＋ローカル証明書に固定）。
+          # ※ manual は「手動管理プロファイル」を要求し Xcode管理プロファイルを弾くため automatic を使う。
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-            <key>method</key><string>app-store</string>
+            <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>$TEAM_ID</string>
             <key>signingStyle</key><string>automatic</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
             <key>destination</key><string>export</string>
             <key>uploadSymbols</key><true/>
           </dict>
@@ -139,11 +175,7 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Gymnee.xcarchive" \
             -exportPath "$RUNNER_TEMP/export" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -allowProvisioningUpdates \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
       - name: Upload to TestFlight
         env:
