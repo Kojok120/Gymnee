@@ -151,6 +151,27 @@ final class SwiftDataSyncStore: SyncBackingStore {
         }
     }
 
+    /// 他端末での DELETE（いいね取消／コメント削除）をローカルへ伝播する。
+    /// サーバー全件 id（serverIds）を正として、未送出でない（isDirty=false の）ローカル行のうち
+    /// サーバーに存在しないものを削除する。未送出（自分が作成しまだ push していない）行は守る。
+    func reconcile(table: String, serverIds: Set<UUID>) {
+        var changed = false
+        switch table {
+        case "post_reactions":
+            let locals = (try? context.fetch(FetchDescriptor<PostReaction>())) ?? []
+            let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
+            for r in locals where orphans.contains(r.id) { context.delete(r); changed = true }
+        case "comments":
+            let locals = (try? context.fetch(FetchDescriptor<Comment>())) ?? []
+            let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
+            for c in locals where orphans.contains(c.id) { context.delete(c); changed = true }
+        default:
+            return
+        }
+        guard changed else { return }
+        do { try context.save() } catch { context.rollback() }
+    }
+
     /// 既存があり、ローカルの方が新しければ true（＝リモートを捨てる）。LWW（§9-7）。
     private func remoteIsStale(localUpdatedAt: Date?, _ row: [String: Any]) -> Bool {
         guard let localUpdatedAt else { return false }

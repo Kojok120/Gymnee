@@ -146,6 +146,38 @@ struct GymneeSecondaryButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - 通知バッジ（iOS 風の赤い丸 + 数字）
+
+/// 右上に iOS 風の通知バッジを重ねる。`count <= 0` なら何も出さない。99 超は "99+"。
+/// アイコンやボタンに `.notificationBadge(unread)` の形で当てる（タップは下のビューへ素通し）。
+private struct NotificationBadge: ViewModifier {
+    let count: Int
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .topTrailing) {
+            if count > 0 {
+                Text(count > 99 ? "99+" : "\(count)")
+                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(Theme.danger, in: Capsule())
+                    .overlay { Capsule().strokeBorder(Theme.bg1, lineWidth: 1.5) }
+                    .offset(x: 9, y: -9)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("未読 \(count) 件")
+            }
+        }
+    }
+}
+
+extension View {
+    /// 右上に未読数の赤バッジを重ねる（0 以下は非表示）。
+    func notificationBadge(_ count: Int) -> some View {
+        modifier(NotificationBadge(count: count))
+    }
+}
+
 extension ButtonStyle where Self == GymneePrimaryButtonStyle {
     static var gymneePrimary: GymneePrimaryButtonStyle { .init() }
     static func gymneePrimary(fullWidth: Bool) -> GymneePrimaryButtonStyle { .init(fullWidth: fullWidth) }

@@ -16,9 +16,15 @@ struct MyPostsView: View {
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @Query private var allReactions: [PostReaction]
+    @Query private var allComments: [Comment]
+    @Query private var blocks: [Block]
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
+    /// 通知を最後に見た時刻。ベルの未読バッジ算出に使う。
+    @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
     /// タップで開く投稿詳細（全投稿共通：リッチ詳細＋リアクションした人＋コメント）。
     @State private var postDetail: FeedEntry?
+    /// 通知一覧（ベルから push）。
+    @State private var showInbox = false
 
     init(userId: UUID, visibilityStore: PostVisibilityStore, onClose: @escaping () -> Void) {
         self.userId = userId
@@ -27,9 +33,24 @@ struct MyPostsView: View {
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
+        _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
+    private var blockedIds: Set<UUID> { Set(blocks.map(\.blockedId)) }
+    /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
+    /// feed_item.id == 元データ id。削除直後でも実体（visit/pr/workout）から導き、stale な feedItems に依存しない。
+    private var myPostIds: Set<UUID> {
+        Set(visits.map(\.id))
+            .union(prs.map(\.id))
+            .union(workouts.filter { $0.completedAt != nil }.map(\.id))
+    }
+    /// 自分の投稿に付いた他者反応の未読数（ベルの赤バッジ）。
+    private var socialUnread: Int {
+        SocialActivityFeed.unreadCount(reactions: allReactions, comments: allComments,
+                                       myPostIds: myPostIds, currentUserId: userId,
+                                       blockedIds: blockedIds, lastSeen: lastSeenActivityAt)
+    }
 
     private var entries: [FeedEntry] {
         FeedBuilder.build(
@@ -69,6 +90,15 @@ struct MyPostsView: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button("閉じる") { onClose() }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showInbox = true } label: {
+                    Image(systemName: "bell").notificationBadge(socialUnread)
+                }
+                .accessibilityLabel("通知")
+            }
+        }
+        .navigationDestination(isPresented: $showInbox) {
+            SocialActivityView(userId: userId)
         }
         .sheet(item: $postDetail) { entry in
             PostDetailView(entry: entry, currentUserId: userId,

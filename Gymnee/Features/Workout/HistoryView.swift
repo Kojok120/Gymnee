@@ -39,6 +39,8 @@ struct HistoryView: View {
 /// 全期間の完了ワークアウトを日付降順で取得し、月ごとにセクション分けして並べる。
 private struct DateHistoryList: View {
     let userId: UUID
+    @Environment(\.modelContext) private var context
+    @Environment(LocalSyncEngine.self) private var sync
     @Query private var workouts: [Workout]
     /// 進行中の下書き（未完了・予定でない）。中身のあるものだけ「下書き」として一覧先頭に出す。
     @Query private var draftWorkouts: [Workout]
@@ -89,6 +91,9 @@ private struct DateHistoryList: View {
                                     WorkoutRow(workout: workout)
                                 }
                             }
+                            .swipeActions {
+                                Button("削除", role: .destructive) { deleteWorkout(workout) }
+                            }
                         }
                     }
                 }
@@ -117,6 +122,15 @@ private struct DateHistoryList: View {
                     .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(2)
             }
         }
+    }
+
+    /// 記録一覧からワークアウトを削除（カレンダー→日付詳細と同じ挙動）。
+    /// ローカル保存が成功した時だけ outbox に積む（保存失敗時にサーバーだけ消えるのを防ぐ）。
+    private func deleteWorkout(_ workout: Workout) {
+        let id = workout.id
+        context.delete(workout) // 配下の workout_exercises / exercise_sets は cascade で削除
+        do { try context.save() } catch { return }
+        sync.enqueue(PendingChange(entity: "workouts", recordId: id, operation: .delete, updatedAt: .now))
     }
 
     private func monthStart(_ date: Date) -> Date {

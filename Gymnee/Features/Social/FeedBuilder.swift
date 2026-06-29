@@ -92,6 +92,8 @@ struct FeedEntry: Identifiable {
     let photoFilename: String?
     let visibility: Visibility
     let partners: [String]
+    /// 他人の投稿のとき著者の userId（プロフィール遷移用。自分の投稿は nil）。
+    var authorId: UUID? = nil
     /// 他人の投稿のとき著者名（自分の投稿は nil）。
     var authorName: String? = nil
     /// 他人の投稿のとき著者アバターの公開URL。
@@ -221,6 +223,7 @@ enum FeedBuilder {
                 photoFilename: nil,
                 visibility: item.visibility,
                 partners: [],
+                authorId: item.userId,
                 authorName: profile?.displayName ?? item.authorDisplayName ?? "ユーザー",
                 authorAvatarURL: profile?.avatarURL,
                 stats: stats?.feedStats ?? [],

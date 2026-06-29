@@ -198,6 +198,7 @@ enum SeedData {
         .init(name: "ダンベルプレス", muscle: .chest, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "チェストプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "ペックフライ", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "スミスマシンベンチプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "ディップス", muscle: .chest, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // 背中
         .init(name: "デッドリフト", muscle: .back, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
@@ -207,6 +208,7 @@ enum SeedData {
         .init(name: "懸垂", muscle: .back, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // 脚
         .init(name: "スクワット", muscle: .legs, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "スミスマシンスクワット", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "レッグプレス", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "レッグエクステンション", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "レッグカール", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
@@ -214,6 +216,7 @@ enum SeedData {
         .init(name: "カーフレイズ", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         // 肩
         .init(name: "ショルダープレス", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "スミスマシンショルダープレス", muscle: .shoulders, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "サイドレイズ", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "リアレイズ", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "アップライトロウ", muscle: .shoulders, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),

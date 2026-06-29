@@ -126,6 +126,16 @@ actor SupabaseClient {
         return (json as? [[String: Any]]) ?? []
     }
 
+    /// 当該テーブルの id だけを最大 `limit` 件取得する（削除照合用。本体列を取らず軽量）。
+    /// 返り件数が `limit` に達したら呼び出し側で「打ち切り」とみなすこと。
+    func selectIds(table: String, limit: Int) async throws -> [UUID] {
+        var request = restRequest(path: table, query: "select=id&limit=\(limit)")
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        let json = (try JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+        return json.compactMap { ($0["id"] as? String).flatMap { UUID(uuidString: $0) } }
+    }
+
     /// 指定 id 群のプロフィールを更新時刻に依存せず取得する。
     /// 差分 pull（updated_at > 基準）はフォロー後追い相手の古いプロフィールを取り込めないため、
     /// フォロー中/フィード著者のプロフィールはこの id 指定取得で確実にローカルへ反映する。

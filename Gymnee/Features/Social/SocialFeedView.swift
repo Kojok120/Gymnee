@@ -45,6 +45,8 @@ private struct SocialContent: View {
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     /// ソーシャル初回利用時のコミュニティガイドライン同意（1.2.5）。
     @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
+    /// 通知（自分の投稿への他者反応）を最後に見た時刻。アイコンの未読バッジ算出に使う。
+    @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
 
     @State private var tab = 0
     /// フレンドタブ内のサブタブ（0=フレンド, 1=合トレ履歴）。
@@ -105,6 +107,19 @@ private struct SocialContent: View {
     private var pendingFollowBack: [Follow] {
         let followingIds = Set(following.map(\.followeeId))
         return follows.filter { $0.followeeId == userId && !followingIds.contains($0.followerId) && !blockedIds.contains($0.followerId) }
+    }
+    /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
+    /// feed_item.id == 元データ id。削除直後でも実体（visit/pr/workout）から導き、stale な feedItems に依存しない。
+    private var myPostIds: Set<UUID> {
+        Set(visits.map(\.id))
+            .union(prs.map(\.id))
+            .union(workouts.filter { $0.completedAt != nil }.map(\.id))
+    }
+    /// 自分の投稿に付いた他者反応の未読数（アイコンの赤バッジ）。
+    private var socialUnread: Int {
+        SocialActivityFeed.unreadCount(reactions: allReactions, comments: allComments,
+                                       myPostIds: myPostIds, currentUserId: userId,
+                                       blockedIds: blockedIds, lastSeen: lastSeenActivityAt)
     }
     /// feed_items の著者名（profiles 行が無い相手でも名前を出せる安全網）。
     private func feedAuthorName(for id: UUID) -> String? {
@@ -180,6 +195,7 @@ private struct SocialContent: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showMyPosts = true } label: {
                     Image(systemName: "person.crop.rectangle.stack")
+                        .notificationBadge(socialUnread)
                 }
                 .accessibilityLabel("自分の投稿")
             }

@@ -16,7 +16,6 @@ struct AddProgressPhotoView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var showCamera = false
     @State private var date = Date.now
-    @State private var visibility: Visibility = .private
     @State private var note = ""
 
     var body: some View {
@@ -43,13 +42,10 @@ struct AddProgressPhotoView: View {
                 }
                 Section("日付") { DatePicker("日付", selection: $date, displayedComponents: .date) }
                 Section {
-                    Picker("公開範囲", selection: $visibility) {
-                        ForEach(Visibility.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                } header: {
-                    Text("公開範囲")
+                    Label("非公開（自分のみ）", systemImage: "lock.fill")
+                        .foregroundStyle(.secondary)
                 } footer: {
-                    Text("体型写真は既定で非公開です。")
+                    Text("体型写真は常に非公開です。他のユーザーには表示されません。")
                 }
                 Section("メモ") { TextField("メモ", text: $note) }
             }
@@ -81,7 +77,8 @@ struct AddProgressPhotoView: View {
             errors.report("写真を保存できませんでした。")
             return
         }
-        let photo = ProgressPhoto(userId: userId, date: date, localPhotoFilename: filename, visibility: visibility, note: note.isEmpty ? nil : note)
+        // 体型写真はセンシティブなため常に非公開（公開させない）。
+        let photo = ProgressPhoto(userId: userId, date: date, localPhotoFilename: filename, visibility: .private, note: note.isEmpty ? nil : note)
         context.insert(photo)
         do {
             try context.save()
