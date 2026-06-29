@@ -480,12 +480,13 @@ private struct CalendarHomeContent: View {
     }
 
     /// 曜日記号・月タイトル用の DateFormatter は生成コストが高いため共有する（毎描画で作らない）。
-    private static let weekdayFormatter: DateFormatter = {
+    /// DateFormatter は可変の共有状態なので MainActor に隔離する（UI からのみ参照）。
+    @MainActor private static let weekdayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
         return f
     }()
-    private static let titleFormatter: DateFormatter = {
+    @MainActor private static let titleFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
         f.dateFormat = "yyyy年 M月"
