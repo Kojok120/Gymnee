@@ -1030,3 +1030,14 @@ grant execute on function public.set_device_token(text, text) to authenticated;
 -- ============================================================
 -- 有酸素種目（cardio）の距離km。距離km ＋ 時間（duration_seconds に分×60で保存）で記録する。
 alter table public.exercise_sets add column if not exists distance_km double precision;
+-- 距離は 0 以上のみ許可（負値が同期 payload 経由で全端末へ複製されるのを防ぐ）。
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'exercise_sets_distance_km_non_negative'
+  ) then
+    alter table public.exercise_sets
+      add constraint exercise_sets_distance_km_non_negative
+      check (distance_km is null or distance_km >= 0);
+  end if;
+end $$;
