@@ -199,26 +199,41 @@ final class LocalSyncEngine: SyncEngine {
         lastError = lastErr
     }
 
+    /// pull のネットワーク取得結果を MainActor 上に集める入れ物。
+    /// [[String: Any]]（非 Sendable）を並行タスクの境界を越えて渡さずに済ませるため、
+    /// @MainActor に隔離した参照型に貯める（書き込みは全て MainActor 上で直列）。
+    @MainActor
+    private final class PulledRows {
+        var byTable: [String: [[String: Any]]] = [:]
+    }
+
     /// リモート差分を取り込み、ConflictResolver でローカルへ統合する。
     func pull() async throws {
         guard let remote, let store else { return } // リモート未設定＝no-op
 
-        // テーブル間に取り込み順依存は無い（衝突解決は ConflictResolver で行単位）。各テーブルの
-        // ネットワーク取得を並列化し、直列だと 19 テーブル分積み上がる往復レイテンシを解消する。
-        // select は actor 上で並行実行され、apply/setLastPulledAt は @MainActor の子タスクで順次反映する。
+        // ネットワーク取得(select)だけを並列化し、直列だと 19 テーブル分積み上がる往復レイテンシを解消する。
+        // ただし apply は FK 依存順（親→子）で順次に行う必要がある：SwiftDataSyncStore は
+        // workout_exercises/exercise_sets の適用時に親 workout/exercise を即 fetch して関連を張るため、
+        // 親が未適用のまま子を適用すると関連が nil 保存され、しかも lastPulledAt が進んで次回も修復されず孤児化する。
         let targets = syncedTables.map { (table: $0, since: store.lastPulledAt(table: $0)) }
+        let collected = PulledRows()
         await withTaskGroup(of: Void.self) { group in
             for target in targets {
                 group.addTask { @MainActor in
                     // 個別テーブル失敗は握りつぶし、他テーブルを継続（best-effort 差分 pull）。
                     guard let rows = try? await remote.select(table: target.table, updatedSince: target.since),
                           !rows.isEmpty else { return }
-                    store.apply(table: target.table, rows: rows)
-                    // 取得行の最大 updated_at を次回基準にする。
-                    if let newest = Self.newestUpdatedAt(in: rows) {
-                        store.setLastPulledAt(newest, table: target.table)
-                    }
+                    collected.byTable[target.table] = rows
                 }
+            }
+        }
+        // syncedTables の並びが依存順（親→子）。その順に適用し、孤児化を防ぐ。
+        for table in syncedTables {
+            guard let rows = collected.byTable[table] else { continue }
+            store.apply(table: table, rows: rows)
+            // 取得行の最大 updated_at を次回基準にする。
+            if let newest = Self.newestUpdatedAt(in: rows) {
+                store.setLastPulledAt(newest, table: table)
             }
         }
     }
