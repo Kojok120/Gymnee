@@ -99,8 +99,7 @@ enum MuscleGroup: String, Codable, CaseIterable, Sendable {
     case back
     case legs
     case shoulders
-    case biceps
-    case triceps
+    case arms
     case abs
     case core
     case glutes
@@ -114,8 +113,7 @@ enum MuscleGroup: String, Codable, CaseIterable, Sendable {
         case .back: return "背中"
         case .legs: return "脚"
         case .shoulders: return "肩"
-        case .biceps: return "二頭"
-        case .triceps: return "三頭"
+        case .arms: return "二頭・三頭"
         case .abs: return "腹"
         case .core: return "体幹"
         case .glutes: return "臀部"

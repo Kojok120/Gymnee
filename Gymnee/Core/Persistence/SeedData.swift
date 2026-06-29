@@ -8,8 +8,25 @@ enum SeedData {
     @MainActor
     static func seedIfNeeded(_ context: ModelContext) {
         seedGyms(context)
+        migrateMuscleGroups(context)
         seedExercises(context)
         seedProducts(context)
+        try? context.save()
+    }
+
+    /// 旧部位「二頭(biceps)」「三頭(triceps)」を「二頭・三頭(arms)」へ統合する（既存データ移行）。
+    /// 起動ごとに走り、未移行の種目を arms に寄せる。isDirty=true で次回同期時にサーバへも反映される。
+    @MainActor
+    private static func migrateMuscleGroups(_ context: ModelContext) {
+        let legacy = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate {
+            $0.muscleGroupRaw == "biceps" || $0.muscleGroupRaw == "triceps"
+        }))) ?? []
+        guard !legacy.isEmpty else { return }
+        for ex in legacy {
+            ex.muscleGroupRaw = "arms"
+            ex.updatedAt = .now
+            ex.isDirty = true
+        }
         try? context.save()
     }
 
@@ -158,11 +175,11 @@ enum SeedData {
         ("リアレイズ", .shoulders, .dumbbell, .weight),
         ("アップライトロウ", .shoulders, .barbell, .weight),
         // 腕
-        ("バーベルカール", .biceps, .barbell, .weight),
-        ("ダンベルカール", .biceps, .dumbbell, .weight),
-        ("ハンマーカール", .biceps, .dumbbell, .weight),
-        ("トライセプスプレスダウン", .triceps, .cable, .weight),
-        ("スカルクラッシャー", .triceps, .barbell, .weight),
+        ("バーベルカール", .arms, .barbell, .weight),
+        ("ダンベルカール", .arms, .dumbbell, .weight),
+        ("ハンマーカール", .arms, .dumbbell, .weight),
+        ("トライセプスプレスダウン", .arms, .cable, .weight),
+        ("スカルクラッシャー", .arms, .barbell, .weight),
         // 腹
         ("クランチ", .abs, .bodyweight, .bodyweight),
         ("シットアップ", .abs, .bodyweight, .bodyweight),

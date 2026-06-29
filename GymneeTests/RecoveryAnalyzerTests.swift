@@ -10,11 +10,11 @@ final class RecoveryAnalyzerTests: XCTestCase {
     }
 
     func testRecentlyTrainedNotRecovered() {
-        // 二頭は回復48h。24h前 → 未回復、進捗0.5。
-        let statuses = RecoveryAnalyzer.statuses(lastTrained: [.biceps: hoursAgo(24)], asOf: now)
-        let biceps = statuses.first { $0.muscle == .biceps }!
-        XCTAssertFalse(biceps.isRecovered)
-        XCTAssertEqual(biceps.recoveryProgress, 0.5, accuracy: 0.01)
+        // 二頭・三頭(arms)は回復48h。24h前 → 未回復、進捗0.5。
+        let statuses = RecoveryAnalyzer.statuses(lastTrained: [.arms: hoursAgo(24)], asOf: now)
+        let arms = statuses.first { $0.muscle == .arms }!
+        XCTAssertFalse(arms.isRecovered)
+        XCTAssertEqual(arms.recoveryProgress, 0.5, accuracy: 0.01)
     }
 
     func testFullyRestedIsRecovered() {
