@@ -208,10 +208,11 @@ struct DayDetailView: View {
         onEditWorkout(workout)
     }
 
-    /// 計画を開始＝実記録に変えてロガーを開く。
+    /// 計画を開始＝実記録に変えて記録タブで開く（過去ワークアウトの編集はカレンダー内のまま）。
     private func startPlan(_ plan: PlannedWorkout) {
         let workout = PlanStarter.start(plan, userId: userId, routines: routines, context: context)
-        onEditWorkout(workout)
+        NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil,
+                                        userInfo: ["workoutId": workout.id.uuidString])
     }
 
     private func planExerciseCount(_ plan: PlannedWorkout) -> Int? {

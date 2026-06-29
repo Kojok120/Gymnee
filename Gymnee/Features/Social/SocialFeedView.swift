@@ -218,6 +218,8 @@ private struct SocialContent: View {
 
     // フレンド/ランキングと容器(List)を統一してタブ切替の描画を滑らかに。重い構築はメモ化(feedEntries)。
     private var feed: some View {
+        // リアクション/コメントは内容変更（種別変更=件数不変）でも即反映する必要があるため、
+        // 件数キーのキャッシュは使わず描画時に直接導出する（feedEntries のような重い構築のみメモ化）。
         let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
         // コメント件数（ブロック相手のコメントは数えない）。
         let commentsByItem = Dictionary(grouping: allComments.filter { !blockedIds.contains($0.userId) }, by: \.feedItemId)

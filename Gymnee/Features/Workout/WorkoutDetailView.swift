@@ -19,22 +19,18 @@ struct WorkoutDetailView: View {
                     Label(visit.gym?.name ?? "ジム", systemImage: "building.2.fill")
                 }
             }
-            ForEach(workout.exercises.sorted { $0.orderIndex < $1.orderIndex }) { we in
+            ForEach(visibleExercises.sorted { $0.orderIndex < $1.orderIndex }) { we in
                 Section(we.exercise?.name ?? "種目") {
-                    if we.sets.isEmpty {
-                        Text("セットなし").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(we.sets.sorted { $0.setIndex < $1.setIndex }) { set in
-                            HStack {
-                                Text("セット\(set.setIndex + 1)").foregroundStyle(.secondary)
-                                Spacer()
-                                Text(set.detailText).monospacedDigit()
-                                if set.isPR {
-                                    Image(systemName: "trophy.fill").foregroundStyle(.yellow)
-                                }
+                    ForEach(we.sets.sorted { $0.setIndex < $1.setIndex }) { set in
+                        HStack {
+                            Text("セット\(set.setIndex + 1)").foregroundStyle(.secondary)
+                            Spacer()
+                            Text(set.detailText).monospacedDigit()
+                            if set.isPR {
+                                Image(systemName: "trophy.fill").foregroundStyle(.yellow)
                             }
-                            .font(.subheadline)
                         }
+                        .font(.subheadline)
                     }
                 }
             }
@@ -62,9 +58,14 @@ struct WorkoutDetailView: View {
         return v.isFinite ? Int(v) : 0   // 非有限混入時も Int(∞) でトラップしない
     }
 
+    /// 表示する種目（セットのある種目のみ。ヘッダ集計と本文セクションで基準を揃える）。
+    private var visibleExercises: [WorkoutExercise] {
+        workout.exercises.filter { !$0.sets.isEmpty }
+    }
+
     /// ヘッダの集計行（種目数・セット数・総容量・所要時間）。
     private var headerStats: String {
-        var parts = ["\(workout.exercises.count)種目", "\(totalSets)セット", "総容量 \(totalVolume)kg"]
+        var parts = ["\(visibleExercises.count)種目", "\(totalSets)セット", "総容量 \(totalVolume)kg"]
         if let end = workout.completedAt {
             let mins = max(1, Int(end.timeIntervalSince(workout.date) / 60))
             parts.append("\(mins)分")

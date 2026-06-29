@@ -81,7 +81,12 @@ private struct CalendarHomeContent: View {
         .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
         .sheet(isPresented: $showPlanner) {
             NavigationStack {
-                WeekPlannerView(userId: userId, onStart: { w in showPlanner = false; editingWorkout = w })
+                WeekPlannerView(userId: userId, onStart: { w in
+                    // 計画の開始は記録タブで開く（カレンダータブ内に留めない）。
+                    showPlanner = false
+                    NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil,
+                                                    userInfo: ["workoutId": w.id.uuidString])
+                })
                     .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showPlanner = false } } }
             }
         }
@@ -474,17 +479,26 @@ private struct CalendarHomeContent: View {
         return ("sparkles", "新しい週。まずは1回チェックインしてみよう。")
     }
 
-    private var weekdaySymbols: [String] {
+    /// 曜日記号・月タイトル用の DateFormatter は生成コストが高いため共有する（毎描画で作らない）。
+    /// DateFormatter は可変の共有状態なので MainActor に隔離する（UI からのみ参照）。
+    @MainActor private static let weekdayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
-        return f.veryShortStandaloneWeekdaySymbols
-    }
-
-    private var titleText: String {
+        return f
+    }()
+    @MainActor private static let titleFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
         f.dateFormat = "yyyy年 M月"
-        return f.string(from: anchor)
+        return f
+    }()
+
+    private var weekdaySymbols: [String] {
+        Self.weekdayFormatter.veryShortStandaloneWeekdaySymbols
+    }
+
+    private var titleText: String {
+        Self.titleFormatter.string(from: anchor)
     }
 
     /// 表示対象の日配列。前後の空白を nil で埋めた当月のグリッド。

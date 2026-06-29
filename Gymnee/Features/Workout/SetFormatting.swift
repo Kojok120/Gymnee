@@ -15,6 +15,11 @@ extension ExerciseSet {
         if measurement == .time, let seconds = durationSeconds {
             return "\(seconds)秒"
         }
+        if measurement == .cardio {
+            let km = SetFormatting.weightString(distanceKm ?? 0)
+            let mins = (durationSeconds ?? 0) / 60
+            return "\(km)km · \(mins)分"
+        }
         let w = SetFormatting.weightString(weight)
         switch measurement {
         case .bodyweight:
@@ -23,7 +28,7 @@ extension ExerciseSet {
             case .weighted: return weight > 0 ? "自重+\(w)kg × \(reps)" : "自重 × \(reps)"
             case .assisted: return weight > 0 ? "補助\(w)kg × \(reps)" : "自重 × \(reps)"
             }
-        case .weight, .time:
+        case .weight, .time, .cardio:
             return "\(w)kg × \(reps)"
         }
     }

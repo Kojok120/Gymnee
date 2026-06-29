@@ -99,11 +99,13 @@ enum MuscleGroup: String, Codable, CaseIterable, Sendable {
     case back
     case legs
     case shoulders
-    case biceps
-    case triceps
+    case arms
+    case abs
     case core
     case glutes
+    case cardio
     case fullBody = "full_body"
+    case other
 
     var label: String {
         switch self {
@@ -111,11 +113,13 @@ enum MuscleGroup: String, Codable, CaseIterable, Sendable {
         case .back: return "背中"
         case .legs: return "脚"
         case .shoulders: return "肩"
-        case .biceps: return "二頭"
-        case .triceps: return "三頭"
+        case .arms: return "二頭・三頭"
+        case .abs: return "腹"
         case .core: return "体幹"
         case .glutes: return "臀部"
+        case .cardio: return "有酸素"
         case .fullBody: return "全身"
+        case .other: return "その他"
         }
     }
 }
@@ -143,15 +147,18 @@ enum EquipmentType: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// 重量の数え方（§6.5）。ダンベル等で片側の重量を入力するか、合計（両側）を入力するか。
+/// 重量の数え方（§6.5・表示ラベル）。ダンベル等で片側の重量か合計（両側）か、または区別なし。
+/// 表示専用でボリューム/PR 計算には影響しない（入力値をそのまま記録に使う）。
 enum WeightMode: String, Codable, CaseIterable, Sendable {
     case both       // 両側・合計（バーベル等）
-    case perSide    // 片側（ダンベル等。実効ボリュームは ×2 相当）
+    case perSide    // 片側（ダンベル等）
+    case none       // 片側/両側の区別なし（マシン/ケーブル/ヒップスラスト等）。ラベルは表示しない
 
     var label: String {
         switch self {
         case .both: return "両側"
         case .perSide: return "片側"
+        case .none: return "指定なし"
         }
     }
     /// バッジ用の短縮表記。
@@ -159,6 +166,7 @@ enum WeightMode: String, Codable, CaseIterable, Sendable {
         switch self {
         case .both: return "両"
         case .perSide: return "片"
+        case .none: return ""
         }
     }
 }
@@ -214,19 +222,22 @@ enum MeasurementType: String, Codable, CaseIterable, Sendable {
     case weight
     case bodyweight
     case time
+    /// 有酸素（距離km ＋ 時間分）。ランニング/ウォーキング/バイシクル等。
+    case cardio
 
     var label: String {
         switch self {
         case .weight: return "ウェイト"
         case .bodyweight: return "自重"
         case .time: return "時間"
+        case .cardio: return "有酸素"
         }
     }
 
-    /// 重量（加重）軸を持つか。time のみ false。
-    var hasWeightAxis: Bool { self != .time }
-    /// reps 軸を持つか。time のみ false（秒で記録）。
-    var hasRepsAxis: Bool { self != .time }
+    /// 重量（加重）軸を持つか。time / cardio は false。
+    var hasWeightAxis: Bool { self == .weight || self == .bodyweight }
+    /// reps 軸を持つか。time / cardio は false（秒・距離/時間で記録）。
+    var hasRepsAxis: Bool { self == .weight || self == .bodyweight }
 }
 
 /// 投稿へのリアクション種別（§6.11 ゲーミフィケーション）。いいねのみ。

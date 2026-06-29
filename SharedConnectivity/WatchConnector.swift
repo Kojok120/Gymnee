@@ -12,6 +12,8 @@ extension Notification.Name {
     static let gymneeShowAnalytics = Notification.Name("gymnee.showAnalytics")
     /// 記録のキャンセル等からカレンダータブへ切替えるための要求。
     static let gymneeShowCalendar = Notification.Name("gymnee.showCalendar")
+    /// 計画/予定の「開始」から、記録タブで当該ワークアウトを開く要求（userInfo: workoutId）。
+    static let gymneeStartWorkout = Notification.Name("gymnee.startWorkout")
     /// 通知タップ等から目的地（タブ）へ遷移する要求（userInfo: type/feedItemId）。
     static let gymneeOpenDestination = Notification.Name("gymnee.openDestination")
     /// Watch：本体から最新スナップショットを受信した。

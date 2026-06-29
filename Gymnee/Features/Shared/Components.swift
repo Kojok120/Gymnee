@@ -1,30 +1,5 @@
 import SwiftUI
 
-// MARK: - Coming soon (暫定)
-
-/// 未実装タブの暫定表示（フェーズ進行に伴い各機能画面へ置き換える）。
-struct ComingSoonView: View {
-    let title: String
-    var systemImage: String = "hammer.fill"
-    var note: String = "このフェーズは順次実装します。"
-
-    var body: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            Image(systemName: systemImage)
-                .font(.system(size: 44))
-                .foregroundStyle(Theme.lime)
-            Text(title).font(.title2.bold())
-            Text(note)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(Theme.Spacing.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.bg0)
-    }
-}
-
 // MARK: - Overline label (大数値の上に置く小ラベル)
 
 /// 大文字・字間広めの小見出し。メトリクスの意味を示す（VOLUME / 1RM / STREAK）。
@@ -100,34 +75,6 @@ struct StatPill: View {
     }
 }
 
-// MARK: - Metric block (大数値 + 単位 + ラベル)
-
-/// 大きな丸数字・単位・オーバーラインラベルの縦並び。分析やヘッダーで使う。
-struct MetricBlock: View {
-    let value: String
-    var unit: String?
-    let label: String
-    var tint: Color = Theme.textPrimary
-    var alignment: HorizontalAlignment = .leading
-
-    var body: some View {
-        VStack(alignment: alignment, spacing: 2) {
-            OverlineLabel(text: label)
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.numL)
-                    .foregroundStyle(tint)
-                    .contentTransition(.numericText())
-                if let unit {
-                    Text(unit)
-                        .font(.numS)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Progress / streak ring
 
 /// 角度グラデの進捗リング。中央に任意コンテンツを差し込める（ストリーク数など）。
@@ -156,28 +103,6 @@ struct ProgressRing<Content: View>: View {
 extension ProgressRing where Content == EmptyView {
     init(progress: Double, lineWidth: CGFloat = 10, size: CGFloat = 92) {
         self.init(progress: progress, lineWidth: lineWidth, size: size) { EmptyView() }
-    }
-}
-
-// MARK: - Chip
-
-/// 選択可能なチップ（フィルタ・タグ）。
-struct Chip: View {
-    let text: String
-    var systemImage: String?
-    var selected: Bool = false
-    var tint: Color = Theme.lime
-
-    var body: some View {
-        HStack(spacing: 4) {
-            if let systemImage { Image(systemName: systemImage).font(.caption2) }
-            Text(text).font(.caption.weight(.semibold))
-        }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.sm)
-        .foregroundStyle(selected ? Theme.onLime : Theme.textSecondary)
-        .background(selected ? AnyShapeStyle(tint) : AnyShapeStyle(Theme.bg2),
-                    in: Capsule())
     }
 }
 

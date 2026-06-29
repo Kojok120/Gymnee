@@ -24,6 +24,8 @@ enum FeedPublisher {
         var byRef: [UUID: FeedItem] = [:]
         for item in existing { byRef[item.refId] = item }
         var changed = false
+        // enqueue は呼ぶたびに outbox 全書き出し(persist)が走るため、発行分はここに溜めて末尾で1回 batch する。
+        var pending: [PendingChange] = []
 
         func upsert(refId: UUID, type: FeedItemType, summary: String, date: Date, statsJSON: String? = nil) {
             let vis = visibilityStore.visibility(for: refId) ?? defaultVisibility
@@ -36,7 +38,7 @@ enum FeedPublisher {
                 item.authorDisplayName = authorName
                 item.updatedAt = .now
                 item.isDirty = true
-                sync.enqueue(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
+                pending.append(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
                 changed = true
             } else {
                 // 同 id(=refId) の FeedItem が既に存在する場合の unique 衝突insertを避ける（保険）。
@@ -46,10 +48,14 @@ enum FeedPublisher {
                 }
                 let item = FeedItem(id: refId, userId: userId, authorDisplayName: authorName, type: type, refId: refId, summary: summary, statsJSON: statsJSON, visibility: vis, createdAt: date)
                 context.insert(item)
-                sync.enqueue(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
+                pending.append(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
                 changed = true
             }
         }
+
+        // ワークアウトごとの PR 件数を先に索引化（毎回 prs を全走査する N+1 を避ける）。
+        var prCountByWorkout: [UUID: Int] = [:]
+        for pr in prs { if let wid = pr.workoutId { prCountByWorkout[wid, default: 0] += 1 } }
 
         for v in visits {
             upsert(refId: v.id, type: .visit, summary: v.gym?.name ?? "チェックイン", date: v.visitedAt)
@@ -60,7 +66,7 @@ enum FeedPublisher {
             let vol = allSets.reduce(0.0) { $0 + $1.volume }
             let totalVolume = vol.isFinite ? Int(vol) : 0
             let minutes = w.completedAt.map { max(1, Int($0.timeIntervalSince(w.date) / 60)) }
-            let prCount = prs.filter { $0.workoutId == w.id }.count
+            let prCount = prCountByWorkout[w.id] ?? 0
             var seenMuscle = Set<MuscleGroup>()
             let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }.map(\.rawValue)
             let stats = FeedItemStats(exercises: w.exercises.count, sets: allSets.count, volume: totalVolume,
@@ -85,17 +91,38 @@ enum FeedPublisher {
             let name = rep.exercise?.name ?? "種目"
             let isFirst = cal.startOfDay(for: rep.achievedAt) == firstDayByExercise[exId]
             let summary = isFirst ? "新しい種目に挑戦: \(name)" : "\(name) 自己ベスト更新"
-            upsert(refId: rep.id, type: .pr, summary: summary, date: rep.achievedAt)
+            // 同種目・同日の各計測タイプ＋数値を載せ、フォロワー側でも数値つきで自己ベストを表示できるようにする。
+            // 同一計測タイプが同日に複数あっても PR タブで重複行にならないよう、type ごと最新1件へ畳む
+            // （値の優劣は種別で向きが違うため「最新」で寄せる）。
+            var latestByType: [PRType: PersonalRecord] = [:]
+            for pr in group {
+                if let cur = latestByType[pr.type], cur.achievedAt >= pr.achievedAt { continue }
+                latestByType[pr.type] = pr
+            }
+            let prStats = FeedItemPRStats(
+                exercise: name,
+                items: latestByType.values
+                    .sorted { $0.type.rawValue < $1.type.rawValue }
+                    .map { FeedItemPRStats.Item(type: $0.type.rawValue, value: $0.value) }
+            )
+            upsert(refId: rep.id, type: .pr, summary: summary, date: rep.achievedAt, statsJSON: prStats.encodedJSON())
         }
 
         // 残った既存 = もう存在しない投稿 → feed_item を削除して同期。
         for stale in byRef.values {
             let id = stale.id
             context.delete(stale)
-            sync.enqueue(PendingChange(entity: "feed_items", recordId: id, operation: .delete, updatedAt: .now))
+            pending.append(PendingChange(entity: "feed_items", recordId: id, operation: .delete, updatedAt: .now))
             changed = true
         }
 
-        if changed { try? context.save() }
+        guard changed else { return }
+        do {
+            try context.save()
+            // 保存成功時だけ同期キューへ積む（保存できなかった変更を push してローカルと乖離させない）。
+            if !pending.isEmpty { sync.enqueueBatch(pending) }
+        } catch {
+            // 保存失敗時は enqueue しない（次回の発行で再試行）。
+        }
     }
 }

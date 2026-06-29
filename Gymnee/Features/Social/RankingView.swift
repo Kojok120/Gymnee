@@ -50,7 +50,8 @@ struct RankingView: View {
         let isMe: Bool
     }
 
-    private var ranking: [Rank] {
+    /// ランキングを集計する（派生値なのでキャッシュせず body から都度呼ぶ）。
+    private func computedRanking() -> [Rank] {
         let start = weekStart
         var xpByUser: [UUID: Int] = [:]
         for item in feedItems where item.createdAt >= start {
@@ -80,20 +81,23 @@ struct RankingView: View {
     }
 
     var body: some View {
+        // ranking は派生値。1描画で1回だけ算出し（streakCard とランキングで使い回す）、
+        // データ更新時は body 再評価で常に最新を反映する（件数キーのキャッシュは内容変更で陳腐化するため使わない）。
+        let ranks = computedRanking()
         // フィード/フレンドと容器(List)を統一してタブ切替を滑らかにする。
-        List {
+        return List {
             Section {
-                streakCard
+                streakCard(ranks: ranks)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
             Section("今週のランキング") {
-                if ranking.count <= 1 {
+                if ranks.count <= 1 {
                     Text("フォローすると、友達と今週のXPを競えます。")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
-                ForEach(Array(ranking.enumerated()), id: \.element.id) { index, rank in
+                ForEach(Array(ranks.enumerated()), id: \.element.id) { index, rank in
                     rankRow(index: index, rank: rank)
                 }
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
@@ -105,10 +109,10 @@ struct RankingView: View {
         .background(Theme.groupedBackground)
     }
 
-    private var streakCard: some View {
+    private func streakCard(ranks: [Rank]) -> some View {
         HStack(spacing: Theme.Spacing.lg) {
             stat(value: "\(myStreak)", label: "連続日数", icon: "flame.fill", tint: Theme.warning)
-            stat(value: "\(ranking.first(where: { $0.isMe })?.xp ?? 0)", label: "今週のXP", icon: "bolt.fill", tint: Theme.lime)
+            stat(value: "\(ranks.first(where: { $0.isMe })?.xp ?? 0)", label: "今週のXP", icon: "bolt.fill", tint: Theme.lime)
         }
         .frame(maxWidth: .infinity)
         .padding(Theme.Spacing.lg)

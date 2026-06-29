@@ -68,6 +68,9 @@ enum PRDetector {
             if secs > bests.maxDuration {
                 results.append(DetectedPR(type: .maxDuration, value: secs))
             }
+        case .cardio:
+            // 有酸素（距離・時間）は強度系 PR の対象外。記録は残すが PR 判定はしない。
+            return []
         }
         return results
     }

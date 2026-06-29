@@ -58,6 +58,27 @@ struct FeedItemStats: Codable {
     var muscleGroups: [MuscleGroup] { muscles.compactMap { MuscleGroup(rawValue: $0) } }
 }
 
+/// feed_items.stats_json に載せる自己ベスト投稿のスタッツ（PR投稿）。
+/// フォロワー側でも種目名＋計測タイプ別の数値を復元して一覧表示するため、サマリ文字列ではなく数値で持つ。
+/// （feed_items の stats_json 列は既存なのでスキーマ変更は不要。改修後に発行された PR から数値が載る）
+struct FeedItemPRStats: Codable {
+    struct Item: Codable {
+        var type: String   // PRType.rawValue
+        var value: Double
+    }
+    var exercise: String
+    var items: [Item]
+
+    func encodedJSON() -> String? {
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    static func decode(_ json: String?) -> FeedItemPRStats? {
+        guard let json, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(FeedItemPRStats.self, from: data)
+    }
+}
+
 /// フィードに表示する統合エントリ（§6.11）。来店/PR/ワークアウトを 1 つの時系列に束ねる。
 /// ローカルでは値型で都度生成（サーバ側フィードは FeedItem モデルで将来差し替え）。
 struct FeedEntry: Identifiable {

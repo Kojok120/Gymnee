@@ -13,61 +13,171 @@ struct PRSpark: Identifiable, Equatable {
 /// 詳細仕様は docs/record-redesign-spec.md。
 struct RecordView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(\.modelContext) private var context
     /// タブから入った時は「記録を開始する」ゲートを挟む。チェックイン経由は飛ばす。
     @State private var gateOpen = false
+    /// 計画/予定の「開始」から渡された、記録タブで再開するワークアウト（nil＝新規ライブ記録）。
+    @State private var resumeTarget: Workout?
+    /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
+    @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
+    private var openDrafts: [Workout]
+
+    /// 中身（セット or メモ）のある自動保存下書きをすべて返す（新しい順）。各々をゲートにカード表示する。
+    private func resumableDrafts(for uid: UUID) -> [Workout] {
+        openDrafts.filter { w in
+            w.userId == uid && (w.exercises.contains { !$0.sets.isEmpty } || !(w.note ?? "").isEmpty)
+        }
+    }
+
+    /// 下書きを破棄する。計画から開始していた下書きは、リンクした PlannedWorkout を未消化へ戻してから削除する
+    /// （cancelRecording と同じ。これをしないと未完了なのに計画が消費済みのまま planner から消える）。
+    private func discardDraft(_ draft: Workout) {
+        let did = draft.id
+        let descriptor = FetchDescriptor<PlannedWorkout>(predicate: #Predicate { $0.completedWorkoutId == did })
+        for plan in (try? context.fetch(descriptor)) ?? [] {
+            plan.isDone = false
+            plan.completedWorkoutId = nil
+            plan.updatedAt = .now
+        }
+        context.delete(draft)
+        try? context.save()
+    }
 
     var body: some View {
         NavigationStack {
             if let uid = auth.currentUserId {
                 if gateOpen {
-                    RecordContent(userId: uid, onEnd: { gateOpen = false })
+                    RecordContent(userId: uid, resuming: resumeTarget, onEnd: { gateOpen = false; resumeTarget = nil })
                 } else {
-                    StartGateView(userId: uid, onStart: { gateOpen = true })
+                    StartGateView(
+                        userId: uid,
+                        resumables: resumableDrafts(for: uid),
+                        onStart: { resumeTarget = nil; gateOpen = true },
+                        onResume: { draft in resumeTarget = draft; gateOpen = true },
+                        onDiscard: { draft in discardDraft(draft) }
+                    )
                 }
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
         }
-        // チェックイン直後はゲートを飛ばして記録画面へ直行。
-        .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in gateOpen = true }
+        // チェックイン直後はゲートを飛ばして記録画面へ直行（新規記録）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in resumeTarget = nil; gateOpen = true }
+        // 計画/予定の「開始」→ 記録タブで当該ワークアウトを再開（カレンダータブから遷移してくる）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { note in
+            guard let idStr = note.userInfo?["workoutId"] as? String, let id = UUID(uuidString: idStr),
+                  let uid = auth.currentUserId else { return }
+            // 通知の id は古い/不正な値で他ユーザーの下書きを指し得るため、現在ユーザー所有に限定する。
+            let found = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id && $0.userId == uid }))) ?? []
+            if let w = found.first {
+                resumeTarget = w
+                gateOpen = true
+            }
+        }
     }
 }
 
 /// 「記録を開始する」ゲート（記録タブから入った時に一度挟む）。
 private struct StartGateView: View {
     let userId: UUID
+    /// 自動保存された中断中の下書き（あれば1件ずつカードで再開/破棄導線を出す）。
+    var resumables: [Workout] = []
     let onStart: () -> Void
+    var onResume: (Workout) -> Void = { _ in }
+    var onDiscard: (Workout) -> Void = { _ in }
 
     private enum Route: Hashable { case history }
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            Spacer()
-            Image(systemName: "dumbbell.fill").font(.system(size: 52)).foregroundStyle(Theme.lime)
-            Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
-            Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
-            Spacer()
-            Button(action: onStart) {
-                Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
-                    .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
-                    .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+        ScrollView {
+            VStack(spacing: Theme.Spacing.lg) {
+                if !resumables.isEmpty {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        Text("途中の記録").font(.subheadline.bold()).foregroundStyle(Theme.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        ForEach(resumables) { draft in resumeCard(draft) }
+                    }
+                    .padding(.top, Theme.Spacing.lg)
+                }
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "dumbbell.fill").font(.system(size: 52)).foregroundStyle(Theme.lime)
+                    Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
+                    Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.top, resumables.isEmpty ? Theme.Spacing.xxl : Theme.Spacing.lg)
             }
             .padding(.horizontal, Theme.Spacing.lg)
-            // これまでの記録を一覧で振り返る導線（記録一覧＝日付/種目ごと）。
-            NavigationLink(value: Route.history) {
-                Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .padding(.top, Theme.Spacing.xs)
-            .padding(.bottom, Theme.Spacing.xl)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg0)
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: Theme.Spacing.sm) {
+                Button(action: onStart) {
+                    Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
+                        .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
+                        .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                }
+                // これまでの記録を一覧で振り返る導線（記録一覧＝日付/種目ごと。下書きも含む）。
+                NavigationLink(value: Route.history) {
+                    Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.md)
+        }
         .navigationTitle("記録").navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: Route.self) { _ in
             HistoryView(userId: userId)
         }
+    }
+
+    /// 中断中の記録1件を再開/破棄するカード（開始日時＋内容の一部を表示）。
+    private func resumeCard(_ draft: Workout) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack {
+                Label("途中の記録", systemImage: "arrow.uturn.backward.circle.fill")
+                    .font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Text(draft.date, format: .dateTime.month().day().hour().minute())
+                    .font(.caption2).foregroundStyle(Theme.textTertiary)
+            }
+            Text(DraftSummary.text(for: draft))
+                .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
+            HStack(spacing: Theme.Spacing.sm) {
+                Button { onResume(draft) } label: {
+                    Text("再開").font(.subheadline.bold()).foregroundStyle(Theme.onLime)
+                        .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                }
+                Button(role: .destructive) { onDiscard(draft) } label: {
+                    Text("破棄").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                }
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(Theme.lime.opacity(0.5), lineWidth: 1))
+    }
+}
+
+/// 下書き（途中の記録）の内容サマリー文字列（種目名の一部＋セット数）。ゲートと記録一覧で共用。
+enum DraftSummary {
+    @MainActor
+    static func text(for draft: Workout) -> String {
+        let setCount = draft.exercises.reduce(0) { $0 + $1.sets.count }
+        let names = draft.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .compactMap { $0.exercise?.name }
+        let head = names.prefix(2).joined(separator: ", ")
+        let more = names.count > 2 ? " 他\(names.count - 2)種目" : ""
+        if names.isEmpty {
+            return setCount > 0 ? "\(setCount)セット" : "メモのみ"
+        }
+        return "\(head)\(more) ・ \(setCount)セット"
     }
 }
 
@@ -109,6 +219,8 @@ struct RecordContent: View {
     /// reps / 秒 ルーラーの中央値（種目ごと・セッション中保持。再描画でスクロール位置を保つ）。
     @State private var repCenters: [UUID: Int] = [:]
     @State private var durCenters: [UUID: Int] = [:]
+    /// 有酸素の距離km ルーラー中央値（種目ごと・セッション中保持）。
+    @State private var distCenters: [UUID: Double] = [:]
     @State private var showSummary = false
     @State private var showModePicker = false
     @State private var showExercisePicker = false
@@ -120,8 +232,11 @@ struct RecordContent: View {
     @State private var jumpTarget: MuscleGroup?
     @State private var showOnboarding = false
     @State private var showCancelConfirm = false
+    @State private var showMemo = false
     /// 録画中の暫定PRスパーク（その場の「更新ペース！」表示・非永続。確定は完了時）。
     @State private var prSpark: PRSpark?
+    /// フリーのカード（部位ごと）。種目数×完了履歴の関連走査が重いので毎描画ではなくキャッシュする。
+    @State private var freeGroups: [(MuscleGroup, [Exercise])] = []
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
@@ -156,6 +271,13 @@ struct RecordContent: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button("キャンセル") { attemptCancel() }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { openMemo() } label: {
+                    Image(systemName: hasMemo ? "note.text" : "square.and.pencil")
+                        .foregroundStyle(hasMemo ? Theme.lime : Theme.textSecondary)
+                }
+                .accessibilityLabel("メモ")
+            }
             if activeWorkout != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完了") { finish() }.bold()
@@ -175,6 +297,9 @@ struct RecordContent: View {
         }
         .sheet(item: $editingExercise) { ex in ExerciseEditView(exercise: ex) }
         .sheet(item: $editingSet) { set in EditSetSheet(set: set) { commitSetEdit(set) } }
+        .sheet(isPresented: $showMemo) {
+            if let w = activeWorkout { WorkoutMemoSheet(workout: w) { try? context.save() } }
+        }
         .sheet(item: $keypad) { req in
             SlotKeypadSheet(request: req) { value in handleKeypad(req, value: value) }
         }
@@ -204,10 +329,13 @@ struct RecordContent: View {
                 if !onboardingShown { showOnboarding = true }
             }
         }
+        // フリーのカード群は種目数が変わった時だけ作り直す（毎描画の関連走査を避ける）。
+        .task(id: allExercises.count) { rebuildFreeGroups() }
     }
 
-    /// 未完了(completedAt=nil)の下書きワークアウトをローカル掃除（クラッシュ/中断の残骸）。
-    /// 現在編集中(resuming/active)と、計画(isPlanned=true)の予定は除外。下書きは未同期なのでローカル削除のみ。
+    /// 中身の無い空の下書き(completedAt=nil)だけをローカル掃除する。
+    /// セットやメモのある下書きは「自動保存された記録」として残し、クラッシュ/中断後に復帰できるようにする。
+    /// 現在編集中(resuming/active)と計画(isPlanned=true)は除外。下書きは未同期なのでローカル削除のみ。
     private func discardAbandonedDrafts() {
         let uid = userId
         let drafts = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate {
@@ -216,6 +344,9 @@ struct RecordContent: View {
         let keepId = resuming?.id ?? activeWorkout?.id
         var changed = false
         for w in drafts where w.id != keepId {
+            let hasSets = w.exercises.contains { !$0.sets.isEmpty }
+            let hasNote = !(w.note ?? "").isEmpty
+            guard !hasSets, !hasNote else { continue }   // 中身のある下書きは残す（自動保存）。
             context.delete(w)
             changed = true
         }
@@ -237,9 +368,9 @@ struct RecordContent: View {
                 .background(Theme.bg1, in: Capsule())
             }
             Spacer(minLength: 0)
-            if mode == .free, !freeGroupedByMuscle.isEmpty {
+            if mode == .free, !freeGroups.isEmpty {
                 Menu {
-                    ForEach(freeGroupedByMuscle.map(\.0), id: \.self) { mg in
+                    ForEach(freeGroups.map(\.0), id: \.self) { mg in
                         Button(mg.label) { jumpTarget = mg }
                     }
                 } label: {
@@ -275,8 +406,9 @@ struct RecordContent: View {
 
     /// ② 記録ログ。常時表示（空ならプレースホルダ）。List なのでスワイプ削除・行タップ編集が効く。
     private var logStrip: some View {
-        List {
-            if loggedSets.isEmpty {
+        let sets = loggedSets   // flatMap+sort を1描画で1回だけに（空判定・行・高さで使い回す）。
+        return List {
+            if sets.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "list.bullet.rectangle").font(.caption)
                     Text("記録するとここに溜まります").font(.caption)
@@ -285,7 +417,7 @@ struct RecordContent: View {
                 .listRowBackground(Theme.bg1)
                 .listRowSeparator(.hidden)
             } else {
-                ForEach(loggedSets) { set in
+                ForEach(sets) { set in
                     LogRowView(set: set)
                         .listRowBackground(Theme.bg1)
                         .contentShape(Rectangle())
@@ -296,7 +428,7 @@ struct RecordContent: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .frame(height: loggedSets.isEmpty ? 52 : 160)
+        .frame(height: sets.isEmpty ? 52 : 160)
         .background(Theme.bg1)
     }
 
@@ -327,7 +459,7 @@ struct RecordContent: View {
     /// フリー：最近/よく使う＋このセッション＋手動追加。部位ごとにまとめ、③でジャンプ。
     @ViewBuilder
     private var freeCardsBody: some View {
-        let grouped = freeGroupedByMuscle
+        let grouped = freeGroups
         if grouped.isEmpty {
             emptyFreeState
         } else {
@@ -363,13 +495,21 @@ struct RecordContent: View {
                     weightCenter: Binding(get: { weightCenter(for: spec) }, set: { armed[spec.exercise.id] = $0 }),
                     repCenter: Binding(get: { Double(repCenter(for: spec)) }, set: { repCenters[spec.exercise.id] = Int($0) }),
                     durCenter: Binding(get: { Double(durCenter(for: spec)) }, set: { durCenters[spec.exercise.id] = Int($0) }),
+                    distanceCenter: Binding(get: { distanceCenter(for: spec) }, set: { distCenters[spec.exercise.id] = $0 }),
                     onLogReps: { reps in logReps(reps, spec: spec) },
                     onLogDuration: { dur in logDuration(dur, spec: spec) },
+                    onLogCardio: { dist, mins in logCardio(distanceKm: dist, minutes: mins, spec: spec) },
                     onCustomWeight: { keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .armValue, decimal: true, title: "重量を入力") },
                     onCustomReps: {
-                        let isTime = spec.exercise.measurementType == .time
-                        keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .customReps, decimal: false, title: isTime ? "秒を入力" : "回数を入力")
+                        let title: String
+                        switch spec.exercise.measurementType {
+                        case .time: title = "秒を入力"
+                        case .cardio: title = "分を入力"
+                        default: title = "回数を入力"
+                        }
+                        keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .customReps, decimal: false, title: title)
                     },
+                    onCustomDistance: { keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .distanceValue, decimal: true, title: "距離(km)を入力") },
                     onEdit: { editingExercise = spec.exercise }
                 )
             }
@@ -486,6 +626,7 @@ struct RecordContent: View {
     private func weightCenter(for spec: CardSpec) -> Double { armed[spec.exercise.id] ?? centers(for: spec).weight }
     private func repCenter(for spec: CardSpec) -> Int { repCenters[spec.exercise.id] ?? centers(for: spec).reps }
     private func durCenter(for spec: CardSpec) -> Int { durCenters[spec.exercise.id] ?? centers(for: spec).duration }
+    private func distanceCenter(for spec: CardSpec) -> Double { distCenters[spec.exercise.id] ?? centers(for: spec).distanceKm }
 
     /// ルーティン/計画モードの順序付きカード。
     private var orderedCardSpecs: [CardSpec] {
@@ -523,24 +664,23 @@ struct RecordContent: View {
     }
 
     /// フリーのカード：部位ごとにまとめた配列。仕様書「最近中心＋全種目」。
-    /// セッション/履歴/手動追加の種目を各部位の先頭に、続けて残りの全カタログ種目（名前順）を並べる。
-    private var freeGroupedByMuscle: [(MuscleGroup, [Exercise])] {
-        let sessionEx = activeWorkout?.exercises.compactMap { $0.exercise } ?? []
+    /// セッション中はカード順を固定する：先頭に置く「最近」は完了済み履歴のある種目のみで判定し、
+    /// 記録途中の下書きでは並べ替えない（記録してもカードが動かない／完了後の次回に順序が更新される）。
+    private func rebuildFreeGroups() {
         let recent = allExercises.filter { ex in
-            ex.workoutExercises.contains { $0.workout?.userId == userId && !$0.sets.isEmpty }
+            ex.workoutExercises.contains { $0.workout?.userId == userId && $0.workout?.completedAt != nil && !$0.sets.isEmpty }
         }
-        let added = allExercises.filter { freeAdded.contains($0.id) }
         var seen = Set<UUID>()
         var ordered: [Exercise] = []
-        // ①最近中心（セッション→履歴→手動追加）を先頭に。
-        for ex in sessionEx + recent + added where seen.insert(ex.id).inserted {
+        // ①最近中心（完了済み履歴のある種目）を先頭に。
+        for ex in recent where seen.insert(ex.id).inserted {
             ordered.append(ex)
         }
         // ②残りの全種目を名前順（allExercises は @Query で name ソート済み）で追加。
         for ex in allExercises where seen.insert(ex.id).inserted {
             ordered.append(ex)
         }
-        return MuscleGroup.allCases.compactMap { mg in
+        freeGroups = MuscleGroup.allCases.compactMap { mg in
             let items = ordered.filter { $0.muscleGroup == mg }
             return items.isEmpty ? nil : (mg, items)
         }
@@ -594,11 +734,21 @@ struct RecordContent: View {
         commitSet(exercise: spec.exercise, weight: 0, reps: 0, duration: seconds)
     }
 
-    private func commitSet(exercise: Exercise, weight: Double, reps: Int, duration: Int?) {
+    /// cardio：距離km ＋ 時間（分）を1セット記録（時間は秒に換算して保存）。
+    private func logCardio(distanceKm: Double, minutes: Int, spec: CardSpec) {
+        // 不正値（負・非有限）と minutes*60 のオーバーフローを排除してから保存する。
+        let km = (distanceKm.isFinite && distanceKm >= 0) ? distanceKm : 0
+        let mins = max(0, min(minutes, 100_000))
+        distCenters[spec.exercise.id] = km   // ルーラー位置を確定（記録後のジャンプ防止）
+        durCenters[spec.exercise.id] = mins
+        commitSet(exercise: spec.exercise, weight: 0, reps: 0, duration: mins * 60, distanceKm: km)
+    }
+
+    private func commitSet(exercise: Exercise, weight: Double, reps: Int, duration: Int?, distanceKm: Double? = nil) {
         let workout = ensureWorkout()
         let we = workoutExercise(for: exercise, in: workout)
         let set = ExerciseSet(setIndex: we.sets.count, weight: weight, reps: reps,
-                              isCompleted: true, durationSeconds: duration, workoutExercise: we)
+                              isCompleted: true, durationSeconds: duration, distanceKm: distanceKm, workoutExercise: we)
         context.insert(set)
         try? context.save()   // 下書きはローカルのみ。同期は完了時。
         // PR の確定・永続は完了時にまとめて。ここでは履歴ベストとの純粋比較で「更新ペース！」を
@@ -651,7 +801,12 @@ struct RecordContent: View {
     }
 
     private func deleteSet(_ set: ExerciseSet) {
+        // 最後のセットを消したら、空になった種目エントリ(WorkoutExercise)も削除する。
+        // 残すと完了後の投稿/詳細に「セットなし」の種目として出てしまうため。
+        let we = set.workoutExercise
+        let wasLastSet = (we?.sets.count ?? 0) <= 1
         context.delete(set)
+        if wasLastSet, let we { context.delete(we) }
         try? context.save()   // 下書き中の削除。未同期なのでローカルのみ。
     }
 
@@ -661,16 +816,33 @@ struct RecordContent: View {
         try? context.save()   // 下書き中の編集。同期は完了時。
     }
 
+    /// このワークアウトにメモが付いているか（ツールバーアイコンの状態表示用）。
+    private var hasMemo: Bool { !(activeWorkout?.note ?? "").isEmpty }
+
+    /// メモを開く。未開始ならセッションを作ってからメモ編集（メモのある下書きは破棄されない）。
+    private func openMemo() {
+        ensureWorkout()
+        showMemo = true
+    }
+
+    /// Double→Int の安全変換。NaN/∞/範囲外での `Int(_:)` トラップを防ぎ、0以上・上限内へ丸める。
+    private func safeCount(_ v: Double, cap: Int = 100_000) -> Int {
+        guard v.isFinite else { return 0 }
+        return max(0, min(Int(v.rounded()), cap))
+    }
+
     private func handleKeypad(_ req: KeypadRequest, value: Double) {
         switch req.kind {
         case .armValue:
-            armed[req.exerciseId] = value
+            armed[req.exerciseId] = value.isFinite ? value : 0
+        case .distanceValue:
+            distCenters[req.exerciseId] = (value.isFinite && value >= 0) ? value : 0
         case .customReps:
             guard let spec = currentSpec(for: req.exerciseId) else { return }
-            if spec.exercise.measurementType == .time {
-                logDuration(Int(value), spec: spec)
-            } else {
-                logReps(Int(value), spec: spec)
+            switch spec.exercise.measurementType {
+            case .time:   logDuration(safeCount(value), spec: spec)
+            case .cardio: logCardio(distanceKm: distanceCenter(for: spec), minutes: safeCount(value), spec: spec)
+            default:      logReps(safeCount(value), spec: spec)
             }
         }
     }
@@ -692,6 +864,8 @@ struct RecordContent: View {
 
     private func finish() {
         guard let w = activeWorkout else { return }
+        // セット0件の種目エントリは投稿/同期前に取り除く（記録ミスで残った空種目を「セットなし」で残さない）。
+        for we in Array(w.exercises) where we.sets.isEmpty { context.delete(we) }
         w.completedAt = .now
         w.isPlanned = false
         w.updatedAt = .now
@@ -763,20 +937,23 @@ struct RecordContent: View {
         armed = [:]
         repCenters = [:]
         durCenters = [:]
+        distCenters = [:]
         freeAdded = []
         // カレンダータブへ切替え、タブのゲート/pushed view を閉じる。
         NotificationCenter.default.post(name: .gymneeShowCalendar, object: nil)
-        if resuming != nil { dismiss() } else { onEnd?() }
+        // タブ起点（チェックイン/計画開始）はゲートへ戻す。カレンダーからの過去編集 push は閉じる。
+        if let onEnd { onEnd() } else { dismiss() }
     }
 
     private func endSession() {
-        if resuming != nil { dismiss(); return }
-        if let onEnd { onEnd(); return }   // タブのゲートへ戻す（state は再生成でリセット）
+        if let onEnd { onEnd(); return }   // タブ起点：ゲートへ戻す（state は再生成でリセット）
+        if resuming != nil { dismiss(); return }   // カレンダーからの過去編集 push を閉じる
         activeWorkout = nil
         activePlanId = nil
         armed = [:]
         repCenters = [:]
         durCenters = [:]
+        distCenters = [:]
         freeAdded = []
         modeInitialized = false
         initializeModeIfNeeded()
@@ -829,10 +1006,13 @@ private struct ExerciseCardView: View {
     @Binding var weightCenter: Double
     @Binding var repCenter: Double
     @Binding var durCenter: Double
+    @Binding var distanceCenter: Double
     let onLogReps: (Int) -> Void
     let onLogDuration: (Int) -> Void
+    let onLogCardio: (Double, Int) -> Void
     let onCustomWeight: () -> Void
     let onCustomReps: () -> Void
+    let onCustomDistance: () -> Void
     let onEdit: () -> Void
 
     /// 自重のみ（重量軸を出さない）。
@@ -842,24 +1022,21 @@ private struct ExerciseCardView: View {
 
     var body: some View {
         VStack(spacing: Theme.Spacing.sm) {
-            if exercise.measurementType == .time {
-                durationRuler
-            } else if !bodyweightOnly {
-                // 自重のみ(loadMode == none)は重量軸なし。荷重/補助/ウェイトは重量ルーラー。
-                weightRuler
-            }
+            topRuler
             VStack(spacing: 1) {
                 Text(exercise.name)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.7)
-                if exercise.measurementType == .weight {
+                if exercise.measurementType == .weight, exercise.weightMode != .none {
                     Text(exercise.weightMode.label).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
                 } else if exercise.measurementType == .bodyweight {
                     Text(exercise.loadMode.loadAxisLabel).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+                } else if exercise.measurementType == .cardio {
+                    Text("距離 · 時間").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
                 }
             }
-            if exercise.measurementType != .time { repsRuler }
+            bottomRuler
         }
         .frame(maxWidth: .infinity)
         .padding(Theme.Spacing.sm)
@@ -867,10 +1044,30 @@ private struct ExerciseCardView: View {
         .contextMenu { Button { onEdit() } label: { Label("種目を編集", systemImage: "pencil") } }
     }
 
+    /// 上段ルーラー：ウェイト=重量 / 時間=秒 / 有酸素=距離。自重のみは無し。
+    @ViewBuilder private var topRuler: some View {
+        switch exercise.measurementType {
+        case .time:   durationRuler
+        case .cardio: distanceRuler
+        case .weight, .bodyweight:
+            if !bodyweightOnly { weightRuler }   // 自重のみ(loadMode == none)は重量軸なし。
+        }
+    }
+
+    /// 下段ルーラー（記録アクション）：ウェイト/自重=回数 / 有酸素=時間(分) / 時間=無し（上段が記録）。
+    @ViewBuilder private var bottomRuler: some View {
+        switch exercise.measurementType {
+        case .time:   EmptyView()
+        case .cardio: cardioMinuteRuler
+        case .weight, .bodyweight: repsRuler
+        }
+    }
+
     private var weightRuler: some View {
+        // 0kg も選べる（下限0）。アシスト/ウォームアップ等で0を記録したいケースに対応。
         SlotRuler(selection: $weightCenter,
                   step: RecordSlots.weightStep(exercise),
-                  lowerBound: exercise.measurementType == .bodyweight ? 0 : RecordSlots.weightStep(exercise),
+                  lowerBound: 0,
                   decimals: true, unit: "", isAction: false,
                   onCommit: nil, onLongPress: onCustomWeight)
     }
@@ -883,6 +1080,18 @@ private struct ExerciseCardView: View {
         SlotRuler(selection: $durCenter,
                   step: 5, lowerBound: 5, decimals: false, unit: "秒", isAction: true,
                   onCommit: { onLogDuration(Int($0)) }, onLongPress: onCustomReps)
+    }
+    /// 有酸素の距離（km）。中央＝アーム（記録時の距離）。
+    private var distanceRuler: some View {
+        SlotRuler(selection: $distanceCenter,
+                  step: 0.5, lowerBound: 0, decimals: true, unit: "km", isAction: false,
+                  onCommit: nil, onLongPress: onCustomDistance)
+    }
+    /// 有酸素の時間（分）。タップで「距離＋その時間」を1セット記録。
+    private var cardioMinuteRuler: some View {
+        SlotRuler(selection: $durCenter,
+                  step: 5, lowerBound: 5, decimals: false, unit: "分", isAction: true,
+                  onCommit: { onLogCardio(distanceCenter, Int($0)) }, onLongPress: onCustomReps)
     }
 }
 
@@ -970,13 +1179,16 @@ private struct LogRowView: View {
     let set: ExerciseSet
 
     var body: some View {
-        HStack {
+        HStack(spacing: Theme.Spacing.sm) {
             Text(set.workoutExercise?.exercise?.name ?? "種目")
                 .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(1)
-            Spacer()
+            Spacer(minLength: Theme.Spacing.sm)
             Text(detail).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textSecondary)
             Text(set.createdAt, format: .dateTime.hour().minute())
                 .font(.caption2).foregroundStyle(Theme.textTertiary)
+            // 行タップで編集できることを示すアフォーダンス（タップ＝編集 / 左スワイプ＝削除）。
+            Image(systemName: "square.and.pencil")
+                .font(.caption).foregroundStyle(Theme.textTertiary)
         }
     }
 
@@ -986,7 +1198,7 @@ private struct LogRowView: View {
 // MARK: - キーパッド
 
 struct KeypadRequest: Identifiable {
-    enum Kind { case armValue, customReps }
+    enum Kind { case armValue, customReps, distanceValue }
     let id = UUID()
     let exerciseId: UUID
     let kind: Kind
@@ -1036,13 +1248,20 @@ private struct EditSetSheet: View {
     @State private var weightText = ""
     @State private var repsText = ""
     @State private var durationText = ""
+    @State private var distanceText = ""
+    @State private var minutesText = ""
 
-    private var isTime: Bool { (set.workoutExercise?.exercise?.measurementType) == .time }
+    private var measurement: MeasurementType { self.set.workoutExercise?.exercise?.measurementType ?? .weight }
+    private var isTime: Bool { measurement == .time }
+    private var isCardio: Bool { measurement == .cardio }
 
     var body: some View {
         NavigationStack {
             Form {
-                if isTime {
+                if isCardio {
+                    LabeledContent("距離(km)") { TextField("距離", text: $distanceText).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
+                    LabeledContent("時間(分)") { TextField("分", text: $minutesText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
+                } else if isTime {
                     LabeledContent("秒") { TextField("秒", text: $durationText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
                 } else {
                     LabeledContent("重量(kg)") { TextField("重量", text: $weightText).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
@@ -1054,11 +1273,19 @@ private struct EditSetSheet: View {
                 ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("保存") {
-                        if isTime {
-                            set.durationSeconds = Int(durationText) ?? set.durationSeconds
+                        // 不正値（負・非有限）は採用せず、分*60 のオーバーフローも防ぐ。
+                        if isCardio {
+                            if let km = Double(distanceText.replacingOccurrences(of: ",", with: ".")), km.isFinite, km >= 0 {
+                                set.distanceKm = km
+                            }
+                            if let m = Int(minutesText), m >= 0 { set.durationSeconds = min(m, 100_000) * 60 }
+                        } else if isTime {
+                            if let s = Int(durationText), s >= 0 { set.durationSeconds = s }
                         } else {
-                            set.weight = Double(weightText.replacingOccurrences(of: ",", with: ".")) ?? set.weight
-                            set.reps = Int(repsText) ?? set.reps
+                            if let w = Double(weightText.replacingOccurrences(of: ",", with: ".")), w.isFinite, w >= 0 {
+                                set.weight = w
+                            }
+                            if let r = Int(repsText), r >= 0 { set.reps = r }
                         }
                         onCommit()
                         dismiss()
@@ -1069,9 +1296,50 @@ private struct EditSetSheet: View {
                 weightText = set.weight == set.weight.rounded() ? String(Int(set.weight)) : String(format: "%.1f", set.weight)
                 repsText = String(set.reps)
                 durationText = String(set.durationSeconds ?? 0)
+                let km = set.distanceKm ?? 0
+                distanceText = km == km.rounded() ? String(Int(km)) : String(format: "%.1f", km)
+                minutesText = String((set.durationSeconds ?? 0) / 60)
             }
         }
         .presentationDetents([.height(220)])
+    }
+}
+
+// MARK: - メモ
+
+/// ワークアウトのメモ（任意）。記録中いつでも編集でき、完了時にサーバーへ同期される。
+private struct WorkoutMemoSheet: View {
+    @Bindable var workout: Workout
+    let onSave: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("このワークアウトのメモ") {
+                    TextField("調子・気づき・コンディションなど（任意）", text: $text, axis: .vertical)
+                        .lineLimit(4...10)
+                }
+            }
+            .navigationTitle("メモ").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("保存") {
+                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        workout.note = trimmed.isEmpty ? nil : trimmed
+                        workout.updatedAt = .now
+                        workout.isDirty = true
+                        onSave()
+                        dismiss()
+                    }.bold()
+                }
+            }
+            .onAppear { text = workout.note ?? "" }
+        }
+        .presentationDetents([.medium])
     }
 }
 

@@ -98,20 +98,17 @@ struct PostDetailView: View {
     private func workoutDetail(_ w: Workout) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             sectionHeader("メニュー", systemImage: "list.bullet")
-            ForEach(w.exercises.sorted { $0.orderIndex < $1.orderIndex }) { we in
+            // セット0件の種目は表示しない（記録ミスで残った空種目を投稿に出さない）。
+            ForEach(w.exercises.filter { !$0.sets.isEmpty }.sorted { $0.orderIndex < $1.orderIndex }) { we in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(we.exercise?.name ?? "種目")
                         .font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
-                    if we.sets.isEmpty {
-                        Text("セットなし").font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        ForEach(we.sets.sorted { $0.setIndex < $1.setIndex }) { set in
-                            HStack {
-                                Text("セット\(set.setIndex + 1)").font(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                Text(set.detailText).font(.subheadline.monospacedDigit()).foregroundStyle(Theme.textPrimary)
-                                if set.isPR { Image(systemName: "trophy.fill").font(.caption).foregroundStyle(.yellow) }
-                            }
+                    ForEach(we.sets.sorted { $0.setIndex < $1.setIndex }) { set in
+                        HStack {
+                            Text("セット\(set.setIndex + 1)").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(set.detailText).font(.subheadline.monospacedDigit()).foregroundStyle(Theme.textPrimary)
+                            if set.isPR { Image(systemName: "trophy.fill").font(.caption).foregroundStyle(.yellow) }
                         }
                     }
                 }
