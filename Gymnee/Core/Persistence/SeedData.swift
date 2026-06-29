@@ -54,6 +54,10 @@ enum SeedData {
 
     @MainActor
     private static func seedExercises(_ context: ModelContext) {
+        // 同名で二重化したプリセット種目を 1 件に集約する（計測タイプ変更の旧行残存や、別 uid 同期で
+        // 入った同名・別 id の古いコピーが原因の重複を自己修復）。参照の付け替え後に削除する。
+        dedupePresetExercises(context)
+
         // 既存プリセット名を集め、未収録のものだけ追加（名前でべき等）。
         // これで後からプリセットを足しても、DB を消さずに反映される。
         let existingPresets = (try? context.fetch(
@@ -75,6 +79,54 @@ enum SeedData {
             )
             context.insert(exercise)
         }
+    }
+
+    /// 同名で重複したプリセット種目を 1 件に統合する（自己修復）。
+    /// 残す 1 件は「現行プリセット定義の計測タイプに一致するもの」を最優先（無ければ参照数が多い→新しい順）。
+    /// 残した種目は現行定義（部位/計測タイプ）に合わせて補正し、消す種目の記録/ルーティン参照は残す側へ付け替える。
+    @MainActor
+    private static func dedupePresetExercises(_ context: ModelContext) {
+        let presets = (try? context.fetch(
+            FetchDescriptor<Exercise>(predicate: #Predicate { $0.isCustom == false })
+        )) ?? []
+        let groups = Dictionary(grouping: presets, by: { $0.name })
+        // 名前 → 現行プリセット定義（部位・計測タイプ）。残すべき正準を判定する基準。
+        let canonical = Dictionary(presetExercises.map { ($0.0, (muscle: $0.1, measure: $0.3)) },
+                                   uniquingKeysWith: { a, _ in a })
+
+        var changed = false
+        for (name, dupes) in groups where dupes.count > 1 {
+            let spec = canonical[name]
+            let keeper = dupes.sorted { a, b in
+                // ① 現行定義の計測タイプに一致する方を優先。
+                let aMatch = spec.map { a.measurementType == $0.measure } ?? false
+                let bMatch = spec.map { b.measurementType == $0.measure } ?? false
+                if aMatch != bMatch { return aMatch }
+                // ② 参照（記録・ルーティン）が多い方を残してデータ損失を避ける。
+                let aRefs = a.workoutExercises.count + a.routineExercises.count
+                let bRefs = b.workoutExercises.count + b.routineExercises.count
+                if aRefs != bRefs { return aRefs > bRefs }
+                // ③ 新しい方。
+                return a.updatedAt > b.updatedAt
+            }.first!
+
+            // 残す種目を現行プリセット定義に合わせて補正（古い計測タイプ/部位の行を残した場合の保険）。
+            if let spec {
+                if keeper.muscleGroup != spec.muscle { keeper.muscleGroup = spec.muscle }
+                if keeper.measurementType != spec.measure { keeper.measurementType = spec.measure }
+                keeper.updatedAt = .now
+                keeper.isDirty = true
+            }
+
+            for loser in dupes where loser !== keeper {
+                // nullify 関連の参照先削除はエンコード/UI でのアサーション落ちを招くため、先に付け替える。
+                for we in Array(loser.workoutExercises) { we.exercise = keeper }
+                for re in Array(loser.routineExercises) { re.exercise = keeper }
+                context.delete(loser)
+                changed = true
+            }
+        }
+        if changed { try? context.save() }
     }
 
     /// 主要種目の最小マスタ（プリセット＋ユーザー作成、§6.5）。
@@ -111,9 +163,15 @@ enum SeedData {
         ("ハンマーカール", .biceps, .dumbbell, .weight),
         ("トライセプスプレスダウン", .triceps, .cable, .weight),
         ("スカルクラッシャー", .triceps, .barbell, .weight),
-        // 体幹・臀部
+        // 腹
+        ("クランチ", .abs, .bodyweight, .bodyweight),
+        ("シットアップ", .abs, .bodyweight, .bodyweight),
+        ("レッグレイズ", .abs, .bodyweight, .bodyweight),
+        ("ケーブルクランチ", .abs, .cable, .weight),
+        ("アブローラー", .abs, .other, .bodyweight),
+        // 体幹
         ("プランク", .core, .bodyweight, .time),
-        ("アブローラー", .core, .other, .bodyweight),
+        // 臀部
         ("ヒップスラスト", .glutes, .barbell, .weight),
         // 全身
         ("バーピー", .fullBody, .bodyweight, .bodyweight),

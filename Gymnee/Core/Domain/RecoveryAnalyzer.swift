@@ -3,14 +3,14 @@ import Foundation
 /// リカバリービュー（§6.8）。直近で鍛えた部位を可視化し、回復済み＝次やる候補を提示する。純粋ロジックでテスト対象。
 enum RecoveryAnalyzer {
     /// リカバリー対象の主要部位（全身は除く）。
-    static let trackedMuscles: [MuscleGroup] = [.chest, .back, .legs, .shoulders, .biceps, .triceps, .core, .glutes]
+    static let trackedMuscles: [MuscleGroup] = [.chest, .back, .legs, .shoulders, .biceps, .triceps, .abs, .core, .glutes]
 
     /// 部位ごとの推奨回復時間（時間）。大筋群ほど長め。
     static func recoveryHours(for muscle: MuscleGroup) -> Double {
         switch muscle {
         case .legs, .back, .glutes: return 72
         case .chest, .shoulders: return 60
-        case .biceps, .triceps, .core: return 48
+        case .biceps, .triceps, .abs, .core: return 48
         case .fullBody: return 60
         }
     }

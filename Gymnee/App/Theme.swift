@@ -127,6 +127,7 @@ enum Theme {
         case .shoulders: return Color(hexF: 0xFFB23E)
         case .biceps: return Color(hexF: 0xB388FF)
         case .triceps: return Color(hexF: 0xFF9FE5)
+        case .abs: return Color(hexF: 0xFFC93C)
         case .core: return Color(hexF: 0x5BE7C4)
         case .glutes: return Color(hexF: 0xFF8A5B)
         case .fullBody: return Color(hexF: 0x9AA0FF)

@@ -101,6 +101,7 @@ enum MuscleGroup: String, Codable, CaseIterable, Sendable {
     case shoulders
     case biceps
     case triceps
+    case abs
     case core
     case glutes
     case fullBody = "full_body"
@@ -113,6 +114,7 @@ enum MuscleGroup: String, Codable, CaseIterable, Sendable {
         case .shoulders: return "肩"
         case .biceps: return "二頭"
         case .triceps: return "三頭"
+        case .abs: return "腹"
         case .core: return "体幹"
         case .glutes: return "臀部"
         case .fullBody: return "全身"
