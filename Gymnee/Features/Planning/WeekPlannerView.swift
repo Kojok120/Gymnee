@@ -123,7 +123,7 @@ struct WeekPlannerView: View {
         .alert("AIワークアウト計画", isPresented: $aiInfo) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("計画を生成できませんでした。ネットワーク接続を確認して、しばらくおいてからもう一度お試しください。")
+            Text("計画を生成できませんでした。サインイン状態とネットワーク接続を確認して、しばらくおいてからもう一度お試しください。")
         }
     }
 
