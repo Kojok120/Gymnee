@@ -177,6 +177,10 @@ enum SeedData {
         ("バーピー", .fullBody, .bodyweight, .bodyweight),
         ("ケトルベルスイング", .fullBody, .kettlebell, .weight),
         ("クリーン&ジャーク", .fullBody, .barbell, .weight),
+        // 有酸素（距離km ＋ 時間分）
+        ("ウォーキング", .cardio, .other, .cardio),
+        ("ランニング", .cardio, .other, .cardio),
+        ("バイシクル", .cardio, .other, .cardio),
     ]
 
     // MARK: - Products

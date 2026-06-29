@@ -12,6 +12,7 @@ enum RecoveryAnalyzer {
         case .chest, .shoulders: return 60
         case .biceps, .triceps, .abs, .core: return 48
         case .fullBody: return 60
+        case .cardio, .other: return 24
         }
     }
 

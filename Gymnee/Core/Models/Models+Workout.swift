@@ -175,8 +175,10 @@ final class ExerciseSet {
     var reps: Int
     var isPR: Bool
     var isCompleted: Bool
-    /// 時間種目の継続秒数（time のみ。weight/bodyweight は nil）。
+    /// 時間種目の継続秒数（time / cardio のみ。weight/bodyweight は nil）。
     var durationSeconds: Int? = nil
+    /// 有酸素種目の距離km（cardio のみ。それ以外は nil）。
+    var distanceKm: Double? = nil
     var createdAt: Date
     var updatedAt: Date
     var isDirty: Bool
@@ -199,6 +201,7 @@ final class ExerciseSet {
         isPR: Bool = false,
         isCompleted: Bool = false,
         durationSeconds: Int? = nil,
+        distanceKm: Double? = nil,
         workoutExercise: WorkoutExercise? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
@@ -211,6 +214,7 @@ final class ExerciseSet {
         self.isPR = isPR
         self.isCompleted = isCompleted
         self.durationSeconds = durationSeconds
+        self.distanceKm = distanceKm
         self.workoutExercise = workoutExercise
         self.createdAt = createdAt
         self.updatedAt = updatedAt

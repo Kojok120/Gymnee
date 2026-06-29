@@ -130,7 +130,9 @@ enum Theme {
         case .abs: return Color(hexF: 0xFFC93C)
         case .core: return Color(hexF: 0x5BE7C4)
         case .glutes: return Color(hexF: 0xFF8A5B)
+        case .cardio: return Color(hexF: 0x4ECBFF)
         case .fullBody: return Color(hexF: 0x9AA0FF)
+        case .other: return Color(hexF: 0x9BA3AF)
         }
     }
 }

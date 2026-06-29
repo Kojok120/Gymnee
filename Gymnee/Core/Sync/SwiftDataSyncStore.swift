@@ -343,7 +343,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func encodeExerciseSet(_ m: ExerciseSet) -> [String: Any] {
         ["id": lower(m.id), "workout_exercise_id": opt(m.workoutExercise?.id.uuidString.lowercased()),
          "set_index": m.setIndex, "weight": m.weight, "reps": m.reps,
-         "duration_seconds": opt(m.durationSeconds), "is_pr": m.isPR, "is_completed": m.isCompleted,
+         "duration_seconds": opt(m.durationSeconds), "distance_km": opt(m.distanceKm),
+         "is_pr": m.isPR, "is_completed": m.isCompleted,
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyExerciseSet(_ row: [String: Any]) {
@@ -355,6 +356,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.weight = dbl(row["weight"]) ?? m.weight
         m.reps = int(row["reps"]) ?? m.reps
         m.durationSeconds = int(row["duration_seconds"])
+        m.distanceKm = dbl(row["distance_km"])
         m.isPR = bool(row["is_pr"]) ?? m.isPR
         m.isCompleted = bool(row["is_completed"]) ?? m.isCompleted
         m.workoutExercise = uuid(row["workout_exercise_id"]).flatMap(fetchWorkoutExercise)

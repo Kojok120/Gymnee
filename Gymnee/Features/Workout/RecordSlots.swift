@@ -9,7 +9,8 @@ enum RecordSlots {
     struct Centers: Equatable {
         var weight: Double   // weight / bodyweight（加重）の中央
         var reps: Int        // reps の中央
-        var duration: Int    // time の秒の中央
+        var duration: Int    // time は秒、cardio は分の中央
+        var distanceKm: Double = 0  // cardio の距離km の中央
     }
 
     /// 種目・コンテキストから中心値を算出（履歴 → 既定）。
@@ -20,6 +21,12 @@ enum RecordSlots {
         if type == .time {
             let dur = prev.compactMap { $0.durationSeconds }.first { $0 > 0 } ?? 30
             return Centers(weight: 0, reps: 0, duration: max(5, dur))
+        }
+
+        if type == .cardio {
+            let dist = prev.compactMap { $0.distanceKm }.first { $0 > 0 } ?? 3
+            let mins = prev.compactMap { $0.durationSeconds }.first { $0 > 0 }.map { $0 / 60 } ?? 30
+            return Centers(weight: 0, reps: 0, duration: max(1, mins), distanceKm: max(0.5, dist))
         }
 
         let weight: Double

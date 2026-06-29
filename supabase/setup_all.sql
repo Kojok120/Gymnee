@@ -1024,3 +1024,9 @@ $$;
 
 revoke all on function public.set_device_token(text, text) from public;
 grant execute on function public.set_device_token(text, text) to authenticated;
+
+-- ============================================================
+-- migrations/0023_exercise_set_distance.sql
+-- ============================================================
+-- 有酸素種目（cardio）の距離km。距離km ＋ 時間（duration_seconds に分×60で保存）で記録する。
+alter table public.exercise_sets add column if not exists distance_km double precision;

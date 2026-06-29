@@ -104,7 +104,9 @@ enum MuscleGroup: String, Codable, CaseIterable, Sendable {
     case abs
     case core
     case glutes
+    case cardio
     case fullBody = "full_body"
+    case other
 
     var label: String {
         switch self {
@@ -117,7 +119,9 @@ enum MuscleGroup: String, Codable, CaseIterable, Sendable {
         case .abs: return "腹"
         case .core: return "体幹"
         case .glutes: return "臀部"
+        case .cardio: return "有酸素"
         case .fullBody: return "全身"
+        case .other: return "その他"
         }
     }
 }
@@ -216,19 +220,22 @@ enum MeasurementType: String, Codable, CaseIterable, Sendable {
     case weight
     case bodyweight
     case time
+    /// 有酸素（距離km ＋ 時間分）。ランニング/ウォーキング/バイシクル等。
+    case cardio
 
     var label: String {
         switch self {
         case .weight: return "ウェイト"
         case .bodyweight: return "自重"
         case .time: return "時間"
+        case .cardio: return "有酸素"
         }
     }
 
-    /// 重量（加重）軸を持つか。time のみ false。
-    var hasWeightAxis: Bool { self != .time }
-    /// reps 軸を持つか。time のみ false（秒で記録）。
-    var hasRepsAxis: Bool { self != .time }
+    /// 重量（加重）軸を持つか。time / cardio は false。
+    var hasWeightAxis: Bool { self == .weight || self == .bodyweight }
+    /// reps 軸を持つか。time / cardio は false（秒・距離/時間で記録）。
+    var hasRepsAxis: Bool { self == .weight || self == .bodyweight }
 }
 
 /// 投稿へのリアクション種別（§6.11 ゲーミフィケーション）。いいねのみ。
