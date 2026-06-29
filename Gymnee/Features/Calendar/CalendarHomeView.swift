@@ -479,17 +479,25 @@ private struct CalendarHomeContent: View {
         return ("sparkles", "新しい週。まずは1回チェックインしてみよう。")
     }
 
-    private var weekdaySymbols: [String] {
+    /// 曜日記号・月タイトル用の DateFormatter は生成コストが高いため共有する（毎描画で作らない）。
+    private static let weekdayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
-        return f.veryShortStandaloneWeekdaySymbols
-    }
-
-    private var titleText: String {
+        return f
+    }()
+    private static let titleFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ja_JP")
         f.dateFormat = "yyyy年 M月"
-        return f.string(from: anchor)
+        return f
+    }()
+
+    private var weekdaySymbols: [String] {
+        Self.weekdayFormatter.veryShortStandaloneWeekdaySymbols
+    }
+
+    private var titleText: String {
+        Self.titleFormatter.string(from: anchor)
     }
 
     /// 表示対象の日配列。前後の空白を nil で埋めた当月のグリッド。
