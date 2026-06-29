@@ -219,6 +219,8 @@ struct RecordContent: View {
     @State private var showMemo = false
     /// 録画中の暫定PRスパーク（その場の「更新ペース！」表示・非永続。確定は完了時）。
     @State private var prSpark: PRSpark?
+    /// フリーのカード（部位ごと）。種目数×完了履歴の関連走査が重いので毎描画ではなくキャッシュする。
+    @State private var freeGroups: [(MuscleGroup, [Exercise])] = []
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
@@ -311,6 +313,8 @@ struct RecordContent: View {
                 if !onboardingShown { showOnboarding = true }
             }
         }
+        // フリーのカード群は種目数が変わった時だけ作り直す（毎描画の関連走査を避ける）。
+        .task(id: allExercises.count) { rebuildFreeGroups() }
     }
 
     /// 中身の無い空の下書き(completedAt=nil)だけをローカル掃除する。
@@ -348,9 +352,9 @@ struct RecordContent: View {
                 .background(Theme.bg1, in: Capsule())
             }
             Spacer(minLength: 0)
-            if mode == .free, !freeGroupedByMuscle.isEmpty {
+            if mode == .free, !freeGroups.isEmpty {
                 Menu {
-                    ForEach(freeGroupedByMuscle.map(\.0), id: \.self) { mg in
+                    ForEach(freeGroups.map(\.0), id: \.self) { mg in
                         Button(mg.label) { jumpTarget = mg }
                     }
                 } label: {
@@ -386,8 +390,9 @@ struct RecordContent: View {
 
     /// ② 記録ログ。常時表示（空ならプレースホルダ）。List なのでスワイプ削除・行タップ編集が効く。
     private var logStrip: some View {
-        List {
-            if loggedSets.isEmpty {
+        let sets = loggedSets   // flatMap+sort を1描画で1回だけに（空判定・行・高さで使い回す）。
+        return List {
+            if sets.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "list.bullet.rectangle").font(.caption)
                     Text("記録するとここに溜まります").font(.caption)
@@ -396,7 +401,7 @@ struct RecordContent: View {
                 .listRowBackground(Theme.bg1)
                 .listRowSeparator(.hidden)
             } else {
-                ForEach(loggedSets) { set in
+                ForEach(sets) { set in
                     LogRowView(set: set)
                         .listRowBackground(Theme.bg1)
                         .contentShape(Rectangle())
@@ -407,7 +412,7 @@ struct RecordContent: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .frame(height: loggedSets.isEmpty ? 52 : 160)
+        .frame(height: sets.isEmpty ? 52 : 160)
         .background(Theme.bg1)
     }
 
@@ -438,7 +443,7 @@ struct RecordContent: View {
     /// フリー：最近/よく使う＋このセッション＋手動追加。部位ごとにまとめ、③でジャンプ。
     @ViewBuilder
     private var freeCardsBody: some View {
-        let grouped = freeGroupedByMuscle
+        let grouped = freeGroups
         if grouped.isEmpty {
             emptyFreeState
         } else {
@@ -645,7 +650,7 @@ struct RecordContent: View {
     /// フリーのカード：部位ごとにまとめた配列。仕様書「最近中心＋全種目」。
     /// セッション中はカード順を固定する：先頭に置く「最近」は完了済み履歴のある種目のみで判定し、
     /// 記録途中の下書きでは並べ替えない（記録してもカードが動かない／完了後の次回に順序が更新される）。
-    private var freeGroupedByMuscle: [(MuscleGroup, [Exercise])] {
+    private func rebuildFreeGroups() {
         let recent = allExercises.filter { ex in
             ex.workoutExercises.contains { $0.workout?.userId == userId && $0.workout?.completedAt != nil && !$0.sets.isEmpty }
         }
@@ -659,7 +664,7 @@ struct RecordContent: View {
         for ex in allExercises where seen.insert(ex.id).inserted {
             ordered.append(ex)
         }
-        return MuscleGroup.allCases.compactMap { mg in
+        freeGroups = MuscleGroup.allCases.compactMap { mg in
             let items = ordered.filter { $0.muscleGroup == mg }
             return items.isEmpty ? nil : (mg, items)
         }
