@@ -40,20 +40,31 @@ struct HistoryView: View {
 private struct DateHistoryList: View {
     let userId: UUID
     @Query private var workouts: [Workout]
+    /// 進行中の下書き（未完了・予定でない）。中身のあるものだけ「下書き」として一覧先頭に出す。
+    @Query private var draftWorkouts: [Workout]
 
     private let calendar = Calendar.current
 
     init(userId: UUID) {
         self.userId = userId
-        // 完了済みのみ（進行中の下書きは履歴に出さない）。全期間（DEV のため件数上限なし）。
+        // 完了済みのみ。全期間（DEV のため件数上限なし）。
         _workouts = Query(
             filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil },
             sort: \Workout.date, order: .reverse
         )
+        _draftWorkouts = Query(
+            filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt == nil && $0.isPlanned == false },
+            sort: \Workout.date, order: .reverse
+        )
+    }
+
+    /// セット or メモのある下書きだけ（空の中断は出さない）。
+    private var drafts: [Workout] {
+        draftWorkouts.filter { $0.exercises.contains { !$0.sets.isEmpty } || !($0.note ?? "").isEmpty }
     }
 
     var body: some View {
-        if workouts.isEmpty {
+        if workouts.isEmpty && drafts.isEmpty {
             EmptyStateView(
                 systemImage: "calendar",
                 title: "記録がありません",
@@ -61,6 +72,11 @@ private struct DateHistoryList: View {
             )
         } else {
             List {
+                if !drafts.isEmpty {
+                    Section("下書き（途中の記録）") {
+                        ForEach(drafts) { draft in draftRow(draft) }
+                    }
+                }
                 ForEach(grouped, id: \.month) { group in
                     Section(monthLabel(group.month)) {
                         ForEach(group.items) { workout in
@@ -76,6 +92,29 @@ private struct DateHistoryList: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// 下書き行。タップで「途中の記録」と同じ再開導線（記録タブで当該ワークアウトを開く）。
+    private func draftRow(_ draft: Workout) -> some View {
+        Button {
+            NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil,
+                                            userInfo: ["workoutId": draft.id.uuidString])
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Text(draft.date, format: .dateTime.month().day().hour().minute())
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text("下書き")
+                        .font(.caption2.bold()).foregroundStyle(Theme.onLime)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Theme.limeFill, in: Capsule())
+                    Spacer()
+                    Image(systemName: "arrow.uturn.backward.circle").font(.caption).foregroundStyle(Theme.lime)
+                }
+                Text(DraftSummary.text(for: draft))
+                    .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(2)
             }
         }
     }

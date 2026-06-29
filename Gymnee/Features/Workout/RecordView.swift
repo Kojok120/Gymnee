@@ -22,9 +22,9 @@ struct RecordView: View {
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
 
-    /// 中身（セット or メモ）のある自動保存下書き。あれば再開を促す。
-    private func resumableDraft(for uid: UUID) -> Workout? {
-        openDrafts.first { w in
+    /// 中身（セット or メモ）のある自動保存下書きをすべて返す（新しい順）。各々をゲートにカード表示する。
+    private func resumableDrafts(for uid: UUID) -> [Workout] {
+        openDrafts.filter { w in
             w.userId == uid && (w.exercises.contains { !$0.sets.isEmpty } || !(w.note ?? "").isEmpty)
         }
     }
@@ -37,7 +37,7 @@ struct RecordView: View {
                 } else {
                     StartGateView(
                         userId: uid,
-                        resumable: resumableDraft(for: uid),
+                        resumables: resumableDrafts(for: uid),
                         onStart: { resumeTarget = nil; gateOpen = true },
                         onResume: { draft in resumeTarget = draft; gateOpen = true },
                         onDiscard: { draft in context.delete(draft); try? context.save() }
@@ -64,8 +64,8 @@ struct RecordView: View {
 /// 「記録を開始する」ゲート（記録タブから入った時に一度挟む）。
 private struct StartGateView: View {
     let userId: UUID
-    /// 自動保存された中断中の下書き（あれば再開導線を出す）。
-    var resumable: Workout? = nil
+    /// 自動保存された中断中の下書き（あれば1件ずつカードで再開/破棄導線を出す）。
+    var resumables: [Workout] = []
     let onStart: () -> Void
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
@@ -73,44 +73,62 @@ private struct StartGateView: View {
     private enum Route: Hashable { case history }
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            Spacer()
-            if let draft = resumable { resumeCard(draft) }
-            Image(systemName: "dumbbell.fill").font(.system(size: 52)).foregroundStyle(Theme.lime)
-            Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
-            Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
-            Spacer()
-            Button(action: onStart) {
-                Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
-                    .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
-                    .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+        ScrollView {
+            VStack(spacing: Theme.Spacing.lg) {
+                if !resumables.isEmpty {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        Text("途中の記録").font(.subheadline.bold()).foregroundStyle(Theme.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        ForEach(resumables) { draft in resumeCard(draft) }
+                    }
+                    .padding(.top, Theme.Spacing.lg)
+                }
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "dumbbell.fill").font(.system(size: 52)).foregroundStyle(Theme.lime)
+                    Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
+                    Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.top, resumables.isEmpty ? Theme.Spacing.xxl : Theme.Spacing.lg)
             }
             .padding(.horizontal, Theme.Spacing.lg)
-            // これまでの記録を一覧で振り返る導線（記録一覧＝日付/種目ごと）。
-            NavigationLink(value: Route.history) {
-                Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .padding(.top, Theme.Spacing.xs)
-            .padding(.bottom, Theme.Spacing.xl)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg0)
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: Theme.Spacing.sm) {
+                Button(action: onStart) {
+                    Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
+                        .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
+                        .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                }
+                // これまでの記録を一覧で振り返る導線（記録一覧＝日付/種目ごと。下書きも含む）。
+                NavigationLink(value: Route.history) {
+                    Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.md)
+        }
         .navigationTitle("記録").navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: Route.self) { _ in
             HistoryView(userId: userId)
         }
     }
 
-    /// 中断中の記録を再開/破棄するカード（自動保存の可視化）。
+    /// 中断中の記録1件を再開/破棄するカード（開始日時＋内容の一部を表示）。
     private func resumeCard(_ draft: Workout) -> some View {
-        let setCount = draft.exercises.reduce(0) { $0 + $1.sets.count }
-        return VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Label("途中の記録があります", systemImage: "arrow.uturn.backward.circle.fill")
-                .font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
-            Text("\(draft.name)・\(setCount)セットを自動保存しました。")
-                .font(.caption).foregroundStyle(Theme.textSecondary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack {
+                Label("途中の記録", systemImage: "arrow.uturn.backward.circle.fill")
+                    .font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Text(draft.date, format: .dateTime.month().day().hour().minute())
+                    .font(.caption2).foregroundStyle(Theme.textTertiary)
+            }
+            Text(DraftSummary.text(for: draft))
+                .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
             HStack(spacing: Theme.Spacing.sm) {
                 Button { onResume(draft) } label: {
                     Text("再開").font(.subheadline.bold()).foregroundStyle(Theme.onLime)
@@ -127,7 +145,23 @@ private struct StartGateView: View {
         .padding(Theme.Spacing.md)
         .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(Theme.lime.opacity(0.5), lineWidth: 1))
-        .padding(.horizontal, Theme.Spacing.lg)
+    }
+}
+
+/// 下書き（途中の記録）の内容サマリー文字列（種目名の一部＋セット数）。ゲートと記録一覧で共用。
+enum DraftSummary {
+    @MainActor
+    static func text(for draft: Workout) -> String {
+        let setCount = draft.exercises.reduce(0) { $0 + $1.sets.count }
+        let names = draft.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .compactMap { $0.exercise?.name }
+        let head = names.prefix(2).joined(separator: ", ")
+        let more = names.count > 2 ? " 他\(names.count - 2)種目" : ""
+        if names.isEmpty {
+            return setCount > 0 ? "\(setCount)セット" : "メモのみ"
+        }
+        return "\(head)\(more) ・ \(setCount)セット"
     }
 }
 
