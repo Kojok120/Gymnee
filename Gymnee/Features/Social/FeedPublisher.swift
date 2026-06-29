@@ -92,9 +92,17 @@ enum FeedPublisher {
             let isFirst = cal.startOfDay(for: rep.achievedAt) == firstDayByExercise[exId]
             let summary = isFirst ? "新しい種目に挑戦: \(name)" : "\(name) 自己ベスト更新"
             // 同種目・同日の各計測タイプ＋数値を載せ、フォロワー側でも数値つきで自己ベストを表示できるようにする。
+            // 同一計測タイプが同日に複数あっても PR タブで重複行にならないよう、type ごと最新1件へ畳む
+            // （値の優劣は種別で向きが違うため「最新」で寄せる）。
+            var latestByType: [PRType: PersonalRecord] = [:]
+            for pr in group {
+                if let cur = latestByType[pr.type], cur.achievedAt >= pr.achievedAt { continue }
+                latestByType[pr.type] = pr
+            }
             let prStats = FeedItemPRStats(
                 exercise: name,
-                items: group.sorted { $0.type.rawValue < $1.type.rawValue }
+                items: latestByType.values
+                    .sorted { $0.type.rawValue < $1.type.rawValue }
                     .map { FeedItemPRStats.Item(type: $0.type.rawValue, value: $0.value) }
             )
             upsert(refId: rep.id, type: .pr, summary: summary, date: rep.achievedAt, statsJSON: prStats.encodedJSON())
@@ -108,8 +116,13 @@ enum FeedPublisher {
             changed = true
         }
 
-        if changed { try? context.save() }
-        // 発行分の同期キュー登録はここで1回だけ（persist・自動同期スケジュールを集約）。
-        if !pending.isEmpty { sync.enqueueBatch(pending) }
+        guard changed else { return }
+        do {
+            try context.save()
+            // 保存成功時だけ同期キューへ積む（保存できなかった変更を push してローカルと乖離させない）。
+            if !pending.isEmpty { sync.enqueueBatch(pending) }
+        } catch {
+            // 保存失敗時は enqueue しない（次回の発行で再試行）。
+        }
     }
 }
