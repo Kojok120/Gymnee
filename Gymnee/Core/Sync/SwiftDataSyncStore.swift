@@ -307,7 +307,11 @@ final class SwiftDataSyncStore: SyncBackingStore {
         if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
         let m = existing ?? insert(Exercise(id: id, name: str(row["name"]) ?? "種目", muscleGroup: .fullBody, equipment: .other))
         m.name = str(row["name"]) ?? m.name
-        m.muscleGroupRaw = str(row["muscle_group"]) ?? m.muscleGroupRaw
+        // 旧部位 biceps/triceps はローカルで arms に統合済み。pull でそのまま取り込むと
+        // muscleGroupRaw が旧値に巻き戻り MuscleGroup(rawValue:) が .fullBody に落ちるため正規化する。
+        if let raw = str(row["muscle_group"]) {
+            m.muscleGroupRaw = (raw == "biceps" || raw == "triceps") ? "arms" : raw
+        }
         m.equipmentRaw = str(row["equipment"]) ?? m.equipmentRaw
         m.isCustom = bool(row["is_custom"]) ?? m.isCustom
         m.createdBy = uuid(row["created_by"])

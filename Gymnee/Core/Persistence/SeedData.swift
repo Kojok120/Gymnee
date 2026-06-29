@@ -160,8 +160,17 @@ enum SeedData {
 
             for loser in dupes where loser !== keeper {
                 // nullify 関連の参照先削除はエンコード/UI でのアサーション落ちを招くため、先に付け替える。
-                for we in Array(loser.workoutExercises) { we.exercise = keeper }
-                for re in Array(loser.routineExercises) { re.exercise = keeper }
+                // 付け替えた行自体も dirty にしないと、LWW で次回 pull に古い exercise_id が巻き戻る。
+                for we in Array(loser.workoutExercises) {
+                    we.exercise = keeper
+                    we.updatedAt = .now
+                    we.isDirty = true
+                }
+                for re in Array(loser.routineExercises) {
+                    re.exercise = keeper
+                    re.updatedAt = .now
+                    re.isDirty = true
+                }
                 context.delete(loser)
                 changed = true
             }
