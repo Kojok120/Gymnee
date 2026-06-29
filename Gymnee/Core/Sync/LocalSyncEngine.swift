@@ -65,6 +65,13 @@ final class LocalSyncEngine: SyncEngine {
     }
     var pendingCount: Int { outbox.count }
 
+    /// outbox 重複判定キー（entity + recordId の組）。
+    private struct PendingKey: Hashable {
+        let entity: String
+        let recordId: UUID
+        init(_ c: PendingChange) { entity = c.entity; recordId = c.recordId }
+    }
+
     func enqueue(_ change: PendingChange) {
         // 同一レコードの既存待ちは最新の 1 件に畳む（LWW、§9-7）。
         outbox.removeAll { $0.recordId == change.recordId && $0.entity == change.entity }
@@ -74,12 +81,21 @@ final class LocalSyncEngine: SyncEngine {
     }
 
     /// 複数変更をまとめて積む（ディスク書込・自動同期は 1 回だけ）。
-    /// 移行のような大量 enqueue でメインスレッドが詰まらないようにするため。
+    /// 移行や投稿一括発行のような大量 enqueue でメインスレッドが詰まらないようにするため。
     func enqueueBatch(_ changes: [PendingChange]) {
         guard !changes.isEmpty else { return }
+        // 同一レコード(entity+recordId)は最新 1 件へ畳む（LWW、§9-7）。
+        // 既存 outbox と追加分をキー索引で突き合わせ、要素ごとの全走査 removeAll（O(n*m)）を避ける。
+        var indexByKey: [PendingKey: Int] = [:]
+        for (i, c) in outbox.enumerated() { indexByKey[PendingKey(c)] = i }
         for change in changes {
-            outbox.removeAll { $0.recordId == change.recordId && $0.entity == change.entity }
-            outbox.append(change)
+            let key = PendingKey(change)
+            if let i = indexByKey[key] {
+                outbox[i] = change
+            } else {
+                indexByKey[key] = outbox.count
+                outbox.append(change)
+            }
         }
         persist()
         scheduleAutoSync()
@@ -123,9 +139,9 @@ final class LocalSyncEngine: SyncEngine {
 
         // FK 親依存（visits→gyms 等）を補完。未enqueue/詰まりの親も先に送れ、既存の詰まりを自己修復する。
         var snapshot = outbox
+        var present = Set(outbox.map { PendingKey($0) })
         for change in outbox {
-            for dep in store.dependencies(for: change)
-            where !snapshot.contains(where: { $0.recordId == dep.recordId && $0.entity == dep.entity }) {
+            for dep in store.dependencies(for: change) where present.insert(PendingKey(dep)).inserted {
                 snapshot.append(dep)
             }
         }
@@ -187,18 +203,22 @@ final class LocalSyncEngine: SyncEngine {
     func pull() async throws {
         guard let remote, let store else { return } // リモート未設定＝no-op
 
-        for table in syncedTables {
-            let since = store.lastPulledAt(table: table)
-            do {
-                let rows = try await remote.select(table: table, updatedSince: since)
-                guard !rows.isEmpty else { continue }
-                store.apply(table: table, rows: rows)
-                // 取得行の最大 updated_at を次回基準にする。
-                if let newest = Self.newestUpdatedAt(in: rows) {
-                    store.setLastPulledAt(newest, table: table)
+        // テーブル間に取り込み順依存は無い（衝突解決は ConflictResolver で行単位）。各テーブルの
+        // ネットワーク取得を並列化し、直列だと 19 テーブル分積み上がる往復レイテンシを解消する。
+        // select は actor 上で並行実行され、apply/setLastPulledAt は @MainActor の子タスクで順次反映する。
+        let targets = syncedTables.map { (table: $0, since: store.lastPulledAt(table: $0)) }
+        await withTaskGroup(of: Void.self) { group in
+            for target in targets {
+                group.addTask { @MainActor in
+                    // 個別テーブル失敗は握りつぶし、他テーブルを継続（best-effort 差分 pull）。
+                    guard let rows = try? await remote.select(table: target.table, updatedSince: target.since),
+                          !rows.isEmpty else { return }
+                    store.apply(table: target.table, rows: rows)
+                    // 取得行の最大 updated_at を次回基準にする。
+                    if let newest = Self.newestUpdatedAt(in: rows) {
+                        store.setLastPulledAt(newest, table: target.table)
+                    }
                 }
-            } catch {
-                continue // 個別テーブル失敗は握りつぶし、他テーブルを継続。
             }
         }
     }
