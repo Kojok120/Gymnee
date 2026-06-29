@@ -13,23 +13,35 @@ struct PRSpark: Identifiable, Equatable {
 /// 詳細仕様は docs/record-redesign-spec.md。
 struct RecordView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(\.modelContext) private var context
     /// タブから入った時は「記録を開始する」ゲートを挟む。チェックイン経由は飛ばす。
     @State private var gateOpen = false
+    /// 計画/予定の「開始」から渡された、記録タブで再開するワークアウト（nil＝新規ライブ記録）。
+    @State private var resumeTarget: Workout?
 
     var body: some View {
         NavigationStack {
             if let uid = auth.currentUserId {
                 if gateOpen {
-                    RecordContent(userId: uid, onEnd: { gateOpen = false })
+                    RecordContent(userId: uid, resuming: resumeTarget, onEnd: { gateOpen = false; resumeTarget = nil })
                 } else {
-                    StartGateView(userId: uid, onStart: { gateOpen = true })
+                    StartGateView(userId: uid, onStart: { resumeTarget = nil; gateOpen = true })
                 }
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
         }
-        // チェックイン直後はゲートを飛ばして記録画面へ直行。
-        .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in gateOpen = true }
+        // チェックイン直後はゲートを飛ばして記録画面へ直行（新規記録）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in resumeTarget = nil; gateOpen = true }
+        // 計画/予定の「開始」→ 記録タブで当該ワークアウトを再開（カレンダータブから遷移してくる）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { note in
+            guard let idStr = note.userInfo?["workoutId"] as? String, let id = UUID(uuidString: idStr) else { return }
+            let found = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id }))) ?? []
+            if let w = found.first {
+                resumeTarget = w
+                gateOpen = true
+            }
+        }
     }
 }
 
@@ -766,12 +778,13 @@ struct RecordContent: View {
         freeAdded = []
         // カレンダータブへ切替え、タブのゲート/pushed view を閉じる。
         NotificationCenter.default.post(name: .gymneeShowCalendar, object: nil)
-        if resuming != nil { dismiss() } else { onEnd?() }
+        // タブ起点（チェックイン/計画開始）はゲートへ戻す。カレンダーからの過去編集 push は閉じる。
+        if let onEnd { onEnd() } else { dismiss() }
     }
 
     private func endSession() {
-        if resuming != nil { dismiss(); return }
-        if let onEnd { onEnd(); return }   // タブのゲートへ戻す（state は再生成でリセット）
+        if let onEnd { onEnd(); return }   // タブ起点：ゲートへ戻す（state は再生成でリセット）
+        if resuming != nil { dismiss(); return }   // カレンダーからの過去編集 push を閉じる
         activeWorkout = nil
         activePlanId = nil
         armed = [:]

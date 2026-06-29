@@ -81,7 +81,12 @@ private struct CalendarHomeContent: View {
         .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
         .sheet(isPresented: $showPlanner) {
             NavigationStack {
-                WeekPlannerView(userId: userId, onStart: { w in showPlanner = false; editingWorkout = w })
+                WeekPlannerView(userId: userId, onStart: { w in
+                    // 計画の開始は記録タブで開く（カレンダータブ内に留めない）。
+                    showPlanner = false
+                    NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil,
+                                                    userInfo: ["workoutId": w.id.uuidString])
+                })
                     .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showPlanner = false } } }
             }
         }

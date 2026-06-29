@@ -147,6 +147,10 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCalendar)) { _ in
             selection = .calendar
         }
+        // 計画/予定の「開始」から記録タブへ（RecordView 側が当該ワークアウトを再開する）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { _ in
+            selection = .workout
+        }
         // 通知タップのルーティング（type に応じて該当タブへ）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
