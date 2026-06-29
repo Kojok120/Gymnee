@@ -91,7 +91,13 @@ enum FeedPublisher {
             let name = rep.exercise?.name ?? "種目"
             let isFirst = cal.startOfDay(for: rep.achievedAt) == firstDayByExercise[exId]
             let summary = isFirst ? "新しい種目に挑戦: \(name)" : "\(name) 自己ベスト更新"
-            upsert(refId: rep.id, type: .pr, summary: summary, date: rep.achievedAt)
+            // 同種目・同日の各計測タイプ＋数値を載せ、フォロワー側でも数値つきで自己ベストを表示できるようにする。
+            let prStats = FeedItemPRStats(
+                exercise: name,
+                items: group.sorted { $0.type.rawValue < $1.type.rawValue }
+                    .map { FeedItemPRStats.Item(type: $0.type.rawValue, value: $0.value) }
+            )
+            upsert(refId: rep.id, type: .pr, summary: summary, date: rep.achievedAt, statsJSON: prStats.encodedJSON())
         }
 
         // 残った既存 = もう存在しない投稿 → feed_item を削除して同期。
