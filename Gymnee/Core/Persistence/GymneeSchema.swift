@@ -70,16 +70,4 @@ enum GymneeSchema {
             return try! ModelContainer(for: schema, configurations: fallback)
         }
     }
-
-    /// テスト/プレビュー用のインメモリコンテナ。
-    @MainActor
-    static func makeInMemoryContainer(seeded: Bool = true) -> ModelContainer {
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        // swiftlint:disable:next force_try
-        let container = try! ModelContainer(for: schema, configurations: configuration)
-        if seeded {
-            SeedData.seedIfNeeded(container.mainContext)
-        }
-        return container
-    }
 }
