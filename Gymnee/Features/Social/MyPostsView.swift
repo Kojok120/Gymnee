@@ -18,7 +18,6 @@ struct MyPostsView: View {
     @Query private var allReactions: [PostReaction]
     @Query private var allComments: [Comment]
     @Query private var blocks: [Block]
-    @Query private var feedItems: [FeedItem]
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     /// 通知を最後に見た時刻。ベルの未読バッジ算出に使う。
     @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
@@ -40,7 +39,12 @@ struct MyPostsView: View {
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
     private var blockedIds: Set<UUID> { Set(blocks.map(\.blockedId)) }
     /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
-    private var myPostIds: Set<UUID> { Set(feedItems.filter { $0.userId == userId }.map(\.id)) }
+    /// feed_item.id == 元データ id。削除直後でも実体（visit/pr/workout）から導き、stale な feedItems に依存しない。
+    private var myPostIds: Set<UUID> {
+        Set(visits.map(\.id))
+            .union(prs.map(\.id))
+            .union(workouts.filter { $0.completedAt != nil }.map(\.id))
+    }
     /// 自分の投稿に付いた他者反応の未読数（ベルの赤バッジ）。
     private var socialUnread: Int {
         SocialActivityFeed.unreadCount(reactions: allReactions, comments: allComments,

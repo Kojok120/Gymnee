@@ -109,7 +109,12 @@ private struct SocialContent: View {
         return follows.filter { $0.followeeId == userId && !followingIds.contains($0.followerId) && !blockedIds.contains($0.followerId) }
     }
     /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
-    private var myPostIds: Set<UUID> { Set(feedItems.filter { $0.userId == userId }.map(\.id)) }
+    /// feed_item.id == 元データ id。削除直後でも実体（visit/pr/workout）から導き、stale な feedItems に依存しない。
+    private var myPostIds: Set<UUID> {
+        Set(visits.map(\.id))
+            .union(prs.map(\.id))
+            .union(workouts.filter { $0.completedAt != nil }.map(\.id))
+    }
     /// 自分の投稿に付いた他者反応の未読数（アイコンの赤バッジ）。
     private var socialUnread: Int {
         SocialActivityFeed.unreadCount(reactions: allReactions, comments: allComments,

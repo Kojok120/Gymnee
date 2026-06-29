@@ -83,9 +83,15 @@ struct PostDetailView: View {
 
     // MARK: - 投稿カード（他人の投稿は著者タップでプロフィールへ）
 
+    /// 著者表示名（空文字も「ユーザー」に正規化。commentName(_:) と同方針）。
+    private var authorDisplayName: String {
+        if let n = entry.authorName, !n.isEmpty { return n }
+        return "ユーザー"
+    }
+
     @ViewBuilder private var authorCard: some View {
         if let authorId = entry.authorId, authorId != currentUserId {
-            NavigationLink(value: UserRef(id: authorId, name: entry.authorName ?? "ユーザー")) {
+            NavigationLink(value: UserRef(id: authorId, name: authorDisplayName)) {
                 FeedCardView(entry: entry)
             }
             .buttonStyle(.plain)

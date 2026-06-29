@@ -14,7 +14,6 @@ struct SocialActivityView: View {
     @Query private var allComments: [Comment]
     @Query private var blocks: [Block]
     @Query private var profiles: [Profile]
-    @Query private var feedItems: [FeedItem]
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
@@ -38,7 +37,12 @@ struct SocialActivityView: View {
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
     private var blockedIds: Set<UUID> { Set(blocks.map(\.blockedId)) }
     /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
-    private var myPostIds: Set<UUID> { Set(feedItems.filter { $0.userId == userId }.map(\.id)) }
+    /// feed_item.id == 元データ id なので、削除直後でも実体（visit/pr/workout）から導く（stale な feedItems に依存しない）。
+    private var myPostIds: Set<UUID> {
+        Set(visits.map(\.id))
+            .union(prs.map(\.id))
+            .union(workouts.filter { $0.completedAt != nil }.map(\.id))
+    }
 
     /// 自分の投稿への他者反応（新しい順）→ 投稿ごとに集約。
     private var groups: [SocialActivityGroup] {
@@ -56,9 +60,11 @@ struct SocialActivityView: View {
 
     var body: some View {
         let since = Date(timeIntervalSince1970: renderSince ?? lastSeenRaw)
+        // 行ごとに FeedBuilder を回さないよう、詳細遷移用の索引は描画ごとに 1 度だけ構築する。
+        let entries = entriesById
         List {
             ForEach(groups) { group in
-                row(group, unread: group.latestDate > since)
+                row(group, entry: entries[group.postId], unread: group.latestDate > since)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -79,18 +85,21 @@ struct SocialActivityView: View {
             // 開く前の lastSeen を一度だけ控えてから既読化する（未読ドットは控えた値で描く）。
             if renderSince == nil { renderSince = lastSeenRaw }
             lastSeenRaw = Date.now.timeIntervalSince1970
-            await ensureProfiles()
         }
+        // 表示中に新しい反応/コメントが来ても反応者プロフィール（名前/アバター）を取りに行く。
+        .task(id: actorIds) { await ensureProfiles() }
         .sheet(item: $postDetail) { entry in
             PostDetailView(entry: entry, currentUserId: userId, onClose: { postDetail = nil })
         }
     }
 
+    /// 集約済みグループの反応者 id（プロフィール再取得の起動キー）。
+    private var actorIds: [UUID] { groups.flatMap(\.actorIds) }
+
     // MARK: - 行（投稿ごと集約）
 
     @ViewBuilder
-    private func row(_ group: SocialActivityGroup, unread: Bool) -> some View {
-        let entry = entriesById[group.postId]
+    private func row(_ group: SocialActivityGroup, entry: FeedEntry?, unread: Bool) -> some View {
         Button {
             if let entry { postDetail = entry }
         } label: {
@@ -134,15 +143,17 @@ struct SocialActivityView: View {
     }
 
     /// 「〇〇さん 他N人が応援・コメントしました」。
+    /// リアクションが「いいね」のみのグループは「いいね」、それ以外（他種別を含む）は「応援」と出し分ける。
     private func headline(_ group: SocialActivityGroup) -> String {
         let first = name(group.actorIds.first)
         let others = max(0, group.actorIds.count - 1)
         let who = others > 0 ? "\(first) 他\(others)人" : first
+        let reactionWord = group.reactionKinds == [.like] ? "いいね" : "応援"
         let verb: String
         if group.reactionCount > 0 && group.commentCount > 0 {
-            verb = "が応援・コメントしました"
+            verb = "が\(reactionWord)・コメントしました"
         } else if group.reactionCount > 0 {
-            verb = "が応援しました"
+            verb = "が\(reactionWord)しました"
         } else {
             verb = "がコメントしました"
         }

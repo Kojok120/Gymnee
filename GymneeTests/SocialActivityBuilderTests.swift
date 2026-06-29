@@ -64,6 +64,7 @@ final class SocialActivityBuilderTests: XCTestCase {
         XCTAssertEqual(groups[0].postId, postA)
         XCTAssertEqual(groups[0].latestDate, date(500))
         XCTAssertEqual(groups[0].reactionCount, 2)
+        XCTAssertEqual(groups[0].reactionKinds, [.like])   // いいね/応援の出し分け用に種別を保持
         XCTAssertEqual(groups[0].commentCount, 1)
         XCTAssertEqual(groups[0].latestCommentText, "nice")
         // actorIds は重複排除・新しい順（otherY が最新コメント、次に otherX）

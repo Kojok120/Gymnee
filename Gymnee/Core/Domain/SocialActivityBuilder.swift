@@ -27,6 +27,8 @@ struct SocialActivityGroup: Identifiable, Equatable {
     /// 反応した相手（重複排除・新しい順）。表示名解決は呼び出し側が行う。
     let actorIds: [UUID]
     let reactionCount: Int
+    /// このグループに含まれるリアクション種別（文言を「いいね」か「応援」かに出し分けるため）。
+    let reactionKinds: Set<ReactionKind>
     let commentCount: Int
     /// 最新のコメント本文（プレビュー用。コメントが無ければ nil）。
     let latestCommentText: String?
@@ -64,8 +66,10 @@ enum SocialActivityBuilder {
             let items = byPost[pid] ?? []   // 新しい順を維持
             var seenActors = Set<UUID>()
             let actorIds = items.compactMap { seenActors.insert($0.actorId).inserted ? $0.actorId : nil }
-            let reactionCount = items.reduce(0) { acc, a in
-                if case .reaction = a.kind { return acc + 1 } else { return acc }
+            var reactionCount = 0
+            var reactionKinds = Set<ReactionKind>()
+            for a in items {
+                if case .reaction(let k) = a.kind { reactionCount += 1; reactionKinds.insert(k) }
             }
             let latestComment = items.first { if case .comment = $0.kind { return true } else { return false } }
             return SocialActivityGroup(
@@ -73,6 +77,7 @@ enum SocialActivityBuilder {
                 latestDate: items.first?.date ?? .distantPast,
                 actorIds: actorIds,
                 reactionCount: reactionCount,
+                reactionKinds: reactionKinds,
                 commentCount: items.count - reactionCount,
                 latestCommentText: latestComment?.commentText
             )
