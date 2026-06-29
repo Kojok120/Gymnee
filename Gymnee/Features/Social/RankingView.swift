@@ -50,7 +50,7 @@ struct RankingView: View {
         let isMe: Bool
     }
 
-    /// ランキングを集計する（`.task` から呼び、結果を `ranks` にキャッシュする）。
+    /// ランキングを集計する（派生値なのでキャッシュせず body から都度呼ぶ）。
     private func computedRanking() -> [Rank] {
         let start = weekStart
         var xpByUser: [UUID: Int] = [:]
