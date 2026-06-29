@@ -51,7 +51,7 @@ struct PostDetailView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        FeedCardView(entry: entry)
+                        authorCard
                         detailExtras
                         reactionsSection
                         Divider().overlay(Theme.bg3)
@@ -78,6 +78,19 @@ struct PostDetailView: View {
                 CheckInEditView(visit: visit, visibilityStore: PostVisibilityStore())
             }
             .task(id: reactions.count + comments.count) { await ensureProfiles() }
+        }
+    }
+
+    // MARK: - 投稿カード（他人の投稿は著者タップでプロフィールへ）
+
+    @ViewBuilder private var authorCard: some View {
+        if let authorId = entry.authorId, authorId != currentUserId {
+            NavigationLink(value: UserRef(id: authorId, name: entry.authorName ?? "ユーザー")) {
+                FeedCardView(entry: entry)
+            }
+            .buttonStyle(.plain)
+        } else {
+            FeedCardView(entry: entry)
         }
     }
 
@@ -229,8 +242,9 @@ struct PostDetailView: View {
         }
     }
 
+    @ViewBuilder
     private func commentRow(_ c: Comment) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        let body = HStack(alignment: .top, spacing: 10) {
             AvatarView(urlString: avatarURL(c.userId), size: 32)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -245,6 +259,16 @@ struct PostDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+
+        // 他人のコメントはタップで投稿者プロフィール（フレンド詳細）へ。自分のコメントは遷移なし。
+        Group {
+            if c.userId != currentUserId {
+                NavigationLink(value: UserRef(id: c.userId, name: commentName(c))) { body }
+                    .buttonStyle(.plain)
+            } else {
+                body
+            }
+        }
         .contextMenu {
             if c.userId == currentUserId {
                 Button("削除", systemImage: "trash", role: .destructive) { deleteComment(c) }
