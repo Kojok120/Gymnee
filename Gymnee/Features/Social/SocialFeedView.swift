@@ -58,6 +58,9 @@ private struct SocialContent: View {
     @State private var burstId: UUID?
     @State private var visStore = PostVisibilityStore()
     @State private var feedEntries: [FeedEntry] = []
+    /// リアクション/コメント件数の索引（毎描画の Dictionary(grouping:) を避けるためキャッシュ）。
+    @State private var reactionsByItem: [UUID: [PostReaction]] = [:]
+    @State private var commentCountByItem: [UUID: Int] = [:]
 
     init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
@@ -216,14 +219,19 @@ private struct SocialContent: View {
             .filter { seen.insert($0.id).inserted }
     }
 
+    /// リアクション/コメント件数の索引を作り直す。reactions/comments/blocks の件数変化時のみ呼ぶ。
+    private func rebuildReactionIndex() {
+        reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
+        commentCountByItem = allComments.reduce(into: [:]) { acc, c in
+            if !blockedIds.contains(c.userId) { acc[c.feedItemId, default: 0] += 1 }
+        }
+    }
+
     // フレンド/ランキングと容器(List)を統一してタブ切替の描画を滑らかに。重い構築はメモ化(feedEntries)。
     private var feed: some View {
-        let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
-        // コメント件数（ブロック相手のコメントは数えない）。
-        let commentsByItem = Dictionary(grouping: allComments.filter { !blockedIds.contains($0.userId) }, by: \.feedItemId)
-        return List {
+        List {
             ForEach(feedEntries) { entry in
-                feedRow(entry, reactions: reactionsByItem[entry.id] ?? [], commentCount: commentsByItem[entry.id]?.count ?? 0)
+                feedRow(entry, reactions: reactionsByItem[entry.id] ?? [], commentCount: commentCountByItem[entry.id] ?? 0)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -241,6 +249,7 @@ private struct SocialContent: View {
             }
         }
         .task(id: "\(visits.count)-\(workouts.count)-\(prs.count)-\(feedItems.count)-\(profiles.count)") { rebuildFeedEntries() }
+        .task(id: "\(allReactions.count)-\(allComments.count)-\(blocks.count)") { rebuildReactionIndex() }
         // カードのタップは全投稿で統一の詳細（リッチ詳細＋リアクションした人＋コメント）を開く。
         // 閉じたら編集/コメント/リアクションを反映するためフィードを作り直す。
         .onChange(of: postDetail?.id) { _, v in if v == nil { Task { await refreshFeed() } } }

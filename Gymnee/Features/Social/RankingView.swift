@@ -12,6 +12,8 @@ struct RankingView: View {
     @Query private var profiles: [Profile]
     @Query private var follows: [Follow]
     @Query private var myVisits: [Visit]
+    /// 集計済みランキング（描画ごとの再計算を避けるためデータ件数変化時だけ作り直す）。
+    @State private var ranks: [Rank] = []
 
     init(userId: UUID) {
         self.userId = userId
@@ -50,7 +52,8 @@ struct RankingView: View {
         let isMe: Bool
     }
 
-    private var ranking: [Rank] {
+    /// ランキングを集計する（`.task` から呼び、結果を `ranks` にキャッシュする）。
+    private func computedRanking() -> [Rank] {
         let start = weekStart
         var xpByUser: [UUID: Int] = [:]
         for item in feedItems where item.createdAt >= start {
@@ -89,11 +92,11 @@ struct RankingView: View {
                     .listRowBackground(Color.clear)
             }
             Section("今週のランキング") {
-                if ranking.count <= 1 {
+                if ranks.count <= 1 {
                     Text("フォローすると、友達と今週のXPを競えます。")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
-                ForEach(Array(ranking.enumerated()), id: \.element.id) { index, rank in
+                ForEach(Array(ranks.enumerated()), id: \.element.id) { index, rank in
                     rankRow(index: index, rank: rank)
                 }
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
@@ -103,12 +106,14 @@ struct RankingView: View {
         }
         .listStyle(.plain)
         .background(Theme.groupedBackground)
+        // データ件数が変わった時だけ再集計（タブ常時マウントでも毎描画の再計算を避ける）。
+        .task(id: "\(feedItems.count)-\(profiles.count)-\(follows.count)") { ranks = computedRanking() }
     }
 
     private var streakCard: some View {
         HStack(spacing: Theme.Spacing.lg) {
             stat(value: "\(myStreak)", label: "連続日数", icon: "flame.fill", tint: Theme.warning)
-            stat(value: "\(ranking.first(where: { $0.isMe })?.xp ?? 0)", label: "今週のXP", icon: "bolt.fill", tint: Theme.lime)
+            stat(value: "\(ranks.first(where: { $0.isMe })?.xp ?? 0)", label: "今週のXP", icon: "bolt.fill", tint: Theme.lime)
         }
         .frame(maxWidth: .infinity)
         .padding(Theme.Spacing.lg)
