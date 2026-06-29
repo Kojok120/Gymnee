@@ -743,7 +743,12 @@ struct RecordContent: View {
     }
 
     private func deleteSet(_ set: ExerciseSet) {
+        // 最後のセットを消したら、空になった種目エントリ(WorkoutExercise)も削除する。
+        // 残すと完了後の投稿/詳細に「セットなし」の種目として出てしまうため。
+        let we = set.workoutExercise
+        let wasLastSet = (we?.sets.count ?? 0) <= 1
         context.delete(set)
+        if wasLastSet, let we { context.delete(we) }
         try? context.save()   // 下書き中の削除。未同期なのでローカルのみ。
     }
 
@@ -795,6 +800,8 @@ struct RecordContent: View {
 
     private func finish() {
         guard let w = activeWorkout else { return }
+        // セット0件の種目エントリは投稿/同期前に取り除く（記録ミスで残った空種目を「セットなし」で残さない）。
+        for we in Array(w.exercises) where we.sets.isEmpty { context.delete(we) }
         w.completedAt = .now
         w.isPlanned = false
         w.updatedAt = .now

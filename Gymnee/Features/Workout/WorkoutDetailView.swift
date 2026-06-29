@@ -19,22 +19,18 @@ struct WorkoutDetailView: View {
                     Label(visit.gym?.name ?? "ジム", systemImage: "building.2.fill")
                 }
             }
-            ForEach(workout.exercises.sorted { $0.orderIndex < $1.orderIndex }) { we in
+            ForEach(workout.exercises.filter { !$0.sets.isEmpty }.sorted { $0.orderIndex < $1.orderIndex }) { we in
                 Section(we.exercise?.name ?? "種目") {
-                    if we.sets.isEmpty {
-                        Text("セットなし").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(we.sets.sorted { $0.setIndex < $1.setIndex }) { set in
-                            HStack {
-                                Text("セット\(set.setIndex + 1)").foregroundStyle(.secondary)
-                                Spacer()
-                                Text(set.detailText).monospacedDigit()
-                                if set.isPR {
-                                    Image(systemName: "trophy.fill").foregroundStyle(.yellow)
-                                }
+                    ForEach(we.sets.sorted { $0.setIndex < $1.setIndex }) { set in
+                        HStack {
+                            Text("セット\(set.setIndex + 1)").foregroundStyle(.secondary)
+                            Spacer()
+                            Text(set.detailText).monospacedDigit()
+                            if set.isPR {
+                                Image(systemName: "trophy.fill").foregroundStyle(.yellow)
                             }
-                            .font(.subheadline)
                         }
+                        .font(.subheadline)
                     }
                 }
             }
