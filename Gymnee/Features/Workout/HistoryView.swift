@@ -125,10 +125,11 @@ private struct DateHistoryList: View {
     }
 
     /// 記録一覧からワークアウトを削除（カレンダー→日付詳細と同じ挙動）。
+    /// ローカル保存が成功した時だけ outbox に積む（保存失敗時にサーバーだけ消えるのを防ぐ）。
     private func deleteWorkout(_ workout: Workout) {
         let id = workout.id
         context.delete(workout) // 配下の workout_exercises / exercise_sets は cascade で削除
-        try? context.save()
+        do { try context.save() } catch { return }
         sync.enqueue(PendingChange(entity: "workouts", recordId: id, operation: .delete, updatedAt: .now))
     }
 
