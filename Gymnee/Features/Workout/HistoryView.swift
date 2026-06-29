@@ -147,50 +147,45 @@ private struct ExerciseHistoryList: View {
     let userId: UUID
     @Query(sort: \Exercise.name) private var exercises: [Exercise]
     @State private var search = ""
-    /// 履歴のある種目（検索フィルタ前）。重い関連走査なので検索ごとには作り直さずキャッシュする。
-    @State private var baseExercises: [Exercise] = []
 
     var body: some View {
-        Group {
-            if baseExercises.isEmpty {
-                EmptyStateView(
-                    systemImage: "dumbbell",
-                    title: "種目の記録がありません",
-                    message: "ワークアウトを完了すると、種目ごとの履歴が見られます。"
-                )
-            } else {
-                List {
-                    if grouped.isEmpty {
-                        Text("該当する種目がありません").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(grouped, id: \.muscle) { group in
-                            Section(group.muscle.label) {
-                                ForEach(group.items) { exercise in
-                                    NavigationLink {
-                                        ExerciseDetailView(exercise: exercise, userId: userId)
-                                    } label: {
-                                        HStack {
-                                            Text(exercise.name)
-                                            Spacer()
-                                            Text(exercise.equipment.label)
-                                                .font(.caption).foregroundStyle(.secondary)
-                                        }
+        if baseExercises.isEmpty {
+            EmptyStateView(
+                systemImage: "dumbbell",
+                title: "種目の記録がありません",
+                message: "ワークアウトを完了すると、種目ごとの履歴が見られます。"
+            )
+        } else {
+            List {
+                if grouped.isEmpty {
+                    Text("該当する種目がありません").foregroundStyle(.secondary)
+                } else {
+                    ForEach(grouped, id: \.muscle) { group in
+                        Section(group.muscle.label) {
+                            ForEach(group.items) { exercise in
+                                NavigationLink {
+                                    ExerciseDetailView(exercise: exercise, userId: userId)
+                                } label: {
+                                    HStack {
+                                        Text(exercise.name)
+                                        Spacer()
+                                        Text(exercise.equipment.label)
+                                            .font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
                             }
                         }
                     }
                 }
-                .searchable(text: $search, prompt: "種目を検索")
             }
+            .searchable(text: $search, prompt: "種目を検索")
         }
-        // 種目数が変わった時だけ再集計（検索1文字ごとの全関連走査を避ける）。
-        .task(id: exercises.count) { rebuildBase() }
     }
 
-    /// 履歴のある種目を集計して `baseExercises` に保持する。空状態判定とグルーピングの土台。
-    private func rebuildBase() {
-        baseExercises = exercises.filter { ex in
+    /// 履歴のある種目（検索フィルタ前）。workoutExercises/完了/セット数に依存するため、
+    /// 件数キーでキャッシュすると初回完了などで陳腐化する。body 評価で都度導出して常に最新にする。
+    private var baseExercises: [Exercise] {
+        exercises.filter { ex in
             ex.workoutExercises.contains { we in
                 we.workout?.userId == userId && we.workout?.completedAt != nil && !we.sets.isEmpty
             }

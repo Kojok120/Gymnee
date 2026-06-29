@@ -12,8 +12,6 @@ struct RankingView: View {
     @Query private var profiles: [Profile]
     @Query private var follows: [Follow]
     @Query private var myVisits: [Visit]
-    /// 集計済みランキング（描画ごとの再計算を避けるためデータ件数変化時だけ作り直す）。
-    @State private var ranks: [Rank] = []
 
     init(userId: UUID) {
         self.userId = userId
@@ -83,10 +81,13 @@ struct RankingView: View {
     }
 
     var body: some View {
+        // ranking は派生値。1描画で1回だけ算出し（streakCard とランキングで使い回す）、
+        // データ更新時は body 再評価で常に最新を反映する（件数キーのキャッシュは内容変更で陳腐化するため使わない）。
+        let ranks = computedRanking()
         // フィード/フレンドと容器(List)を統一してタブ切替を滑らかにする。
-        List {
+        return List {
             Section {
-                streakCard
+                streakCard(ranks: ranks)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -106,11 +107,9 @@ struct RankingView: View {
         }
         .listStyle(.plain)
         .background(Theme.groupedBackground)
-        // データ件数が変わった時だけ再集計（タブ常時マウントでも毎描画の再計算を避ける）。
-        .task(id: "\(feedItems.count)-\(profiles.count)-\(follows.count)") { ranks = computedRanking() }
     }
 
-    private var streakCard: some View {
+    private func streakCard(ranks: [Rank]) -> some View {
         HStack(spacing: Theme.Spacing.lg) {
             stat(value: "\(myStreak)", label: "連続日数", icon: "flame.fill", tint: Theme.warning)
             stat(value: "\(ranks.first(where: { $0.isMe })?.xp ?? 0)", label: "今週のXP", icon: "bolt.fill", tint: Theme.lime)
