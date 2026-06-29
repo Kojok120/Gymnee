@@ -47,9 +47,16 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "not_configured" }), { status: 503, headers: cors });
   }
 
-  // 簡易レート制限（認証ユーザー単位・ベストエフォート＝インスタンス内）。Gemini コスト乱用の抑止。
+  // 認証必須（Gemini コスト乱用の抑止）。アプリ同梱の公開 publishable key だけでの匿名実行を拒否する。
+  // ゲートウェイの verify_jwt(=署名検証) とは別に、関数側でも user JWT(sub) の存在を必須化する多層防御。
+  // クライアントは isBackendAuthenticated 時のみ Authorization: Bearer(user JWT) を付けて呼ぶため正規経路は無影響。
   const sub = userIdFromJWT(req);
-  if (sub) {
+  if (!sub) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: cors });
+  }
+
+  // 簡易レート制限（認証ユーザー単位・ベストエフォート＝インスタンス内）。
+  {
     const now = Date.now();
     if (lastCall.size > 5000) lastCall.clear();
     const prev = lastCall.get(sub);

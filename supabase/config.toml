@@ -5,3 +5,9 @@ project_id = "bdeaeykruwxazdoewxmg"
 # send-push は DB トリガーから X-Push-Secret 認証で呼ぶため、Supabase の JWT 検証は無効化する。
 [functions.send-push]
 verify_jwt = false
+
+# plan-workouts は Gemini を叩く課金関数。アプリ同梱の公開 publishable key だけで匿名実行
+# （Gemini コスト乱用）されないよう JWT 検証を必須にする。クライアントは isBackendAuthenticated
+# 時のみ Bearer(user JWT) 付きで呼ぶため、正規経路は影響を受けない。
+[functions.plan-workouts]
+verify_jwt = true

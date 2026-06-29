@@ -123,7 +123,7 @@ struct WeekPlannerView: View {
         .alert("AIワークアウト計画", isPresented: $aiInfo) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("予定を避けて今週のメニューを自動で組み替えます。現在 Gemini 連携を準備中です（まもなく有効化）。")
+            Text("計画を生成できませんでした。ネットワーク接続を確認して、しばらくおいてからもう一度お試しください。")
         }
     }
 
