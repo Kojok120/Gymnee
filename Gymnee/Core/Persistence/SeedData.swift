@@ -74,6 +74,8 @@ enum SeedData {
         // 同名で二重化したプリセット種目を 1 件に集約する（計測タイプ変更の旧行残存や、別 uid 同期で
         // 入った同名・別 id の古いコピーが原因の重複を自己修復）。参照の付け替え後に削除する。
         dedupePresetExercises(context)
+        // 既存プリセットの設定を現行定義に合わせる（部位/器具/計測/重量の数え方/荷重スタイル）。
+        reconcilePresets(context)
 
         // 既存プリセット名を集め、未収録のものだけ追加（名前でべき等）。
         // これで後からプリセットを足しても、DB を消さずに反映される。
@@ -82,20 +84,41 @@ enum SeedData {
         )) ?? []
         let existingNames = Set(existingPresets.map { $0.name })
 
-        for preset in presetExercises where !existingNames.contains(preset.0) {
-            // 片側/両側の既定は器具で決める（ダンベル/ケトルベル＝片側、他＝両側）。
-            let weightMode: WeightMode = (preset.2 == .dumbbell || preset.2 == .kettlebell) ? .perSide : .both
+        for preset in presetExercises where !existingNames.contains(preset.name) {
             let exercise = Exercise(
-                name: preset.0,
-                muscleGroup: preset.1,
-                equipment: preset.2,
+                name: preset.name,
+                muscleGroup: preset.muscle,
+                equipment: preset.equipment,
                 isCustom: false,
-                weightMode: weightMode,
-                measurementType: preset.3,
+                weightMode: preset.weightMode,
+                measurementType: preset.measurement,
+                loadMode: preset.loadMode,
                 isDirty: false
             )
             context.insert(exercise)
         }
+    }
+
+    /// 既存プリセット種目の設定を現行定義（presetExercises）へ寄せる（ドメインレビューの反映）。
+    /// 部位/器具/計測タイプ/重量の数え方/荷重スタイルを名前一致で補正。ユーザー作成(isCustom)は対象外。
+    @MainActor
+    private static func reconcilePresets(_ context: ModelContext) {
+        let canon = Dictionary(presetExercises.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        let existing = (try? context.fetch(
+            FetchDescriptor<Exercise>(predicate: #Predicate { $0.isCustom == false })
+        )) ?? []
+        var changed = false
+        for ex in existing {
+            guard let p = canon[ex.name] else { continue }
+            var dirty = false
+            if ex.muscleGroupRaw != p.muscle.rawValue { ex.muscleGroup = p.muscle; dirty = true }
+            if ex.equipmentRaw != p.equipment.rawValue { ex.equipment = p.equipment; dirty = true }
+            if ex.measurementTypeRaw != p.measurement.rawValue { ex.measurementType = p.measurement; dirty = true }
+            if ex.weightModeRaw != p.weightMode.rawValue { ex.weightMode = p.weightMode; dirty = true }
+            if ex.loadModeRaw != p.loadMode.rawValue { ex.loadMode = p.loadMode; dirty = true }
+            if dirty { ex.updatedAt = .now; ex.isDirty = true; changed = true }
+        }
+        if changed { try? context.save() }
     }
 
     /// 同名で重複したプリセット種目を 1 件に統合する（自己修復）。
@@ -108,7 +131,7 @@ enum SeedData {
         )) ?? []
         let groups = Dictionary(grouping: presets, by: { $0.name })
         // 名前 → 現行プリセット定義（部位・計測タイプ）。残すべき正準を判定する基準。
-        let canonical = Dictionary(presetExercises.map { ($0.0, (muscle: $0.1, measure: $0.3)) },
+        let canonical = Dictionary(presetExercises.map { ($0.name, (muscle: $0.muscle, measure: $0.measurement)) },
                                    uniquingKeysWith: { a, _ in a })
 
         var changed = false
@@ -146,58 +169,69 @@ enum SeedData {
         if changed { try? context.save() }
     }
 
-    /// 主要種目の最小マスタ（プリセット＋ユーザー作成、§6.5）。
-    /// 4要素目は計測タイプ：自重種目は .bodyweight、時間種目は .time、それ以外は .weight。
-    private static let presetExercises: [(String, MuscleGroup, EquipmentType, MeasurementType)] = [
+    /// プリセット種目1件の定義（部位/器具/計測タイプ/重量の数え方/自重の荷重スタイル）。
+    struct PresetExercise {
+        let name: String
+        let muscle: MuscleGroup
+        let equipment: EquipmentType
+        let measurement: MeasurementType
+        let weightMode: WeightMode
+        let loadMode: LoadMode
+    }
+
+    /// 主要種目の最小マスタ（プリセット、§6.5）。各種目の設定はドメインレビュー済み。
+    /// weightMode は表示ラベル：ダンベル=片側(perSide) / バーベルで左右合計を入力=両側(both) /
+    /// マシン・ケーブル・自重・有酸素・ヒップスラスト等は区別なし(none・ラベル非表示)。
+    private static let presetExercises: [PresetExercise] = [
         // 胸
-        ("ベンチプレス", .chest, .barbell, .weight),
-        ("インクラインベンチプレス", .chest, .barbell, .weight),
-        ("ダンベルプレス", .chest, .dumbbell, .weight),
-        ("チェストプレス", .chest, .machine, .weight),
-        ("ペックフライ", .chest, .machine, .weight),
-        ("ディップス", .chest, .bodyweight, .bodyweight),
+        .init(name: "ベンチプレス", muscle: .chest, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "インクラインベンチプレス", muscle: .chest, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "ダンベルプレス", muscle: .chest, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "チェストプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ペックフライ", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ディップス", muscle: .chest, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // 背中
-        ("デッドリフト", .back, .barbell, .weight),
-        ("ベントオーバーロウ", .back, .barbell, .weight),
-        ("ラットプルダウン", .back, .cable, .weight),
-        ("シーテッドロウ", .back, .cable, .weight),
-        ("懸垂", .back, .bodyweight, .bodyweight),
+        .init(name: "デッドリフト", muscle: .back, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "ベントオーバーロウ", muscle: .back, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "ラットプルダウン", muscle: .back, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "シーテッドロウ", muscle: .back, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "懸垂", muscle: .back, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // 脚
-        ("スクワット", .legs, .barbell, .weight),
-        ("レッグプレス", .legs, .machine, .weight),
-        ("レッグエクステンション", .legs, .machine, .weight),
-        ("レッグカール", .legs, .machine, .weight),
-        ("ルーマニアンデッドリフト", .legs, .barbell, .weight),
-        ("カーフレイズ", .legs, .machine, .weight),
+        .init(name: "スクワット", muscle: .legs, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "レッグプレス", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "レッグエクステンション", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "レッグカール", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ルーマニアンデッドリフト", muscle: .legs, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "カーフレイズ", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         // 肩
-        ("ショルダープレス", .shoulders, .dumbbell, .weight),
-        ("サイドレイズ", .shoulders, .dumbbell, .weight),
-        ("リアレイズ", .shoulders, .dumbbell, .weight),
-        ("アップライトロウ", .shoulders, .barbell, .weight),
+        .init(name: "ショルダープレス", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "サイドレイズ", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "リアレイズ", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "アップライトロウ", muscle: .shoulders, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         // 腕
-        ("バーベルカール", .arms, .barbell, .weight),
-        ("ダンベルカール", .arms, .dumbbell, .weight),
-        ("ハンマーカール", .arms, .dumbbell, .weight),
-        ("トライセプスプレスダウン", .arms, .cable, .weight),
-        ("スカルクラッシャー", .arms, .barbell, .weight),
+        .init(name: "バーベルカール", muscle: .arms, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "ダンベルカール", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "ハンマーカール", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "トライセプスプレスダウン", muscle: .arms, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "スカルクラッシャー", muscle: .arms, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         // 腹
-        ("クランチ", .abs, .bodyweight, .bodyweight),
-        ("シットアップ", .abs, .bodyweight, .bodyweight),
-        ("レッグレイズ", .abs, .bodyweight, .bodyweight),
-        ("ケーブルクランチ", .abs, .cable, .weight),
-        ("アブローラー", .abs, .other, .bodyweight),
+        .init(name: "クランチ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        .init(name: "シットアップ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        .init(name: "レッグレイズ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        .init(name: "ケーブルクランチ", muscle: .abs, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "アブローラー", muscle: .abs, equipment: .other, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // 体幹
-        ("プランク", .core, .bodyweight, .time),
+        .init(name: "プランク", muscle: .core, equipment: .bodyweight, measurement: .time, weightMode: .none, loadMode: .none),
         // 臀部
-        ("ヒップスラスト", .glutes, .barbell, .weight),
+        .init(name: "ヒップスラスト", muscle: .glutes, equipment: .barbell, measurement: .weight, weightMode: .none, loadMode: .none),
         // 全身
-        ("バーピー", .fullBody, .bodyweight, .bodyweight),
-        ("ケトルベルスイング", .fullBody, .kettlebell, .weight),
-        ("クリーン&ジャーク", .fullBody, .barbell, .weight),
+        .init(name: "バーピー", muscle: .fullBody, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        .init(name: "ケトルベルスイング", muscle: .fullBody, equipment: .kettlebell, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "クリーン&ジャーク", muscle: .fullBody, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         // 有酸素（距離km ＋ 時間分）
-        ("ウォーキング", .cardio, .other, .cardio),
-        ("ランニング", .cardio, .other, .cardio),
-        ("バイシクル", .cardio, .other, .cardio),
+        .init(name: "ウォーキング", muscle: .cardio, equipment: .other, measurement: .cardio, weightMode: .none, loadMode: .none),
+        .init(name: "ランニング", muscle: .cardio, equipment: .other, measurement: .cardio, weightMode: .none, loadMode: .none),
+        .init(name: "バイシクル", muscle: .cardio, equipment: .other, measurement: .cardio, weightMode: .none, loadMode: .none),
     ]
 
     // MARK: - Products
