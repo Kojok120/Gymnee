@@ -147,15 +147,18 @@ enum EquipmentType: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// 重量の数え方（§6.5）。ダンベル等で片側の重量を入力するか、合計（両側）を入力するか。
+/// 重量の数え方（§6.5・表示ラベル）。ダンベル等で片側の重量か合計（両側）か、または区別なし。
+/// 表示専用でボリューム/PR 計算には影響しない（入力値をそのまま記録に使う）。
 enum WeightMode: String, Codable, CaseIterable, Sendable {
     case both       // 両側・合計（バーベル等）
-    case perSide    // 片側（ダンベル等。実効ボリュームは ×2 相当）
+    case perSide    // 片側（ダンベル等）
+    case none       // 片側/両側の区別なし（マシン/ケーブル/ヒップスラスト等）。ラベルは表示しない
 
     var label: String {
         switch self {
         case .both: return "両側"
         case .perSide: return "片側"
+        case .none: return "指定なし"
         }
     }
     /// バッジ用の短縮表記。
@@ -163,6 +166,7 @@ enum WeightMode: String, Codable, CaseIterable, Sendable {
         switch self {
         case .both: return "両"
         case .perSide: return "片"
+        case .none: return ""
         }
     }
 }

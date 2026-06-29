@@ -964,7 +964,7 @@ private struct ExerciseCardView: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.7)
-                if exercise.measurementType == .weight {
+                if exercise.measurementType == .weight, exercise.weightMode != .none {
                     Text(exercise.weightMode.label).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
                 } else if exercise.measurementType == .bodyweight {
                     Text(exercise.loadMode.loadAxisLabel).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
