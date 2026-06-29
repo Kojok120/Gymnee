@@ -65,8 +65,10 @@ struct RecordView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in resumeTarget = nil; gateOpen = true }
         // 計画/予定の「開始」→ 記録タブで当該ワークアウトを再開（カレンダータブから遷移してくる）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { note in
-            guard let idStr = note.userInfo?["workoutId"] as? String, let id = UUID(uuidString: idStr) else { return }
-            let found = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id }))) ?? []
+            guard let idStr = note.userInfo?["workoutId"] as? String, let id = UUID(uuidString: idStr),
+                  let uid = auth.currentUserId else { return }
+            // 通知の id は古い/不正な値で他ユーザーの下書きを指し得るため、現在ユーザー所有に限定する。
+            let found = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id && $0.userId == uid }))) ?? []
             if let w = found.first {
                 resumeTarget = w
                 gateOpen = true
@@ -734,9 +736,12 @@ struct RecordContent: View {
 
     /// cardio：距離km ＋ 時間（分）を1セット記録（時間は秒に換算して保存）。
     private func logCardio(distanceKm: Double, minutes: Int, spec: CardSpec) {
-        distCenters[spec.exercise.id] = distanceKm   // ルーラー位置を確定（記録後のジャンプ防止）
-        durCenters[spec.exercise.id] = minutes
-        commitSet(exercise: spec.exercise, weight: 0, reps: 0, duration: minutes * 60, distanceKm: distanceKm)
+        // 不正値（負・非有限）と minutes*60 のオーバーフローを排除してから保存する。
+        let km = (distanceKm.isFinite && distanceKm >= 0) ? distanceKm : 0
+        let mins = max(0, min(minutes, 100_000))
+        distCenters[spec.exercise.id] = km   // ルーラー位置を確定（記録後のジャンプ防止）
+        durCenters[spec.exercise.id] = mins
+        commitSet(exercise: spec.exercise, weight: 0, reps: 0, duration: mins * 60, distanceKm: km)
     }
 
     private func commitSet(exercise: Exercise, weight: Double, reps: Int, duration: Int?, distanceKm: Double? = nil) {
@@ -820,18 +825,24 @@ struct RecordContent: View {
         showMemo = true
     }
 
+    /// Double→Int の安全変換。NaN/∞/範囲外での `Int(_:)` トラップを防ぎ、0以上・上限内へ丸める。
+    private func safeCount(_ v: Double, cap: Int = 100_000) -> Int {
+        guard v.isFinite else { return 0 }
+        return max(0, min(Int(v.rounded()), cap))
+    }
+
     private func handleKeypad(_ req: KeypadRequest, value: Double) {
         switch req.kind {
         case .armValue:
-            armed[req.exerciseId] = value
+            armed[req.exerciseId] = value.isFinite ? value : 0
         case .distanceValue:
-            distCenters[req.exerciseId] = value
+            distCenters[req.exerciseId] = (value.isFinite && value >= 0) ? value : 0
         case .customReps:
             guard let spec = currentSpec(for: req.exerciseId) else { return }
             switch spec.exercise.measurementType {
-            case .time:   logDuration(Int(value), spec: spec)
-            case .cardio: logCardio(distanceKm: distanceCenter(for: spec), minutes: Int(value), spec: spec)
-            default:      logReps(Int(value), spec: spec)
+            case .time:   logDuration(safeCount(value), spec: spec)
+            case .cardio: logCardio(distanceKm: distanceCenter(for: spec), minutes: safeCount(value), spec: spec)
+            default:      logReps(safeCount(value), spec: spec)
             }
         }
     }
@@ -1262,14 +1273,19 @@ private struct EditSetSheet: View {
                 ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("保存") {
+                        // 不正値（負・非有限）は採用せず、分*60 のオーバーフローも防ぐ。
                         if isCardio {
-                            set.distanceKm = Double(distanceText.replacingOccurrences(of: ",", with: ".")) ?? set.distanceKm
-                            if let m = Int(minutesText) { set.durationSeconds = m * 60 }
+                            if let km = Double(distanceText.replacingOccurrences(of: ",", with: ".")), km.isFinite, km >= 0 {
+                                set.distanceKm = km
+                            }
+                            if let m = Int(minutesText), m >= 0 { set.durationSeconds = min(m, 100_000) * 60 }
                         } else if isTime {
-                            set.durationSeconds = Int(durationText) ?? set.durationSeconds
+                            if let s = Int(durationText), s >= 0 { set.durationSeconds = s }
                         } else {
-                            set.weight = Double(weightText.replacingOccurrences(of: ",", with: ".")) ?? set.weight
-                            set.reps = Int(repsText) ?? set.reps
+                            if let w = Double(weightText.replacingOccurrences(of: ",", with: ".")), w.isFinite, w >= 0 {
+                                set.weight = w
+                            }
+                            if let r = Int(repsText), r >= 0 { set.reps = r }
                         }
                         onCommit()
                         dismiss()
