@@ -6,16 +6,17 @@ import SwiftData
 @MainActor
 enum WorkoutMetrics {
     /// 指定種目・ユーザーの全セット（メモリ走査）。
+    /// 完了済みワークアウト(completedAt != nil)のみ。記録途中の下書きは最大RM/PR等に含めない（記録間違い対策）。
     static func allSets(for exercise: Exercise, userId: UUID) -> [ExerciseSet] {
         exercise.workoutExercises
-            .filter { $0.workout?.userId == userId }
+            .filter { $0.workout?.userId == userId && $0.workout?.completedAt != nil }
             .flatMap { $0.sets }
     }
 
-    /// 前回値オートフィル（§6.5 の生命線）。直近（当該ワークアウト除く）のセットを返す。
+    /// 前回値オートフィル（§6.5 の生命線）。直近の完了済み（当該ワークアウト除く）のセットを返す。
     static func previousSets(for exercise: Exercise, userId: UUID, excludingWorkoutId: UUID?) -> [ExerciseSet] {
         let candidates = exercise.workoutExercises.filter {
-            $0.workout?.userId == userId && $0.workout?.id != excludingWorkoutId
+            $0.workout?.userId == userId && $0.workout?.completedAt != nil && $0.workout?.id != excludingWorkoutId
         }
         let mostRecent = candidates.max {
             ($0.workout?.date ?? .distantPast) < ($1.workout?.date ?? .distantPast)
@@ -26,7 +27,7 @@ enum WorkoutMetrics {
     /// 直近 N セッションの代表セット（最重量の作業セット）。インライン履歴表示用。
     static func recentTopSets(for exercise: Exercise, userId: UUID, excludingWorkoutId: UUID?, limit: Int = 3) -> [(date: Date, weight: Double, reps: Int)] {
         let sessions = exercise.workoutExercises
-            .filter { $0.workout?.userId == userId && $0.workout?.id != excludingWorkoutId }
+            .filter { $0.workout?.userId == userId && $0.workout?.completedAt != nil && $0.workout?.id != excludingWorkoutId }
             .compactMap { we -> (date: Date, weight: Double, reps: Int)? in
                 guard let date = we.workout?.date else { return nil }
                 let working = we.sets.filter { $0.weight > 0 }
@@ -40,7 +41,7 @@ enum WorkoutMetrics {
     /// 種目の履歴ベスト推定1RM（%1RM 提案の基準）。
     static func bestE1RM(for exercise: Exercise, userId: UUID, excludingWorkoutId: UUID?) -> Double {
         var best = 0.0
-        for we in exercise.workoutExercises where we.workout?.userId == userId && we.workout?.id != excludingWorkoutId {
+        for we in exercise.workoutExercises where we.workout?.userId == userId && we.workout?.completedAt != nil && we.workout?.id != excludingWorkoutId {
             for s in we.sets where s.weight > 0 && s.reps > 0 {
                 best = max(best, OneRepMax.estimate(weight: s.weight, reps: s.reps))
             }
