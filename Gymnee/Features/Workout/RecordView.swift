@@ -29,6 +29,20 @@ struct RecordView: View {
         }
     }
 
+    /// 下書きを破棄する。計画から開始していた下書きは、リンクした PlannedWorkout を未消化へ戻してから削除する
+    /// （cancelRecording と同じ。これをしないと未完了なのに計画が消費済みのまま planner から消える）。
+    private func discardDraft(_ draft: Workout) {
+        let did = draft.id
+        let descriptor = FetchDescriptor<PlannedWorkout>(predicate: #Predicate { $0.completedWorkoutId == did })
+        for plan in (try? context.fetch(descriptor)) ?? [] {
+            plan.isDone = false
+            plan.completedWorkoutId = nil
+            plan.updatedAt = .now
+        }
+        context.delete(draft)
+        try? context.save()
+    }
+
     var body: some View {
         NavigationStack {
             if let uid = auth.currentUserId {
@@ -40,7 +54,7 @@ struct RecordView: View {
                         resumables: resumableDrafts(for: uid),
                         onStart: { resumeTarget = nil; gateOpen = true },
                         onResume: { draft in resumeTarget = draft; gateOpen = true },
-                        onDiscard: { draft in context.delete(draft); try? context.save() }
+                        onDiscard: { draft in discardDraft(draft) }
                     )
                 }
             } else {
