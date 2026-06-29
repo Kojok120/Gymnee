@@ -34,6 +34,12 @@ final class LocalSyncEngine: SyncEngine {
         "comments", "products", "supply_logs", "subscriptions",
     ]
 
+    /// 他端末での DELETE（いいね取消／コメント削除）を伝播するため、毎回フル取得して
+    /// サーバー id と差分照合（ローカルの余剰行を削除）するテーブル。set 的で小さく、tombstone を持たない。
+    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments"]
+    /// フル照合での誤削除を避ける安全上限。取得がこの件数に達したら（＝ページ打ち切りの恐れ）当回は削除照合しない。
+    @ObservationIgnored private let reconcileSafetyCap = 1000
+
     init(persistenceURL: URL? = nil) {
         let resolved = persistenceURL ?? OutboxStore.defaultURL()
         self.url = resolved
@@ -215,14 +221,17 @@ final class LocalSyncEngine: SyncEngine {
         // ただし apply は FK 依存順（親→子）で順次に行う必要がある：SwiftDataSyncStore は
         // workout_exercises/exercise_sets の適用時に親 workout/exercise を即 fetch して関連を張るため、
         // 親が未適用のまま子を適用すると関連が nil 保存され、しかも lastPulledAt が進んで次回も修復されず孤児化する。
-        let targets = syncedTables.map { (table: $0, since: store.lastPulledAt(table: $0)) }
+        // reconcile 対象は差分基準を使わずフル取得（削除照合のため全件が必要）。
+        let targets = syncedTables.map { (table: $0,
+                                          since: reconcileTables.contains($0) ? nil : store.lastPulledAt(table: $0)) }
         let collected = PulledRows()
         await withTaskGroup(of: Void.self) { group in
             for target in targets {
                 group.addTask { @MainActor in
                     // 個別テーブル失敗は握りつぶし、他テーブルを継続（best-effort 差分 pull）。
-                    guard let rows = try? await remote.select(table: target.table, updatedSince: target.since),
-                          !rows.isEmpty else { return }
+                    // 空応答も記録する：reconcile 対象は「サーバーが空＝全削除」も正しく反映する必要があるため
+                    // （失敗時は nil で記録されず、誤って全消ししない）。
+                    guard let rows = try? await remote.select(table: target.table, updatedSince: target.since) else { return }
                     collected.byTable[target.table] = rows
                 }
             }
@@ -231,11 +240,24 @@ final class LocalSyncEngine: SyncEngine {
         for table in syncedTables {
             guard let rows = collected.byTable[table] else { continue }
             store.apply(table: table, rows: rows)
+            // reconcile 対象は、フル取得できた場合のみ（打ち切りの恐れがなければ）削除を伝播する。
+            if reconcileTables.contains(table), rows.count < reconcileSafetyCap {
+                store.reconcile(table: table, serverIds: Self.ids(in: rows))
+            }
             // 取得行の最大 updated_at を次回基準にする。
             if let newest = Self.newestUpdatedAt(in: rows) {
                 store.setLastPulledAt(newest, table: table)
             }
         }
+    }
+
+    /// リモート行群から id 集合を取り出す（reconcile の正集合）。
+    private static func ids(in rows: [[String: Any]]) -> Set<UUID> {
+        var s = Set<UUID>()
+        for row in rows {
+            if let str = row["id"] as? String, let id = UUID(uuidString: str) { s.insert(id) }
+        }
+        return s
     }
 
     private func persist() {
@@ -270,6 +292,10 @@ protocol SyncBackingStore: AnyObject {
     func payload(for change: PendingChange) -> [String: Any]?
     /// pull で取得したリモート行をローカルへ適用する。
     func apply(table: String, rows: [[String: Any]])
+    /// リモートで削除された行（他端末でのいいね取消／コメント削除）をローカルへ伝播する。
+    /// 当該テーブルのサーバー全件 id を正として、未送出でない（isDirty=false の）ローカル行のうち
+    /// サーバーに存在しないものを削除する。既定は no-op（差分 pull のみで運用するテーブル）。
+    func reconcile(table: String, serverIds: Set<UUID>)
     /// 当該テーブルの最終 pull 時刻（差分取得の基準。未取得なら nil）。
     func lastPulledAt(table: String) -> Date?
     /// 最終 pull 時刻を更新する。
@@ -280,4 +306,5 @@ protocol SyncBackingStore: AnyObject {
 
 extension SyncBackingStore {
     func dependencies(for change: PendingChange) -> [PendingChange] { [] }
+    func reconcile(table: String, serverIds: Set<UUID>) {}
 }
