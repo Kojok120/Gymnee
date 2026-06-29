@@ -100,7 +100,7 @@ struct UserProfileView: View {
     private var workoutSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             SectionHeader(title: "活動ヒートマップ（直近4週）")
-            HeatmapView(counts: workoutDayCounts, weeks: 4)
+            HeatmapView(counts: workoutDayCounts, weeks: 4, fillWidth: true)
         }
         .gymneeCard()
 

@@ -6,12 +6,42 @@ struct HeatmapView: View {
     let counts: [Date: Int]
     var weeks: Int = 26
     var tint: Color = Theme.energy
+    /// 横スクロールせず、曜日7列のグリッドでカード幅いっぱいに日次表示する（フレンド詳細の直近数週向け）。
+    var fillWidth: Bool = false
 
     private let calendar = Calendar.current
     private let cell: CGFloat = 13
     private let spacing: CGFloat = 3
 
     var body: some View {
+        if fillWidth { fillWidthGrid } else { scrollingWeeks }
+    }
+
+    // MARK: - 全幅（曜日7列 × 週行）の日次グリッド
+
+    private var fillWidthGrid: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: spacing), count: 7)
+        return LazyVGrid(columns: columns, spacing: spacing) {
+            ForEach(gridDays, id: \.self) { day in
+                let count = counts[calendar.startOfDay(for: day)] ?? 0
+                let isFuture = day > Date.now
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(color(for: count).opacity(isFuture ? 0.15 : 1))
+                    .aspectRatio(1, contentMode: .fit)
+            }
+        }
+    }
+
+    /// 直近 `weeks` 週分の全日（週頭→曜日順）。グリッドは週行・曜日列で並ぶ。
+    private var gridDays: [Date] {
+        weekStarts.flatMap { ws in
+            (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: ws) }
+        }
+    }
+
+    // MARK: - 横スクロール（貢献グラフ風・年間ビュー）
+
+    private var scrollingWeeks: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: spacing) {
