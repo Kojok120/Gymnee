@@ -133,9 +133,13 @@ struct AnalyticsView: View {
             guard let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: thisWeek),
                   let interval = calendar.dateInterval(of: .weekOfYear, for: start) else { return nil }
             // 頻度＝その週にトレーニングした「日数」（最大7。1日に複数回でも1日）。
+            // 週判定・日付の重複排除とも completedAt 基準に統一（date 基準だと日跨ぎや後完了でズレる）。
             let days = Set(
-                workouts.filter { $0.completedAt != nil && interval.contains($0.date) }
-                    .map { calendar.startOfDay(for: $0.date) }
+                workouts.compactMap { workout -> Date? in
+                    guard let completedAt = workout.completedAt,
+                          interval.contains(completedAt) else { return nil }
+                    return calendar.startOfDay(for: completedAt)
+                }
             )
             return WeeklyCount(weekStart: start, count: min(days.count, 7))
         }
