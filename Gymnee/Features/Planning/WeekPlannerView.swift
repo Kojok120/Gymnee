@@ -170,15 +170,11 @@ struct WeekPlannerView: View {
             List {
                 Section("カスタムセットから") {
                     if routines.isEmpty {
-                        Text("カスタムセット未作成").foregroundStyle(.secondary)
+                        Text("カスタムセットがありません。「カスタムセット」から胸の日などのテンプレで作成すると、計画に使えます。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     ForEach(routines) { r in
                         planSelectRow(title: r.name, routineId: r.id)
-                    }
-                }
-                Section("自由入力") {
-                    ForEach(["胸の日", "背中の日", "脚の日", "肩・腕", "有酸素", "休養"], id: \.self) { t in
-                        planSelectRow(title: t, routineId: nil)
                     }
                 }
             }
