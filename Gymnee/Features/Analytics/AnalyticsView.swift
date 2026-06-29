@@ -114,9 +114,11 @@ struct AnalyticsView: View {
                 Text("記録が増えると表示されます。").font(.caption).foregroundStyle(.secondary)
             } else {
                 Chart(weeklyCounts, id: \.weekStart) { item in
-                    BarMark(x: .value("週", item.weekStart, unit: .weekOfYear), y: .value("回数", item.count))
+                    BarMark(x: .value("週", item.weekStart, unit: .weekOfYear), y: .value("日数", item.count))
                         .foregroundStyle(Theme.energy)
                 }
+                .chartYScale(domain: 0...7)   // 1週間＝最大7日。
+                .chartYAxis { AxisMarks(values: Array(0...7)) }
                 .frame(height: 160)
             }
         }
@@ -130,8 +132,12 @@ struct AnalyticsView: View {
         return (0..<period.weeks).reversed().compactMap { offset in
             guard let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: thisWeek),
                   let interval = calendar.dateInterval(of: .weekOfYear, for: start) else { return nil }
-            let count = workouts.filter { $0.completedAt != nil && interval.contains($0.date) }.count
-            return WeeklyCount(weekStart: start, count: count)
+            // 頻度＝その週にトレーニングした「日数」（最大7。1日に複数回でも1日）。
+            let days = Set(
+                workouts.filter { $0.completedAt != nil && interval.contains($0.date) }
+                    .map { calendar.startOfDay(for: $0.date) }
+            )
+            return WeeklyCount(weekStart: start, count: min(days.count, 7))
         }
     }
 
