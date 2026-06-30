@@ -485,8 +485,9 @@ create policy "progress own update" on storage.objects for update to authenticat
 create policy "progress own delete" on storage.objects for delete to authenticated
     using (bucket_id = 'progress-photos' and (storage.foldername(name))[1] = auth.uid()::text);
 
--- 来店写真: 本人が書込。読取は本人に加え、その来店投稿(feed_items.type='visit')が閲覧者から
--- 見える（public、または friends かつフォロー中）場合に許可する（フィード共有のため。0025）。
+-- 来店写真: 本人が書込。読取は本人に加え、「その写真を参照する来店投稿(feed_items.type='visit')」が
+-- 閲覧者から見える（public、または friends かつフォロー中）場合に限り許可（0025）。
+-- フォルダ単位でなく当該オブジェクトに厳密一致（photoRef = bucket_id || '/' || name）。
 create policy "visit read own or via feed" on storage.objects for select to authenticated
     using (
         bucket_id = 'visit-photos'
@@ -496,6 +497,7 @@ create policy "visit read own or via feed" on storage.objects for select to auth
                 select 1 from public.feed_items f
                 where f.user_id::text = (storage.foldername(name))[1]
                   and f.type = 'visit'
+                  and (f.stats_json::jsonb ->> 'photoRef') = bucket_id || '/' || name
                   and (
                       f.visibility = 'public'
                       or (f.visibility = 'friends' and public.is_following(f.user_id))

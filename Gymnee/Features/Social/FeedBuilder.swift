@@ -201,8 +201,10 @@ enum FeedBuilder {
             var seenMuscle = Set<MuscleGroup>()
             let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }
 
+            // 「種目」件数は詳細(メニュー)と一致させる（セットの無い空種目は数えない）。
+            let exerciseCount = w.exercises.filter { !$0.sets.isEmpty }.count
             var stats: [FeedStat] = [
-                FeedStat(label: "種目", value: "\(w.exercises.count)"),
+                FeedStat(label: "種目", value: "\(exerciseCount)"),
                 FeedStat(label: "セット", value: "\(totalSets)"),
             ]
             if totalVolume > 0 { stats.append(FeedStat(label: "ボリューム", value: "\(totalVolume) kg")) }

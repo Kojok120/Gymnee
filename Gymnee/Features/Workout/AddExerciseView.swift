@@ -95,7 +95,8 @@ struct AddExerciseView: View {
             measurementType: measurementType
         )
         context.insert(exercise)
-        try? context.save()
+        // 保存に成功した時だけ enqueue / onCreated へ進む（未保存の種目を呼び出し側へ渡さない）。
+        do { try context.save() } catch { return }
         sync.enqueue(PendingChange(entity: "exercises", recordId: exercise.id, operation: .upsert, updatedAt: exercise.updatedAt))
         onCreated?(exercise)
         dismiss()

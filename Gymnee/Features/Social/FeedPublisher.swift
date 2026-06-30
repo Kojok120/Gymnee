@@ -72,8 +72,8 @@ enum FeedPublisher {
             var seenMuscle = Set<MuscleGroup>()
             let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }.map(\.rawValue)
             // 種目別セット内訳（他人の投稿でも「メニュー」を再現するため）。空種目は出さない。
-            let lines = w.exercises
-                .filter { !$0.sets.isEmpty }
+            let visibleExercises = w.exercises.filter { !$0.sets.isEmpty }
+            let lines = visibleExercises
                 .sorted { $0.orderIndex < $1.orderIndex }
                 .map { we in
                     FeedItemStats.ExerciseLine(
@@ -82,7 +82,8 @@ enum FeedPublisher {
                             .map { FeedItemStats.SetLine(text: $0.detailText, isPR: $0.isPR) }
                     )
                 }
-            let stats = FeedItemStats(exercises: w.exercises.count, sets: allSets.count, volume: totalVolume,
+            // 「種目」件数は内訳(lines)と一致させる（空種目を数に含めない）。
+            let stats = FeedItemStats(exercises: visibleExercises.count, sets: allSets.count, volume: totalVolume,
                                       minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines)
             upsert(refId: w.id, type: .workout, summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
         }

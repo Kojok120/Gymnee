@@ -157,8 +157,9 @@ private struct NotificationBadge: ViewModifier {
         // バッジを枠外に offset すると親(ツールバー等)の境界でクリップされるため、
         // バッジ分の余白を確保してアイコンの右上「枠内」に重ねる（欠けない）。
         content
-            .padding(.top, 5)
-            .padding(.trailing, 7)
+            // 余白はバッジがある時だけ確保（0件のときは元の配置を崩さない）。
+            .padding(.top, count > 0 ? 5 : 0)
+            .padding(.trailing, count > 0 ? 7 : 0)
             .overlay(alignment: .topTrailing) {
                 if count > 0 {
                     Text(count > 99 ? "99+" : "\(count)")
