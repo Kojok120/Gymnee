@@ -215,7 +215,7 @@ enum SeedData {
         .init(name: "ルーマニアンデッドリフト", muscle: .legs, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "カーフレイズ", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         // 肩
-        .init(name: "ショルダープレス", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "ショルダープレス", muscle: .shoulders, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "ダンベルショルダープレス", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "スミスマシンショルダープレス", muscle: .shoulders, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "サイドレイズ", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
