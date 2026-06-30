@@ -20,6 +20,13 @@ struct FeedCardView: View {
                     .frame(maxWidth: .infinity).frame(height: 200)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            } else if let ref = entry.photoRef, !ref.isEmpty {
+                // 他人の来店写真：ストレージ参照から取得（権限が無ければプレースホルダのまま）。
+                SyncedPhoto(filename: nil, ref: ref) { Color.clear }
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity).frame(height: 200)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             }
             if let subtitle = entry.subtitle, !subtitle.isEmpty, entry.kind == .visit {
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)

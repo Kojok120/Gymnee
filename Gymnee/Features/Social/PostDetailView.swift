@@ -105,11 +105,12 @@ struct PostDetailView: View {
     @ViewBuilder private var detailExtras: some View {
         switch entry.kind {
         case .workout:
-            if let w = ownWorkouts.first { workoutDetail(w) }
+            if let w = ownWorkouts.first { workoutDetail(w) }                       // 自分: ローカル実体（編集導線つき）
+            else if let lines = entry.workoutLines, !lines.isEmpty { othersWorkoutMenu(lines) }  // 他人: feed の内訳
         case .pr:
             prDetail
         case .visit:
-            if let v = ownVisits.first { visitDetail(v) }
+            if let v = ownVisits.first { visitDetail(v) }                           // 他人の写真はカード（FeedCardView）に表示
         }
     }
 
@@ -142,6 +143,29 @@ struct PostDetailView: View {
                     .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.lime)
             }
             .padding(.top, 2)
+        }
+    }
+
+    /// 他人のワークアウト: feed の statsJSON に載った種目別セット内訳を、自分の投稿と同じ体裁で描く（編集導線なし）。
+    private func othersWorkoutMenu(_ lines: [FeedItemStats.ExerciseLine]) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            sectionHeader("メニュー", systemImage: "list.bullet")
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(line.name).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
+                    ForEach(Array(line.sets.enumerated()), id: \.offset) { i, set in
+                        HStack {
+                            Text("セット\(i + 1)").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(set.text).font(.subheadline.monospacedDigit()).foregroundStyle(Theme.textPrimary)
+                            if set.isPR { Image(systemName: "trophy.fill").font(.caption).foregroundStyle(.yellow) }
+                        }
+                    }
+                }
+                .padding(Theme.Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+            }
         }
     }
 
