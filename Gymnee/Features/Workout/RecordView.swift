@@ -279,10 +279,11 @@ struct RecordContent: View {
                 }
                 .accessibilityLabel("メモ")
             }
-            if activeWorkout != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完了") { finish() }.bold()
-                }
+            ToolbarItem(placement: .topBarTrailing) {
+                // 完了の場所を最初から見せる（メモを開くまで現れない＝在処が分かりづらい問題の解消）。
+                // 記録(セット)が1件も無いうちは無効。セットを記録すると有効になる。
+                Button("完了") { finish() }.bold()
+                    .disabled(!hasRecordedSets)
             }
         }
         .alert("この記録を破棄しますか？", isPresented: $showCancelConfirm) {
@@ -819,6 +820,8 @@ struct RecordContent: View {
 
     /// このワークアウトにメモが付いているか（ツールバーアイコンの状態表示用）。
     private var hasMemo: Bool { !(activeWorkout?.note ?? "").isEmpty }
+    /// 記録済みセットが1件以上あるか（完了ボタンの有効/無効判定）。
+    private var hasRecordedSets: Bool { !(activeWorkout?.exercises.flatMap { $0.sets } ?? []).isEmpty }
 
     /// メモを開く。未開始ならセッションを作ってからメモ編集（メモのある下書きは破棄されない）。
     private func openMemo() {
