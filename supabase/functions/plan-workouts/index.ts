@@ -6,10 +6,11 @@
 // キー設定: supabase secrets set GEMINI_API_KEY=xxxx
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-// モデル/APIバージョンは secrets で切替可能。gemini-3.5-flash は v1 でのみ提供。
-// 例: supabase secrets set GEMINI_MODEL=gemini-2.5-flash GEMINI_API_VERSION=v1beta
-const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash";
-const API_VERSION = Deno.env.get("GEMINI_API_VERSION") ?? "v1";
+// モデル/APIバージョンは secrets で切替可能。既定は gemini-3.1-flash-lite(v1beta)。
+// （直接検証で当該モデル＋現行キーが v1beta/v1 とも 200 を返すことを確認済み）
+// 例: supabase secrets set GEMINI_MODEL=gemini-3.1-flash-lite GEMINI_API_VERSION=v1beta
+const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
+const API_VERSION = Deno.env.get("GEMINI_API_VERSION") ?? "v1beta";
 
 /// 応答テキストから JSON 本体（最初の { 〜 最後の }）を取り出す。コードフェンスや前置きを除去。
 function extractJson(s: string): string {
