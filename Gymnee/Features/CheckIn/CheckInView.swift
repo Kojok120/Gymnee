@@ -14,6 +14,8 @@ struct CheckInView: View {
     @Query(sort: \Gym.name) private var gyms: [Gym]
     @Query private var follows: [Follow]
     @Query private var profiles: [Profile]
+    /// 既定の公開範囲（来店をフィード発行するときに使う）。SocialFeedView と同じキー。
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
 
     @State private var image: UIImage?
     @State private var photoItem: PhotosPickerItem?
@@ -380,6 +382,9 @@ struct CheckInView: View {
             return
         }
         sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
+        // ワークアウト完了時と同様、来店もこの時点でフィード(feed_item)へ発行してフォロワーへ同期する
+        // （これをしないと自分がソーシャルを開くまで来店がフィードに出ない）。
+        publishToFeed()
         // 来店写真をリモートにもアップロード（再インストール後の消失を防ぐ・best-effort）。
         if let filename, let img = image {
             let vid = visit.id
@@ -389,10 +394,26 @@ struct CheckInView: View {
                 // 画面破棄/削除後に元オブジェクトを触らない（id で再取得し、存在する時だけ書く）。
                 guard let fresh = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == vid })))?.first else { return }
                 fresh.photoURL = ref; fresh.updatedAt = .now; fresh.isDirty = true
-                try? context.save()
+                // 保存成功時のみ enqueue/再発行へ進む（未保存の写真参照を同期しない）。
+                do { try context.save() } catch { return }
                 sync.enqueue(PendingChange(entity: "visits", recordId: vid, operation: .upsert, updatedAt: fresh.updatedAt))
+                // 写真アップロード完了後に再発行し、feed_item に写真参照(photoRef)を載せてフォロワーにも写真を表示する。
+                publishToFeed()
             }
         }
         savedVisit = visit
+    }
+
+    // 不正/破損値は安全側（既定の friends）へ。来店をフィード発行するため public フォールバックは避ける。
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
+
+    /// 来店を feed_item として発行し、フォロワーへ即同期する（ワークアウト完了時と同じ仕組み）。
+    private func publishToFeed() {
+        guard let userId = auth.currentUserId else { return }
+        FeedPublisher.publishOwnPosts(
+            userId: userId, authorName: auth.session?.displayName, context: context,
+            visibilityStore: PostVisibilityStore(), defaultVisibility: defaultVisibility, sync: sync
+        )
+        Task { await sync.syncNow(force: true) }
     }
 }

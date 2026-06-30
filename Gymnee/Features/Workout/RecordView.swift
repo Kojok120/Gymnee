@@ -86,7 +86,6 @@ private struct StartGateView: View {
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
 
-    private enum Route: Hashable { case history }
 
     var body: some View {
         ScrollView {
@@ -118,7 +117,12 @@ private struct StartGateView: View {
                         .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
                 }
                 // これまでの記録を一覧で振り返る導線（記録一覧＝日付/種目ごと。下書きも含む）。
-                NavigationLink(value: Route.history) {
+                // 単発クロージャ型リンク：RecordContent が push 経由(カレンダー編集/ワークアウト詳細)で
+                // 開かれても、pushed view 上の navigationDestination(for:) に依存せず確実に遷移する
+                // （iOS 26.5 で子リンクが解決されない問題の回避。List/ForEach 内ではないのでハングもしない）。
+                NavigationLink {
+                    HistoryView(userId: userId)
+                } label: {
                     Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Theme.textSecondary)
@@ -128,9 +132,6 @@ private struct StartGateView: View {
             .padding(.bottom, Theme.Spacing.md)
         }
         .navigationTitle("記録").navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: Route.self) { _ in
-            HistoryView(userId: userId)
-        }
     }
 
     /// 中断中の記録1件を再開/破棄するカード（開始日時＋内容の一部を表示）。
@@ -278,10 +279,11 @@ struct RecordContent: View {
                 }
                 .accessibilityLabel("メモ")
             }
-            if activeWorkout != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完了") { finish() }.bold()
-                }
+            ToolbarItem(placement: .topBarTrailing) {
+                // 完了の場所を最初から見せる（メモを開くまで現れない＝在処が分かりづらい問題の解消）。
+                // 記録(セット)が1件も無いうちは無効。セットを記録すると有効になる。
+                Button("完了") { finish() }.bold()
+                    .disabled(!hasRecordedSets)
             }
         }
         .alert("この記録を破棄しますか？", isPresented: $showCancelConfirm) {
@@ -818,6 +820,8 @@ struct RecordContent: View {
 
     /// このワークアウトにメモが付いているか（ツールバーアイコンの状態表示用）。
     private var hasMemo: Bool { !(activeWorkout?.note ?? "").isEmpty }
+    /// 記録済みセットが1件以上あるか（完了ボタンの有効/無効判定）。
+    private var hasRecordedSets: Bool { !(activeWorkout?.exercises.flatMap { $0.sets } ?? []).isEmpty }
 
     /// メモを開く。未開始ならセッションを作ってからメモ編集（メモのある下書きは破棄されない）。
     private func openMemo() {

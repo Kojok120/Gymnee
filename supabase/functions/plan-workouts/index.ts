@@ -6,10 +6,11 @@
 // キー設定: supabase secrets set GEMINI_API_KEY=xxxx
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-// モデル/APIバージョンは secrets で切替可能。gemini-3.5-flash は v1 でのみ提供。
-// 例: supabase secrets set GEMINI_MODEL=gemini-2.5-flash GEMINI_API_VERSION=v1beta
-const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash";
-const API_VERSION = Deno.env.get("GEMINI_API_VERSION") ?? "v1";
+// モデル/APIバージョンは secrets で切替可能。既定は gemini-3.1-flash-lite(v1beta)。
+// （直接検証で当該モデル＋現行キーが v1beta/v1 とも 200 を返すことを確認済み）
+// 例: supabase secrets set GEMINI_MODEL=gemini-3.1-flash-lite GEMINI_API_VERSION=v1beta
+const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
+const API_VERSION = Deno.env.get("GEMINI_API_VERSION") ?? "v1beta";
 
 /// 応答テキストから JSON 本体（最初の { 〜 最後の }）を取り出す。コードフェンスや前置きを除去。
 function extractJson(s: string): string {
@@ -87,8 +88,9 @@ Deno.serve(async (req) => {
     `既存の予定(避けるべき多忙日の参考): ${JSON.stringify(busy)}`,
     `直近4週間の記録(頻度・部位バランス・前回重量の参考。空なら初心者想定で控えめに): ${JSON.stringify(history)}`,
     `部位ごとの回復状況(recovered=false=未回復。hoursSince=最終トレからの経過時間): ${JSON.stringify(recovery)}`,
-    "方針: 予定で忙しい日は休養または軽め。回復していない部位(recovered=false)は連日に入れない。目標日数に合わせる。",
-    "種目構成はハイブリッド: 可能な限り『利用可能なルーティン名』を各トレ日に割り当て、title をそのルーティン名にする。ルーティンで埋まらない日や不足部位だけ個別種目で補う。",
+    "方針: 予定で忙しい日は休養または軽め。目標日数に合わせる。各トレ日の部位は『部位ごとの回復状況』で決める＝ hoursSince が長い(最も休めている)/recovered=true の部位を優先し、recovered=false の部位は連日に入れない。",
+    "【最重要・分割の原則】週全体で主要部位(胸・背中・脚・肩・腕)をバランスよく分割する。1つの部位やルーティンに偏らせない。同じ部位は週に最大2回、連続するトレ日は必ず異なる部位にする(例: 胸→背中→脚→肩/腕)。同じ内容の繰り返しは禁止。",
+    "利用可能なルーティンが無い/少ない/1つだけの場合は、それを毎日繰り返さず、各トレ日を【オリジナルに】個別種目を組み合わせて構成する。回復状況で最も休めている部位から順に割り当て、title はその部位名にし、その部位の主要種目を2〜4種目入れる。ルーティンを使える日は1ルーティンにつき週1回まで割り当ててよい。",
     "重量は過去記録の前回値を基準に漸進的過負荷(無理のない範囲で微増)。記録が無い種目は控えめな初期値。",
     'JSONのみを返す。形式: {"plan":[{"date":"<対象日>","title":"<部位/ルーティン名 or 休養>","exercises":[{"name":"種目名","muscleGroup":"chest|back|legs|shoulders|arms|core|fullBody のいずれか","sets":3,"reps":8,"weight":60}]}]}。休養日は exercises を空配列に。',
   ].join("\n");

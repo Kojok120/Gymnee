@@ -151,9 +151,11 @@ final class SwiftDataSyncStore: SyncBackingStore {
         }
     }
 
-    /// 他端末での DELETE（いいね取消／コメント削除）をローカルへ伝播する。
+    /// 他端末での DELETE（いいね取消／コメント削除／投稿削除）をローカルへ伝播する。
     /// サーバー全件 id（serverIds）を正として、未送出でない（isDirty=false の）ローカル行のうち
     /// サーバーに存在しないものを削除する。未送出（自分が作成しまだ push していない）行は守る。
+    /// feed_items: 投稿者が来店/ワークアウトを削除すると feed_item もサーバーから消えるため、
+    /// 可視でなくなった/削除された投稿をフォロワー端末のフィードからも取り除く。
     func reconcile(table: String, serverIds: Set<UUID>) {
         var changed = false
         switch table {
@@ -165,11 +167,40 @@ final class SwiftDataSyncStore: SyncBackingStore {
             let locals = (try? context.fetch(FetchDescriptor<Comment>())) ?? []
             let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
             for c in locals where orphans.contains(c.id) { context.delete(c); changed = true }
+        case "feed_items":
+            let locals = (try? context.fetch(FetchDescriptor<FeedItem>())) ?? []
+            let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
+            for f in locals where orphans.contains(f.id) { context.delete(f); changed = true }
         default:
             return
         }
         guard changed else { return }
         do { try context.save() } catch { context.rollback() }
+    }
+
+    /// 親 feed_item 不在の FK 違反(23503)で詰まった反応/コメントを孤児として破棄する。
+    /// 自分の投稿への反応は親(feed_item)を送れる見込みなので残す(false)。
+    /// 他人の投稿（自分が所有しない／既に削除済み）への反応は反応者が親を作れず永久に詰まるので、
+    /// ローカル行を削除して破棄する(true)。
+    func discardOrphanedChild(table: String, recordId: UUID) -> Bool {
+        switch table {
+        case "post_reactions":
+            guard let r = fetchPostReaction(recordId) else { return true } // ローカルにも無い＝既に消滅
+            if let fi = fetchFeedItem(r.feedItemId), fi.userId == r.userId { return false } // 自分の投稿→残す
+            return deleteAndSave(r)
+        case "comments":
+            guard let c = fetchComment(recordId) else { return true }
+            if let fi = fetchFeedItem(c.feedItemId), fi.userId == c.userId { return false }
+            return deleteAndSave(c)
+        default:
+            return false
+        }
+    }
+
+    /// ローカル行を削除し、保存成功時のみ true を返す（保存失敗時は rollback して false＝outbox から消さない）。
+    private func deleteAndSave<T: PersistentModel>(_ model: T) -> Bool {
+        context.delete(model)
+        do { try context.save(); return true } catch { context.rollback(); return false }
     }
 
     /// 既存があり、ローカルの方が新しければ true（＝リモートを捨てる）。LWW（§9-7）。
@@ -741,9 +772,14 @@ final class SwiftDataSyncStore: SyncBackingStore {
     }
     private func dbl(_ v: Any?) -> Double? {
         guard let v, !(v is NSNull) else { return nil }
-        if let n = v as? NSNumber { return n.doubleValue }
-        if let s = v as? String { return Double(s) }
-        return nil
+        let d: Double?
+        if let n = v as? NSNumber { d = n.doubleValue }
+        else if let s = v as? String { d = Double(s) }
+        else { d = nil }
+        // 非有限(NaN/±Infinity)は捨てる。後段の Int(Double) 変換トラップ・描画クラッシュを防ぐ
+        // （送信側 sanitizeForJSON が非有限を弾くのと対称の防御）。
+        guard let d, d.isFinite else { return nil }
+        return d
     }
     private func decimal(_ v: Any?) -> Decimal? {
         guard let v, !(v is NSNull) else { return nil }

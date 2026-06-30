@@ -37,7 +37,7 @@ final class LocalSyncEngine: SyncEngine {
     /// 他端末での DELETE（いいね取消／コメント削除）を伝播するため、差分 pull とは別に
     /// id だけをフル取得してサーバー id と差分照合（ローカルの余剰行を削除）するテーブル。
     /// set 的で小さく、tombstone を持たない。
-    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments"]
+    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments", "feed_items"]
     /// 削除照合の id 取得上限。取得がこの件数に達したら（＝ページ打ち切りの恐れ）当回は照合しない。
     @ObservationIgnored private let reconcileSafetyCap = 1000
 
@@ -190,13 +190,27 @@ final class LocalSyncEngine: SyncEngine {
                 try await remote.upsert(table: table, rows: encodableRows)
                 succeeded.append(contentsOf: encodableChanges.map { $0.id })
             } catch {
-                lastErr = error.localizedDescription
+                // バッチ失敗→1件ずつ。回収できなかったエラーだけを lastErr に残す
+                // （孤児破棄で回収できた変更は失敗扱いにせず、同期エラー表示を出さない）。
+                var unrecovered: String?
                 for (index, change) in encodableChanges.enumerated() {
                     do {
                         try await remote.upsert(table: table, rows: [encodableRows[index]])
                         succeeded.append(change.id)
-                    } catch { lastErr = error.localizedDescription }
+                    } catch {
+                        let desc = error.localizedDescription
+                        // 親 feed_item 不在の FK 違反(23503)で詰まる反応/コメントは、孤児（他人/削除済み投稿への反応）なら
+                        // outbox から捨てて永久リトライ＋同期エラー表示を止める（自分の投稿への反応は親を送れるので残す）。
+                        if (table == "post_reactions" || table == "comments"),
+                           desc.contains("23503"),
+                           store.discardOrphanedChild(table: table, recordId: change.recordId) {
+                            succeeded.append(change.id)
+                        } else {
+                            unrecovered = desc
+                        }
+                    }
                 }
+                if let unrecovered { lastErr = unrecovered }
             }
         }
 
@@ -312,9 +326,14 @@ protocol SyncBackingStore: AnyObject {
     func setLastPulledAt(_ date: Date, table: String)
     /// FK 親依存（例: visits→gyms）。push 時にこれらを先に送って外部キー違反(23503)を防ぐ。既定は依存なし。
     func dependencies(for change: PendingChange) -> [PendingChange]
+    /// 親 feed_item 不在の FK 違反(23503)で push が詰まった反応/コメントを「孤児」として破棄してよいか。
+    /// 他人/削除済み投稿への反応は反応者が親を送れないため孤児＝true（ローカル行も削除）。
+    /// 自分の投稿への反応は親を送れる見込みなので false（残してリトライ）。既定 false。
+    func discardOrphanedChild(table: String, recordId: UUID) -> Bool
 }
 
 extension SyncBackingStore {
     func dependencies(for change: PendingChange) -> [PendingChange] { [] }
     func reconcile(table: String, serverIds: Set<UUID>) {}
+    func discardOrphanedChild(table: String, recordId: UUID) -> Bool { false }
 }
