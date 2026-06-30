@@ -14,6 +14,8 @@ struct CheckInView: View {
     @Query(sort: \Gym.name) private var gyms: [Gym]
     @Query private var follows: [Follow]
     @Query private var profiles: [Profile]
+    /// 既定の公開範囲（来店をフィード発行するときに使う）。SocialFeedView と同じキー。
+    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
 
     @State private var image: UIImage?
     @State private var photoItem: PhotosPickerItem?
@@ -380,6 +382,9 @@ struct CheckInView: View {
             return
         }
         sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
+        // ワークアウト完了時と同様、来店もこの時点でフィード(feed_item)へ発行してフォロワーへ同期する
+        // （これをしないと自分がソーシャルを開くまで来店がフィードに出ない）。
+        publishToFeed()
         // 来店写真をリモートにもアップロード（再インストール後の消失を防ぐ・best-effort）。
         if let filename, let img = image {
             let vid = visit.id
@@ -391,8 +396,22 @@ struct CheckInView: View {
                 fresh.photoURL = ref; fresh.updatedAt = .now; fresh.isDirty = true
                 try? context.save()
                 sync.enqueue(PendingChange(entity: "visits", recordId: vid, operation: .upsert, updatedAt: fresh.updatedAt))
+                // 写真アップロード完了後に再発行し、feed_item に写真参照(photoRef)を載せてフォロワーにも写真を表示する。
+                publishToFeed()
             }
         }
         savedVisit = visit
+    }
+
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
+
+    /// 来店を feed_item として発行し、フォロワーへ即同期する（ワークアウト完了時と同じ仕組み）。
+    private func publishToFeed() {
+        guard let userId = auth.currentUserId else { return }
+        FeedPublisher.publishOwnPosts(
+            userId: userId, authorName: auth.session?.displayName, context: context,
+            visibilityStore: PostVisibilityStore(), defaultVisibility: defaultVisibility, sync: sync
+        )
+        Task { await sync.syncNow(force: true) }
     }
 }
