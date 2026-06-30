@@ -91,7 +91,7 @@ struct RoutineEditorView: View {
                 }
             }
             .sheet(isPresented: $showPicker) {
-                ExercisePickerView { addExercise($0) }
+                AddExerciseView(onCreated: { addExercise($0) })
             }
         }
         .interactiveDismissDisabled()

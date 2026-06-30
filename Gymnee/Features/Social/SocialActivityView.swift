@@ -6,6 +6,8 @@ import SwiftData
 /// 開いた時点で既読化（lastSeen を now にして両バッジを消す）。行タップで該当投稿の詳細を開く。
 struct SocialActivityView: View {
     let userId: UUID
+    /// シートを閉じる。NavigationStack 内の \.dismiss はシートを閉じないため明示的に渡す。
+    var onClose: () -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
@@ -26,8 +28,9 @@ struct SocialActivityView: View {
     @State private var postDetail: FeedEntry?
     @State private var visStore = PostVisibilityStore()
 
-    init(userId: UUID) {
+    init(userId: UUID, onClose: @escaping () -> Void) {
         self.userId = userId
+        self.onClose = onClose
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
@@ -59,10 +62,14 @@ struct SocialActivityView: View {
     }
 
     var body: some View {
+        NavigationStack { content }
+    }
+
+    private var content: some View {
         let since = Date(timeIntervalSince1970: renderSince ?? lastSeenRaw)
         // 行ごとに FeedBuilder を回さないよう、詳細遷移用の索引は描画ごとに 1 度だけ構築する。
         let entries = entriesById
-        List {
+        return List {
             ForEach(groups) { group in
                 row(group, entry: entries[group.postId], unread: group.latestDate > since)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -81,6 +88,9 @@ struct SocialActivityView: View {
         }
         .navigationTitle("通知")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { Button("閉じる") { onClose() } }
+        }
         .task {
             // 開く前の lastSeen を一度だけ控えてから既読化する（未読ドットは控えた値で描く）。
             if renderSince == nil { renderSince = lastSeenRaw }

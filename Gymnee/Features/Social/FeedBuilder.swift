@@ -39,6 +39,19 @@ struct FeedItemStats: Codable {
     var minutes: Int?
     var prCount: Int
     var muscles: [String]   // MuscleGroup.rawValue
+    /// 種目別のセット内訳（他人の投稿でも「メニュー」を再現するため。任意・後方互換）。
+    var exerciseLines: [ExerciseLine]? = nil
+
+    /// 1 種目分のセット内訳。
+    struct ExerciseLine: Codable, Equatable {
+        var name: String
+        var sets: [SetLine]
+    }
+    /// 1 セット分（表示テキスト＋PR フラグ）。
+    struct SetLine: Codable, Equatable {
+        var text: String
+        var isPR: Bool
+    }
 
     func encodedJSON() -> String? {
         guard let data = try? JSONEncoder().encode(self) else { return nil }
@@ -79,6 +92,21 @@ struct FeedItemPRStats: Codable {
     }
 }
 
+/// feed_items.stats_json に載せる来店投稿のメタ（写真ストレージ参照）。
+/// 他人の投稿でも来店写真を表示するため、本人の visit.photoURL（"bucket/path"）を載せる。
+struct FeedItemVisitStats: Codable {
+    var photoRef: String?
+
+    func encodedJSON() -> String? {
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    static func decode(_ json: String?) -> FeedItemVisitStats? {
+        guard let json, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(FeedItemVisitStats.self, from: data)
+    }
+}
+
 /// フィードに表示する統合エントリ（§6.11）。来店/PR/ワークアウトを 1 つの時系列に束ねる。
 /// ローカルでは値型で都度生成（サーバ側フィードは FeedItem モデルで将来差し替え）。
 struct FeedEntry: Identifiable {
@@ -106,6 +134,10 @@ struct FeedEntry: Identifiable {
     var prCount: Int = 0
     /// PR 投稿の計測タイプ（トロフィーのアイコン/ラベル）。
     var prKind: PRType? = nil
+    /// 他人のワークアウト投稿の種目別セット内訳（feed の statsJSON から復元。自分の投稿はローカル実体から描く）。
+    var workoutLines: [FeedItemStats.ExerciseLine]? = nil
+    /// 他人の来店投稿の写真ストレージ参照（"bucket/path"）。SyncedPhoto で取得して表示する。
+    var photoRef: String? = nil
 
     /// 他ユーザーの投稿か（フィード上の表示分岐用）。
     var isFromOther: Bool { authorName != nil }
@@ -169,8 +201,10 @@ enum FeedBuilder {
             var seenMuscle = Set<MuscleGroup>()
             let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }
 
+            // 「種目」件数は詳細(メニュー)と一致させる（セットの無い空種目は数えない）。
+            let exerciseCount = w.exercises.filter { !$0.sets.isEmpty }.count
             var stats: [FeedStat] = [
-                FeedStat(label: "種目", value: "\(w.exercises.count)"),
+                FeedStat(label: "種目", value: "\(exerciseCount)"),
                 FeedStat(label: "セット", value: "\(totalSets)"),
             ]
             if totalVolume > 0 { stats.append(FeedStat(label: "ボリューム", value: "\(totalVolume) kg")) }
@@ -214,6 +248,8 @@ enum FeedBuilder {
             }
             let profile = profilesById[item.userId]
             let stats = FeedItemStats.decode(item.statsJSON)
+            // 来店投稿は statsJSON に写真参照を載せている（ワークアウトの statsJSON とは別形式）。
+            let visitPhotoRef = kind == .visit ? FeedItemVisitStats.decode(item.statsJSON)?.photoRef : nil
             return FeedEntry(
                 id: item.id,
                 date: item.createdAt,
@@ -228,7 +264,9 @@ enum FeedBuilder {
                 authorAvatarURL: profile?.avatarURL,
                 stats: stats?.feedStats ?? [],
                 muscles: stats?.muscleGroups ?? [],
-                prCount: stats?.prCount ?? 0
+                prCount: stats?.prCount ?? 0,
+                workoutLines: stats?.exerciseLines,
+                photoRef: visitPhotoRef
             )
         }
     }

@@ -58,7 +58,9 @@ enum FeedPublisher {
         for pr in prs { if let wid = pr.workoutId { prCountByWorkout[wid, default: 0] += 1 } }
 
         for v in visits {
-            upsert(refId: v.id, type: .visit, summary: v.gym?.name ?? "チェックイン", date: v.visitedAt)
+            // 写真をリモートに上げてある来店は参照を載せ、フォロワー側でも写真を表示できるようにする。
+            let visitStats = v.photoURL.flatMap { FeedItemVisitStats(photoRef: $0).encodedJSON() }
+            upsert(refId: v.id, type: .visit, summary: v.gym?.name ?? "チェックイン", date: v.visitedAt, statsJSON: visitStats)
         }
         for w in workouts {
             // サマリは種目名のみ（数値は stats_json が運ぶ）。フォロワー側もリッチカードを描ける。
@@ -69,8 +71,20 @@ enum FeedPublisher {
             let prCount = prCountByWorkout[w.id] ?? 0
             var seenMuscle = Set<MuscleGroup>()
             let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }.map(\.rawValue)
-            let stats = FeedItemStats(exercises: w.exercises.count, sets: allSets.count, volume: totalVolume,
-                                      minutes: minutes, prCount: prCount, muscles: muscles)
+            // 種目別セット内訳（他人の投稿でも「メニュー」を再現するため）。空種目は出さない。
+            let visibleExercises = w.exercises.filter { !$0.sets.isEmpty }
+            let lines = visibleExercises
+                .sorted { $0.orderIndex < $1.orderIndex }
+                .map { we in
+                    FeedItemStats.ExerciseLine(
+                        name: we.exercise?.name ?? "種目",
+                        sets: we.sets.sorted { $0.setIndex < $1.setIndex }
+                            .map { FeedItemStats.SetLine(text: $0.detailText, isPR: $0.isPR) }
+                    )
+                }
+            // 「種目」件数は内訳(lines)と一致させる（空種目を数に含めない）。
+            let stats = FeedItemStats(exercises: visibleExercises.count, sets: allSets.count, volume: totalVolume,
+                                      minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines)
             upsert(refId: w.id, type: .workout, summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
         }
         // PR はフィードを荒らさないよう「種目 × 日」で 1 件に集約する。初回の種目は
