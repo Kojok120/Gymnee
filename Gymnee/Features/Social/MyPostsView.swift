@@ -97,8 +97,8 @@ struct MyPostsView: View {
                 .accessibilityLabel("通知")
             }
         }
-        .navigationDestination(isPresented: $showInbox) {
-            SocialActivityView(userId: userId)
+        .sheet(isPresented: $showInbox) {
+            SocialActivityView(userId: userId, onClose: { showInbox = false })
         }
         .sheet(item: $postDetail) { entry in
             PostDetailView(entry: entry, currentUserId: userId,

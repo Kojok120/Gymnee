@@ -154,20 +154,24 @@ private struct NotificationBadge: ViewModifier {
     let count: Int
 
     func body(content: Content) -> some View {
-        content.overlay(alignment: .topTrailing) {
-            if count > 0 {
-                Text(count > 99 ? "99+" : "\(count)")
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .frame(minWidth: 18, minHeight: 18)
-                    .background(Theme.danger, in: Capsule())
-                    .overlay { Capsule().strokeBorder(Theme.bg1, lineWidth: 1.5) }
-                    .offset(x: 9, y: -9)
-                    .allowsHitTesting(false)
-                    .accessibilityLabel("未読 \(count) 件")
+        // バッジを枠外に offset すると親(ツールバー等)の境界でクリップされるため、
+        // バッジ分の余白を確保してアイコンの右上「枠内」に重ねる（欠けない）。
+        content
+            .padding(.top, 5)
+            .padding(.trailing, 7)
+            .overlay(alignment: .topTrailing) {
+                if count > 0 {
+                    Text(count > 99 ? "99+" : "\(count)")
+                        .font(.system(size: 10, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Theme.danger, in: Capsule())
+                        .overlay { Capsule().strokeBorder(Theme.bg1, lineWidth: 1.5) }
+                        .allowsHitTesting(false)
+                        .accessibilityLabel("未読 \(count) 件")
+                }
             }
-        }
     }
 }
 
