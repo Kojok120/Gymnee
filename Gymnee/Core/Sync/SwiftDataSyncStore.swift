@@ -178,6 +178,25 @@ final class SwiftDataSyncStore: SyncBackingStore {
         do { try context.save() } catch { context.rollback() }
     }
 
+    /// 親 feed_item 不在の FK 違反(23503)で詰まった反応/コメントを孤児として破棄する。
+    /// 自分の投稿への反応は親(feed_item)を送れる見込みなので残す(false)。
+    /// 他人の投稿（自分が所有しない／既に削除済み）への反応は反応者が親を作れず永久に詰まるので、
+    /// ローカル行を削除して破棄する(true)。
+    func discardOrphanedChild(table: String, recordId: UUID) -> Bool {
+        switch table {
+        case "post_reactions":
+            guard let r = fetchPostReaction(recordId) else { return true } // ローカルにも無い＝既に消滅
+            if let fi = fetchFeedItem(r.feedItemId), fi.userId == r.userId { return false } // 自分の投稿→残す
+            context.delete(r); try? context.save(); return true
+        case "comments":
+            guard let c = fetchComment(recordId) else { return true }
+            if let fi = fetchFeedItem(c.feedItemId), fi.userId == c.userId { return false }
+            context.delete(c); try? context.save(); return true
+        default:
+            return false
+        }
+    }
+
     /// 既存があり、ローカルの方が新しければ true（＝リモートを捨てる）。LWW（§9-7）。
     private func remoteIsStale(localUpdatedAt: Date?, _ row: [String: Any]) -> Bool {
         guard let localUpdatedAt else { return false }
