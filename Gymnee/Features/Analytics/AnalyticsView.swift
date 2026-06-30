@@ -12,6 +12,8 @@ struct AnalyticsView: View {
     @Query private var prs: [PersonalRecord]
     @State private var csvURL: URL?
     @State private var period: Period = .quarter
+    /// 強度進捗グラフに表示する種目（空＝頻度上位5の既定）。チップで増減できる。
+    @State private var pinnedExercises: Set<String> = []
 
     private let calendar = Calendar.current
 
@@ -177,31 +179,62 @@ struct AnalyticsView: View {
     private var strengthCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             SectionHeader(title: "強度進捗（推定1RM）")
-            if strengthPoints.isEmpty {
+            if weightedExercisesByFreq.isEmpty {
                 Text("ワークアウトを重ねると主要種目の推移が出ます。").font(.caption).foregroundStyle(.secondary)
             } else {
-                Chart(strengthPoints) { p in
-                    LineMark(x: .value("日付", p.date), y: .value("推定1RM", p.e1RM))
-                        .foregroundStyle(by: .value("種目", p.exercise))
-                        .interpolationMethod(.catmullRom)
-                    PointMark(x: .value("日付", p.date), y: .value("推定1RM", p.e1RM))
-                        .foregroundStyle(by: .value("種目", p.exercise))
+                exerciseSelector
+                if strengthPoints.isEmpty {
+                    Text("表示する種目を選んでください。").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Chart(strengthPoints) { p in
+                        LineMark(x: .value("日付", p.date), y: .value("推定1RM", p.e1RM))
+                            .foregroundStyle(by: .value("種目", p.exercise))
+                            .interpolationMethod(.catmullRom)
+                        PointMark(x: .value("日付", p.date), y: .value("推定1RM", p.e1RM))
+                            .foregroundStyle(by: .value("種目", p.exercise))
+                    }
+                    .chartYAxisLabel("kg")
+                    .frame(height: 200)
                 }
-                .chartYAxisLabel("kg")
-                .frame(height: 200)
             }
         }
         .gymneeCard()
+    }
+
+    /// 表示種目の選択チップ（推定1RMが出せる種目を頻度順に。タップで増減）。
+    private var exerciseSelector: some View {
+        let shown = Set(displayedExercises)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+                ForEach(weightedExercisesByFreq, id: \.self) { name in
+                    let on = shown.contains(name)
+                    Button { toggleExercise(name) } label: {
+                        Text(name)
+                            .font(.caption.bold())
+                            .padding(.horizontal, Theme.Spacing.md).padding(.vertical, 6)
+                            .background(on ? Theme.energy : Color(uiColor: .tertiarySystemFill), in: Capsule())
+                            .foregroundStyle(on ? .white : .primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    /// チップ操作：初回タップは既定(頻度上位5)を取り込んでから増減する。空にすると既定へ戻る。
+    private func toggleExercise(_ name: String) {
+        if pinnedExercises.isEmpty { pinnedExercises = Set(weightedExercisesByFreq.prefix(5)) }
+        if pinnedExercises.contains(name) { pinnedExercises.remove(name) } else { pinnedExercises.insert(name) }
     }
 
     private struct StrengthPoint: Identifiable {
         let id = UUID(); let date: Date; let e1RM: Double; let exercise: String
     }
 
-    /// 期間内で最も頻度の高い上位3種目の推定1RM推移。
-    private var strengthPoints: [StrengthPoint] {
+    /// 期間内の (種目 -> [WorkoutExercise])（完了ワークアウトのみ）。
+    private var byExerciseInPeriod: [String: [WorkoutExercise]] {
         let start = periodStart
-        // 期間内の (種目 -> [WorkoutExercise]) を集計。
         var byExercise: [String: [WorkoutExercise]] = [:]
         for w in workouts where w.completedAt != nil && w.date >= start {
             for we in w.exercises {
@@ -209,10 +242,30 @@ struct AnalyticsView: View {
                 byExercise[name, default: []].append(we)
             }
         }
-        let top = byExercise.sorted { $0.value.count > $1.value.count }.prefix(3)
+        return byExercise
+    }
+
+    /// 推定1RMが出せる種目（加重セットあり）を頻度の高い順に。グラフ・選択チップの母集合。
+    private var weightedExercisesByFreq: [String] {
+        byExerciseInPeriod
+            .filter { $0.value.contains { we in we.sets.contains { $0.weight > 0 && $0.reps > 0 } } }
+            .sorted { a, b in a.value.count != b.value.count ? a.value.count > b.value.count : a.key < b.key }
+            .map(\.key)
+    }
+
+    /// グラフに表示する種目：選択があればそれ（母集合内のみ）、無ければ頻度上位5。
+    private var displayedExercises: [String] {
+        let avail = weightedExercisesByFreq
+        if pinnedExercises.isEmpty { return Array(avail.prefix(5)) }
+        return avail.filter { pinnedExercises.contains($0) }
+    }
+
+    /// 表示種目の推定1RM推移（日ごとの最大推定1RM）。
+    private var strengthPoints: [StrengthPoint] {
+        let by = byExerciseInPeriod
         var points: [StrengthPoint] = []
-        for (name, wes) in top {
-            for we in wes {
+        for name in displayedExercises {
+            for we in by[name] ?? [] {
                 guard let date = we.workout?.date else { continue }
                 let best = we.sets
                     .filter { $0.weight > 0 && $0.reps > 0 }
