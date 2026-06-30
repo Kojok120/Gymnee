@@ -747,9 +747,14 @@ final class SwiftDataSyncStore: SyncBackingStore {
     }
     private func dbl(_ v: Any?) -> Double? {
         guard let v, !(v is NSNull) else { return nil }
-        if let n = v as? NSNumber { return n.doubleValue }
-        if let s = v as? String { return Double(s) }
-        return nil
+        let d: Double?
+        if let n = v as? NSNumber { d = n.doubleValue }
+        else if let s = v as? String { d = Double(s) }
+        else { d = nil }
+        // 非有限(NaN/±Infinity)は捨てる。後段の Int(Double) 変換トラップ・描画クラッシュを防ぐ
+        // （送信側 sanitizeForJSON が非有限を弾くのと対称の防御）。
+        guard let d, d.isFinite else { return nil }
+        return d
     }
     private func decimal(_ v: Any?) -> Decimal? {
         guard let v, !(v is NSNull) else { return nil }
