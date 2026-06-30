@@ -3,6 +3,9 @@ import SwiftData
 
 /// カスタム種目作成（§6.5 種目マスタはプリセット＋ユーザー作成）。
 struct AddExerciseView: View {
+    /// 作成した種目を呼び出し側（ワークアウト/ルーティン）へ渡す。nil ならマスタ作成のみ。
+    var onCreated: ((Exercise) -> Void)? = nil
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthService.self) private var auth
@@ -94,6 +97,7 @@ struct AddExerciseView: View {
         context.insert(exercise)
         try? context.save()
         sync.enqueue(PendingChange(entity: "exercises", recordId: exercise.id, operation: .upsert, updatedAt: exercise.updatedAt))
+        onCreated?(exercise)
         dismiss()
     }
 }

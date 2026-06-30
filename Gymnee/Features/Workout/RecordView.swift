@@ -223,7 +223,7 @@ struct RecordContent: View {
     @State private var distCenters: [UUID: Double] = [:]
     @State private var showSummary = false
     @State private var showModePicker = false
-    @State private var showExercisePicker = false
+    @State private var showAddExercise = false
     @State private var editingExercise: Exercise?
     @State private var editingSet: ExerciseSet?
     @State private var keypad: KeypadRequest?
@@ -292,8 +292,8 @@ struct RecordContent: View {
         }
         .safeAreaInset(edge: .bottom) { timerBar }
         .sheet(isPresented: $showModePicker) { modePickerSheet }
-        .sheet(isPresented: $showExercisePicker) {
-            ExercisePickerView { ex in freeAdded.insert(ex.id) }
+        .sheet(isPresented: $showAddExercise) {
+            AddExerciseView(onCreated: { ex in freeAdded.insert(ex.id) })
         }
         .sheet(item: $editingExercise) { ex in ExerciseEditView(exercise: ex) }
         .sheet(item: $editingSet) { set in EditSetSheet(set: set) { commitSetEdit(set) } }
@@ -517,7 +517,7 @@ struct RecordContent: View {
     }
 
     private var addExerciseButton: some View {
-        Button { showExercisePicker = true } label: {
+        Button { showAddExercise = true } label: {
             Label("種目を追加", systemImage: "plus")
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
