@@ -131,6 +131,7 @@ private struct DateHistoryList: View {
         context.delete(workout) // 配下の workout_exercises / exercise_sets は cascade で削除
         do { try context.save() } catch { return }
         sync.enqueue(PendingChange(entity: "workouts", recordId: id, operation: .delete, updatedAt: .now))
+        FeedPublisher.deleteFeedItem(forRefId: id, context: context, sync: sync)
     }
 
     private func monthStart(_ date: Date) -> Date {

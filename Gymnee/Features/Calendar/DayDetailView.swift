@@ -267,6 +267,7 @@ struct DayDetailView: View {
         context.delete(visit)
         try? context.save()
         sync.enqueue(PendingChange(entity: "visits", recordId: visitId, operation: .delete, updatedAt: .now))
+        FeedPublisher.deleteFeedItem(forRefId: visitId, context: context, sync: sync)
     }
 
     private func deleteWorkout(_ workout: Workout) {
@@ -274,5 +275,6 @@ struct DayDetailView: View {
         context.delete(workout) // 配下の workout_exercises / exercise_sets は cascade で削除
         try? context.save()
         sync.enqueue(PendingChange(entity: "workouts", recordId: id, operation: .delete, updatedAt: .now))
+        FeedPublisher.deleteFeedItem(forRefId: id, context: context, sync: sync)
     }
 }

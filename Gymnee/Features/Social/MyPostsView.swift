@@ -141,6 +141,7 @@ struct MyPostsView: View {
             context.delete(v)
             try? context.save()
             sync.enqueue(PendingChange(entity: "visits", recordId: entry.id, operation: .delete, updatedAt: .now))
+            FeedPublisher.deleteFeedItem(forRefId: entry.id, context: context, sync: sync)
         case .pr:
             guard let pr = prs.first(where: { $0.id == entry.id }) else { return }
             context.delete(pr)
@@ -151,6 +152,7 @@ struct MyPostsView: View {
             context.delete(w)
             try? context.save()
             sync.enqueue(PendingChange(entity: "workouts", recordId: entry.id, operation: .delete, updatedAt: .now))
+            FeedPublisher.deleteFeedItem(forRefId: entry.id, context: context, sync: sync)
         }
     }
 }

@@ -139,4 +139,18 @@ enum FeedPublisher {
             // 保存失敗時は enqueue しない（次回の発行で再試行）。
         }
     }
+
+    /// 来店/ワークアウト削除時に、対応する feed_item（id == 元データ id）も削除して同期する。
+    /// これによりフォロワーのフィードからも消える（feed_items は reconcile 対象なので削除が伝播する）。
+    /// 注: PR は feed_item を種目×日でグルーピングするため対象外（publishOwnPosts の再発行に委ねる）。
+    @MainActor
+    static func deleteFeedItem(forRefId refId: UUID, context: ModelContext, sync: LocalSyncEngine) {
+        let rid = refId
+        if let fi = (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == rid })))?.first {
+            context.delete(fi)
+            try? context.save()
+        }
+        // ローカルに feed_item が無くても、サーバー側を確実に消すため delete を積む。
+        sync.enqueue(PendingChange(entity: "feed_items", recordId: refId, operation: .delete, updatedAt: .now))
+    }
 }

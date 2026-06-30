@@ -37,7 +37,7 @@ final class LocalSyncEngine: SyncEngine {
     /// 他端末での DELETE（いいね取消／コメント削除）を伝播するため、差分 pull とは別に
     /// id だけをフル取得してサーバー id と差分照合（ローカルの余剰行を削除）するテーブル。
     /// set 的で小さく、tombstone を持たない。
-    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments"]
+    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments", "feed_items"]
     /// 削除照合の id 取得上限。取得がこの件数に達したら（＝ページ打ち切りの恐れ）当回は照合しない。
     @ObservationIgnored private let reconcileSafetyCap = 1000
 

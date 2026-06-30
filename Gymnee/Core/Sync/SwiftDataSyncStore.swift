@@ -151,9 +151,11 @@ final class SwiftDataSyncStore: SyncBackingStore {
         }
     }
 
-    /// 他端末での DELETE（いいね取消／コメント削除）をローカルへ伝播する。
+    /// 他端末での DELETE（いいね取消／コメント削除／投稿削除）をローカルへ伝播する。
     /// サーバー全件 id（serverIds）を正として、未送出でない（isDirty=false の）ローカル行のうち
     /// サーバーに存在しないものを削除する。未送出（自分が作成しまだ push していない）行は守る。
+    /// feed_items: 投稿者が来店/ワークアウトを削除すると feed_item もサーバーから消えるため、
+    /// 可視でなくなった/削除された投稿をフォロワー端末のフィードからも取り除く。
     func reconcile(table: String, serverIds: Set<UUID>) {
         var changed = false
         switch table {
@@ -165,6 +167,10 @@ final class SwiftDataSyncStore: SyncBackingStore {
             let locals = (try? context.fetch(FetchDescriptor<Comment>())) ?? []
             let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
             for c in locals where orphans.contains(c.id) { context.delete(c); changed = true }
+        case "feed_items":
+            let locals = (try? context.fetch(FetchDescriptor<FeedItem>())) ?? []
+            let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
+            for f in locals where orphans.contains(f.id) { context.delete(f); changed = true }
         default:
             return
         }
