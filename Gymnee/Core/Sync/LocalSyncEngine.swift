@@ -190,22 +190,27 @@ final class LocalSyncEngine: SyncEngine {
                 try await remote.upsert(table: table, rows: encodableRows)
                 succeeded.append(contentsOf: encodableChanges.map { $0.id })
             } catch {
-                lastErr = error.localizedDescription
+                // バッチ失敗→1件ずつ。回収できなかったエラーだけを lastErr に残す
+                // （孤児破棄で回収できた変更は失敗扱いにせず、同期エラー表示を出さない）。
+                var unrecovered: String?
                 for (index, change) in encodableChanges.enumerated() {
                     do {
                         try await remote.upsert(table: table, rows: [encodableRows[index]])
                         succeeded.append(change.id)
                     } catch {
-                        lastErr = error.localizedDescription
+                        let desc = error.localizedDescription
                         // 親 feed_item 不在の FK 違反(23503)で詰まる反応/コメントは、孤児（他人/削除済み投稿への反応）なら
                         // outbox から捨てて永久リトライ＋同期エラー表示を止める（自分の投稿への反応は親を送れるので残す）。
                         if (table == "post_reactions" || table == "comments"),
-                           error.localizedDescription.contains("23503"),
+                           desc.contains("23503"),
                            store.discardOrphanedChild(table: table, recordId: change.recordId) {
                             succeeded.append(change.id)
+                        } else {
+                            unrecovered = desc
                         }
                     }
                 }
+                if let unrecovered { lastErr = unrecovered }
             }
         }
 

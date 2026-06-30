@@ -394,7 +394,8 @@ struct CheckInView: View {
                 // 画面破棄/削除後に元オブジェクトを触らない（id で再取得し、存在する時だけ書く）。
                 guard let fresh = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == vid })))?.first else { return }
                 fresh.photoURL = ref; fresh.updatedAt = .now; fresh.isDirty = true
-                try? context.save()
+                // 保存成功時のみ enqueue/再発行へ進む（未保存の写真参照を同期しない）。
+                do { try context.save() } catch { return }
                 sync.enqueue(PendingChange(entity: "visits", recordId: vid, operation: .upsert, updatedAt: fresh.updatedAt))
                 // 写真アップロード完了後に再発行し、feed_item に写真参照(photoRef)を載せてフォロワーにも写真を表示する。
                 publishToFeed()
@@ -403,7 +404,8 @@ struct CheckInView: View {
         savedVisit = visit
     }
 
-    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
+    // 不正/破損値は安全側（既定の friends）へ。来店をフィード発行するため public フォールバックは避ける。
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
 
     /// 来店を feed_item として発行し、フォロワーへ即同期する（ワークアウト完了時と同じ仕組み）。
     private func publishToFeed() {

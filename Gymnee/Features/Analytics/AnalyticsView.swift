@@ -212,8 +212,8 @@ struct AnalyticsView: View {
                         Text(name)
                             .font(.caption.bold())
                             .padding(.horizontal, Theme.Spacing.md).padding(.vertical, 6)
-                            .background(on ? Theme.energy : Color(uiColor: .tertiarySystemFill), in: Capsule())
-                            .foregroundStyle(on ? .white : .primary)
+                            .background(on ? Theme.energy : Theme.bg3, in: Capsule())
+                            .foregroundStyle(on ? .white : Theme.textSecondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -236,7 +236,8 @@ struct AnalyticsView: View {
     private var byExerciseInPeriod: [String: [WorkoutExercise]] {
         let start = periodStart
         var byExercise: [String: [WorkoutExercise]] = [:]
-        for w in workouts where w.completedAt != nil && w.date >= start {
+        // 期間判定は週次頻度と揃えて完了時刻(completedAt)基準にする（深夜跨ぎの日ズレ防止）。
+        for w in workouts where (w.completedAt ?? .distantPast) >= start {
             for we in w.exercises {
                 guard let name = we.exercise?.name else { continue }
                 byExercise[name, default: []].append(we)
@@ -266,7 +267,8 @@ struct AnalyticsView: View {
         var points: [StrengthPoint] = []
         for name in displayedExercises {
             for we in by[name] ?? [] {
-                guard let date = we.workout?.date else { continue }
+                // プロット日付も完了時刻基準（週次頻度と同じ）。byExerciseInPeriod で完了済みのみ。
+                guard let date = we.workout?.completedAt else { continue }
                 let best = we.sets
                     .filter { $0.weight > 0 && $0.reps > 0 }
                     .map { OneRepMax.estimate(weight: $0.weight, reps: $0.reps) }

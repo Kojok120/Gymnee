@@ -187,14 +187,20 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "post_reactions":
             guard let r = fetchPostReaction(recordId) else { return true } // ローカルにも無い＝既に消滅
             if let fi = fetchFeedItem(r.feedItemId), fi.userId == r.userId { return false } // 自分の投稿→残す
-            context.delete(r); try? context.save(); return true
+            return deleteAndSave(r)
         case "comments":
             guard let c = fetchComment(recordId) else { return true }
             if let fi = fetchFeedItem(c.feedItemId), fi.userId == c.userId { return false }
-            context.delete(c); try? context.save(); return true
+            return deleteAndSave(c)
         default:
             return false
         }
+    }
+
+    /// ローカル行を削除し、保存成功時のみ true を返す（保存失敗時は rollback して false＝outbox から消さない）。
+    private func deleteAndSave<T: PersistentModel>(_ model: T) -> Bool {
+        context.delete(model)
+        do { try context.save(); return true } catch { context.rollback(); return false }
     }
 
     /// 既存があり、ローカルの方が新しければ true（＝リモートを捨てる）。LWW（§9-7）。
