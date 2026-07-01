@@ -506,11 +506,10 @@ private struct CalendarHomeContent: View {
         let firstDay = monthInterval.start
         let weekdayOfFirst = calendar.component(.weekday, from: firstDay)
         let leading = (weekdayOfFirst - calendar.firstWeekday + 7) % 7
-        let daysInMonth = calendar.range(of: .day, in: .month, for: anchor)?.count ?? 30
-        // グリッド先頭（当月1日の週頭＝前月の日）から、7 の倍数に丸めたセル数分だけ連続する実日付で埋める。
+        // グリッド先頭（当月1日の週頭＝前月の日）から常に6週=42セル分を連続する実日付で埋める。
+        // 行数を固定することで月移動時にカード高さが跳ねない（余りは前後月の薄色日で埋まる）。
         guard let gridStart = calendar.date(byAdding: .day, value: -leading, to: firstDay) else { return [] }
-        let totalCells = Int((Double(leading + daysInMonth) / 7.0).rounded(.up)) * 7
-        return (0..<totalCells).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
+        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
     }
 
     private func shift(_ direction: Int) {

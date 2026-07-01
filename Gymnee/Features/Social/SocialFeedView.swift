@@ -55,6 +55,8 @@ private struct SocialContent: View {
     @State private var tab = 0
     /// フレンド画面（右上アイコンから push）の表示。
     @State private var showFriends = false
+    /// openFriends による自動 push を一度だけに抑える（戻った際の再 push トラップ防止）。
+    @State private var didAutoOpenFriends = false
     @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
     @State private var showMyPosts = false
@@ -193,7 +195,7 @@ private struct SocialContent: View {
         .navigationTitle("ソーシャル")
         .navigationBarTitleDisplayMode(.inline)
         .task { await refreshFeed() }
-        .onAppear { if openFriends { showFriends = true } }
+        .onAppear { if openFriends && !didAutoOpenFriends { didAutoOpenFriends = true; showFriends = true } }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showMyPosts = true } label: {
