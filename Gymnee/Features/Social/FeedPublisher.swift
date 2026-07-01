@@ -87,8 +87,9 @@ enum FeedPublisher {
                                       minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines)
             upsert(refId: w.id, type: .workout, summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
         }
-        // PR はフィードを荒らさないよう「種目 × 日」で 1 件に集約する。初回の種目は
-        // 最大重量/レップ…と乱発せず「新しい種目に挑戦」1件、以降は「自己ベスト更新」1件。
+        // 自己ベストは「最大重量」の更新だけをフィードに投稿する。推定1RM/最大レップ/最長時間/最小補助
+        // などその他のトロフィーはフィードに出さず、各セットの記録内（ワークアウト詳細のトロフィー表示）に
+        // 内包する。最大重量 PR は種目ごとに 1 行を上書き保持するため、種目ごとに 1 投稿へ自然にまとまる。
         let cal = Calendar.current
         var firstDayByExercise: [UUID: Date] = [:]
         for pr in prs {
@@ -97,29 +98,17 @@ enum FeedPublisher {
             if let cur = firstDayByExercise[exId] { firstDayByExercise[exId] = min(cur, day) }
             else { firstDayByExercise[exId] = day }
         }
-        let prGroups = Dictionary(grouping: prs.filter { $0.exercise != nil }) { pr in
-            "\(pr.exercise!.id.uuidString)|\(cal.startOfDay(for: pr.achievedAt).timeIntervalSince1970)"
-        }
-        for group in prGroups.values {
-            guard let rep = group.max(by: { $0.value < $1.value }), let exId = rep.exercise?.id else { continue }
-            let name = rep.exercise?.name ?? "種目"
-            let isFirst = cal.startOfDay(for: rep.achievedAt) == firstDayByExercise[exId]
+        for pr in prs where pr.type == .maxWeight {
+            guard let exId = pr.exercise?.id else { continue }
+            let name = pr.exercise?.name ?? "種目"
+            // 現在の最大重量が種目の初日のままなら「新しい種目に挑戦」、更新後は「自己ベスト更新」。
+            let isFirst = cal.startOfDay(for: pr.achievedAt) == firstDayByExercise[exId]
             let summary = isFirst ? "新しい種目に挑戦: \(name)" : "\(name) 自己ベスト更新"
-            // 同種目・同日の各計測タイプ＋数値を載せ、フォロワー側でも数値つきで自己ベストを表示できるようにする。
-            // 同一計測タイプが同日に複数あっても PR タブで重複行にならないよう、type ごと最新1件へ畳む
-            // （値の優劣は種別で向きが違うため「最新」で寄せる）。
-            var latestByType: [PRType: PersonalRecord] = [:]
-            for pr in group {
-                if let cur = latestByType[pr.type], cur.achievedAt >= pr.achievedAt { continue }
-                latestByType[pr.type] = pr
-            }
             let prStats = FeedItemPRStats(
                 exercise: name,
-                items: latestByType.values
-                    .sorted { $0.type.rawValue < $1.type.rawValue }
-                    .map { FeedItemPRStats.Item(type: $0.type.rawValue, value: $0.value) }
+                items: [FeedItemPRStats.Item(type: PRType.maxWeight.rawValue, value: pr.value)]
             )
-            upsert(refId: rep.id, type: .pr, summary: summary, date: rep.achievedAt, statsJSON: prStats.encodedJSON())
+            upsert(refId: pr.id, type: .pr, summary: summary, date: pr.achievedAt, statsJSON: prStats.encodedJSON())
         }
 
         // 残った既存 = もう存在しない投稿 → feed_item を削除して同期。

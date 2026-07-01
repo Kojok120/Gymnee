@@ -176,7 +176,10 @@ enum FeedBuilder {
             ))
         }
 
-        for pr in personalRecords {
+        // 自己ベスト投稿は「最大重量」のみ。推定1RM/最大レップ/最長時間などその他のトロフィーは
+        // 単独投稿にせず、ワークアウト記録（各セットのトロフィー表示）に内包する。
+        // 発行側（FeedPublisher）と表示基準を揃え、自分の投稿一覧とフォロワーのフィードを一致させる。
+        for pr in personalRecords where pr.type == .maxWeight {
             let valueText = formatPR(pr)
             entries.append(FeedEntry(
                 id: pr.id,
