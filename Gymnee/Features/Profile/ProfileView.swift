@@ -13,18 +13,17 @@ struct ProfileView: View {
     @State private var showProfileEdit = false
     @State private var showWrapped = false
     @Query private var visits: [Visit]
+    @Query private var workouts: [Workout]
 
     init(userId: UUID) {
         self.userId = userId
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId })
+        _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil })
     }
 
     /// 週次ストリーク（筋トレは休息が正義のため日次でなく「週N回×連続週」を主指標に）。
     private var weeklyStreak: StreakCalculator.WeeklyStreak {
         StreakCalculator.currentWeeklyStreak(visitDays: visits.map(\.visitedAt), weeklyGoal: weeklyGoal)
-    }
-    private var longestWeekly: Int {
-        StreakCalculator.longestWeeklyStreak(visitDays: visits.map(\.visitedAt), weeklyGoal: weeklyGoal)
     }
 
     /// 週次ストリークの補足（今週の進捗・フリーズ使用）。日次と違い「休んだ罪悪感」を出さない文面に。
@@ -62,9 +61,9 @@ struct ProfileView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { showProfileEdit = true }
                     HStack(spacing: Theme.Spacing.md) {
-                        StatPill(value: "\(visits.count)", label: "来店", tint: Theme.lime, systemImage: "mappin.and.ellipse")
+                        StatPill(value: "\(visits.count)", label: "来店数", tint: Theme.lime, systemImage: "mappin.and.ellipse")
+                        StatPill(value: "\(workouts.count)", label: "ワークアウト数", tint: Theme.info, systemImage: "dumbbell.fill")
                         StatPill(value: "\(weeklyStreak.weeks)", label: "連続週", tint: Theme.warning, systemImage: "flame.fill")
-                        StatPill(value: "\(longestWeekly)", label: "最長週", tint: Theme.textPrimary, systemImage: "trophy.fill")
                     }
                     weeklyStreakCaption
                 }

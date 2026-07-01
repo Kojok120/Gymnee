@@ -24,6 +24,8 @@ struct PostDetailView: View {
     @Query private var ownPRs: [PersonalRecord]
 
     @State private var draft = ""
+    /// 編集中の自分のコメント（非nilならコンポーザーは編集モード）。
+    @State private var editingComment: Comment?
     @State private var reportTarget: CommentReportTarget?
     @State private var editVisit: Visit?
     @FocusState private var composerFocused: Bool
@@ -301,6 +303,7 @@ struct PostDetailView: View {
         }
         .contextMenu {
             if c.userId == currentUserId {
+                Button("編集", systemImage: "pencil") { startEdit(c) }
                 Button("削除", systemImage: "trash", role: .destructive) { deleteComment(c) }
             } else {
                 Button("通報", systemImage: "flag") {
@@ -314,19 +317,31 @@ struct PostDetailView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
-            TextField("コメントを追加…", text: $draft, axis: .vertical)
-                .lineLimit(1...4)
-                .focused($composerFocused)
-                .padding(.vertical, 8).padding(.horizontal, Theme.Spacing.md)
-                .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous))
-            Button { send() } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(canSend ? Theme.lime : Theme.textTertiary)
+        VStack(spacing: 6) {
+            if editingComment != nil {
+                HStack(spacing: 6) {
+                    Image(systemName: "pencil").font(.caption2)
+                    Text("コメントを編集中").font(.caption2)
+                    Spacer(minLength: 0)
+                    Button("キャンセル") { cancelEdit() }.font(.caption2)
+                }
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, Theme.Spacing.xs)
             }
-            .disabled(!canSend)
-            .sensoryFeedback(.success, trigger: visibleComments.count)
+            HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
+                TextField(editingComment == nil ? "コメントを追加…" : "コメントを編集…", text: $draft, axis: .vertical)
+                    .lineLimit(1...4)
+                    .focused($composerFocused)
+                    .padding(.vertical, 8).padding(.horizontal, Theme.Spacing.md)
+                    .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous))
+                Button { submit() } label: {
+                    Image(systemName: editingComment == nil ? "arrow.up.circle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(canSend ? Theme.lime : Theme.textTertiary)
+                }
+                .disabled(!canSend)
+                .sensoryFeedback(.success, trigger: visibleComments.count)
+            }
         }
         .padding(Theme.Spacing.md)
         .background(Theme.bg1)
@@ -362,9 +377,14 @@ struct PostDetailView: View {
         if !ids.isEmpty { await sync.ensureProfiles(ids: ids) }
     }
 
+    /// 送信ボタン：編集モードなら更新、通常なら新規投稿。
+    private func submit() {
+        if editingComment != nil { saveEdit() } else { send() }
+    }
+
     private func send() {
+        guard canSend else { return }
         let t = trimmedDraft
-        guard (1...500).contains(t.count) else { return }
         let c = Comment(feedItemId: entry.id, userId: currentUserId, authorDisplayName: currentUserName, text: t)
         context.insert(c)
         try? context.save()
@@ -374,8 +394,37 @@ struct PostDetailView: View {
         Task { await sync.syncNow() }
     }
 
+    /// 自分のコメントを編集開始（コンポーザーを編集モードに）。
+    private func startEdit(_ c: Comment) {
+        editingComment = c
+        draft = c.text
+        composerFocused = true
+    }
+
+    /// 編集内容を保存（本人のみ・RLS comments_modify_own）。updated_at 更新で LWW 反映。
+    private func saveEdit() {
+        guard let c = editingComment, canSend else { return }
+        let t = trimmedDraft
+        c.text = t
+        c.updatedAt = .now
+        c.isDirty = true
+        try? context.save()
+        sync.enqueue(PendingChange(entity: "comments", recordId: c.id, operation: .upsert, updatedAt: c.updatedAt))
+        cancelEdit()
+        Task { await sync.syncNow() }
+    }
+
+    private func cancelEdit() {
+        editingComment = nil
+        draft = ""
+        composerFocused = false
+    }
+
     private func deleteComment(_ c: Comment) {
         let id = c.id
+        // 編集中のコメントを削除したら、削除済みモデルへの参照を残さないよう編集状態を解除する
+        // （残すと saveEdit が破棄済みモデルを触り整合性/クラッシュの恐れ）。
+        if editingComment?.id == id { cancelEdit() }
         context.delete(c)
         try? context.save()
         sync.enqueue(PendingChange(entity: "comments", recordId: id, operation: .delete, updatedAt: .now))

@@ -88,48 +88,48 @@ private struct StartGateView: View {
 
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: Theme.Spacing.lg) {
-                if !resumables.isEmpty {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Text("途中の記録").font(.subheadline.bold()).foregroundStyle(Theme.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        ForEach(resumables) { draft in resumeCard(draft) }
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: Theme.Spacing.xl) {
+                    if !resumables.isEmpty {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                            Text("途中の記録").font(.subheadline.bold()).foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            ForEach(resumables) { draft in resumeCard(draft) }
+                        }
                     }
-                    .padding(.top, Theme.Spacing.lg)
+                    // 記録の開始導線（ヘッダー＋ボタン）を画面中央にまとめる。
+                    VStack(spacing: Theme.Spacing.lg) {
+                        VStack(spacing: Theme.Spacing.md) {
+                            Image(systemName: "dumbbell.fill").font(.system(size: 52)).foregroundStyle(Theme.lime)
+                            Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
+                            Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
+                        }
+                        VStack(spacing: Theme.Spacing.sm) {
+                            Button(action: onStart) {
+                                Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
+                                    .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
+                                    .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                            }
+                            // これまでの記録を振り返る導線（記録一覧＝日付/種目ごと。下書きも含む）。
+                            // 単発クロージャ型リンク：RecordContent が push 経由(カレンダー編集/ワークアウト詳細)で
+                            // 開かれても pushed view 上の navigationDestination(for:) に依存せず確実に遷移する
+                            // （iOS 26.5 で子リンクが解決されない問題の回避。List/ForEach 内ではないのでハングもしない）。
+                            NavigationLink {
+                                HistoryView(userId: userId)
+                            } label: {
+                                Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                        }
+                    }
                 }
-                VStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: "dumbbell.fill").font(.system(size: 52)).foregroundStyle(Theme.lime)
-                    Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
-                    Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
-                }
-                .padding(.top, resumables.isEmpty ? Theme.Spacing.xxl : Theme.Spacing.lg)
+                .padding(.horizontal, Theme.Spacing.lg)
+                // 中身が画面より短ければ縦中央、長ければスクロール。
+                .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .frame(maxWidth: .infinity)
-        }
-        .background(Theme.bg0)
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: Theme.Spacing.sm) {
-                Button(action: onStart) {
-                    Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
-                        .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
-                        .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
-                }
-                // これまでの記録を一覧で振り返る導線（記録一覧＝日付/種目ごと。下書きも含む）。
-                // 単発クロージャ型リンク：RecordContent が push 経由(カレンダー編集/ワークアウト詳細)で
-                // 開かれても、pushed view 上の navigationDestination(for:) に依存せず確実に遷移する
-                // （iOS 26.5 で子リンクが解決されない問題の回避。List/ForEach 内ではないのでハングもしない）。
-                NavigationLink {
-                    HistoryView(userId: userId)
-                } label: {
-                    Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.bottom, Theme.Spacing.md)
+            .background(Theme.bg0)
         }
         .navigationTitle("記録").navigationBarTitleDisplayMode(.inline)
     }
