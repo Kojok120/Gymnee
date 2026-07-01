@@ -1,17 +1,19 @@
 import SwiftUI
 import SwiftData
 
-/// ソーシャル（§6.11）。フィード（来店/PR/ワークアウト）と合トレ・フォロー。
-/// 実マルチユーザ連携は Supabase 接続後。今回はローカルデータ＋UI＋抽象。
+/// ソーシャル（§6.11）。フィード（来店/PR/ワークアウト）とフォロー・ランキング。
+/// フレンドは右上アイコンから開く画面に集約。実マルチユーザ連携は Supabase 接続後。
 struct SocialFeedView: View {
     @Environment(AuthService.self) private var auth
-    /// 起動時に表示するタブ（0=フィード, 1=フレンド）。ディープリンク/検証ハーネス用。
+    /// 起動時に表示するタブ（0=フィード, 1=ランキング）。ディープリンク/検証ハーネス用。
     var initialTab: Int = 0
+    /// 起動時にフレンド画面を開く（検証ハーネス -gymneeScreen friends 用）。
+    var openFriends: Bool = false
 
     var body: some View {
         NavigationStack {
             if let uid = auth.currentUserId {
-                SocialContent(userId: uid, initialTab: initialTab)
+                SocialContent(userId: uid, initialTab: initialTab, openFriends: openFriends)
             } else {
                 EmptyStateView(systemImage: "person.2", title: "未ログイン")
             }
@@ -27,6 +29,8 @@ struct UserRef: Hashable {
 
 private struct SocialContent: View {
     let userId: UUID
+    /// 起動時にフレンド画面を自動 push（検証ハーネス用）。
+    let openFriends: Bool
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
@@ -49,8 +53,8 @@ private struct SocialContent: View {
     @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
 
     @State private var tab = 0
-    /// フレンドタブ内のサブタブ（0=フレンド, 1=合トレ履歴）。
-    @State private var friendsSubtab = 0
+    /// フレンド画面（右上アイコンから push）の表示。
+    @State private var showFriends = false
     @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
     @State private var showMyPosts = false
@@ -61,8 +65,9 @@ private struct SocialContent: View {
     @State private var visStore = PostVisibilityStore()
     @State private var feedEntries: [FeedEntry] = []
 
-    init(userId: UUID, initialTab: Int = 0) {
+    init(userId: UUID, initialTab: Int = 0, openFriends: Bool = false) {
         self.userId = userId
+        self.openFriends = openFriends
         _tab = State(initialValue: initialTab)
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
@@ -181,16 +186,14 @@ private struct SocialContent: View {
             feed
                 .opacity(tab == 0 ? 1 : 0)
                 .allowsHitTesting(tab == 0)
-            friendsList
+            RankingView(userId: userId)
                 .opacity(tab == 1 ? 1 : 0)
                 .allowsHitTesting(tab == 1)
-            RankingView(userId: userId)
-                .opacity(tab == 2 ? 1 : 0)
-                .allowsHitTesting(tab == 2)
         }
         .navigationTitle("ソーシャル")
         .navigationBarTitleDisplayMode(.inline)
         .task { await refreshFeed() }
+        .onAppear { if openFriends { showFriends = true } }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showMyPosts = true } label: {
@@ -202,9 +205,14 @@ private struct SocialContent: View {
             ToolbarItem(placement: .principal) {
                 Picker("", selection: $tab) {
                     Text("フィード").tag(0)
-                    Text("フレンド").tag(1)
-                    Text("ランキング").tag(2)
+                    Text("ランキング").tag(1)
                 }.pickerStyle(.segmented)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showFriends = true } label: {
+                    Image(systemName: "person.2")
+                }
+                .accessibilityLabel("フレンド")
             }
         }
         .sheet(isPresented: $showMyPosts) {
@@ -212,6 +220,7 @@ private struct SocialContent: View {
         }
         .onChange(of: showMyPosts) { _, shown in if !shown { Task { await refreshFeed() } } }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
+        .navigationDestination(isPresented: $showFriends) { friendsScreen }
         .navigationDestination(for: UserRef.self) { ref in
             UserProfileView(targetUserId: ref.id, currentUserId: userId, fallbackName: ref.name)
         }
@@ -332,33 +341,10 @@ private struct SocialContent: View {
         }
     }
 
-    // MARK: - Friends / 合トレ
+    // MARK: - Friends
 
-    /// フレンドタブ：上部の横並びサブタブで「フレンド」と「合トレ履歴」を切替える。
-    /// 2画面を常時マウントし不透明度だけ切替（メインタブと同じ滑らかな切替）。
-    private var friendsList: some View {
-        VStack(spacing: 0) {
-            Picker("", selection: $friendsSubtab) {
-                Text("フレンド").tag(0)
-                Text("合トレ履歴").tag(1)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 4)
-
-            ZStack {
-                friendsPage
-                    .opacity(friendsSubtab == 0 ? 1 : 0)
-                    .allowsHitTesting(friendsSubtab == 0)
-                partnersPage
-                    .opacity(friendsSubtab == 1 ? 1 : 0)
-                    .allowsHitTesting(friendsSubtab == 1)
-            }
-        }
-        .background(Theme.groupedBackground)
-    }
-
-    /// フレンドサブタブ：フォロー中＋（あれば）あなたをフォロー。
-    private var friendsPage: some View {
+    /// フレンド画面（右上アイコンから push）：フォロー中＋（あれば）あなたをフォロー。
+    private var friendsScreen: some View {
         // 行ごとの profiles.first(O(N^2)) を避けるため id 索引を一度だけ構築。
         let avatarById = Dictionary(profiles.map { ($0.id, $0.avatarURL) }, uniquingKeysWith: { a, _ in a })
         return List {
@@ -424,27 +410,7 @@ private struct SocialContent: View {
         }
         .listStyle(.plain)  // フィード/ランキングと容器スタイルを統一（切替時のインセット差による揺れを解消）
         .background(Theme.groupedBackground)
-    }
-
-    /// 合トレ履歴サブタブ：パートナー同伴の来店一覧。
-    private var partnersPage: some View {
-        let partnerVisits = visits.filter { !$0.partners.isEmpty }
-        return List {
-            if partnerVisits.isEmpty {
-                Text("合トレ記録はまだありません。").foregroundStyle(.secondary)
-            } else {
-                ForEach(partnerVisits) { v in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(v.gym?.name ?? "ジム").font(.subheadline.bold())
-                        Text(v.partners.compactMap(\.partnerDisplayName).joined(separator: "・"))
-                            .font(.caption).foregroundStyle(.secondary)
-                        Text(v.visitedAt, format: .dateTime.year().month().day())
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .listStyle(.plain)
-        .background(Theme.groupedBackground)
+        .navigationTitle("フレンド")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
