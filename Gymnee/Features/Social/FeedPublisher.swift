@@ -91,18 +91,22 @@ enum FeedPublisher {
         // などその他のトロフィーはフィードに出さず、各セットの記録内（ワークアウト詳細のトロフィー表示）に
         // 内包する。最大重量 PR は種目ごとに 1 行を上書き保持するため、種目ごとに 1 投稿へ自然にまとまる。
         let cal = Calendar.current
-        var firstDayByExercise: [UUID: Date] = [:]
-        for pr in prs {
-            guard let exId = pr.exercise?.id else { continue }
-            let day = cal.startOfDay(for: pr.achievedAt)
-            if let cur = firstDayByExercise[exId] { firstDayByExercise[exId] = min(cur, day) }
-            else { firstDayByExercise[exId] = day }
+        // 種目ごとの「初めて記録した日」（完了ワークアウト基準）。PR の achievedAt は更新のたびに
+        // 上書きされ初回日を失うため、初回判定はワークアウトの日付から導出する。
+        var firstWorkoutDay: [UUID: Date] = [:]
+        for w in workouts {
+            let day = cal.startOfDay(for: w.date)
+            for we in w.exercises where !we.sets.isEmpty {
+                guard let exId = we.exercise?.id else { continue }
+                if let cur = firstWorkoutDay[exId] { firstWorkoutDay[exId] = min(cur, day) }
+                else { firstWorkoutDay[exId] = day }
+            }
         }
         for pr in prs where pr.type == .maxWeight {
             guard let exId = pr.exercise?.id else { continue }
             let name = pr.exercise?.name ?? "種目"
-            // 現在の最大重量が種目の初日のままなら「新しい種目に挑戦」、更新後は「自己ベスト更新」。
-            let isFirst = cal.startOfDay(for: pr.achievedAt) == firstDayByExercise[exId]
+            // 現在の最大重量が種目の初回記録日のままなら「新しい種目に挑戦」、更新後は「自己ベスト更新」。
+            let isFirst = firstWorkoutDay[exId].map { cal.isDate(pr.achievedAt, inSameDayAs: $0) } ?? false
             let summary = isFirst ? "新しい種目に挑戦: \(name)" : "\(name) 自己ベスト更新"
             let prStats = FeedItemPRStats(
                 exercise: name,

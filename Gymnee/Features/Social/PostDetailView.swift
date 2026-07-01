@@ -383,8 +383,8 @@ struct PostDetailView: View {
     }
 
     private func send() {
+        guard canSend else { return }
         let t = trimmedDraft
-        guard (1...500).contains(t.count) else { return }
         let c = Comment(feedItemId: entry.id, userId: currentUserId, authorDisplayName: currentUserName, text: t)
         context.insert(c)
         try? context.save()
@@ -403,9 +403,8 @@ struct PostDetailView: View {
 
     /// 編集内容を保存（本人のみ・RLS comments_modify_own）。updated_at 更新で LWW 反映。
     private func saveEdit() {
-        guard let c = editingComment else { return }
+        guard let c = editingComment, canSend else { return }
         let t = trimmedDraft
-        guard (1...500).contains(t.count) else { return }
         c.text = t
         c.updatedAt = .now
         c.isDirty = true
@@ -423,6 +422,9 @@ struct PostDetailView: View {
 
     private func deleteComment(_ c: Comment) {
         let id = c.id
+        // 編集中のコメントを削除したら、削除済みモデルへの参照を残さないよう編集状態を解除する
+        // （残すと saveEdit が破棄済みモデルを触り整合性/クラッシュの恐れ）。
+        if editingComment?.id == id { cancelEdit() }
         context.delete(c)
         try? context.save()
         sync.enqueue(PendingChange(entity: "comments", recordId: id, operation: .delete, updatedAt: .now))
