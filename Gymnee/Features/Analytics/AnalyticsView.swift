@@ -93,10 +93,11 @@ struct AnalyticsView: View {
 
     // MARK: - Heatmap
 
+    /// 来店ヒートマップは期間セレクタから切り離し、直近12週の貢献グラフ（幅いっぱい）に固定する。
     private var heatmapCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "来店ヒートマップ（直近\(period.label)）")
-            HeatmapView(counts: visitCounts, weeks: period.weeks)
+            SectionHeader(title: "来店ヒートマップ（直近12週）")
+            HeatmapView(counts: visitCounts, weeks: 12, contribution: true)
         }
         .gymneeCard()
     }
