@@ -1,8 +1,9 @@
 import SwiftUI
 import SwiftData
 
-/// 投稿カード下のアクションバー（§6.11 / ③）。
-/// 普段は「付いた絵文字＋合計数」を控えめに集約表示（未反応なら "応援" プロンプト）し、
+/// 投稿カード下のアクションバー（§6.11 / ③）。Strava 風に応援＝サムズアップ、コメント＝吹き出しの
+/// 線アイコンで揃える。
+/// 普段は「付いた絵文字＋合計数」を控えめに集約表示（未反応なら サムズアップ＋"応援" プロンプト）し、
 /// タップで筋トレ絵文字トレイをスプリングで開いて 1 つ選ぶ（1 投稿 1 種別・選択中は lime リング）。
 /// パフォーマンス: 行ごとに @Query を張らず、親が PostReaction/Comment を一括取得して件数を渡す。
 struct ReactionBar: View {
@@ -68,10 +69,11 @@ struct ReactionBar: View {
                         .contentTransition(.numericText())
                 }
             } else {
-                HStack(spacing: 5) {
-                    Image(systemName: "hands.clap.fill")
-                    Text("応援").font(.subheadline.weight(.semibold))
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.thumbsup").imageScale(.large)
+                    Text("応援").fontWeight(.semibold)
                 }
+                .font(.subheadline)
                 .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -110,12 +112,14 @@ struct ReactionBar: View {
 
     private func commentButton(_ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "bubble.right")
-                if commentCount > 0 { Text("\(commentCount)").font(.caption.monospacedDigit()) }
+            HStack(spacing: 6) {
+                Image(systemName: "text.bubble").imageScale(.large)
+                if commentCount > 0 {
+                    Text("\(commentCount)").font(.subheadline.weight(.semibold).monospacedDigit())
+                }
             }
             .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.textSecondary)
             .padding(.vertical, 8).padding(.horizontal, 6)
             .contentShape(Rectangle())
         }
