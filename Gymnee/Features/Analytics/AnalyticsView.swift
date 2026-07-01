@@ -12,8 +12,10 @@ struct AnalyticsView: View {
     @Query private var prs: [PersonalRecord]
     @State private var csvURL: URL?
     @State private var period: Period = .quarter
-    /// 強度進捗グラフに表示する種目（空＝頻度上位5の既定）。チップで増減できる。
+    /// 強度進捗グラフに表示する種目（空＝頻度上位5の既定）。シートで増減できる。
     @State private var pinnedExercises: Set<String> = []
+    /// 表示種目を選ぶシートの表示。
+    @State private var showExercisePicker = false
 
     private let calendar = Calendar.current
 
@@ -202,31 +204,36 @@ struct AnalyticsView: View {
         .gymneeCard()
     }
 
-    /// 表示種目の選択チップ（推定1RMが出せる種目を頻度順に。タップで増減）。
+    /// 表示種目の選択導線。横スクロールのチップをやめ、検索付きシートで選ぶ。
     private var exerciseSelector: some View {
-        let shown = Set(displayedExercises)
-        return ScrollView(.horizontal, showsIndicators: false) {
+        Button { showExercisePicker = true } label: {
             HStack(spacing: Theme.Spacing.sm) {
-                ForEach(weightedExercisesByFreq, id: \.self) { name in
-                    let on = shown.contains(name)
-                    Button { toggleExercise(name) } label: {
-                        Text(name)
-                            .font(.caption.bold())
-                            .padding(.horizontal, Theme.Spacing.md).padding(.vertical, 6)
-                            .background(on ? Theme.energy : Theme.bg3, in: Capsule())
-                            .foregroundStyle(on ? .white : Theme.textSecondary)
-                    }
-                    .buttonStyle(.plain)
-                }
+                Image(systemName: "slider.horizontal.3").foregroundStyle(Theme.energy)
+                Text(exerciseSelectionSummary)
+                    .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
             }
-            .padding(.vertical, 2)
+            .padding(.horizontal, Theme.Spacing.md).padding(.vertical, 10)
+            .background(Theme.bg3, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showExercisePicker) {
+            StrengthExercisePicker(
+                all: weightedExercisesByFreq,
+                defaultTop: Array(weightedExercisesByFreq.prefix(5)),
+                pinned: $pinnedExercises
+            )
         }
     }
 
-    /// チップ操作：初回タップは既定(頻度上位5)を取り込んでから増減する。空にすると既定へ戻る。
-    private func toggleExercise(_ name: String) {
-        if pinnedExercises.isEmpty { pinnedExercises = Set(weightedExercisesByFreq.prefix(5)) }
-        if pinnedExercises.contains(name) { pinnedExercises.remove(name) } else { pinnedExercises.insert(name) }
+    /// 選択サマリ（未選択＝上位Nの既定 / 選択あり＝先頭種目＋件数）。
+    private var exerciseSelectionSummary: String {
+        let shown = displayedExercises
+        if pinnedExercises.isEmpty { return "主要種目（上位\(shown.count)）" }
+        if shown.isEmpty { return "種目を選択" }
+        if shown.count == 1 { return shown[0] }
+        return "\(shown[0]) 他\(shown.count - 1)種目"
     }
 
     private struct StrengthPoint: Identifiable {
@@ -401,5 +408,59 @@ struct AnalyticsView: View {
             }
         }
         return entries
+    }
+}
+
+/// 強度進捗グラフに表示する種目を選ぶシート（検索＋チェックの縦リスト）。
+/// 横スクロールのチップだと目的の種目を探しづらいため、検索付きの一覧で増減する。
+private struct StrengthExercisePicker: View {
+    /// 推定1RMを出せる種目（頻度順）。
+    let all: [String]
+    /// 未選択時の既定（頻度上位N）。
+    let defaultTop: [String]
+    @Binding var pinned: Set<String>
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+
+    /// 実際に表示中の種目（未選択なら既定の上位N）。
+    private var shown: Set<String> { pinned.isEmpty ? Set(defaultTop) : pinned }
+    private var filtered: [String] {
+        search.isEmpty ? all : all.filter { $0.localizedCaseInsensitiveContains(search) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if all.isEmpty {
+                    Text("推定1RMを出せる種目がまだありません。")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(filtered, id: \.self) { name in
+                        Button { toggle(name) } label: {
+                            HStack {
+                                Text(name).foregroundStyle(Theme.textPrimary)
+                                Spacer()
+                                if shown.contains(name) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Theme.energy).fontWeight(.semibold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $search, prompt: "種目を検索")
+            .navigationTitle("表示する種目")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完了") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// 初回操作で既定(上位N)を取り込んでから増減する。空にすると既定へ戻る（チップ時と同じ挙動）。
+    private func toggle(_ name: String) {
+        if pinned.isEmpty { pinned = Set(defaultTop) }
+        if pinned.contains(name) { pinned.remove(name) } else { pinned.insert(name) }
     }
 }
