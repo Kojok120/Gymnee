@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// 身体メトリクスの手動入力（§6.7）。体重・体脂肪・各部位サイズ。
+/// 身体メトリクスの手動入力（§6.7）。身長・体重・体脂肪率の3項目に絞る。
+/// 身長は measurements["height"]（cm）に保持し、モデル/サーバ列は増やさない。
 struct AddBodyMetricView: View {
     let userId: UUID
 
@@ -17,28 +18,20 @@ struct AddBodyMetricView: View {
     @State private var measurements: [String: Double] = [:]
     @State private var syncToHealth = true
 
-    private let parts: [(key: String, label: String)] = [
-        ("chest", "胸囲"), ("waist", "ウエスト"), ("arm", "腕"), ("thigh", "腿"), ("hip", "ヒップ"),
-    ]
-
     var body: some View {
         NavigationStack {
             Form {
                 Section("日付") { DatePicker("日付", selection: $date, displayedComponents: .date) }
                 Section("基本") {
+                    LabeledContent("身長") {
+                        TextField("cm", value: bindingFor("height"), format: .number)
+                            .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                    }
                     LabeledContent("体重") {
                         TextField("kg", value: $weight, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
                     }
                     LabeledContent("体脂肪率") {
                         TextField("%", value: $bodyFat, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
-                    }
-                }
-                Section("各部位サイズ (cm)") {
-                    ForEach(parts, id: \.key) { part in
-                        LabeledContent(part.label) {
-                            TextField("cm", value: bindingFor(part.key), format: .number)
-                                .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
-                        }
                     }
                 }
                 if health.isAvailable {
