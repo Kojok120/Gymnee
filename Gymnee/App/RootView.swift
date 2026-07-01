@@ -72,7 +72,7 @@ struct RootView: View {
         case "profile": NavigationStack { ProfileView(userId: userId).gymneeNavigationDestinations(userId: userId) }
         case "settings": NavigationStack { SettingsView() }
         case "social": SocialFeedView()
-        case "friends": SocialFeedView(initialTab: 1)
+        case "friends": SocialFeedView(openFriends: true)
         case "shop": ShopView()
         case "routine":
             if let r = debugRoutine {

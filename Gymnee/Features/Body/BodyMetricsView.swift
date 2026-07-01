@@ -33,6 +33,7 @@ struct BodyMetricsView: View {
                     HStack {
                         Text(m.date, format: .dateTime.year().month().day())
                         Spacer()
+                        if let h = m.measurements["height"] { Text(String(format: "%.0fcm", h)).foregroundStyle(.secondary) }
                         if let w = m.weight { Text(String(format: "%.1fkg", w)) }
                         if let bf = m.bodyFat { Text(String(format: "%.1f%%", bf)).foregroundStyle(.secondary) }
                         if m.fromHealthKit { Image(systemName: "heart.fill").font(.caption2).foregroundStyle(.pink) }
@@ -42,7 +43,7 @@ struct BodyMetricsView: View {
             } header: {
                 Text("記録")
             } footer: {
-                if metrics.isEmpty { Text("右上の＋で体重・体脂肪・サイズを記録できます。") }
+                if metrics.isEmpty { Text("右上の＋で身長・体重・体脂肪率を記録できます。") }
             }
         }
         .navigationTitle("身体メトリクス")

@@ -298,11 +298,7 @@ private struct CalendarHomeContent: View {
         let pDays = plannedDays
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(Array(displayedDays.enumerated()), id: \.offset) { _, day in
-                if let day {
-                    dayCell(day, visitDays: vDays, workoutDays: wDays, plannedDays: pDays)
-                } else {
-                    Color.clear.frame(height: 46)
-                }
+                dayCell(day, visitDays: vDays, workoutDays: wDays, plannedDays: pDays)
             }
         }
     }
@@ -324,7 +320,7 @@ private struct CalendarHomeContent: View {
                 Text("\(calendar.component(.day, from: date))")
                     .font(.subheadline.weight(isToday ? .bold : .regular))
                     .lineLimit(1).minimumScaleFactor(0.6)
-                    .foregroundStyle(isToday ? Theme.onLime : (inMonth ? Theme.textPrimary : Theme.textTertiary))
+                    .foregroundStyle(isToday ? Theme.onLime : Theme.textPrimary)
                     .frame(width: 30, height: 30)
                     .background {
                         if isToday {
@@ -346,6 +342,8 @@ private struct CalendarHomeContent: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 46)
+            // 隣月の日は数字もマーカーもまとめて薄くする（当月との区別）。
+            .opacity(inMonth ? 1 : 0.4)
         }
         .buttonStyle(.plain)
     }
@@ -501,19 +499,17 @@ private struct CalendarHomeContent: View {
         Self.titleFormatter.string(from: anchor)
     }
 
-    /// 表示対象の日配列。前後の空白を nil で埋めた当月のグリッド。
-    private var displayedDays: [Date?] {
+    /// 表示対象の日配列。前後は隣月の実日付で埋めたグリッド（週頭から連続する日付）。
+    /// 隣月分は dayCell が inMonth 判定で薄色にし、タップで当日の詳細を開ける。
+    private var displayedDays: [Date] {
         guard let monthInterval = calendar.dateInterval(of: .month, for: anchor) else { return [] }
         let firstDay = monthInterval.start
         let weekdayOfFirst = calendar.component(.weekday, from: firstDay)
         let leading = (weekdayOfFirst - calendar.firstWeekday + 7) % 7
-        let daysInMonth = calendar.range(of: .day, in: .month, for: anchor)?.count ?? 30
-        var result: [Date?] = Array(repeating: nil, count: leading)
-        for d in 0..<daysInMonth {
-            result.append(calendar.date(byAdding: .day, value: d, to: firstDay))
-        }
-        while result.count % 7 != 0 { result.append(nil) }
-        return result
+        // グリッド先頭（当月1日の週頭＝前月の日）から常に6週=42セル分を連続する実日付で埋める。
+        // 行数を固定することで月移動時にカード高さが跳ねない（余りは前後月の薄色日で埋まる）。
+        guard let gridStart = calendar.date(byAdding: .day, value: -leading, to: firstDay) else { return [] }
+        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
     }
 
     private func shift(_ direction: Int) {
