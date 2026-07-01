@@ -187,17 +187,18 @@ struct UserProfileView: View {
         let valueText: String
         let date: Date
     }
-    /// 公開された自己ベスト投稿を、計測タイプ別の行に展開して新しい順に並べる。
+    /// 公開された自己ベスト投稿を、種目ごとの「最大重量」1 行だけに絞って新しい順に並べる。
+    /// 推定1RM / 最大ボリューム / 最大レップは並べず、一覧を最大重量に統一する。
     /// stats_json に数値がある投稿（改修後の発行分）は数値つき、無い旧投稿は summary をそのまま表示する。
     private var prRows: [PRRow] {
         var rows: [PRRow] = []
         for item in theirFeedItems where item.type == .pr {
             if let stats = FeedItemPRStats.decode(item.statsJSON), !stats.items.isEmpty {
                 for s in stats.items {
-                    guard let t = PRType(rawValue: s.type) else { continue }
+                    guard let t = PRType(rawValue: s.type), t == .maxWeight else { continue }
                     rows.append(PRRow(
                         id: "\(item.id.uuidString)-\(s.type)",
-                        title: "\(stats.exercise) · \(t.label)",
+                        title: stats.exercise,
                         valueText: t.formatted(s.value),
                         date: item.createdAt
                     ))
