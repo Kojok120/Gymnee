@@ -202,6 +202,7 @@ struct RecordContent: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AppErrorCenter.self) private var errors
@@ -293,6 +294,8 @@ struct RecordContent: View {
             Text("記録した内容は保存されません。")
         }
         .safeAreaInset(edge: .bottom) { timerBar }
+        // フォアグラウンド復帰時にレスト残りを実時計から即時同期（バックグラウンド中の凍結表示を解消）。
+        .onChange(of: scenePhase) { _, phase in if phase == .active { restTimer.refresh() } }
         .sheet(isPresented: $showModePicker) { modePickerSheet }
         .sheet(isPresented: $showAddExercise) {
             AddExerciseView(onCreated: { ex in freeAdded.insert(ex.id) })
