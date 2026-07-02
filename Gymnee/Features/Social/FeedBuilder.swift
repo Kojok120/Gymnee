@@ -162,6 +162,9 @@ enum FeedBuilder {
     ) -> [FeedEntry] {
         var entries: [FeedEntry] = []
         func vis(_ id: UUID) -> Visibility { visibilityStore?.visibility(for: id) ?? defaultVisibility }
+        // ワークアウトごとの PR 件数を先に索引化（workout×PR の全走査を避ける。FeedPublisher と同じ手法）。
+        var prCountByWorkout: [UUID: Int] = [:]
+        for pr in personalRecords { if let wid = pr.workoutId { prCountByWorkout[wid, default: 0] += 1 } }
 
         for v in visits {
             entries.append(FeedEntry(
@@ -199,7 +202,7 @@ enum FeedBuilder {
             let totalSets = sets.count
             let vol = sets.reduce(0.0) { $0 + $1.volume }
             let totalVolume = vol.isFinite ? Int(vol) : 0
-            let prCount = personalRecords.filter { $0.workoutId == w.id }.count
+            let prCount = prCountByWorkout[w.id] ?? 0
             // 鍛えた部位（重複除去・元の並び維持）。
             var seenMuscle = Set<MuscleGroup>()
             let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }

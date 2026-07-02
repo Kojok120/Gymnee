@@ -64,9 +64,11 @@ struct MyPostsView: View {
 
     var body: some View {
         // 毎描画の O(N^2) first(where:) を避けるため id 索引と reaction を一度だけ構築。
+        // entries（FeedBuilder.build）も1回の body 評価で2回組み直さないよう let に束ねる。
         let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
+        let posts = entries
         return List {
-            ForEach(entries) { entry in
+            ForEach(posts) { entry in
                 row(entry, reactions: reactionsByItem[entry.id] ?? [])
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
@@ -80,7 +82,7 @@ struct MyPostsView: View {
         .listStyle(.plain)
         .background(Theme.groupedBackground)
         .overlay {
-            if entries.isEmpty {
+            if posts.isEmpty {
                 EmptyStateView(systemImage: "square.stack.3d.up", title: "投稿がありません", message: "チェックイン・ワークアウト・自己ベストがここに並びます。")
             }
         }
