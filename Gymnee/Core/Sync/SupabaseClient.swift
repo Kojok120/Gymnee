@@ -453,10 +453,24 @@ actor SupabaseClient {
         return data
     }
 
+    /// 進行中のトークンリフレッシュ（単一 in-flight）。並列 pull が同時に 401 を踏んでも
+    /// refresh は 1 回だけ実行し、他は同じ Task に相乗りする。refresh_token はローテーション
+    /// するため、多重発火は相互無効化 → セッション喪失（全同期停止）につながる。
+    private var refreshTask: Task<Bool, Never>?
+
     /// refresh_token でアクセストークンを更新し、新トークンを保持＋永続化フックへ通知する。
     /// 更新できれば true。refresh_token も失効していれば false（呼び出し元で 401 を伝播 → 再ログインが必要）。
     private func refreshAccessTokenIfPossible() async -> Bool {
+        if let running = refreshTask { return await running.value }
         guard let refresh = refreshToken else { return false }
+        let task = Task { await self.performRefresh(refresh) }
+        refreshTask = task
+        let ok = await task.value
+        refreshTask = nil
+        return ok
+    }
+
+    private func performRefresh(_ refresh: String) async -> Bool {
         do {
             let s = try await refreshSession(refreshToken: refresh)
             accessToken = s.accessToken
