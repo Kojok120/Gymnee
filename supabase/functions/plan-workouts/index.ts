@@ -95,8 +95,11 @@ Deno.serve(async (req) => {
     'JSONのみを返す。形式: {"plan":[{"date":"<対象日>","title":"<部位/ルーティン名 or 休養>","exercises":[{"name":"種目名","muscleGroup":"chest|back|legs|shoulders|arms|core|fullBody のいずれか","sets":3,"reps":8,"weight":60}]}]}。休養日は exercises を空配列に。',
   ].join("\n");
 
-  try {
-    const res = await fetch(
+  // Gemini 呼び出し。ハング対策に 25s で打ち切り（AbortSignal）、一過性の失敗
+  // （タイムアウト/429/5xx）は 1 回だけ短い待ちで再試行する。2 回失敗なら 502。
+  // 最悪 25s+1s+25s ≈ 51s で、クライアント（functions 用 session 60s）より先に必ず返る。
+  const callGemini = () =>
+    fetch(
       `https://generativelanguage.googleapis.com/${API_VERSION}/models/${MODEL}:generateContent?key=${apiKey}`,
       {
         method: "POST",
@@ -106,8 +109,22 @@ Deno.serve(async (req) => {
           // v1 は responseMimeType 非対応のため、プロンプトでJSON指定＋本文から抽出する。
           generationConfig: { temperature: 0.7 },
         }),
+        signal: AbortSignal.timeout(25_000),
       },
     );
+
+  try {
+    let res: Response;
+    try {
+      res = await callGemini();
+      if (res.status === 429 || res.status >= 500) throw new Error(`gemini_status_${res.status}`);
+    } catch (_first) {
+      await new Promise((r) => setTimeout(r, 1_000));
+      res = await callGemini();
+    }
+    if (!res.ok) {
+      return new Response(JSON.stringify({ error: "upstream", detail: `gemini_status_${res.status}` }), { status: 502, headers: cors });
+    }
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '{"plan":[]}';
     return new Response(extractJson(text), { headers: cors });

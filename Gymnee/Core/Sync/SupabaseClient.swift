@@ -8,6 +8,10 @@ import Security
 actor SupabaseClient {
     private let config: SupabaseConfig
     private let session: URLSession
+    /// Edge Function（AI計画など応答が遅い呼び出し）用の長タイムアウト session。
+    /// REST 用の短い設定（request 15s / resource 30s）を LLM 呼び出しへ適用すると
+    /// 生成に時間がかかった時に常に打ち切られるため分離する。
+    private let functionsSession: URLSession
     private var accessToken: String?
     /// 401(JWT expired)時に自動でアクセストークンを更新するための refresh_token。
     private var refreshToken: String?
@@ -18,6 +22,7 @@ actor SupabaseClient {
         self.config = config
         if let session {
             self.session = session
+            self.functionsSession = session
         } else {
             // フレーキーな回線でハングした接続が積み上がらないよう短めのタイムアウトと接続数制限を付ける。
             let cfg = URLSessionConfiguration.default
@@ -26,6 +31,12 @@ actor SupabaseClient {
             cfg.waitsForConnectivity = false
             cfg.httpMaximumConnectionsPerHost = 4
             self.session = URLSession(configuration: cfg)
+            // Edge Function 用（サーバ側は最悪 ~51s で必ず返す設定なので、それより長く待つ）。
+            let fnCfg = URLSessionConfiguration.default
+            fnCfg.timeoutIntervalForRequest = 60
+            fnCfg.timeoutIntervalForResource = 90
+            fnCfg.waitsForConnectivity = false
+            self.functionsSession = URLSession(configuration: fnCfg)
         }
     }
 
@@ -342,7 +353,8 @@ actor SupabaseClient {
             "days": days, "routines": routines, "weeklyGoal": weeklyGoal,
             "events": events, "history": history, "recovery": recovery,
         ])
-        let data = try await send(request)
+        // AI 生成は REST 用の短いタイムアウト（15s/30s）では打ち切られるため、functions 用 session で送る。
+        let data = try await send(request, via: functionsSession)
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let plan = (obj?["plan"] as? [[String: Any]]) ?? []
         return plan.compactMap { row in
@@ -411,8 +423,9 @@ actor SupabaseClient {
     }
 
     @discardableResult
-    private func send(_ request: URLRequest, allowRefresh: Bool = true) async throws -> Data {
-        let (data, response) = try await session.data(for: request)
+    private func send(_ request: URLRequest, allowRefresh: Bool = true, via overrideSession: URLSession? = nil) async throws -> Data {
+        let ses = overrideSession ?? session
+        let (data, response) = try await ses.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SupabaseError.invalidResponse }
 
         // 401 はアクセストークン(JWT)期限切れの可能性。refresh_token があれば一度だけ更新して再試行する。
@@ -425,7 +438,7 @@ actor SupabaseClient {
             if refreshed, let token = accessToken {
                 var retry = request
                 retry.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                let (data2, response2) = try await session.data(for: retry)
+                let (data2, response2) = try await ses.data(for: retry)
                 guard let http2 = response2 as? HTTPURLResponse else { throw SupabaseError.invalidResponse }
                 guard (200..<300).contains(http2.statusCode) else {
                     throw SupabaseError.http(status: http2.statusCode, body: String(data: data2, encoding: .utf8) ?? "")
