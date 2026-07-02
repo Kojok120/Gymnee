@@ -107,6 +107,34 @@ struct FeedItemVisitStats: Codable {
     }
 }
 
+/// ソーシャル行描画用の名前/アバター索引。行ごとの profiles/comments 線形走査（O(行数×全件)）を
+/// 避けるため、body 評価ごとに 1 回だけ構築して行ビルダーへ配る（PostDetailView / SocialActivityView）。
+struct SocialNameIndex {
+    private let profileById: [UUID: Profile]
+    private let commentNameById: [UUID: String]
+
+    init(profiles: [Profile], comments: [Comment] = []) {
+        profileById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // コメントの非正規化著者名（プロフィール未同期の相手の安全網）。ユーザーごと最初の非空値。
+        var byUser: [UUID: String] = [:]
+        for c in comments where byUser[c.userId] == nil {
+            if let n = c.authorDisplayName, !n.isEmpty { byUser[c.userId] = n }
+        }
+        commentNameById = byUser
+    }
+
+    /// プロフィール表示名 → コメント著者名 → fallback → 「ユーザー」の順で解決する。
+    func name(_ id: UUID?, fallback: String? = nil) -> String {
+        guard let id else { return "ユーザー" }
+        if let n = profileById[id]?.displayName, !n.isEmpty { return n }
+        if let n = commentNameById[id] { return n }
+        if let f = fallback, !f.isEmpty { return f }
+        return "ユーザー"
+    }
+
+    func avatarURL(_ id: UUID) -> String? { profileById[id]?.avatarURL }
+}
+
 /// フィードに表示する統合エントリ（§6.11）。来店/PR/ワークアウトを 1 つの時系列に束ねる。
 /// ローカルでは値型で都度生成（サーバ側フィードは FeedItem モデルで将来差し替え）。
 struct FeedEntry: Identifiable {
@@ -162,6 +190,9 @@ enum FeedBuilder {
     ) -> [FeedEntry] {
         var entries: [FeedEntry] = []
         func vis(_ id: UUID) -> Visibility { visibilityStore?.visibility(for: id) ?? defaultVisibility }
+        // ワークアウトごとの PR 件数を先に索引化（workout×PR の全走査を避ける。FeedPublisher と同じ手法）。
+        var prCountByWorkout: [UUID: Int] = [:]
+        for pr in personalRecords { if let wid = pr.workoutId { prCountByWorkout[wid, default: 0] += 1 } }
 
         for v in visits {
             entries.append(FeedEntry(
@@ -199,7 +230,7 @@ enum FeedBuilder {
             let totalSets = sets.count
             let vol = sets.reduce(0.0) { $0 + $1.volume }
             let totalVolume = vol.isFinite ? Int(vol) : 0
-            let prCount = personalRecords.filter { $0.workoutId == w.id }.count
+            let prCount = prCountByWorkout[w.id] ?? 0
             // 鍛えた部位（重複除去・元の並び維持）。
             var seenMuscle = Set<MuscleGroup>()
             let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }

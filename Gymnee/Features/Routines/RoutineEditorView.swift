@@ -143,17 +143,18 @@ struct RoutineEditorView: View {
         }
     }
 
-    /// 完了：隔離コンテキストを保存し、本体＋配下種目を同期キューへ。
+    /// 完了：隔離コンテキストを保存し、本体＋配下種目を同期キューへ（enqueueBatch でディスク書込1回）。
     private func save() {
         routine.updatedAt = .now
         routine.isDirty = true
         try? editorContext.save()
-        sync.enqueue(PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt))
+        var pending: [PendingChange] = [PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt)]
         for re in routine.routineExercises {
             if let ex = re.exercise {
-                sync.enqueue(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
+                pending.append(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
             }
-            sync.enqueue(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
+            pending.append(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
         }
+        sync.enqueueBatch(pending)
     }
 }

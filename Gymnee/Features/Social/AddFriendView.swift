@@ -105,7 +105,7 @@ struct AddFriendView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             } else {
                                 Button("フォロー") { follow(profile) }
-                                    .buttonStyle(.borderedProminent).tint(Theme.energy).controlSize(.small)
+                                    .buttonStyle(.borderedProminent).prominentLime().controlSize(.small)
                             }
                         }
                         .swipeActions {

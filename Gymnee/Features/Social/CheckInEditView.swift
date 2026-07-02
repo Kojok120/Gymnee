@@ -106,23 +106,26 @@ struct CheckInEditView: View {
 
     private func save() {
         // 合トレ相手の差分を反映（partnerUserId をキーに追加/削除）。
+        // enqueue は1件ごとに outbox 全書き出しが走るため、保存後にまとめて enqueueBatch する。
+        var pending: [PendingChange] = []
         let draftIds = Set(partners.map(\.id))
         let originalIds = Set(visit.partners.map(\.partnerUserId))
         for p in visit.partners where !draftIds.contains(p.partnerUserId) {
             let id = p.id
             context.delete(p)
-            sync.enqueue(PendingChange(entity: "visit_partners", recordId: id, operation: .delete, updatedAt: .now))
+            pending.append(PendingChange(entity: "visit_partners", recordId: id, operation: .delete, updatedAt: .now))
         }
         for d in partners where !originalIds.contains(d.id) {
             let vp = VisitPartner(partnerUserId: d.id, partnerDisplayName: d.name, visit: visit)
             context.insert(vp)
-            sync.enqueue(PendingChange(entity: "visit_partners", recordId: vp.id, operation: .upsert, updatedAt: vp.updatedAt))
+            pending.append(PendingChange(entity: "visit_partners", recordId: vp.id, operation: .upsert, updatedAt: vp.updatedAt))
         }
 
         visit.updatedAt = .now
         visit.isDirty = true
         try? context.save()
-        sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
+        pending.append(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
+        sync.enqueueBatch(pending)
         visibilityStore.set(visibility, for: visit.id)
         dismiss()
     }

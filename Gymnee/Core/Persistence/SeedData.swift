@@ -4,12 +4,22 @@ import SwiftData
 /// 初回起動時のプリセット投入（§6.4 ジムマスタ / §6.5 種目マスタ / §6.12 商品）。
 /// §9-3（プリセット初期収録範囲）は未確定のため、主要チェーン＋汎用種目の最小セットで開始する。
 enum SeedData {
+    /// プリセット定義の版数。プリセット種目/部位移行の内容を変えたら +1 する
+    /// （次回起動時に一度だけ整備処理が走る）。
+    private static let presetVersion = 1
+    private static let presetVersionKey = "gymnee.seed.presetVersion"
+
     /// プリセット投入が済んでいなければ投入する。複数回呼んでも安全（冪等）。
     @MainActor
     static func seedIfNeeded(_ context: ModelContext) {
         seedGyms(context)
-        migrateMuscleGroups(context)
-        seedExercises(context)
+        // 部位移行・種目の dedupe/reconcile は毎起動で Exercise を複数回フルフェッチして
+        // 起動クリティカルパスを塞ぐため、プリセット定義が変わった時だけ実行する。
+        if UserDefaults.standard.integer(forKey: presetVersionKey) != presetVersion {
+            migrateMuscleGroups(context)
+            seedExercises(context)
+            UserDefaults.standard.set(presetVersion, forKey: presetVersionKey)
+        }
         seedProducts(context)
         try? context.save()
     }

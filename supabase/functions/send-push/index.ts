@@ -87,6 +87,7 @@ async function pushToUsers(
   let sent = 0;
   const stale: string[] = [];
   // fetch のネットワーク例外で全体が落ちないよう allSettled＋個別try/catch。
+  // APNs 側の遅延で関数全体が延びないよう 10s で打ち切る。
   await Promise.allSettled(deviceTokens.map(async (token: string) => {
     try {
       const res = await fetch(`https://${APNS_HOST}/3/device/${token}`, {
@@ -98,6 +99,7 @@ async function pushToUsers(
           "content-type": "application/json",
         },
         body: apsBody,
+        signal: AbortSignal.timeout(10_000),
       });
       if (res.status === 200) sent++;
       else if (res.status === 410 || res.status === 400) stale.push(token); // 失効/不正トークンは掃除
@@ -116,7 +118,7 @@ Deno.serve(async (req) => {
     return new Response("forbidden", { status: 403 });
   }
 
-  let payload: { event?: string; visitId?: string; reactionId?: string; commentId?: string };
+  let payload: { event?: string; visitId?: string; reactionId?: string; commentId?: string; followId?: string };
   try {
     payload = await req.json();
   } catch {
@@ -140,13 +142,15 @@ Deno.serve(async (req) => {
     const authorId = item.user_id as string;
     if (authorId === reactorId) return new Response(JSON.stringify({ sent: 0, reason: "self" }), { status: 200 });
 
+    // 投稿者の通知設定と反応者の表示名は独立なので並列で取得（逐次 await の積み上げを避ける）。
+    const [{ data: authorPref }, { data: profile }] = await Promise.all([
+      db.from("profiles").select("notify_likes").eq("id", authorId).single(),
+      db.from("profiles").select("display_name").eq("id", reactorId).single(),
+    ]);
     // 投稿者が「いいね通知」をオフにしていたら送らない（列が無い場合は既定で送る）。
-    const { data: authorPref } = await db.from("profiles").select("notify_likes").eq("id", authorId).single();
     if (authorPref && authorPref.notify_likes === false) {
       return new Response(JSON.stringify({ sent: 0, reason: "muted" }), { status: 200 });
     }
-
-    const { data: profile } = await db.from("profiles").select("display_name").eq("id", reactorId).single();
     const reactorName = profile?.display_name ?? "フレンド";
     // 筋トレ絵文字リアクション（like/strong/fire/clap）に応じて文面を変える。
     const kind = (reaction.kind as string) ?? "like";
@@ -174,19 +178,42 @@ Deno.serve(async (req) => {
     const authorId = item.user_id as string;
     if (authorId === commenterId) return new Response(JSON.stringify({ sent: 0, reason: "self" }), { status: 200 });
 
+    // 投稿者の通知設定とコメント者の表示名は独立なので並列で取得。
+    const [{ data: authorPref }, { data: profile }] = await Promise.all([
+      db.from("profiles").select("notify_comments").eq("id", authorId).single(),
+      db.from("profiles").select("display_name").eq("id", commenterId).single(),
+    ]);
     // 投稿者が「コメント通知」をオフにしていたら送らない（列が無い場合は既定で送る）。
-    const { data: authorPref } = await db.from("profiles").select("notify_comments").eq("id", authorId).single();
     if (authorPref && authorPref.notify_comments === false) {
       return new Response(JSON.stringify({ sent: 0, reason: "muted" }), { status: 200 });
     }
-
-    const { data: profile } = await db.from("profiles").select("display_name").eq("id", commenterId).single();
     const commenterName = profile?.display_name ?? "フレンド";
     const preview = ((comment.text as string) ?? "").slice(0, 40);
     const title = `${commenterName}さんがコメントしました`;
     const message = preview.length > 0 ? preview : "あなたの投稿にコメント💬";
     const sent = await pushToUsers(db, [authorId], title, message, {
       type: "comment", feedItemId: comment.feed_item_id,
+    });
+    return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
+  // --- フォロー → フォローされた人へ通知 ---
+  if (event === "follow") {
+    const followId = payload.followId;
+    if (!followId) return new Response("missing followId", { status: 400 });
+    const { data: follow } = await db
+      .from("follows").select("follower_id, followee_id").eq("id", followId).single();
+    if (!follow) return new Response(JSON.stringify({ sent: 0, reason: "follow not found" }), { status: 200 });
+    const followerId = follow.follower_id as string;
+    const followeeId = follow.followee_id as string;
+    if (followerId === followeeId) return new Response(JSON.stringify({ sent: 0, reason: "self" }), { status: 200 });
+
+    const { data: profile } = await db.from("profiles").select("display_name").eq("id", followerId).single();
+    const followerName = profile?.display_name ?? "フレンド";
+    const title = `${followerName}さんにフォローされました`;
+    const message = "フレンド画面からフォローし返せます👋";
+    const sent = await pushToUsers(db, [followeeId], title, message, {
+      type: "follow", followerId,
     });
     return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
   }

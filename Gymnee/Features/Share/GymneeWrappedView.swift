@@ -103,14 +103,16 @@ struct GymneeWrappedView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        // stats（全セット走査＋集計）は計算プロパティのため、1回の body 評価で束ねて再計算を避ける。
+        let stats = self.stats
+        return NavigationStack {
             ScrollView {
                 if stats.hasData {
                     VStack(spacing: Theme.Spacing.lg) {
                         WrappedShareCard(stats: stats, side: 320)
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
                             .shadow(radius: 10)
-                        statGrid
+                        statGrid(stats)
                         shareActions
                     }
                     .padding(Theme.Spacing.lg)
@@ -134,7 +136,7 @@ struct GymneeWrappedView: View {
         }
     }
 
-    private var statGrid: some View {
+    private func statGrid(_ stats: WrappedStats) -> some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.md) {
             StatPill(value: "\(stats.totalVolume)", label: "総挙上量 kg", tint: Theme.lime, systemImage: "scalemass.fill")
             StatPill(value: "\(stats.workoutCount)", label: "ワークアウト", tint: Theme.textPrimary, systemImage: "dumbbell.fill")
@@ -150,7 +152,7 @@ struct GymneeWrappedView: View {
                     Label("まとめを共有", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.sm)
                 }
-                .buttonStyle(.borderedProminent).tint(Theme.lime)
+                .buttonStyle(.borderedProminent).prominentLime()
                 Button {
                     UIImageWriteToSavedPhotosAlbum(rendered, nil, nil, nil)
                     saveMessage = "写真に保存しました"

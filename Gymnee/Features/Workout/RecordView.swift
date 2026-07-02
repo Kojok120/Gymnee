@@ -202,6 +202,7 @@ struct RecordContent: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AppErrorCenter.self) private var errors
@@ -222,6 +223,10 @@ struct RecordContent: View {
     @State private var durCenters: [UUID: Int] = [:]
     /// 有酸素の距離km ルーラー中央値（種目ごと・セッション中保持）。
     @State private var distCenters: [UUID: Double] = [:]
+    /// centers（前回セット履歴の走査）の計算結果キャッシュ。カードごと・軸ごとの Binding get が
+    /// 毎描画で履歴を再走査しないようにする。描画中（Binding get 内）に書き込むため、
+    /// @State の値型辞書ではなく参照型に持つ（identity 不変＝ビュー更新を誘発しない）。
+    @State private var centersCache = CentersCache()
     @State private var showSummary = false
     @State private var showModePicker = false
     @State private var showAddExercise = false
@@ -293,11 +298,16 @@ struct RecordContent: View {
             Text("記録した内容は保存されません。")
         }
         .safeAreaInset(edge: .bottom) { timerBar }
+        // フォアグラウンド復帰時にレスト残りを実時計から即時同期（バックグラウンド中の凍結表示を解消）。
+        .onChange(of: scenePhase) { _, phase in if phase == .active { restTimer.refresh() } }
+        // 除外対象（編集中ワークアウト）が変わると前回値の計算結果も変わるためキャッシュを捨てる。
+        .onChange(of: activeWorkout?.id) { _, _ in centersCache.values.removeAll() }
         .sheet(isPresented: $showModePicker) { modePickerSheet }
         .sheet(isPresented: $showAddExercise) {
             AddExerciseView(onCreated: { ex in freeAdded.insert(ex.id) })
         }
-        .sheet(item: $editingExercise) { ex in ExerciseEditView(exercise: ex) }
+        // 種目編集（器具・計測タイプ変更）は centers の既定値に影響するため、閉じたらキャッシュを捨てる。
+        .sheet(item: $editingExercise, onDismiss: { centersCache.values.removeAll() }) { ex in ExerciseEditView(exercise: ex) }
         .sheet(item: $editingSet) { set in EditSetSheet(set: set) { commitSetEdit(set) } }
         .sheet(isPresented: $showMemo) {
             if let w = activeWorkout { WorkoutMemoSheet(workout: w) { try? context.save() } }
@@ -621,7 +631,11 @@ struct RecordContent: View {
 
     private func centers(for spec: CardSpec) -> RecordSlots.Centers {
         if let explicit = spec.explicit { return explicit }
-        return RecordSlots.centers(for: spec.exercise, userId: userId, excludingWorkoutId: activeWorkout?.id)
+        let id = spec.exercise.id
+        if let cached = centersCache.values[id] { return cached }
+        let computed = RecordSlots.centers(for: spec.exercise, userId: userId, excludingWorkoutId: activeWorkout?.id)
+        centersCache.values[id] = computed
+        return computed
     }
 
     /// 各軸の現在中央値（ルーラー位置＝記録に使う値）。weight は armed と兼用。
@@ -890,16 +904,18 @@ struct RecordContent: View {
             return
         }
         // 完了時に初めてサーバー同期（下書き中は一切送らない）。種目→種目並び→セットの順に送出。
-        sync.enqueue(PendingChange(entity: "workouts", recordId: w.id, operation: .upsert, updatedAt: w.updatedAt))
+        // enqueue は1件ごとに outbox 全書き出しが走るため、まとめて enqueueBatch（ディスク書込1回）にする。
+        var pending: [PendingChange] = [PendingChange(entity: "workouts", recordId: w.id, operation: .upsert, updatedAt: w.updatedAt)]
         for we in w.exercises {
             if let ex = we.exercise {
-                sync.enqueue(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
+                pending.append(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
             }
-            sync.enqueue(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
+            pending.append(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
             for set in we.sets {
-                sync.enqueue(PendingChange(entity: "exercise_sets", recordId: set.id, operation: .upsert, updatedAt: set.updatedAt))
+                pending.append(PendingChange(entity: "exercise_sets", recordId: set.id, operation: .upsert, updatedAt: set.updatedAt))
             }
         }
+        sync.enqueueBatch(pending)
         // 計画の消化リンク。
         if let pid = activePlanId, let plan = todayPlanned.first(where: { $0.id == pid }) {
             plan.isDone = true
@@ -1001,6 +1017,12 @@ private struct CardSpec {
     let routineExercise: RoutineExercise?
     /// 計画モードなどで明示的に与える中央値（nil なら RecordSlots で算出）。
     let explicit: RecordSlots.Centers?
+}
+
+/// centers 計算結果の入れ物（種目ID→中央値）。描画中の Binding get から書き込むため
+/// 参照型にして @State の値変更（＝描画中の状態更新警告）を避ける。
+private final class CentersCache {
+    var values: [UUID: RecordSlots.Centers] = [:]
 }
 
 // MARK: - 種目カード

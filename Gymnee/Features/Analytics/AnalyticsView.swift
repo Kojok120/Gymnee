@@ -11,26 +11,22 @@ struct AnalyticsView: View {
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @State private var csvURL: URL?
-    @State private var period: Period = .quarter
     /// 強度進捗グラフに表示する種目（空＝頻度上位5の既定）。シートで増減できる。
     @State private var pinnedExercises: Set<String> = []
     /// 表示種目を選ぶシートの表示。
     @State private var showExercisePicker = false
 
     private let calendar = Calendar.current
-
-    enum Period: String, CaseIterable, Identifiable {
-        case month, quarter, year
-        var id: String { rawValue }
-        var label: String { self == .month ? "4週" : self == .quarter ? "12週" : "1年" }
-        var weeks: Int { self == .month ? 4 : self == .quarter ? 12 : 52 }
-    }
+    /// 分析の集計期間は直近3ヶ月（12週）に固定（期間切替は廃止）。
+    private let periodWeeks = 12
+    private let periodLabel = "3ヶ月"
 
     private enum Route: Hashable { case history }
 
     init(userId: UUID) {
         self.userId = userId
-        // 最大表示期間(1年=52週)＋バッファ分だけ取得し、多年履歴の全ロードを避ける。
+        // ダッシュボード表示は直近3ヶ月だが、リカバリーの最終トレ日など遡及用に約1年分を確保する
+        // （多年履歴の全ロードは避ける）。
         let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -53, to: Date()) ?? .distantPast
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.date >= cutoff }, sort: \Workout.date)
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId && $0.visitedAt >= cutoff }, sort: \Visit.visitedAt)
@@ -41,7 +37,6 @@ struct AnalyticsView: View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
                 historyLink
-                periodPicker
                 heatmapCard
                 frequencyCard
                 strengthCard
@@ -82,24 +77,17 @@ struct AnalyticsView: View {
         .buttonStyle(.plain)
     }
 
-    private var periodPicker: some View {
-        Picker("期間", selection: $period) {
-            ForEach(Period.allCases) { Text($0.label).tag($0) }
-        }
-        .pickerStyle(.segmented)
-    }
-
     private var periodStart: Date {
-        calendar.date(byAdding: .weekOfYear, value: -period.weeks, to: .now) ?? .distantPast
+        calendar.date(byAdding: .weekOfYear, value: -periodWeeks, to: .now) ?? .distantPast
     }
 
     // MARK: - Heatmap
 
-    /// 来店ヒートマップは期間セレクタから切り離し、直近12週の貢献グラフ（幅いっぱい）に固定する。
+    /// 来店ヒートマップは直近3ヶ月（12週）の貢献グラフ（幅いっぱい）に固定する。
     private var heatmapCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "来店ヒートマップ（直近12週）")
-            HeatmapView(counts: visitCounts, weeks: 12, contribution: true)
+            SectionHeader(title: "来店ヒートマップ（直近\(periodLabel)）")
+            HeatmapView(counts: visitCounts, weeks: periodWeeks, contribution: true)
         }
         .gymneeCard()
     }
@@ -114,7 +102,7 @@ struct AnalyticsView: View {
 
     private var frequencyCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "週次頻度（直近\(period.label)）")
+            SectionHeader(title: "週次頻度（直近\(periodLabel)）")
             if weeklyCounts.allSatisfy({ $0.count == 0 }) {
                 Text("記録が増えると表示されます。").font(.caption).foregroundStyle(.secondary)
             } else {
@@ -134,7 +122,7 @@ struct AnalyticsView: View {
     private var weeklyCounts: [WeeklyCount] {
         let today = calendar.startOfDay(for: .now)
         guard let thisWeek = calendar.dateInterval(of: .weekOfYear, for: today)?.start else { return [] }
-        return (0..<period.weeks).reversed().compactMap { offset in
+        return (0..<periodWeeks).reversed().compactMap { offset in
             guard let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: thisWeek),
                   let interval = calendar.dateInterval(of: .weekOfYear, for: start) else { return nil }
             // 頻度＝その週にトレーニングした「日数」（最大7。1日に複数回でも1日）。
@@ -154,7 +142,7 @@ struct AnalyticsView: View {
 
     private var balanceCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "部位バランス（直近\(period.label)・セット数）")
+            SectionHeader(title: "部位バランス（直近\(periodLabel)・セット数）")
             if balanceData.allSatisfy({ $0.value == 0 }) {
                 Text("ワークアウトを記録すると表示されます。").font(.caption).foregroundStyle(.secondary)
             } else {
@@ -167,7 +155,7 @@ struct AnalyticsView: View {
 
     private struct Balance { let label: String; let value: Double; let normalized: Double }
     private var balanceData: [Balance] {
-        let entries = recentVolumeEntries(weeks: period.weeks)
+        let entries = recentVolumeEntries(weeks: periodWeeks)
         let counts = VolumeCalculator.setCountByMuscle(entries)
         let muscles = RecoveryAnalyzer.trackedMuscles
         let maxCount = max(muscles.map { Double(counts[$0] ?? 0) }.max() ?? 1, 1)
@@ -180,16 +168,22 @@ struct AnalyticsView: View {
     // MARK: - Strength progress
 
     private var strengthCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        // 期間内の種目索引（全ワークアウト走査）は重い導出のため、1回の body 評価で
+        // 1 度だけ計算して各パーツへ配る（計算プロパティの多重再計算を避ける）。
+        let byExercise = byExerciseInPeriod
+        let avail = weightedExercisesByFreq(in: byExercise)
+        let displayed = displayedExercises(in: avail)
+        let points = strengthPoints(by: byExercise, displayed: displayed)
+        return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             SectionHeader(title: "強度進捗（推定1RM）")
-            if weightedExercisesByFreq.isEmpty {
+            if avail.isEmpty {
                 Text("ワークアウトを重ねると主要種目の推移が出ます。").font(.caption).foregroundStyle(.secondary)
             } else {
-                exerciseSelector
-                if strengthPoints.isEmpty {
+                exerciseSelector(avail: avail, displayed: displayed)
+                if points.isEmpty {
                     Text("表示する種目を選んでください。").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Chart(strengthPoints) { p in
+                    Chart(points) { p in
                         LineMark(x: .value("日付", p.date), y: .value("推定1RM", p.e1RM))
                             .foregroundStyle(by: .value("種目", p.exercise))
                             .interpolationMethod(.catmullRom)
@@ -205,11 +199,11 @@ struct AnalyticsView: View {
     }
 
     /// 表示種目の選択導線。横スクロールのチップをやめ、検索付きシートで選ぶ。
-    private var exerciseSelector: some View {
+    private func exerciseSelector(avail: [String], displayed: [String]) -> some View {
         Button { showExercisePicker = true } label: {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: "slider.horizontal.3").foregroundStyle(Theme.energy)
-                Text(exerciseSelectionSummary)
+                Text(exerciseSelectionSummary(displayed: displayed))
                     .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(1)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
@@ -220,16 +214,15 @@ struct AnalyticsView: View {
         .buttonStyle(.plain)
         .sheet(isPresented: $showExercisePicker) {
             StrengthExercisePicker(
-                all: weightedExercisesByFreq,
-                defaultTop: Array(weightedExercisesByFreq.prefix(5)),
+                all: avail,
+                defaultTop: Array(avail.prefix(5)),
                 pinned: $pinnedExercises
             )
         }
     }
 
     /// 選択サマリ（未選択＝上位Nの既定 / 選択あり＝先頭種目＋件数）。
-    private var exerciseSelectionSummary: String {
-        let shown = displayedExercises
+    private func exerciseSelectionSummary(displayed shown: [String]) -> String {
         if pinnedExercises.isEmpty { return "主要種目（上位\(shown.count)）" }
         if shown.isEmpty { return "種目を選択" }
         if shown.count == 1 { return shown[0] }
@@ -255,25 +248,23 @@ struct AnalyticsView: View {
     }
 
     /// 推定1RMが出せる種目（加重セットあり）を頻度の高い順に。グラフ・選択チップの母集合。
-    private var weightedExercisesByFreq: [String] {
-        byExerciseInPeriod
+    private func weightedExercisesByFreq(in byExercise: [String: [WorkoutExercise]]) -> [String] {
+        byExercise
             .filter { $0.value.contains { we in we.sets.contains { $0.weight > 0 && $0.reps > 0 } } }
             .sorted { a, b in a.value.count != b.value.count ? a.value.count > b.value.count : a.key < b.key }
             .map(\.key)
     }
 
     /// グラフに表示する種目：選択があればそれ（母集合内のみ）、無ければ頻度上位5。
-    private var displayedExercises: [String] {
-        let avail = weightedExercisesByFreq
+    private func displayedExercises(in avail: [String]) -> [String] {
         if pinnedExercises.isEmpty { return Array(avail.prefix(5)) }
         return avail.filter { pinnedExercises.contains($0) }
     }
 
     /// 表示種目の推定1RM推移（日ごとの最大推定1RM）。
-    private var strengthPoints: [StrengthPoint] {
-        let by = byExerciseInPeriod
+    private func strengthPoints(by: [String: [WorkoutExercise]], displayed: [String]) -> [StrengthPoint] {
         var points: [StrengthPoint] = []
-        for name in displayedExercises {
+        for name in displayed {
             for we in by[name] ?? [] {
                 // プロット日付も完了時刻基準（週次頻度と同じ）。byExerciseInPeriod で完了済みのみ。
                 guard let date = we.workout?.completedAt else { continue }
@@ -350,7 +341,7 @@ struct AnalyticsView: View {
             } label: {
                 Label("記録を開始", systemImage: "plus.circle.fill").font(.subheadline.bold())
             }
-            .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+            .buttonStyle(.borderedProminent).prominentLime().controlSize(.small)
             .padding(.top, Theme.Spacing.xs)
         }
         .gymneeCard()

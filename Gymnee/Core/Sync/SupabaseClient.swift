@@ -8,6 +8,10 @@ import Security
 actor SupabaseClient {
     private let config: SupabaseConfig
     private let session: URLSession
+    /// Edge Function（AI計画など応答が遅い呼び出し）用の長タイムアウト session。
+    /// REST 用の短い設定（request 15s / resource 30s）を LLM 呼び出しへ適用すると
+    /// 生成に時間がかかった時に常に打ち切られるため分離する。
+    private let functionsSession: URLSession
     private var accessToken: String?
     /// 401(JWT expired)時に自動でアクセストークンを更新するための refresh_token。
     private var refreshToken: String?
@@ -18,6 +22,7 @@ actor SupabaseClient {
         self.config = config
         if let session {
             self.session = session
+            self.functionsSession = session
         } else {
             // フレーキーな回線でハングした接続が積み上がらないよう短めのタイムアウトと接続数制限を付ける。
             let cfg = URLSessionConfiguration.default
@@ -26,6 +31,12 @@ actor SupabaseClient {
             cfg.waitsForConnectivity = false
             cfg.httpMaximumConnectionsPerHost = 4
             self.session = URLSession(configuration: cfg)
+            // Edge Function 用（サーバ側は最悪 ~51s で必ず返す設定なので、それより長く待つ）。
+            let fnCfg = URLSessionConfiguration.default
+            fnCfg.timeoutIntervalForRequest = 60
+            fnCfg.timeoutIntervalForResource = 90
+            fnCfg.waitsForConnectivity = false
+            self.functionsSession = URLSession(configuration: fnCfg)
         }
     }
 
@@ -113,17 +124,27 @@ actor SupabaseClient {
     }
 
     /// `updated_at` が指定時刻より新しい行を取得（pull の差分取得）。
+    /// 1000 件ずつページングして尽きるまで取得する。初回同期（watermark 無し）の全件一括レスポンスに
+    /// よるメモリ/パース負荷と、PostgREST 側 max-rows 設定による暗黙の打ち切りを避けるため。
+    /// 並びは (updated_at, id) で全順序にし、OFFSET ページングでも取りこぼし/重複が出ないようにする。
     func select(table: String, updatedSince: Date?) async throws -> [[String: Any]] {
-        var query = "select=*&order=updated_at.asc"
-        if let updatedSince {
-            let iso = ISO8601DateFormatter.supabase.string(from: updatedSince)
-            query += "&updated_at=gt.\(iso)"
+        let pageSize = 1000
+        let maxPages = 100   // 暴走ガード（10万行。通常の同期で到達しない）
+        var all: [[String: Any]] = []
+        for page in 0..<maxPages {
+            var query = "select=*&order=updated_at.asc,id.asc&limit=\(pageSize)&offset=\(page * pageSize)"
+            if let updatedSince {
+                let iso = ISO8601DateFormatter.supabase.string(from: updatedSince)
+                query += "&updated_at=gt.\(iso)"
+            }
+            var request = restRequest(path: table, query: query)
+            request.httpMethod = "GET"
+            let data = try await send(request)
+            let rows = ((try JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+            all.append(contentsOf: rows)
+            if rows.count < pageSize { break }
         }
-        var request = restRequest(path: table, query: query)
-        request.httpMethod = "GET"
-        let data = try await send(request)
-        let json = try JSONSerialization.jsonObject(with: data)
-        return (json as? [[String: Any]]) ?? []
+        return all
     }
 
     /// 当該テーブルの id だけを最大 `limit` 件取得する（削除照合用。本体列を取らず軽量）。
@@ -342,7 +363,8 @@ actor SupabaseClient {
             "days": days, "routines": routines, "weeklyGoal": weeklyGoal,
             "events": events, "history": history, "recovery": recovery,
         ])
-        let data = try await send(request)
+        // AI 生成は REST 用の短いタイムアウト（15s/30s）では打ち切られるため、functions 用 session で送る。
+        let data = try await send(request, via: functionsSession)
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let plan = (obj?["plan"] as? [[String: Any]]) ?? []
         return plan.compactMap { row in
@@ -411,8 +433,32 @@ actor SupabaseClient {
     }
 
     @discardableResult
-    private func send(_ request: URLRequest, allowRefresh: Bool = true) async throws -> Data {
-        let (data, response) = try await session.data(for: request)
+    private func send(_ request: URLRequest, allowRefresh: Bool = true, via overrideSession: URLSession? = nil) async throws -> Data {
+        do {
+            return try await sendOnce(request, allowRefresh: allowRefresh, via: overrideSession)
+        } catch let error where request.httpMethod == "GET" && Self.isTransient(error) {
+            // 冪等な GET のみ、一過性の失敗（瞬断/タイムアウト/5xx）を短い待ちで1回だけ再試行する。
+            // 並列 pull は1本落ちるとそのテーブルの当回分が歯抜けになるため、その場で拾い直す。
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return try await sendOnce(request, allowRefresh: allowRefresh, via: overrideSession)
+        }
+    }
+
+    /// 一過性とみなすエラー（再試行対象）。認証・クライアント起因（4xx）は含めない。
+    private static func isTransient(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            return [.timedOut, .networkConnectionLost, .cannotConnectToHost, .dnsLookupFailed].contains(urlError.code)
+        }
+        if case SupabaseError.http(let status, _) = error {
+            return status == 502 || status == 503 || status == 504
+        }
+        return false
+    }
+
+    @discardableResult
+    private func sendOnce(_ request: URLRequest, allowRefresh: Bool = true, via overrideSession: URLSession? = nil) async throws -> Data {
+        let ses = overrideSession ?? session
+        let (data, response) = try await ses.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SupabaseError.invalidResponse }
 
         // 401 はアクセストークン(JWT)期限切れの可能性。refresh_token があれば一度だけ更新して再試行する。
@@ -425,7 +471,7 @@ actor SupabaseClient {
             if refreshed, let token = accessToken {
                 var retry = request
                 retry.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                let (data2, response2) = try await session.data(for: retry)
+                let (data2, response2) = try await ses.data(for: retry)
                 guard let http2 = response2 as? HTTPURLResponse else { throw SupabaseError.invalidResponse }
                 guard (200..<300).contains(http2.statusCode) else {
                     throw SupabaseError.http(status: http2.statusCode, body: String(data: data2, encoding: .utf8) ?? "")
@@ -440,10 +486,24 @@ actor SupabaseClient {
         return data
     }
 
+    /// 進行中のトークンリフレッシュ（単一 in-flight）。並列 pull が同時に 401 を踏んでも
+    /// refresh は 1 回だけ実行し、他は同じ Task に相乗りする。refresh_token はローテーション
+    /// するため、多重発火は相互無効化 → セッション喪失（全同期停止）につながる。
+    private var refreshTask: Task<Bool, Never>?
+
     /// refresh_token でアクセストークンを更新し、新トークンを保持＋永続化フックへ通知する。
     /// 更新できれば true。refresh_token も失効していれば false（呼び出し元で 401 を伝播 → 再ログインが必要）。
     private func refreshAccessTokenIfPossible() async -> Bool {
+        if let running = refreshTask { return await running.value }
         guard let refresh = refreshToken else { return false }
+        let task = Task { await self.performRefresh(refresh) }
+        refreshTask = task
+        let ok = await task.value
+        refreshTask = nil
+        return ok
+    }
+
+    private func performRefresh(_ refresh: String) async -> Bool {
         do {
             let s = try await refreshSession(refreshToken: refresh)
             accessToken = s.accessToken

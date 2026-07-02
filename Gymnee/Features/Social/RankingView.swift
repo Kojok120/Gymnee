@@ -68,11 +68,16 @@ struct RankingView: View {
         for item in feedItems {
             if let n = item.authorDisplayName, !n.isEmpty { feedNameById[item.userId] = n }
         }
+        // フォローキャッシュの表示名も辞書化（参加者ごとの follows 線形走査を避ける）。
+        var followeeNameById: [UUID: String] = [:]
+        for f in follows where followeeNameById[f.followeeId] == nil {
+            if let n = Self.nonEmpty(f.followeeDisplayName) { followeeNameById[f.followeeId] = n }
+        }
         let rows = ids.map { id -> Rank in
             let isMe = id == userId
             let name = isMe ? "あなた" : (Self.nonEmpty(profileById[id]?.displayName)
                 ?? feedNameById[id]
-                ?? Self.nonEmpty(follows.first { $0.followeeId == id }?.followeeDisplayName)
+                ?? followeeNameById[id]
                 ?? "ユーザー")
             let avatar = isMe ? (myAvatarURL.isEmpty ? nil : myAvatarURL) : profileById[id]?.avatarURL
             return Rank(id: id, name: name, avatarURL: avatar, xp: xpByUser[id] ?? 0, isMe: isMe)

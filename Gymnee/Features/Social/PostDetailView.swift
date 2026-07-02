@@ -49,15 +49,17 @@ struct PostDetailView: View {
     private var visibleReactions: [PostReaction] { reactions.filter { !blockedIds.contains($0.userId) } }
 
     var body: some View {
-        NavigationStack {
+        // 行ごとの profiles 線形走査を避けるため、名前/アバター索引を1描画で1回だけ構築する。
+        let names = SocialNameIndex(profiles: profiles)
+        return NavigationStack {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                         authorCard
                         detailExtras
-                        reactionsSection
+                        reactionsSection(names)
                         Divider().overlay(Theme.bg3)
-                        commentsSection
+                        commentsSection(names)
                     }
                     .padding(Theme.Spacing.md)
                 }
@@ -230,7 +232,7 @@ struct PostDetailView: View {
 
     // MARK: - ②リアクションした人
 
-    @ViewBuilder private var reactionsSection: some View {
+    @ViewBuilder private func reactionsSection(_ names: SocialNameIndex) -> some View {
         if visibleReactions.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 sectionHeader("リアクション", systemImage: "heart")
@@ -240,17 +242,18 @@ struct PostDetailView: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 sectionHeader("リアクション \(visibleReactions.count)", systemImage: "heart.fill")
                 ForEach(visibleReactions) { r in
-                    reactorRow(r)
+                    reactorRow(r, names: names)
                 }
             }
         }
     }
 
-    @ViewBuilder private func reactorRow(_ r: PostReaction) -> some View {
+    @ViewBuilder private func reactorRow(_ r: PostReaction, names: SocialNameIndex) -> some View {
         let isMe = r.userId == currentUserId
+        let name = names.name(r.userId)
         let label = HStack(spacing: 10) {
-            AvatarView(urlString: avatarURL(r.userId), size: 32)
-            Text(isMe ? "あなた" : name(r.userId))
+            AvatarView(urlString: names.avatarURL(r.userId), size: 32)
+            Text(isMe ? "あなた" : name)
                 .font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary)
             Spacer(minLength: 0)
             Text(ReactionKind(rawValue: r.kindRaw)?.emoji ?? "❤️").font(.subheadline)
@@ -258,29 +261,31 @@ struct PostDetailView: View {
         if isMe {
             label
         } else {
-            NavigationLink(value: UserRef(id: r.userId, name: name(r.userId))) { label }
+            NavigationLink(value: UserRef(id: r.userId, name: name)) { label }
                 .buttonStyle(.plain)
         }
     }
 
     // MARK: - ③コメント
 
-    @ViewBuilder private var commentsSection: some View {
+    @ViewBuilder private func commentsSection(_ names: SocialNameIndex) -> some View {
         sectionHeader(visibleComments.isEmpty ? "コメント" : "コメント \(visibleComments.count)", systemImage: "bubble.left.and.bubble.right.fill")
         if visibleComments.isEmpty {
             Text("最初のコメントを送りましょう。").font(.caption).foregroundStyle(.secondary)
         } else {
-            ForEach(visibleComments) { c in commentRow(c) }
+            ForEach(visibleComments) { c in commentRow(c, names: names) }
         }
     }
 
     @ViewBuilder
-    private func commentRow(_ c: Comment) -> some View {
+    private func commentRow(_ c: Comment, names: SocialNameIndex) -> some View {
+        // プロフィール表示名 → コメントの非正規化著者名 → 「ユーザー」。
+        let commentName = names.name(c.userId, fallback: c.authorDisplayName)
         let body = HStack(alignment: .top, spacing: 10) {
-            AvatarView(urlString: avatarURL(c.userId), size: 32)
+            AvatarView(urlString: names.avatarURL(c.userId), size: 32)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(commentName(c)).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
+                    Text(commentName).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
                     Text(c.createdAt, format: .dateTime.month().day().hour().minute())
                         .font(.caption2).foregroundStyle(.secondary)
                 }
@@ -295,7 +300,7 @@ struct PostDetailView: View {
         // 他人のコメントはタップで投稿者プロフィール（フレンド詳細）へ。自分のコメントは遷移なし。
         Group {
             if c.userId != currentUserId {
-                NavigationLink(value: UserRef(id: c.userId, name: commentName(c))) { body }
+                NavigationLink(value: UserRef(id: c.userId, name: commentName)) { body }
                     .buttonStyle(.plain)
             } else {
                 body
@@ -307,10 +312,10 @@ struct PostDetailView: View {
                 Button("削除", systemImage: "trash", role: .destructive) { deleteComment(c) }
             } else {
                 Button("通報", systemImage: "flag") {
-                    reportTarget = CommentReportTarget(id: c.id, userId: c.userId, name: commentName(c))
+                    reportTarget = CommentReportTarget(id: c.id, userId: c.userId, name: commentName)
                 }
                 Button("ブロック", systemImage: "hand.raised", role: .destructive) {
-                    Moderation.block(blockerId: currentUserId, blockedId: c.userId, displayName: commentName(c), context: context, sync: sync)
+                    Moderation.block(blockerId: currentUserId, blockedId: c.userId, displayName: commentName, context: context, sync: sync)
                 }
             }
         }
@@ -354,16 +359,7 @@ struct PostDetailView: View {
             .font(.subheadline.weight(.bold)).foregroundStyle(Theme.textSecondary)
     }
 
-    private func name(_ id: UUID) -> String {
-        if let n = profiles.first(where: { $0.id == id })?.displayName, !n.isEmpty { return n }
-        return "ユーザー"
-    }
-    private func commentName(_ c: Comment) -> String {
-        if let n = profiles.first(where: { $0.id == c.userId })?.displayName, !n.isEmpty { return n }
-        if let n = c.authorDisplayName, !n.isEmpty { return n }
-        return "ユーザー"
-    }
-    private func avatarURL(_ id: UUID) -> String? { profiles.first(where: { $0.id == id })?.avatarURL }
+    // 名前/アバター解決は SocialNameIndex（body で1回構築）に集約。
 
     private var trimmedDraft: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canSend: Bool { (1...500).contains(trimmedDraft.count) }

@@ -10,15 +10,33 @@ struct SocialFeedView: View {
     /// 起動時にフレンド画面を開く（検証ハーネス -gymneeScreen friends 用）。
     var openFriends: Bool = false
 
+    /// 値ベース遷移用のパス（フレンド画面の自動 push にも使う）。
+    @State private var path = NavigationPath()
+    @State private var didAutoOpenFriends = false
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             if let uid = auth.currentUserId {
-                SocialContent(userId: uid, initialTab: initialTab, openFriends: openFriends)
+                SocialContent(userId: uid, initialTab: initialTab)
+                    .onAppear {
+                        // 検証ハーネス: 一度だけフレンド画面を自動 push（戻り時の再 push を防ぐ）。
+                        if openFriends && !didAutoOpenFriends {
+                            didAutoOpenFriends = true
+                            path.append(SocialRoute.friends)
+                        }
+                    }
             } else {
                 EmptyStateView(systemImage: "person.2", title: "未ログイン")
             }
         }
     }
+}
+
+/// ソーシャル内の値ベース遷移先。フレンド画面は当初 navigationDestination(isPresented:) で
+/// 提示していたが、同一スタックの値 push（UserRef）と競合して遷移がループするため、
+/// 値ベース（NavigationLink(value:)＋ルート宣言）に統一する。
+enum SocialRoute: Hashable {
+    case friends
 }
 
 /// 他ユーザーのプロフィールへ遷移するための値（フレンド一覧から）。
@@ -29,8 +47,6 @@ struct UserRef: Hashable {
 
 private struct SocialContent: View {
     let userId: UUID
-    /// 起動時にフレンド画面を自動 push（検証ハーネス用）。
-    let openFriends: Bool
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
@@ -53,10 +69,6 @@ private struct SocialContent: View {
     @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
 
     @State private var tab = 0
-    /// フレンド画面（右上アイコンから push）の表示。
-    @State private var showFriends = false
-    /// openFriends による自動 push を一度だけに抑える（戻った際の再 push トラップ防止）。
-    @State private var didAutoOpenFriends = false
     @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
     @State private var showMyPosts = false
@@ -67,9 +79,8 @@ private struct SocialContent: View {
     @State private var visStore = PostVisibilityStore()
     @State private var feedEntries: [FeedEntry] = []
 
-    init(userId: UUID, initialTab: Int = 0, openFriends: Bool = false) {
+    init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
-        self.openFriends = openFriends
         _tab = State(initialValue: initialTab)
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
@@ -132,17 +143,10 @@ private struct SocialContent: View {
     private func feedAuthorName(for id: UUID) -> String? {
         feedItems.lazy.filter { $0.userId == id }.compactMap { $0.authorDisplayName }.first { !$0.isEmpty }
     }
+    /// 表示名の単発解決（followBack などのアクション用。行描画は friendsScreen 内の辞書引き resolveName を使う）。
     private func displayName(for id: UUID) -> String {
         if let n = profiles.first(where: { $0.id == id })?.displayName, !n.isEmpty { return n }
         if let n = feedAuthorName(for: id) { return n }
-        return "ユーザー"
-    }
-    /// フォロー相手の表示名。プロフィール→feed著者名→follow キャッシュ→既定の順。
-    /// （profiles 行が無い相手でも feed_items.author_display_name から実名を出せる）
-    private func followeeName(_ f: Follow) -> String {
-        if let n = profiles.first(where: { $0.id == f.followeeId })?.displayName, !n.isEmpty { return n }
-        if let n = feedAuthorName(for: f.followeeId) { return n }
-        if let cached = f.followeeDisplayName, !cached.isEmpty { return cached }
         return "ユーザー"
     }
 
@@ -195,7 +199,6 @@ private struct SocialContent: View {
         .navigationTitle("ソーシャル")
         .navigationBarTitleDisplayMode(.inline)
         .task { await refreshFeed() }
-        .onAppear { if openFriends && !didAutoOpenFriends { didAutoOpenFriends = true; showFriends = true } }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showMyPosts = true } label: {
@@ -211,7 +214,9 @@ private struct SocialContent: View {
                 }.pickerStyle(.segmented)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showFriends = true } label: {
+                // フレンド画面へは値ベースで push（isPresented 型 destination は UserRef の
+                // 値 push と競合してループするため使わない）。
+                NavigationLink(value: SocialRoute.friends) {
                     Image(systemName: "person.2")
                 }
                 .accessibilityLabel("フレンド")
@@ -222,7 +227,11 @@ private struct SocialContent: View {
         }
         .onChange(of: showMyPosts) { _, shown in if !shown { Task { await refreshFeed() } } }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
-        .navigationDestination(isPresented: $showFriends) { friendsScreen }
+        .navigationDestination(for: SocialRoute.self) { route in
+            switch route {
+            case .friends: friendsScreen
+            }
+        }
         .navigationDestination(for: UserRef.self) { ref in
             UserProfileView(targetUserId: ref.id, currentUserId: userId, fallbackName: ref.name)
         }
@@ -347,18 +356,34 @@ private struct SocialContent: View {
 
     /// フレンド画面（右上アイコンから push）：フォロー中＋（あれば）あなたをフォロー。
     private var friendsScreen: some View {
-        // 行ごとの profiles.first(O(N^2)) を避けるため id 索引を一度だけ構築。
+        // 行ごとの profiles/feedItems 線形走査（O(行数×全件)）を避けるため、索引を一度だけ構築。
         let avatarById = Dictionary(profiles.map { ($0.id, $0.avatarURL) }, uniquingKeysWith: { a, _ in a })
+        var nameById: [UUID: String] = [:]
+        for p in profiles where nameById[p.id] == nil {
+            if !p.displayName.isEmpty { nameById[p.id] = p.displayName }
+        }
+        var feedNameById: [UUID: String] = [:]
+        for item in feedItems where feedNameById[item.userId] == nil {
+            if let n = item.authorDisplayName, !n.isEmpty { feedNameById[item.userId] = n }
+        }
+        // 表示名の解決（displayName(for:)/旧 followeeName と同じ優先順。行描画用の辞書引き版）。
+        func resolveName(_ id: UUID, cached: String? = nil) -> String {
+            if let n = nameById[id] { return n }
+            if let n = feedNameById[id] { return n }
+            if let cached, !cached.isEmpty { return cached }
+            return "ユーザー"
+        }
         return List {
             Section("フォロー中 (\(following.count))") {
                 if following.isEmpty {
                     Text("まだ誰もフォローしていません。").foregroundStyle(.secondary)
                 } else {
                     ForEach(following) { f in
-                        NavigationLink(value: UserRef(id: f.followeeId, name: followeeName(f))) {
+                        let name = resolveName(f.followeeId, cached: f.followeeDisplayName)
+                        NavigationLink(value: UserRef(id: f.followeeId, name: name)) {
                             HStack {
                                 AvatarView(urlString: avatarById[f.followeeId] ?? nil, size: 32)
-                                Text(followeeName(f))
+                                Text(name)
                                 Spacer()
                                 if isMutual(f) {
                                     Label("相互", systemImage: "arrow.left.arrow.right")
@@ -371,10 +396,10 @@ private struct SocialContent: View {
                         .swipeActions { Button("解除", role: .destructive) { unfollow(f) } }
                         .contextMenu {
                             Button("通報", systemImage: "flag") {
-                                reportTarget = ReportUserTarget(id: f.followeeId, displayName: followeeName(f))
+                                reportTarget = ReportUserTarget(id: f.followeeId, displayName: name)
                             }
                             Button("ブロック", systemImage: "hand.raised", role: .destructive) {
-                                blockUser(f.followeeId, name: followeeName(f))
+                                blockUser(f.followeeId, name: name)
                             }
                         }
                     }
@@ -387,22 +412,23 @@ private struct SocialContent: View {
             if !pendingFollowBack.isEmpty {
                 Section("あなたをフォロー") {
                     ForEach(pendingFollowBack) { f in
+                        let name = resolveName(f.followerId)
                         HStack {
                             Image(systemName: "person").foregroundStyle(.secondary)
-                            Text(displayName(for: f.followerId))
+                            Text(name)
                             Spacer()
                             Button("フォローし返す") { followBack(f.followerId) }
                                 .buttonStyle(.borderedProminent).tint(Theme.energy).controlSize(.small)
                         }
                         .swipeActions {
-                            Button("ブロック", role: .destructive) { blockUser(f.followerId, name: displayName(for: f.followerId)) }
+                            Button("ブロック", role: .destructive) { blockUser(f.followerId, name: name) }
                         }
                         .contextMenu {
                             Button("通報", systemImage: "flag") {
-                                reportTarget = ReportUserTarget(id: f.followerId, displayName: displayName(for: f.followerId))
+                                reportTarget = ReportUserTarget(id: f.followerId, displayName: name)
                             }
                             Button("ブロック", systemImage: "hand.raised", role: .destructive) {
-                                blockUser(f.followerId, name: displayName(for: f.followerId))
+                                blockUser(f.followerId, name: name)
                             }
                         }
                     }

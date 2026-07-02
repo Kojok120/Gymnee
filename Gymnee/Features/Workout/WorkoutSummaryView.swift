@@ -158,7 +158,7 @@ struct WorkoutSummaryView: View {
             Button { showShare = true } label: {
                 Label("共有カードを作る", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.large)
+            .buttonStyle(.borderedProminent).prominentLime().controlSize(.large)
             Button { onAnalytics() } label: {
                 Label("分析を見る", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
             }

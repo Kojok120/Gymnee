@@ -67,11 +67,12 @@ struct SocialActivityView: View {
 
     private var content: some View {
         let since = Date(timeIntervalSince1970: renderSince ?? lastSeenRaw)
-        // 行ごとに FeedBuilder を回さないよう、詳細遷移用の索引は描画ごとに 1 度だけ構築する。
+        // 行ごとに FeedBuilder / profiles 線形走査を回さないよう、索引は描画ごとに 1 度だけ構築する。
         let entries = entriesById
+        let names = SocialNameIndex(profiles: profiles, comments: allComments)
         return List {
             ForEach(groups) { group in
-                row(group, entry: entries[group.postId], unread: group.latestDate > since)
+                row(group, entry: entries[group.postId], unread: group.latestDate > since, names: names)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -109,14 +110,14 @@ struct SocialActivityView: View {
     // MARK: - 行（投稿ごと集約）
 
     @ViewBuilder
-    private func row(_ group: SocialActivityGroup, entry: FeedEntry?, unread: Bool) -> some View {
+    private func row(_ group: SocialActivityGroup, entry: FeedEntry?, unread: Bool, names: SocialNameIndex) -> some View {
         Button {
             if let entry { postDetail = entry }
         } label: {
             HStack(alignment: .top, spacing: Theme.Spacing.sm) {
-                avatarCluster(group.actorIds)
+                avatarCluster(group.actorIds, names: names)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(headline(group))
+                    Text(headline(group, names: names))
                         .font(.subheadline).foregroundStyle(Theme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let entry {
@@ -143,10 +144,10 @@ struct SocialActivityView: View {
     }
 
     /// 反応者アバターを最大 3 人重ねて表示。
-    private func avatarCluster(_ ids: [UUID]) -> some View {
+    private func avatarCluster(_ ids: [UUID], names: SocialNameIndex) -> some View {
         HStack(spacing: -10) {
             ForEach(Array(ids.prefix(3)), id: \.self) { id in
-                AvatarView(urlString: avatarURL(id), size: 36)
+                AvatarView(urlString: names.avatarURL(id), size: 36)
                     .overlay { Circle().strokeBorder(Theme.bg1, lineWidth: 2) }
             }
         }
@@ -154,8 +155,8 @@ struct SocialActivityView: View {
 
     /// 「〇〇さん 他N人が応援・コメントしました」。
     /// リアクションが「いいね」のみのグループは「いいね」、それ以外（他種別を含む）は「応援」と出し分ける。
-    private func headline(_ group: SocialActivityGroup) -> String {
-        let first = name(group.actorIds.first)
+    private func headline(_ group: SocialActivityGroup, names: SocialNameIndex) -> String {
+        let first = names.name(group.actorIds.first)
         let others = max(0, group.actorIds.count - 1)
         let who = others > 0 ? "\(first) 他\(others)人" : first
         let reactionWord = group.reactionKinds == [.like] ? "いいね" : "応援"
@@ -170,15 +171,7 @@ struct SocialActivityView: View {
         return who + verb
     }
 
-    // MARK: - 名前/アバター解決（PostDetailView と同じ方針）
-
-    private func name(_ id: UUID?) -> String {
-        guard let id else { return "ユーザー" }
-        if let n = profiles.first(where: { $0.id == id })?.displayName, !n.isEmpty { return n }
-        if let n = allComments.first(where: { $0.userId == id })?.authorDisplayName, !n.isEmpty { return n }
-        return "ユーザー"
-    }
-    private func avatarURL(_ id: UUID) -> String? { profiles.first(where: { $0.id == id })?.avatarURL }
+    // 名前/アバター解決は SocialNameIndex（content で1回構築）に集約。
 
     /// 反応者・コメント者のプロフィール（名前/アバター）が未取得なら取りに行く。
     private func ensureProfiles() async {

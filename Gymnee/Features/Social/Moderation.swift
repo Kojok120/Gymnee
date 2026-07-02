@@ -148,7 +148,7 @@ struct CommunityGuidelinesGate: View {
             Button(action: onAgree) {
                 Text("同意してはじめる").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).tint(Theme.energy).controlSize(.large)
+            .buttonStyle(.borderedProminent).prominentLime().controlSize(.large)
             Text("「同意してはじめる」を押すと、利用規約とこのルールに同意したものとみなされます。")
                 .font(.caption2).foregroundStyle(.secondary)
         }

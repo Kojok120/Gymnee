@@ -108,6 +108,16 @@ extension ProgressRing where Content == EmptyView {
 
 // MARK: - Buttons
 
+extension View {
+    /// `.buttonStyle(.borderedProminent)` の lime 主ボタン共通装飾。
+    /// `tint(Theme.lime)` はダークモードで明るい lime 地になり既定の白ラベルが読めなくなるため、
+    /// 両モードで明るい limeFill 地 × onLime（濃色）文字に統一する
+    /// （フル装飾は GymneePrimaryButtonStyle。こちらは borderedProminent の形状を保つ軽量版）。
+    func prominentLime() -> some View {
+        foregroundStyle(Theme.onLime).tint(Theme.limeFill)
+    }
+}
+
 /// メイン CTA。lime 塗り + 黒文字 + プレス縮小 + ハプティクス。
 struct GymneePrimaryButtonStyle: ButtonStyle {
     var fullWidth: Bool = true
