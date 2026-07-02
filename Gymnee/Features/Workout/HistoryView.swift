@@ -44,12 +44,15 @@ private struct DateHistoryList: View {
     @Query private var workouts: [Workout]
     /// 進行中の下書き（未完了・予定でない）。中身のあるものだけ「下書き」として一覧先頭に出す。
     @Query private var draftWorkouts: [Workout]
+    /// 初期表示は直近6ヶ月。末尾の「さらに表示」で全期間へ広げる（長期利用時の初期構築を軽くする）。
+    @State private var showAll = false
 
     private let calendar = Calendar.current
+    private static let initialWindowMonths = 6
 
     init(userId: UUID) {
         self.userId = userId
-        // 完了済みのみ。全期間（DEV のため件数上限なし）。
+        // 完了済みのみ（表示は直近6ヶ月＋さらに表示。@Query は init 固定のため表示側で絞る）。
         _workouts = Query(
             filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil },
             sort: \Workout.date, order: .reverse
@@ -66,6 +69,8 @@ private struct DateHistoryList: View {
     }
 
     var body: some View {
+        // 表示対象（直近6ヶ月 or 全期間）。降順ソート済みなので prefix(while:) で先頭から切り出せる。
+        let visible = visibleWorkouts
         if workouts.isEmpty && drafts.isEmpty {
             EmptyStateView(
                 systemImage: "calendar",
@@ -79,7 +84,7 @@ private struct DateHistoryList: View {
                         ForEach(drafts) { draft in draftRow(draft) }
                     }
                 }
-                ForEach(grouped, id: \.month) { group in
+                ForEach(grouped(visible), id: \.month) { group in
                     Section(monthLabel(group.month)) {
                         ForEach(group.items) { workout in
                             NavigationLink {
@@ -97,8 +102,27 @@ private struct DateHistoryList: View {
                         }
                     }
                 }
+                if !showAll && visible.count < workouts.count {
+                    Section {
+                        Button {
+                            showAll = true
+                        } label: {
+                            Label("さらに表示（全期間）", systemImage: "clock.arrow.circlepath")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
             }
         }
+    }
+
+    /// 表示対象のワークアウト。初期は直近6ヶ月、「さらに表示」後は全期間。
+    private var visibleWorkouts: [Workout] {
+        guard !showAll,
+              let cutoff = calendar.date(byAdding: .month, value: -Self.initialWindowMonths, to: .now)
+        else { return workouts }
+        return Array(workouts.prefix(while: { $0.date >= cutoff }))
     }
 
     /// 下書き行。タップで「途中の記録」と同じ再開導線（記録タブで当該ワークアウトを開く）。
@@ -142,11 +166,11 @@ private struct DateHistoryList: View {
         date.formatted(.dateTime.year().month())
     }
 
-    /// 取得済み（日付降順）を月ごとにまとめる。順序は降順を維持。
-    private var grouped: [(month: Date, items: [Workout])] {
+    /// 表示対象（日付降順）を月ごとにまとめる。順序は降順を維持。
+    private func grouped(_ items: [Workout]) -> [(month: Date, items: [Workout])] {
         var order: [Date] = []
         var map: [Date: [Workout]] = [:]
-        for w in workouts {
+        for w in items {
             let m = monthStart(w.date)
             if map[m] == nil { order.append(m) }
             map[m, default: []].append(w)
@@ -164,18 +188,22 @@ private struct ExerciseHistoryList: View {
     @State private var search = ""
 
     var body: some View {
-        if baseExercises.isEmpty {
+        // 重いリレーション走査(baseExercises)は 1 回の body 評価で 1 度だけ導出する
+        // （計算プロパティのままだと isEmpty/グルーピングで検索1キーストロークごとに複数回走っていた）。
+        let base = baseExercises
+        if base.isEmpty {
             EmptyStateView(
                 systemImage: "dumbbell",
                 title: "種目の記録がありません",
                 message: "ワークアウトを完了すると、種目ごとの履歴が見られます。"
             )
         } else {
+            let groups = grouped(base: base)
             List {
-                if grouped.isEmpty {
+                if groups.isEmpty {
                     Text("該当する種目がありません").foregroundStyle(.secondary)
                 } else {
-                    ForEach(grouped, id: \.muscle) { group in
+                    ForEach(groups, id: \.muscle) { group in
                         Section(group.muscle.label) {
                             ForEach(group.items) { exercise in
                                 NavigationLink {
@@ -208,10 +236,10 @@ private struct ExerciseHistoryList: View {
     }
 
     /// 検索フィルタ適用後、部位別にグルーピング（部位ラベル昇順・種目名昇順）。
-    private var grouped: [(muscle: MuscleGroup, items: [Exercise])] {
+    private func grouped(base: [Exercise]) -> [(muscle: MuscleGroup, items: [Exercise])] {
         let filtered = search.isEmpty
-            ? baseExercises
-            : baseExercises.filter { $0.name.localizedCaseInsensitiveContains(search) }
+            ? base
+            : base.filter { $0.name.localizedCaseInsensitiveContains(search) }
         let byMuscle = Dictionary(grouping: filtered, by: { $0.muscleGroup })
         return byMuscle.keys
             .sorted { $0.label < $1.label }
