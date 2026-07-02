@@ -7,18 +7,24 @@ struct ProfileView: View {
     let userId: UUID
 
     @Environment(AuthService.self) private var auth
+    @Environment(\.modelContext) private var context
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @State private var showProfileEdit = false
     @State private var showWrapped = false
     @Query private var visits: [Visit]
-    @Query private var workouts: [Workout]
 
     init(userId: UUID) {
         self.userId = userId
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId })
-        _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil })
+    }
+
+    /// 完了ワークアウト数。件数表示のためだけに全モデルを実体化しないよう fetchCount で数える。
+    private var workoutCount: Int {
+        let uid = userId
+        let descriptor = FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
+        return (try? context.fetchCount(descriptor)) ?? 0
     }
 
     /// 週次ストリーク（筋トレは休息が正義のため日次でなく「週N回×連続週」を主指標に）。
@@ -62,7 +68,7 @@ struct ProfileView: View {
                     .onTapGesture { showProfileEdit = true }
                     HStack(spacing: Theme.Spacing.md) {
                         StatPill(value: "\(visits.count)", label: "来店数", tint: Theme.lime, systemImage: "mappin.and.ellipse")
-                        StatPill(value: "\(workouts.count)", label: "ワークアウト数", tint: Theme.info, systemImage: "dumbbell.fill")
+                        StatPill(value: "\(workoutCount)", label: "ワークアウト数", tint: Theme.info, systemImage: "dumbbell.fill")
                         StatPill(value: "\(weeklyStreak.weeks)", label: "連続週", tint: Theme.warning, systemImage: "flame.fill")
                     }
                     weeklyStreakCaption

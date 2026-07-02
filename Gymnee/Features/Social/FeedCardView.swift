@@ -7,6 +7,11 @@ import SwiftUI
 struct FeedCardView: View {
     let entry: FeedEntry
 
+    /// 自分の来店写真。初回スクロール時の同期ディスクI/O＋フル解像度デコードが
+    /// メインスレッドを塞がないよう非同期に読み込む（2回目以降は NSCache 命中で即時）。
+    @State private var ownPhoto: UIImage?
+    @State private var ownPhotoMissing = false
+
     private var isPRHighlight: Bool { entry.kind == .pr || entry.prCount > 0 }
 
     var body: some View {
@@ -14,12 +19,23 @@ struct FeedCardView: View {
             header
             bodyContent
 
-            if let photo = PhotoStore.load(entry.photoFilename) {
-                Image(uiImage: photo)
-                    .resizable().scaledToFill()
-                    .frame(maxWidth: .infinity).frame(height: 200)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+            if entry.photoFilename != nil && !ownPhotoMissing {
+                Group {
+                    if let ownPhoto {
+                        Image(uiImage: ownPhoto).resizable().scaledToFill()
+                    } else {
+                        Theme.bg2   // 読込中プレースホルダ（高さを固定してレイアウト跳ねを防ぐ）
+                    }
+                }
+                .frame(maxWidth: .infinity).frame(height: 200)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .task(id: entry.photoFilename) {
+                    let filename = entry.photoFilename
+                    let image = await Task.detached(priority: .userInitiated) { PhotoStore.load(filename) }.value
+                    ownPhoto = image
+                    ownPhotoMissing = (image == nil)
+                }
             } else if let ref = entry.photoRef, !ref.isEmpty {
                 // 他人の来店写真：ストレージ参照から取得（権限が無ければプレースホルダのまま）。
                 SyncedPhoto(filename: nil, ref: ref) { Color.clear }

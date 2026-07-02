@@ -23,9 +23,11 @@ struct ProgressPhotosView: View {
     }
 
     var body: some View {
-        ScrollView {
+        // 月別グルーピング（写真ごとの DateFormatter 呼び出し）を 1 回の body 評価で 1 度だけ行う。
+        let grouped = self.grouped
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg, pinnedViews: [.sectionHeaders]) {
-                ForEach(monthKeys, id: \.self) { key in
+                ForEach(grouped.keys.sorted(by: >), id: \.self) { key in
                     Section {
                         LazyVGrid(columns: columns, spacing: 6) {
                             ForEach(grouped[key] ?? []) { photo in
@@ -120,9 +122,6 @@ struct ProgressPhotosView: View {
 
     private var grouped: [String: [ProgressPhoto]] {
         Dictionary(grouping: photos, by: monthKey)
-    }
-    private var monthKeys: [String] {
-        grouped.keys.sorted(by: >)
     }
     /// 写真ごとに DateFormatter を新規生成しないよう共有（生成コストは高い）。
     private static let monthFormatter: DateFormatter = {

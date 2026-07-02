@@ -168,16 +168,22 @@ struct AnalyticsView: View {
     // MARK: - Strength progress
 
     private var strengthCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        // 期間内の種目索引（全ワークアウト走査）は重い導出のため、1回の body 評価で
+        // 1 度だけ計算して各パーツへ配る（計算プロパティの多重再計算を避ける）。
+        let byExercise = byExerciseInPeriod
+        let avail = weightedExercisesByFreq(in: byExercise)
+        let displayed = displayedExercises(in: avail)
+        let points = strengthPoints(by: byExercise, displayed: displayed)
+        return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             SectionHeader(title: "強度進捗（推定1RM）")
-            if weightedExercisesByFreq.isEmpty {
+            if avail.isEmpty {
                 Text("ワークアウトを重ねると主要種目の推移が出ます。").font(.caption).foregroundStyle(.secondary)
             } else {
-                exerciseSelector
-                if strengthPoints.isEmpty {
+                exerciseSelector(avail: avail, displayed: displayed)
+                if points.isEmpty {
                     Text("表示する種目を選んでください。").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Chart(strengthPoints) { p in
+                    Chart(points) { p in
                         LineMark(x: .value("日付", p.date), y: .value("推定1RM", p.e1RM))
                             .foregroundStyle(by: .value("種目", p.exercise))
                             .interpolationMethod(.catmullRom)
@@ -193,11 +199,11 @@ struct AnalyticsView: View {
     }
 
     /// 表示種目の選択導線。横スクロールのチップをやめ、検索付きシートで選ぶ。
-    private var exerciseSelector: some View {
+    private func exerciseSelector(avail: [String], displayed: [String]) -> some View {
         Button { showExercisePicker = true } label: {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: "slider.horizontal.3").foregroundStyle(Theme.energy)
-                Text(exerciseSelectionSummary)
+                Text(exerciseSelectionSummary(displayed: displayed))
                     .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(1)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
@@ -208,16 +214,15 @@ struct AnalyticsView: View {
         .buttonStyle(.plain)
         .sheet(isPresented: $showExercisePicker) {
             StrengthExercisePicker(
-                all: weightedExercisesByFreq,
-                defaultTop: Array(weightedExercisesByFreq.prefix(5)),
+                all: avail,
+                defaultTop: Array(avail.prefix(5)),
                 pinned: $pinnedExercises
             )
         }
     }
 
     /// 選択サマリ（未選択＝上位Nの既定 / 選択あり＝先頭種目＋件数）。
-    private var exerciseSelectionSummary: String {
-        let shown = displayedExercises
+    private func exerciseSelectionSummary(displayed shown: [String]) -> String {
         if pinnedExercises.isEmpty { return "主要種目（上位\(shown.count)）" }
         if shown.isEmpty { return "種目を選択" }
         if shown.count == 1 { return shown[0] }
@@ -243,25 +248,23 @@ struct AnalyticsView: View {
     }
 
     /// 推定1RMが出せる種目（加重セットあり）を頻度の高い順に。グラフ・選択チップの母集合。
-    private var weightedExercisesByFreq: [String] {
-        byExerciseInPeriod
+    private func weightedExercisesByFreq(in byExercise: [String: [WorkoutExercise]]) -> [String] {
+        byExercise
             .filter { $0.value.contains { we in we.sets.contains { $0.weight > 0 && $0.reps > 0 } } }
             .sorted { a, b in a.value.count != b.value.count ? a.value.count > b.value.count : a.key < b.key }
             .map(\.key)
     }
 
     /// グラフに表示する種目：選択があればそれ（母集合内のみ）、無ければ頻度上位5。
-    private var displayedExercises: [String] {
-        let avail = weightedExercisesByFreq
+    private func displayedExercises(in avail: [String]) -> [String] {
         if pinnedExercises.isEmpty { return Array(avail.prefix(5)) }
         return avail.filter { pinnedExercises.contains($0) }
     }
 
     /// 表示種目の推定1RM推移（日ごとの最大推定1RM）。
-    private var strengthPoints: [StrengthPoint] {
-        let by = byExerciseInPeriod
+    private func strengthPoints(by: [String: [WorkoutExercise]], displayed: [String]) -> [StrengthPoint] {
         var points: [StrengthPoint] = []
-        for name in displayedExercises {
+        for name in displayed {
             for we in by[name] ?? [] {
                 // プロット日付も完了時刻基準（週次頻度と同じ）。byExerciseInPeriod で完了済みのみ。
                 guard let date = we.workout?.completedAt else { continue }
