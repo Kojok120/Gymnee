@@ -91,9 +91,8 @@ struct RoutinesView: View {
         let exerciseIds = routine.routineExercises.map(\.id)
         context.delete(routine)
         try? context.save()
-        sync.enqueue(PendingChange(entity: "routines", recordId: routineId, operation: .delete, updatedAt: .now))
-        for id in exerciseIds {
-            sync.enqueue(PendingChange(entity: "routine_exercises", recordId: id, operation: .delete, updatedAt: .now))
-        }
+        let pending = [PendingChange(entity: "routines", recordId: routineId, operation: .delete, updatedAt: .now)]
+            + exerciseIds.map { PendingChange(entity: "routine_exercises", recordId: $0, operation: .delete, updatedAt: .now) }
+        sync.enqueueBatch(pending)
     }
 }

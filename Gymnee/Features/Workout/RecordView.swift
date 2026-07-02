@@ -893,16 +893,18 @@ struct RecordContent: View {
             return
         }
         // 完了時に初めてサーバー同期（下書き中は一切送らない）。種目→種目並び→セットの順に送出。
-        sync.enqueue(PendingChange(entity: "workouts", recordId: w.id, operation: .upsert, updatedAt: w.updatedAt))
+        // enqueue は1件ごとに outbox 全書き出しが走るため、まとめて enqueueBatch（ディスク書込1回）にする。
+        var pending: [PendingChange] = [PendingChange(entity: "workouts", recordId: w.id, operation: .upsert, updatedAt: w.updatedAt)]
         for we in w.exercises {
             if let ex = we.exercise {
-                sync.enqueue(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
+                pending.append(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
             }
-            sync.enqueue(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
+            pending.append(PendingChange(entity: "workout_exercises", recordId: we.id, operation: .upsert, updatedAt: we.updatedAt))
             for set in we.sets {
-                sync.enqueue(PendingChange(entity: "exercise_sets", recordId: set.id, operation: .upsert, updatedAt: set.updatedAt))
+                pending.append(PendingChange(entity: "exercise_sets", recordId: set.id, operation: .upsert, updatedAt: set.updatedAt))
             }
         }
+        sync.enqueueBatch(pending)
         // 計画の消化リンク。
         if let pid = activePlanId, let plan = todayPlanned.first(where: { $0.id == pid }) {
             plan.isDone = true
