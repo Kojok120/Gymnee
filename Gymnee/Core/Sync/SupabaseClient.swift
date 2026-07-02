@@ -434,6 +434,29 @@ actor SupabaseClient {
 
     @discardableResult
     private func send(_ request: URLRequest, allowRefresh: Bool = true, via overrideSession: URLSession? = nil) async throws -> Data {
+        do {
+            return try await sendOnce(request, allowRefresh: allowRefresh, via: overrideSession)
+        } catch let error where request.httpMethod == "GET" && Self.isTransient(error) {
+            // 冪等な GET のみ、一過性の失敗（瞬断/タイムアウト/5xx）を短い待ちで1回だけ再試行する。
+            // 並列 pull は1本落ちるとそのテーブルの当回分が歯抜けになるため、その場で拾い直す。
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return try await sendOnce(request, allowRefresh: allowRefresh, via: overrideSession)
+        }
+    }
+
+    /// 一過性とみなすエラー（再試行対象）。認証・クライアント起因（4xx）は含めない。
+    private static func isTransient(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            return [.timedOut, .networkConnectionLost, .cannotConnectToHost, .dnsLookupFailed].contains(urlError.code)
+        }
+        if case SupabaseError.http(let status, _) = error {
+            return status == 502 || status == 503 || status == 504
+        }
+        return false
+    }
+
+    @discardableResult
+    private func sendOnce(_ request: URLRequest, allowRefresh: Bool = true, via overrideSession: URLSession? = nil) async throws -> Data {
         let ses = overrideSession ?? session
         let (data, response) = try await ses.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw SupabaseError.invalidResponse }
