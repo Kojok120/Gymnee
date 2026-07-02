@@ -46,6 +46,7 @@ final class AppEnvironment {
         sync.store = SwiftDataSyncStore(context: container.mainContext)
         auth.configureSupabase(client)
         backfillExercisesIfNeeded()
+        pushDirtyOwnProfileIfNeeded()
         // APNs トークン取得時に Supabase の device_tokens へ登録（要サインイン＝best-effort）。
         PushTokenCenter.shared.onToken = { token in
             Task { try? await client.registerDeviceToken(token) }
@@ -83,6 +84,17 @@ final class AppEnvironment {
             PendingChange(entity: "exercises", recordId: $0.id, operation: .upsert, updatedAt: .now)
         })
         UserDefaults.standard.set(true, forKey: key)
+    }
+
+    /// 未送出（isDirty）の自分の Profile を起動時に outbox へ積む（自己修復）。
+    /// updateDisplayName は「同期は呼び出し側で enqueue」の契約だが、初期設定
+    /// （SetupOnboardingView）が enqueue しておらず、表示名の変更がサーバへ届かないまま
+    /// フレンド側で「ゲスト」表示になる不具合があった。過去に取りこぼした変更もここで送る。
+    private func pushDirtyOwnProfileIfNeeded() {
+        guard let uid = auth.currentUserId else { return }
+        let descriptor = FetchDescriptor<Profile>(predicate: #Predicate { $0.id == uid && $0.isDirty })
+        guard let profile = (try? container.mainContext.fetch(descriptor))?.first else { return }
+        sync.enqueue(PendingChange(entity: "profiles", recordId: profile.id, operation: .upsert, updatedAt: profile.updatedAt))
     }
 
     /// 再起動後にバックエンドセッションを復元する（GymneeApp の起動 task から呼ぶ）。

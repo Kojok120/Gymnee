@@ -5,6 +5,7 @@ import SwiftUI
 struct SetupOnboardingView: View {
     @Environment(AuthService.self) private var auth
     @Environment(NotificationService.self) private var notifications
+    @Environment(LocalSyncEngine.self) private var sync
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @AppStorage("gymnee.setupDone") private var setupDone = false
     @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
@@ -81,7 +82,15 @@ struct SetupOnboardingView: View {
 
     private func finish() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
-        if !trimmed.isEmpty { auth.updateDisplayName(trimmed) }
+        if !trimmed.isEmpty {
+            auth.updateDisplayName(trimmed)
+            // updateDisplayName はローカル更新のみ（同期は呼び出し側の責務）。ここで enqueue
+            // しないと表示名がサーバへ届かず、フレンド側で「ゲスト」表示になる。
+            if let uid = auth.currentUserId {
+                sync.enqueue(PendingChange(entity: "profiles", recordId: uid, operation: .upsert, updatedAt: .now))
+                Task { await sync.syncNow() }
+            }
+        }
         setupDone = true // バインディングが false になり cover が閉じる
     }
 }
