@@ -9,10 +9,11 @@ struct OnboardingView: View {
     @State private var showEmailSignIn = false
     @State private var appeared = false
 
-    private let features: [(icon: String, title: String, sub: String)] = [
-        ("door.right.hand.open", "写真でチェックイン", "撮るだけで来店が記録され、共有導線が立ち上がる"),
-        ("dumbbell.fill", "セット・レップ・重量をフル記録", "前回値オートフィルと自動 PR 検出で、続く"),
-        ("flame.fill", "ヒートマップで継続を可視化", "ジムを変えても1本のタイムラインに残る")
+    /// 特徴はタイトルのみ（説明文は画面高が足りない端末で途切れ、情報過多だったため廃止）。
+    private let features: [(icon: String, title: String)] = [
+        ("door.right.hand.open", "写真でチェックイン"),
+        ("dumbbell.fill", "セット・レップ・重量をフル記録"),
+        ("flame.fill", "ヒートマップで継続を可視化")
     ]
 
     var body: some View {
@@ -72,11 +73,12 @@ struct OnboardingView: View {
                 Text("Gymnee")
                     .font(.system(size: 46, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
-                Text("カレンダーから始まる、\nクロスジムの筋トレ記録。")
+                Text("カレンダーから始まる、筋トレ記録。")
                     .font(.headline)
                     .foregroundStyle(.white.opacity(0.78))
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)   // 画面高が足りない端末でも途切れさせない
             }
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 12)
@@ -94,14 +96,10 @@ struct OnboardingView: View {
                         .foregroundStyle(Theme.limeFill)
                         .frame(width: 44, height: 44)
                         .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(f.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                        Text(f.sub)
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
+                    Text(f.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
