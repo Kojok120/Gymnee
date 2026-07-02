@@ -27,6 +27,8 @@ struct RootView: View {
         }
         .animation(.default, value: auth.isSignedIn)
         .task { await runDebugHarnessIfNeeded() }
+        // テキスト入力以外をタップしたらキーボードを閉じる（全画面共通の操作規約）。
+        .onAppear { KeyboardDismissal.installIfNeeded() }
         .alert("エラー", isPresented: Bindable(errors).isPresented, presenting: errors.message) { _ in
             Button("OK", role: .cancel) {}
         } message: { msg in
@@ -179,6 +181,47 @@ struct RootView: View {
             OtherTabView(userId: uid)
         } else {
             EmptyStateView(systemImage: "ellipsis", title: "未ログイン")
+        }
+    }
+}
+
+// MARK: - キーボード外タップで閉じる（全画面共通）
+
+/// UIWindow にキャンセルしないタップ認識を1度だけ仕込み、テキスト入力ビュー以外への
+/// タップで `endEditing` する。SwiftUI 標準ではタップでキーボードが閉じず、フォーム入力後に
+/// 閉じる手段が無い（報告: チェックインのメモ/合トレ相手 ほか全テキスト入力）。
+@MainActor
+enum KeyboardDismissal {
+    private static var installed = false
+    private static let delegate = TouchFilterDelegate()
+
+    static func installIfNeeded() {
+        guard !installed else { return }
+        guard let window = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow) ?? UIApplication.shared.connectedScenes
+            .compactMap({ ($0 as? UIWindowScene)?.windows.first })
+            .first
+        else { return }
+        let tap = UITapGestureRecognizer(target: window, action: #selector(UIView.endEditing(_:)))
+        tap.cancelsTouchesInView = false   // ボタン等のタップは素通しし、キーボードだけ閉じる
+        tap.requiresExclusiveTouchType = false
+        tap.delegate = delegate
+        window.addGestureRecognizer(tap)
+        installed = true
+    }
+
+    /// テキスト入力ビュー自身（カーソル移動・別フィールドへのフォーカス移動）への
+    /// タップでは発火させないフィルタ。
+    private final class TouchFilterDelegate: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            var view: UIView? = touch.view
+            while let v = view {
+                if v is UITextInput { return false }
+                view = v.superview
+            }
+            return true
         }
     }
 }
