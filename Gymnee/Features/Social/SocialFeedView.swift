@@ -10,15 +10,33 @@ struct SocialFeedView: View {
     /// 起動時にフレンド画面を開く（検証ハーネス -gymneeScreen friends 用）。
     var openFriends: Bool = false
 
+    /// 値ベース遷移用のパス（フレンド画面の自動 push にも使う）。
+    @State private var path = NavigationPath()
+    @State private var didAutoOpenFriends = false
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             if let uid = auth.currentUserId {
-                SocialContent(userId: uid, initialTab: initialTab, openFriends: openFriends)
+                SocialContent(userId: uid, initialTab: initialTab)
+                    .onAppear {
+                        // 検証ハーネス: 一度だけフレンド画面を自動 push（戻り時の再 push を防ぐ）。
+                        if openFriends && !didAutoOpenFriends {
+                            didAutoOpenFriends = true
+                            path.append(SocialRoute.friends)
+                        }
+                    }
             } else {
                 EmptyStateView(systemImage: "person.2", title: "未ログイン")
             }
         }
     }
+}
+
+/// ソーシャル内の値ベース遷移先。フレンド画面は当初 navigationDestination(isPresented:) で
+/// 提示していたが、同一スタックの値 push（UserRef）と競合して遷移がループするため、
+/// 値ベース（NavigationLink(value:)＋ルート宣言）に統一する。
+enum SocialRoute: Hashable {
+    case friends
 }
 
 /// 他ユーザーのプロフィールへ遷移するための値（フレンド一覧から）。
@@ -29,8 +47,6 @@ struct UserRef: Hashable {
 
 private struct SocialContent: View {
     let userId: UUID
-    /// 起動時にフレンド画面を自動 push（検証ハーネス用）。
-    let openFriends: Bool
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
@@ -53,10 +69,6 @@ private struct SocialContent: View {
     @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
 
     @State private var tab = 0
-    /// フレンド画面（右上アイコンから push）の表示。
-    @State private var showFriends = false
-    /// openFriends による自動 push を一度だけに抑える（戻った際の再 push トラップ防止）。
-    @State private var didAutoOpenFriends = false
     @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
     @State private var showMyPosts = false
@@ -67,9 +79,8 @@ private struct SocialContent: View {
     @State private var visStore = PostVisibilityStore()
     @State private var feedEntries: [FeedEntry] = []
 
-    init(userId: UUID, initialTab: Int = 0, openFriends: Bool = false) {
+    init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
-        self.openFriends = openFriends
         _tab = State(initialValue: initialTab)
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
@@ -188,7 +199,6 @@ private struct SocialContent: View {
         .navigationTitle("ソーシャル")
         .navigationBarTitleDisplayMode(.inline)
         .task { await refreshFeed() }
-        .onAppear { if openFriends && !didAutoOpenFriends { didAutoOpenFriends = true; showFriends = true } }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showMyPosts = true } label: {
@@ -204,7 +214,9 @@ private struct SocialContent: View {
                 }.pickerStyle(.segmented)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showFriends = true } label: {
+                // フレンド画面へは値ベースで push（isPresented 型 destination は UserRef の
+                // 値 push と競合してループするため使わない）。
+                NavigationLink(value: SocialRoute.friends) {
                     Image(systemName: "person.2")
                 }
                 .accessibilityLabel("フレンド")
@@ -215,7 +227,11 @@ private struct SocialContent: View {
         }
         .onChange(of: showMyPosts) { _, shown in if !shown { Task { await refreshFeed() } } }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
-        .navigationDestination(isPresented: $showFriends) { friendsScreen }
+        .navigationDestination(for: SocialRoute.self) { route in
+            switch route {
+            case .friends: friendsScreen
+            }
+        }
         .navigationDestination(for: UserRef.self) { ref in
             UserProfileView(targetUserId: ref.id, currentUserId: userId, fallbackName: ref.name)
         }
