@@ -152,7 +152,7 @@ struct CheckInView: View {
                             Label("撮影", systemImage: "camera.fill").frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(Theme.energy)
+                        .prominentLime()
                     }
                     PhotosPicker(selection: $photoItem, matching: .images) {
                         Label("ライブラリ", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity)

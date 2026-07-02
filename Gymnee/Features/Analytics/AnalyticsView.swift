@@ -338,7 +338,7 @@ struct AnalyticsView: View {
             } label: {
                 Label("記録を開始", systemImage: "plus.circle.fill").font(.subheadline.bold())
             }
-            .buttonStyle(.borderedProminent).tint(Theme.lime).controlSize(.small)
+            .buttonStyle(.borderedProminent).prominentLime().controlSize(.small)
             .padding(.top, Theme.Spacing.xs)
         }
         .gymneeCard()

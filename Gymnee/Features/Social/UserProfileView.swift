@@ -228,7 +228,9 @@ struct UserProfileView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(isFollowing ? Color.secondary : Theme.energy)
+            // 未フォロー時は明るい lime 地 × 濃色文字（ダークで白文字が読めなくなるのを防ぐ）。
+            .foregroundStyle(isFollowing ? Color.white : Theme.onLime)
+            .tint(isFollowing ? Color.secondary : Theme.limeFill)
 
             // フォロー中のみ：このフレンドのチェックイン通知をON/OFF。
             if isFollowing, let myFollow = myFollows.first {

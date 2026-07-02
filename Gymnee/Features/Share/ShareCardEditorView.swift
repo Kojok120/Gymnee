@@ -69,7 +69,7 @@ struct ShareCardEditorView: View {
                         .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.sm)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Theme.energy)
+                .prominentLime()
 
                 Button {
                     UIImageWriteToSavedPhotosAlbum(rendered, nil, nil, nil)

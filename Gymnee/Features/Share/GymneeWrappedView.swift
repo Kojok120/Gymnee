@@ -150,7 +150,7 @@ struct GymneeWrappedView: View {
                     Label("まとめを共有", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.sm)
                 }
-                .buttonStyle(.borderedProminent).tint(Theme.lime)
+                .buttonStyle(.borderedProminent).prominentLime()
                 Button {
                     UIImageWriteToSavedPhotosAlbum(rendered, nil, nil, nil)
                     saveMessage = "写真に保存しました"

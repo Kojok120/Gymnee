@@ -234,7 +234,7 @@ struct GymPickerView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(Theme.energy)
+            .prominentLime()
         }
         .gymneeCard()
         .padding(Theme.Spacing.md)
@@ -253,7 +253,8 @@ struct GymPickerView: View {
             VStack(spacing: 0) {
                 Image(systemName: systemImage)
                     .font(.caption.bold())
-                    .foregroundStyle(.white)
+                    // ダークモードで lime 円に白アイコンが埋もれるため濃色（onLime）にする。
+                    .foregroundStyle(Theme.onLime)
                     .frame(width: selected ? 40 : 30, height: selected ? 40 : 30)
                     .background(tint, in: Circle())
                     .overlay(Circle().stroke(.white, lineWidth: selected ? 3 : 2))

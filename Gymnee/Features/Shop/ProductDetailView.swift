@@ -50,7 +50,7 @@ struct ProductDetailView: View {
                     Label("提携先サイトで見る", systemImage: "arrow.up.forward.app")
                         .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.sm)
                 }
-                .buttonStyle(.borderedProminent).tint(Theme.energy)
+                .buttonStyle(.borderedProminent).prominentLime()
                 .disabled(product.resolvedAffiliateURL == nil)
 
                 if product.resolvedAffiliateURL == nil {
