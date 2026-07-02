@@ -114,6 +114,14 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - 復号（pull）
 
     func apply(table: String, rows: [[String: Any]]) {
+        // 行ごとの存在確認・親解決 fetch（N+1）を避ける: 対象テーブルの既存行を 1 クエリで
+        // 先読みし、apply 中は同一 (entity,id) の取得をメモ化する（無い id は negative cache）。
+        // 親テーブルの行は最初の参照時に 1 回だけ fetch され、以降の行は辞書引きになる。
+        let ids = rows.compactMap { uuid($0["id"]) }
+        fetchMemo.removeAll(keepingCapacity: true)
+        memoActive = true
+        prefetchForApply(table: table, ids: ids)
+        defer { memoActive = false; fetchMemo.removeAll() }
         for row in rows {
             switch table {
             case "profiles":          applyProfile(row)
@@ -706,32 +714,107 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.isDirty = false
     }
 
-    // MARK: - 取得ヘルパ（id で 1 件）
+    // MARK: - apply 用フェッチメモ（pull 適用の per-row fetch N+1 回避）
+
+    /// apply(table:rows:) 実行中だけ有効な (entity,id) → モデル のメモ。
+    /// 値の nil は「存在しない」を覚えた negative cache（キー自体が無い＝未メモ）。
+    private var fetchMemo: [String: (any PersistentModel)?] = [:]
+    private var memoActive = false
+
+    private func memoKey(_ entity: String, _ id: UUID) -> String { entity + ":" + id.uuidString }
+
+    /// fetchXxx 共通のメモ付き取得。memoActive 中は同一 (entity,id) を再 fetch しない。
+    /// 注意: 辞書の添字代入は nil で削除になるため updateValue で negative cache を保持する。
+    private func memoized<T: PersistentModel>(_ entity: String, _ id: UUID, _ fetch: () -> T?) -> T? {
+        guard memoActive else { return fetch() }
+        let key = memoKey(entity, id)
+        if let cached = fetchMemo[key] { return cached as? T }
+        let value = fetch()
+        fetchMemo.updateValue(value, forKey: key)
+        return value
+    }
+
+    /// 対象テーブルの既存行を先読みしてメモへ載せる（無い id は negative cache）。
+    /// SQLite の IN 句パラメータ上限を避けるため 500 件ずつに分割して問い合わせる。
+    private func prefetchForApply(table: String, ids allIds: [UUID]) {
+        guard !allIds.isEmpty else { return }
+        let chunkSize = 500
+        var start = 0
+        while start < allIds.count {
+            let ids = Array(allIds[start..<min(start + chunkSize, allIds.count)])
+            prefetchChunk(table: table, ids: ids)
+            start += chunkSize
+        }
+    }
+
+    private func prefetchChunk(table: String, ids: [UUID]) {
+        switch table {
+        case "profiles":          seed(try? context.fetch(FetchDescriptor<Profile>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "gyms":              seed(try? context.fetch(FetchDescriptor<Gym>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "gym_equipment":     seed(try? context.fetch(FetchDescriptor<GymEquipment>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "visits":            seed(try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "visit_partners":    seed(try? context.fetch(FetchDescriptor<VisitPartner>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "workouts":          seed(try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "exercises":         seed(try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "workout_exercises": seed(try? context.fetch(FetchDescriptor<WorkoutExercise>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "exercise_sets":     seed(try? context.fetch(FetchDescriptor<ExerciseSet>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "routines":          seed(try? context.fetch(FetchDescriptor<Routine>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "routine_exercises": seed(try? context.fetch(FetchDescriptor<RoutineExercise>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "personal_records":  seed(try? context.fetch(FetchDescriptor<PersonalRecord>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "body_metrics":      seed(try? context.fetch(FetchDescriptor<BodyMetric>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "progress_photos":   seed(try? context.fetch(FetchDescriptor<ProgressPhoto>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "follows":           seed(try? context.fetch(FetchDescriptor<Follow>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "blocks":            seed(try? context.fetch(FetchDescriptor<Block>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "reports":           seed(try? context.fetch(FetchDescriptor<Report>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "feed_items":        seed(try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "post_reactions":    seed(try? context.fetch(FetchDescriptor<PostReaction>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "comments":          seed(try? context.fetch(FetchDescriptor<Comment>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "products":          seed(try? context.fetch(FetchDescriptor<Product>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "supply_logs":       seed(try? context.fetch(FetchDescriptor<SupplyLog>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "subscriptions":     seed(try? context.fetch(FetchDescriptor<Subscription>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        default: break
+        }
+    }
+
+    /// 先読み結果をメモへ展開する（存在する行は実体、無い id は negative cache）。
+    private func seed<T: PersistentModel>(_ fetched: [T]?, ids: [UUID], entity: String, id: (T) -> UUID) {
+        var seen = Set<UUID>()
+        for model in fetched ?? [] {
+            let mid = id(model)
+            fetchMemo.updateValue(model, forKey: memoKey(entity, mid))
+            seen.insert(mid)
+        }
+        for missing in ids where !seen.contains(missing) {
+            fetchMemo.updateValue(nil, forKey: memoKey(entity, missing))
+        }
+    }
+
+    // MARK: - 取得ヘルパ（id で 1 件。apply 中は fetchMemo 経由）
     @discardableResult private func insert<T: PersistentModel>(_ model: T) -> T { context.insert(model); return model }
-    private func fetchProfile(_ id: UUID) -> Profile? { first(FetchDescriptor<Profile>(predicate: #Predicate { $0.id == id })) }
-    private func fetchGym(_ id: UUID) -> Gym? { first(FetchDescriptor<Gym>(predicate: #Predicate { $0.id == id })) }
-    private func fetchGymEquipment(_ id: UUID) -> GymEquipment? { first(FetchDescriptor<GymEquipment>(predicate: #Predicate { $0.id == id })) }
-    private func fetchVisit(_ id: UUID) -> Visit? { first(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == id })) }
-    private func fetchVisitPartner(_ id: UUID) -> VisitPartner? { first(FetchDescriptor<VisitPartner>(predicate: #Predicate { $0.id == id })) }
-    private func fetchWorkout(_ id: UUID) -> Workout? { first(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id })) }
-    private func fetchExercise(_ id: UUID) -> Exercise? { first(FetchDescriptor<Exercise>(predicate: #Predicate { $0.id == id })) }
-    private func fetchWorkoutExercise(_ id: UUID) -> WorkoutExercise? { first(FetchDescriptor<WorkoutExercise>(predicate: #Predicate { $0.id == id })) }
-    private func fetchExerciseSet(_ id: UUID) -> ExerciseSet? { first(FetchDescriptor<ExerciseSet>(predicate: #Predicate { $0.id == id })) }
-    private func fetchRoutine(_ id: UUID) -> Routine? { first(FetchDescriptor<Routine>(predicate: #Predicate { $0.id == id })) }
-    private func fetchRoutineExercise(_ id: UUID) -> RoutineExercise? { first(FetchDescriptor<RoutineExercise>(predicate: #Predicate { $0.id == id })) }
-    private func fetchPersonalRecord(_ id: UUID) -> PersonalRecord? { first(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.id == id })) }
-    private func fetchBodyMetric(_ id: UUID) -> BodyMetric? { first(FetchDescriptor<BodyMetric>(predicate: #Predicate { $0.id == id })) }
-    private func fetchProgressPhoto(_ id: UUID) -> ProgressPhoto? { first(FetchDescriptor<ProgressPhoto>(predicate: #Predicate { $0.id == id })) }
-    private func fetchFollow(_ id: UUID) -> Follow? { first(FetchDescriptor<Follow>(predicate: #Predicate { $0.id == id })) }
-    private func fetchBlock(_ id: UUID) -> Block? { first(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })) }
-    private func fetchReport(_ id: UUID) -> Report? { first(FetchDescriptor<Report>(predicate: #Predicate { $0.id == id })) }
-    private func fetchFeedItem(_ id: UUID) -> FeedItem? { first(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == id })) }
-    private func fetchPostReaction(_ id: UUID) -> PostReaction? { first(FetchDescriptor<PostReaction>(predicate: #Predicate { $0.id == id })) }
-    private func fetchComment(_ id: UUID) -> Comment? { first(FetchDescriptor<Comment>(predicate: #Predicate { $0.id == id })) }
-    private func fetchProduct(_ id: UUID) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.id == id })) }
+    private func fetchProfile(_ id: UUID) -> Profile? { memoized("profiles", id) { first(FetchDescriptor<Profile>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchGym(_ id: UUID) -> Gym? { memoized("gyms", id) { first(FetchDescriptor<Gym>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchGymEquipment(_ id: UUID) -> GymEquipment? { memoized("gym_equipment", id) { first(FetchDescriptor<GymEquipment>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchVisit(_ id: UUID) -> Visit? { memoized("visits", id) { first(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchVisitPartner(_ id: UUID) -> VisitPartner? { memoized("visit_partners", id) { first(FetchDescriptor<VisitPartner>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchWorkout(_ id: UUID) -> Workout? { memoized("workouts", id) { first(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchExercise(_ id: UUID) -> Exercise? { memoized("exercises", id) { first(FetchDescriptor<Exercise>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchWorkoutExercise(_ id: UUID) -> WorkoutExercise? { memoized("workout_exercises", id) { first(FetchDescriptor<WorkoutExercise>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchExerciseSet(_ id: UUID) -> ExerciseSet? { memoized("exercise_sets", id) { first(FetchDescriptor<ExerciseSet>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchRoutine(_ id: UUID) -> Routine? { memoized("routines", id) { first(FetchDescriptor<Routine>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchRoutineExercise(_ id: UUID) -> RoutineExercise? { memoized("routine_exercises", id) { first(FetchDescriptor<RoutineExercise>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchPersonalRecord(_ id: UUID) -> PersonalRecord? { memoized("personal_records", id) { first(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchBodyMetric(_ id: UUID) -> BodyMetric? { memoized("body_metrics", id) { first(FetchDescriptor<BodyMetric>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchProgressPhoto(_ id: UUID) -> ProgressPhoto? { memoized("progress_photos", id) { first(FetchDescriptor<ProgressPhoto>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchFollow(_ id: UUID) -> Follow? { memoized("follows", id) { first(FetchDescriptor<Follow>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchBlock(_ id: UUID) -> Block? { memoized("blocks", id) { first(FetchDescriptor<Block>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchReport(_ id: UUID) -> Report? { memoized("reports", id) { first(FetchDescriptor<Report>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchFeedItem(_ id: UUID) -> FeedItem? { memoized("feed_items", id) { first(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchPostReaction(_ id: UUID) -> PostReaction? { memoized("post_reactions", id) { first(FetchDescriptor<PostReaction>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchComment(_ id: UUID) -> Comment? { memoized("comments", id) { first(FetchDescriptor<Comment>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchProduct(_ id: UUID) -> Product? { memoized("products", id) { first(FetchDescriptor<Product>(predicate: #Predicate { $0.id == id })) } }
     private func fetchProductByName(_ name: String) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.name == name })) }
-    private func fetchSupplyLog(_ id: UUID) -> SupplyLog? { first(FetchDescriptor<SupplyLog>(predicate: #Predicate { $0.id == id })) }
-    private func fetchSubscription(_ id: UUID) -> Subscription? { first(FetchDescriptor<Subscription>(predicate: #Predicate { $0.id == id })) }
+    private func fetchSupplyLog(_ id: UUID) -> SupplyLog? { memoized("supply_logs", id) { first(FetchDescriptor<SupplyLog>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchSubscription(_ id: UUID) -> Subscription? { memoized("subscriptions", id) { first(FetchDescriptor<Subscription>(predicate: #Predicate { $0.id == id })) } }
 
     private func first<T: PersistentModel>(_ descriptor: FetchDescriptor<T>) -> T? {
         var d = descriptor; d.fetchLimit = 1
