@@ -124,17 +124,27 @@ actor SupabaseClient {
     }
 
     /// `updated_at` が指定時刻より新しい行を取得（pull の差分取得）。
+    /// 1000 件ずつページングして尽きるまで取得する。初回同期（watermark 無し）の全件一括レスポンスに
+    /// よるメモリ/パース負荷と、PostgREST 側 max-rows 設定による暗黙の打ち切りを避けるため。
+    /// 並びは (updated_at, id) で全順序にし、OFFSET ページングでも取りこぼし/重複が出ないようにする。
     func select(table: String, updatedSince: Date?) async throws -> [[String: Any]] {
-        var query = "select=*&order=updated_at.asc"
-        if let updatedSince {
-            let iso = ISO8601DateFormatter.supabase.string(from: updatedSince)
-            query += "&updated_at=gt.\(iso)"
+        let pageSize = 1000
+        let maxPages = 100   // 暴走ガード（10万行。通常の同期で到達しない）
+        var all: [[String: Any]] = []
+        for page in 0..<maxPages {
+            var query = "select=*&order=updated_at.asc,id.asc&limit=\(pageSize)&offset=\(page * pageSize)"
+            if let updatedSince {
+                let iso = ISO8601DateFormatter.supabase.string(from: updatedSince)
+                query += "&updated_at=gt.\(iso)"
+            }
+            var request = restRequest(path: table, query: query)
+            request.httpMethod = "GET"
+            let data = try await send(request)
+            let rows = ((try JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+            all.append(contentsOf: rows)
+            if rows.count < pageSize { break }
         }
-        var request = restRequest(path: table, query: query)
-        request.httpMethod = "GET"
-        let data = try await send(request)
-        let json = try JSONSerialization.jsonObject(with: data)
-        return (json as? [[String: Any]]) ?? []
+        return all
     }
 
     /// 当該テーブルの id だけを最大 `limit` 件取得する（削除照合用。本体列を取らず軽量）。
