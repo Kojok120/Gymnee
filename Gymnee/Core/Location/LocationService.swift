@@ -35,10 +35,15 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     // MARK: - Geofence (§6.10 ジオフェンス自動チェックイン)
 
     /// 登録ジム（座標あり）への接近を監視する。iOS の上限 20 リージョンに合わせて先頭 20 件。
+    /// 現在の監視集合と目標集合を突き合わせ、変化があるリージョンだけ登録/解除する
+    /// （呼び出しのたびの全 stop→start は OS のリージョン再評価を誘発しバッテリーを浪費するため）。
     func startMonitoring(gymRegions: [(id: UUID, name: String, lat: Double, lng: Double)]) {
         guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
-        for region in manager.monitoredRegions { manager.stopMonitoring(for: region) }
-        for gym in gymRegions.prefix(20) {
+        let targets = Array(gymRegions.prefix(20))
+
+        // 目標のリージョンを identifier で索引化。
+        var toAdd: [String: CLCircularRegion] = [:]
+        for gym in targets {
             let region = CLCircularRegion(
                 center: CLLocationCoordinate2D(latitude: gym.lat, longitude: gym.lng),
                 radius: 120,
@@ -46,9 +51,27 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             )
             region.notifyOnEntry = true
             region.notifyOnExit = false
-            monitoredGymNames[gym.id.uuidString] = gym.name
-            manager.startMonitoring(for: region)
+            toAdd[gym.id.uuidString] = region
         }
+
+        // 既存監視のうち、目標と同一（中心・半径が一致）のものは維持して追加対象から外す。
+        // 目標に無い・座標が変わったものは解除する。
+        for existing in manager.monitoredRegions {
+            guard let circular = existing as? CLCircularRegion,
+                  let want = toAdd[circular.identifier],
+                  want.center.latitude == circular.center.latitude,
+                  want.center.longitude == circular.center.longitude,
+                  want.radius == circular.radius
+            else {
+                manager.stopMonitoring(for: existing)
+                continue
+            }
+            toAdd.removeValue(forKey: circular.identifier)
+        }
+
+        // 通知用の名前索引は維持分も含む全対象で作り直す（削除済みジムの残骸も掃除）。
+        monitoredGymNames = Dictionary(uniqueKeysWithValues: targets.map { ($0.id.uuidString, $0.name) })
+        for region in toAdd.values { manager.startMonitoring(for: region) }
     }
 
     private var monitoredGymNames: [String: String] = [:]
