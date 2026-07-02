@@ -40,6 +40,11 @@ final class LocalSyncEngine: SyncEngine {
     @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments", "feed_items"]
     /// 削除照合の id 取得上限。取得がこの件数に達したら（＝ページ打ち切りの恐れ）当回は照合しない。
     @ObservationIgnored private let reconcileSafetyCap = 1000
+    /// 削除照合（reconcile）の実行間隔。毎 pull で 3 テーブルの id 全取得＋ローカル全件走査を
+    /// 行うのは重いため間隔を空ける。エンジン生成後の初回 pull では必ず実行されるので、
+    /// アプリを開き直せば他端末の削除は即反映される。
+    @ObservationIgnored private let reconcileCooldown: TimeInterval = 300
+    @ObservationIgnored private var lastReconciledAt: Date?
 
     init(persistenceURL: URL? = nil) {
         let resolved = persistenceURL ?? OutboxStore.defaultURL()
@@ -266,9 +271,23 @@ final class LocalSyncEngine: SyncEngine {
         // 反応/コメントは他端末の DELETE が差分 pull に乗らない（tombstone 無し）ため、id だけを
         // 別途フル取得してローカルの余剰行を掃除する。取得が上限に達した（＝打ち切りの恐れ）ときは
         // 不完全な id 集合での誤削除を避けてスキップする（newest は上の差分 pull が取り込んでいる）。
-        for table in reconcileTables {
-            guard let ids = try? await remote.selectIds(table: table, limit: reconcileSafetyCap) else { continue }
-            if ids.count < reconcileSafetyCap {
+        // 実行は初回＋ reconcileCooldown 間隔に制限し、3 テーブルの id 取得は並列（1 波）で行う。
+        let shouldReconcile = lastReconciledAt.map { Date().timeIntervalSince($0) >= reconcileCooldown } ?? true
+        if shouldReconcile {
+            lastReconciledAt = Date()
+            let cap = reconcileSafetyCap
+            let idsByTable = await withTaskGroup(of: (String, [UUID])?.self) { group in
+                for table in reconcileTables {
+                    group.addTask {
+                        guard let ids = try? await remote.selectIds(table: table, limit: cap) else { return nil }
+                        return (table, ids)
+                    }
+                }
+                var acc: [(String, [UUID])] = []
+                for await result in group { if let result { acc.append(result) } }
+                return acc
+            }
+            for (table, ids) in idsByTable where ids.count < cap {
                 store.reconcile(table: table, serverIds: Set(ids))
             }
         }
