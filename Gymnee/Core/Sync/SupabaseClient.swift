@@ -346,15 +346,21 @@ actor SupabaseClient {
         let exercises: [PlanExercise]
     }
 
+    /// AI 計画の応答（計画＋変更内容の説明メッセージ。チャットUIで使う）。
+    struct PlanResult: Sendable {
+        let items: [PlanItem]
+        let message: String?
+    }
+
     /// AI ワークアウト計画（Edge Function plan-workouts → Gemini）。
-    /// 過去記録(history)・予定・ルーティン・目標日数に加え、体調シグナル(condition: 睡眠/HRV)と
-    /// ユーザーの自由記述(instruction)を渡し、種目＋セット＋重量/レップまで組ませる。
+    /// 過去記録(history)・予定・ルーティン・目標日数に加え、体調シグナル(condition: 睡眠/HRV)、
+    /// 対話履歴(messages)、現在計画(currentPlan)を渡し、種目＋セット＋重量/レップまで組ませる。
     /// 503(not_configured) など非2xx は send が throw する（呼び出し側で「準備中」扱い）。
     func planWorkouts(
         days: [String], routines: [String], weeklyGoal: Int,
         events: [[String: Any]], history: [[String: Any]], recovery: [[String: Any]],
-        condition: [String: Any] = [:], instruction: String = ""
-    ) async throws -> [PlanItem] {
+        condition: [String: Any] = [:], messages: [[String: String]] = [], currentPlan: [[String: Any]] = []
+    ) async throws -> PlanResult {
         let url = config.url.appendingPathComponent("functions/v1/plan-workouts")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -364,13 +370,14 @@ actor SupabaseClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "days": days, "routines": routines, "weeklyGoal": weeklyGoal,
             "events": events, "history": history, "recovery": recovery,
-            "condition": condition, "instruction": instruction,
+            "condition": condition, "messages": messages, "currentPlan": currentPlan,
         ])
         // AI 生成は REST 用の短いタイムアウト（15s/30s）では打ち切られるため、functions 用 session で送る。
         let data = try await send(request, via: functionsSession)
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let message = (obj?["message"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let plan = (obj?["plan"] as? [[String: Any]]) ?? []
-        return plan.compactMap { row in
+        let items: [PlanItem] = plan.compactMap { row in
             guard let d = row["date"] as? String, let t = row["title"] as? String else { return nil }
             let exs = (row["exercises"] as? [[String: Any]] ?? []).compactMap { e -> PlanExercise? in
                 guard let name = e["name"] as? String else { return nil }
@@ -395,6 +402,7 @@ actor SupabaseClient {
             }
             return PlanItem(date: d, title: t, exercises: exs)
         }
+        return PlanResult(items: items, message: message)
     }
 
     /// アカウント削除 RPC（auth.users 削除 → CASCADE）。要ユーザートークン。
