@@ -21,7 +21,7 @@ struct AnalyticsView: View {
     private let periodWeeks = 12
     private let periodLabel = "3ヶ月"
 
-    private enum Route: Hashable { case history }
+    private enum Route: Hashable { case history, exercise(Exercise) }
 
     init(userId: UUID) {
         self.userId = userId
@@ -52,6 +52,7 @@ struct AnalyticsView: View {
         .navigationDestination(for: Route.self) { route in
             switch route {
             case .history: HistoryView(userId: userId)
+            case .exercise(let ex): ExerciseDetailView(exercise: ex, userId: userId)
             }
         }
     }
@@ -288,17 +289,15 @@ struct AnalyticsView: View {
                 Text("この期間の自己ベスト更新はありません。").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(recent.prefix(12)) { pr in
-                    HStack {
-                        Image(systemName: "trophy.fill").foregroundStyle(.yellow)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("\(pr.exercise?.name ?? "種目") · \(pr.type.label)").font(.subheadline)
-                            Text(pr.achievedAt, format: .dateTime.year().month().day())
-                                .font(.caption2).foregroundStyle(.secondary)
+                    // 種目が残っていれば行タップで種目詳細（推移・目安・履歴）へ。
+                    if let ex = pr.exercise {
+                        NavigationLink(value: Route.exercise(ex)) {
+                            prRow(pr, chevron: true)
                         }
-                        Spacer()
-                        Text(prValue(pr)).font(.subheadline.bold())
+                        .buttonStyle(.plain)
+                    } else {
+                        prRow(pr, chevron: false)
                     }
-                    .padding(.vertical, 2)
                 }
             }
         }
@@ -307,6 +306,23 @@ struct AnalyticsView: View {
 
     private func prValue(_ pr: PersonalRecord) -> String {
         pr.type.formatted(pr.value)
+    }
+
+    private func prRow(_ pr: PersonalRecord, chevron: Bool) -> some View {
+        HStack {
+            Image(systemName: "trophy.fill").foregroundStyle(.yellow)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(pr.exercise?.name ?? "種目") · \(pr.type.label)").font(.subheadline)
+                Text(pr.achievedAt, format: .dateTime.year().month().day())
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(prValue(pr)).font(.subheadline.bold())
+            if chevron {
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     // MARK: - Recovery
