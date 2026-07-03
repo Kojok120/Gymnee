@@ -347,11 +347,13 @@ actor SupabaseClient {
     }
 
     /// AI ワークアウト計画（Edge Function plan-workouts → Gemini）。
-    /// 過去記録(history)・予定・ルーティン・目標日数を渡し、種目＋セット＋重量/レップまで組ませる。
+    /// 過去記録(history)・予定・ルーティン・目標日数に加え、体調シグナル(condition: 睡眠/HRV)と
+    /// ユーザーの自由記述(instruction)を渡し、種目＋セット＋重量/レップまで組ませる。
     /// 503(not_configured) など非2xx は send が throw する（呼び出し側で「準備中」扱い）。
     func planWorkouts(
         days: [String], routines: [String], weeklyGoal: Int,
-        events: [[String: Any]], history: [[String: Any]], recovery: [[String: Any]]
+        events: [[String: Any]], history: [[String: Any]], recovery: [[String: Any]],
+        condition: [String: Any] = [:], instruction: String = ""
     ) async throws -> [PlanItem] {
         let url = config.url.appendingPathComponent("functions/v1/plan-workouts")
         var request = URLRequest(url: url)
@@ -362,6 +364,7 @@ actor SupabaseClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "days": days, "routines": routines, "weeklyGoal": weeklyGoal,
             "events": events, "history": history, "recovery": recovery,
+            "condition": condition, "instruction": instruction,
         ])
         // AI 生成は REST 用の短いタイムアウト（15s/30s）では打ち切られるため、functions 用 session で送る。
         let data = try await send(request, via: functionsSession)

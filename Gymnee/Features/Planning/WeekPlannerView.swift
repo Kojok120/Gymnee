@@ -13,6 +13,7 @@ struct WeekPlannerView: View {
     @Environment(GoogleCalendarService.self) private var googleCalendar
     @Environment(SubscriptionService.self) private var subscription
     @Environment(AuthService.self) private var auth
+    @Environment(HealthKitService.self) private var health
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
     @Query private var planned: [PlannedWorkout]
     @Query private var routines: [Routine]
@@ -26,6 +27,12 @@ struct WeekPlannerView: View {
     @AppStorage("gymnee.aiFreeUsed") private var aiFreeUsed = false
     @State private var aiInfo = false
     @State private var aiRunning = false
+    /// AI生成前のオプションシート（体調シグナルの確認＋自由記述の要望）。
+    @State private var showAIOptions = false
+    @State private var aiInstruction = ""
+    /// HealthKit から取れた体調シグナル（nil＝データ無し）。シート表示時に取得。
+    @State private var aiSleepHours: Double?
+    @State private var aiHRV: Double?
     /// カレンダー予定のキャッシュ（startOfDay→予定）。body 毎の同期列挙(hang)を避けるため一度だけ取得。
     @State private var eventsByDay: [Date: [CalendarEvent]] = [:]
 
@@ -114,11 +121,12 @@ struct WeekPlannerView: View {
                 if aiRunning {
                     ProgressView()
                 } else {
-                    Button { aiPlan() } label: { Label("AIで計画", systemImage: "sparkles") }
+                    Button { openAIOptions() } label: { Label("AIで計画", systemImage: "sparkles") }
                 }
             }
         }
         .sheet(item: $addDay) { day in addSheet(day.date) }
+        .sheet(isPresented: $showAIOptions) { aiOptionsSheet }
         .sheet(isPresented: $showPaywall) { PaywallView() }
         .alert("AIワークアウト計画", isPresented: $aiInfo) {
             Button("OK", role: .cancel) {}
@@ -260,6 +268,62 @@ struct WeekPlannerView: View {
         onStart(PlanStarter.start(plan, userId: userId, routines: routines, context: context))
     }
 
+    /// AI計画のオプションシートを開く（Paywall 判定は生成時に行う）。
+    /// 体調シグナル（昨夜の睡眠・HRV）は開いた時点で取得して表示する。
+    private func openAIOptions() {
+        showAIOptions = true
+        Task {
+            aiSleepHours = await health.lastNightSleepHours()
+            aiHRV = await health.recentHRV()
+        }
+    }
+
+    private var aiOptionsSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    if aiSleepHours == nil && aiHRV == nil {
+                        Label("体調データなし（ヘルスケア未連携または記録なし）", systemImage: "moon.zzz")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    } else {
+                        if let sleep = aiSleepHours {
+                            LabeledContent { Text("\(String(format: "%.1f", sleep)) 時間").monospacedDigit() } label: {
+                                Label("昨夜の睡眠", systemImage: "moon.zzz.fill")
+                            }
+                        }
+                        if let hrv = aiHRV {
+                            LabeledContent { Text("\(Int(hrv)) ms").monospacedDigit() } label: {
+                                Label("心拍変動（HRV）", systemImage: "waveform.path.ecg")
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("睡眠不足やHRV低下の日は、AIが強度を抑えた計画を提案します。")
+                }
+                Section("AIへの要望（任意）") {
+                    TextField("例: 肩が痛いので肩は避けて / 今週は脚を重点的に", text: $aiInstruction, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+                Section {
+                    Button {
+                        showAIOptions = false
+                        aiPlan()
+                    } label: {
+                        Label("この内容で生成", systemImage: "sparkles").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent).prominentLime()
+                    .listRowBackground(Color.clear).listRowInsets(EdgeInsets())
+                }
+            }
+            .navigationTitle("AIで計画")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { showAIOptions = false } }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
     private func aiPlan() {
         // 初回は無料で体験 → 価値を感じてから課金（無料ユーザーは2回目以降 Paywall）。
         if !subscription.isPremium {
@@ -281,7 +345,12 @@ struct WeekPlannerView: View {
             }
             let history = buildHistory(formatter: fmt)
             let recovery = buildRecovery()
-            let result = await auth.planWorkouts(days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal, events: evs, history: history, recovery: recovery)
+            // 体調シグナル（取れた項目のみ渡す。無ければ空＝従来どおり）。
+            var condition: [String: Any] = [:]
+            if let sleep = aiSleepHours { condition["sleepHours"] = (sleep * 10).rounded() / 10 }
+            if let hrv = aiHRV { condition["hrvMs"] = Int(hrv) }
+            let instruction = String(aiInstruction.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+            let result = await auth.planWorkouts(days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal, events: evs, history: history, recovery: recovery, condition: condition, instruction: instruction)
             aiRunning = false
             if let result, !result.isEmpty {
                 applyPlan(result, formatter: fmt)
