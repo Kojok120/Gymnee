@@ -27,6 +27,8 @@ struct WeekPlannerView: View {
     @AppStorage("gymnee.aiFreeUsed") private var aiFreeUsed = false
     @State private var aiInfo = false
     @State private var aiRunning = false
+    /// カレンダー連携のミニシート（設定と同じ行を共用）。
+    @State private var showCalendarLink = false
     /// AI計画のチャットシート（体調シグナルの確認＋対話での生成/調整）。
     @State private var showAIOptions = false
     @State private var aiInput = ""
@@ -95,10 +97,12 @@ struct WeekPlannerView: View {
                     }
                 }
             }
-            if !calendarService.authorized {
+            // どのカレンダーとも未連携のときだけ促す（連携済みなら画面に何も足さない）。
+            // 連携管理はツールバーのカレンダーアイコンから常時開ける。
+            if !calendarLinked {
                 Section {
-                    Button { Task { await calendarService.requestAccess(); await loadEvents() } } label: {
-                        Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
+                    Button { showCalendarLink = true } label: {
+                        Label("カレンダーと連携", systemImage: "calendar.badge.plus")
                     }
                 } footer: {
                     Text("予定を読み込み、空いている日に合わせて計画できます。")
@@ -142,7 +146,14 @@ struct WeekPlannerView: View {
                     Button { openAIOptions() } label: { Label("AIで計画", systemImage: "sparkles") }
                 }
             }
+            // カレンダー連携の管理（設定まで行かずに済む導線。§6.5）。
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showCalendarLink = true } label: {
+                    Label("カレンダー連携", systemImage: "calendar.badge.plus")
+                }
+            }
         }
+        .sheet(isPresented: $showCalendarLink) { calendarLinkSheet }
         .sheet(item: $addDay) { day in addSheet(day.date) }
         // 未確定のままシートを閉じたら提案は破棄する（残すと、その後の手動編集を無視した
         // 古い案が次回の練り直しベースになり、確定時に手動編集を消してしまう）。
@@ -285,6 +296,31 @@ struct WeekPlannerView: View {
     /// 計画を「開始」：共通ロジックで実記録を作成し（AI詳細→ルーティン→空）ロガーを開く。
     private func start(_ plan: PlannedWorkout) {
         onStart(PlanStarter.start(plan, userId: userId, routines: routines, context: context))
+    }
+
+    /// いずれかのカレンダーと連携済みか（Apple はアプリ内トグルまで含めて有効判定）。
+    private var calendarLinked: Bool {
+        (calendarService.authorized && calendarService.isEnabled) || googleCalendar.isConnected
+    }
+
+    /// カレンダー連携のミニシート（設定画面と同じ行を共用。連携/解除の変更は
+    /// 既存の onChange(authorized/isEnabled/isConnected) が拾って予定を再読込する）。
+    private var calendarLinkSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    CalendarLinkRows()
+                } footer: {
+                    Text("予定を週プランナーに重ねて表示し、計画作成時に Google カレンダーへ自動で予定を追加します。")
+                }
+            }
+            .navigationTitle("カレンダー連携")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showCalendarLink = false } }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     /// AI計画のオプションシートを開く（Paywall 判定は生成時に行う）。
