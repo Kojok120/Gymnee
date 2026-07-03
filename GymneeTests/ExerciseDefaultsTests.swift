@@ -22,11 +22,14 @@ final class ExerciseDefaultsTests: XCTestCase {
         }
     }
 
-    /// 加重が定番の自重種目（懸垂・ディップス）は loadMode=weighted。
-    func testWeightedBodyweightPresets() {
+    /// 懸垂・ディップスは補助が多数派のため assisted 既定（符号付き軸で加重も記録可）。
+    /// 初期中央は補助側（負値）。
+    func testAssistedBodyweightPresets() {
         let byName = Dictionary(uniqueKeysWithValues: SeedData.presetExercises.map { ($0.name, $0) })
-        XCTAssertEqual(byName["懸垂"]?.loadMode, .weighted)
-        XCTAssertEqual(byName["ディップス"]?.loadMode, .weighted)
+        XCTAssertEqual(byName["懸垂"]?.loadMode, .assisted)
+        XCTAssertEqual(byName["ディップス"]?.loadMode, .assisted)
+        XCTAssertEqual(ExerciseDefaults.entry(for: "懸垂")?.startWeight, -15)
+        XCTAssertEqual(ExerciseDefaults.entry(for: "ディップス")?.startWeight, -10)
     }
 
     /// 片側/両側ラベルの整合（ダンベル=片側、バーベル=両側計）。

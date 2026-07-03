@@ -558,8 +558,12 @@ struct RecordContent: View {
                     onLogCardio: { dist, mins in logCardio(distanceKm: dist, minutes: mins, spec: spec) },
                     onCustomWeight: {
                         // バーベルの合計重量入力ではプレート換算（片側内訳）を併記する。
+                        // 自重（加重/補助）は符号切替（加重＋/補助−）を出す。
                         let plates = spec.exercise.equipment == .barbell && spec.exercise.measurementType == .weight
-                        keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .armValue, decimal: true, title: "重量を入力", showPlates: plates)
+                        let signed = spec.exercise.measurementType == .bodyweight && spec.exercise.loadMode != .none
+                        keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .armValue, decimal: true,
+                                               title: signed ? "加重/補助を入力" : "重量を入力",
+                                               showPlates: plates, signedLoad: signed)
                     },
                     onCustomReps: {
                         let title: String
@@ -1139,33 +1143,38 @@ private struct ExerciseCardView: View {
     }
 
     private var weightRuler: some View {
-        // 0kg も選べる（下限0）。アシスト/ウォームアップ等で0を記録したいケースに対応。
-        SlotRuler(selection: $weightCenter,
-                  step: RecordSlots.weightStep(exercise),
-                  lowerBound: 0,
+        // 値列は種目特性で決まる（ダンベル1kg→2kg区分、自重は補助−⟷加重＋の一本軸、他は等差・下限0）。
+        let ex = exercise
+        return SlotRuler(selection: $weightCenter,
+                  makeValues: { RecordSlots.weightRulerValues(for: ex, center: $0) },
                   decimals: true, unit: "", isAction: false,
+                  signedLoad: ex.measurementType == .bodyweight,
                   onCommit: nil, onLongPress: onCustomWeight)
     }
     private var repsRuler: some View {
         SlotRuler(selection: $repCenter,
-                  step: 1, lowerBound: 1, decimals: false, unit: "", isAction: true,
+                  makeValues: { RecordSlots.rulerValues(center: $0, step: 1, lowerBound: 1) },
+                  decimals: false, unit: "", isAction: true,
                   onCommit: { onLogReps(Int($0)) }, onLongPress: onCustomReps)
     }
     private var durationRuler: some View {
         SlotRuler(selection: $durCenter,
-                  step: 5, lowerBound: 5, decimals: false, unit: "秒", isAction: true,
+                  makeValues: { RecordSlots.rulerValues(center: $0, step: 5, lowerBound: 5) },
+                  decimals: false, unit: "秒", isAction: true,
                   onCommit: { onLogDuration(Int($0)) }, onLongPress: onCustomReps)
     }
     /// 有酸素の距離（km）。中央＝アーム（記録時の距離）。
     private var distanceRuler: some View {
         SlotRuler(selection: $distanceCenter,
-                  step: 0.5, lowerBound: 0, decimals: true, unit: "km", isAction: false,
+                  makeValues: { RecordSlots.rulerValues(center: $0, step: 0.5, lowerBound: 0) },
+                  decimals: true, unit: "km", isAction: false,
                   onCommit: nil, onLongPress: onCustomDistance)
     }
     /// 有酸素の時間（分）。タップで「距離＋その時間」を1セット記録。
     private var cardioMinuteRuler: some View {
         SlotRuler(selection: $durCenter,
-                  step: 5, lowerBound: 5, decimals: false, unit: "分", isAction: true,
+                  makeValues: { RecordSlots.rulerValues(center: $0, step: 5, lowerBound: 5) },
+                  decimals: false, unit: "分", isAction: true,
                   onCommit: { onLogCardio(distanceCenter, Int($0)) }, onLongPress: onCustomReps)
     }
 }
@@ -1175,11 +1184,13 @@ private struct ExerciseCardView: View {
 /// セルタップ＝その値へ寄せて選択、長押し＝キーパッド。値列は onAppear で一度だけ生成し再描画でリセットしない。
 private struct SlotRuler: View {
     @Binding var selection: Double
-    let step: Double
-    let lowerBound: Double
+    /// 中心値 → ルーラーの値列。等差だけでなく区分刻み（ダンベル/自重の補助⟷加重）にも対応する。
+    let makeValues: (Double) -> [Double]
     let decimals: Bool
     let unit: String
     let isAction: Bool
+    /// 負値を「補助」として表示する（自重の一本軸）。
+    var signedLoad: Bool = false
     let onCommit: ((Double) -> Void)?
     let onLongPress: () -> Void
 
@@ -1204,7 +1215,7 @@ private struct SlotRuler: View {
         .frame(height: 38)
         .onAppear {
             if values.isEmpty {
-                values = RecordSlots.rulerValues(center: selection, step: step, lowerBound: lowerBound)
+                values = makeValues(selection)
             }
             scrolledID = nearest(selection)
         }
@@ -1214,7 +1225,7 @@ private struct SlotRuler: View {
         .onChange(of: selection) { _, sel in
             // 外部ジャンプ(キーパッド)で範囲外なら作り直し。スクロール由来(sel∈values)では作り直さない＝位置維持。
             if !values.contains(sel) {
-                values = RecordSlots.rulerValues(center: sel, step: step, lowerBound: lowerBound)
+                values = makeValues(sel)
             }
             if scrolledID != sel { scrolledID = nearest(sel) }
         }
@@ -1243,6 +1254,13 @@ private struct SlotRuler: View {
 
     private func nearest(_ c: Double) -> Double { values.min(by: { abs($0 - c) < abs($1 - c) }) ?? c }
     private func label(_ v: Double) -> String {
+        // 符号付き（自重の一本軸）: 負=補助、0=自重、正=加重。
+        if signedLoad {
+            if v == 0 { return "自重" }
+            let mag = abs(v)
+            let s = mag == mag.rounded() ? String(Int(mag)) : String(format: "%.1f", mag)
+            return v < 0 ? "補\(s)" : "+\(s)"
+        }
         let s = decimals ? (v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)) : String(Int(v))
         return unit.isEmpty ? s : "\(s)\(unit)"
     }
@@ -1281,6 +1299,8 @@ struct KeypadRequest: Identifiable {
     let title: String
     /// バーベル種目の重量入力でプレート換算（片側内訳）を併記する。
     var showPlates: Bool = false
+    /// 自重（加重/補助）の符号付き入力（加重＋/補助−の切替を表示）。
+    var signedLoad: Bool = false
 }
 
 private struct SlotKeypadSheet: View {
@@ -1290,6 +1310,8 @@ private struct SlotKeypadSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @FocusState private var focused: Bool
+    /// 符号付き入力（自重の加重＋/補助−）の方向。テンキーに±が無いためセグメントで切替える。
+    @State private var loadDirection = 1.0
     /// バーベルのバー重量（プレート換算用・ジムのバーに合わせて選択を記憶）。
     @AppStorage("gymnee.barWeightKg") private var barWeight = 20.0
 
@@ -1300,6 +1322,13 @@ private struct SlotKeypadSheet: View {
                     .keyboardType(request.decimal ? .decimalPad : .numberPad)
                     .font(.numL)
                     .focused($focused)
+                if request.signedLoad {
+                    Picker("種別", selection: $loadDirection) {
+                        Text("加重 ＋").tag(1.0)
+                        Text("補助 −").tag(-1.0)
+                    }
+                    .pickerStyle(.segmented)
+                }
                 if request.showPlates {
                     LabeledContent("バー") {
                         Picker("", selection: $barWeight) {
@@ -1319,7 +1348,10 @@ private struct SlotKeypadSheet: View {
                 ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("決定") {
-                        if let v = Double(text.replacingOccurrences(of: ",", with: ".")) { onSubmit(v) }
+                        if let v = Double(text.replacingOccurrences(of: ",", with: ".")) {
+                            // 符号付き入力（自重）は選択方向（加重＋/補助−）を符号に反映。
+                            onSubmit(request.signedLoad ? abs(v) * loadDirection : v)
+                        }
                         dismiss()
                     }.bold().disabled(Double(text.replacingOccurrences(of: ",", with: ".")) == nil)
                 }
@@ -1371,6 +1403,10 @@ private struct EditSetSheet: View {
                     LabeledContent("時間(分)") { TextField("分", text: $minutesText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
                 } else if isTime {
                     LabeledContent("秒") { TextField("秒", text: $durationText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
+                } else if measurement == .bodyweight {
+                    // 符号付き（−=補助 / 0=自重 / ＋=加重）。テンキーに±が無いため標準キーボードで受ける。
+                    LabeledContent("加重(kg・補助は−)") { TextField("0", text: $weightText).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing) }
+                    LabeledContent("回数") { TextField("回数", text: $repsText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
                 } else {
                     LabeledContent("重量(kg)") { TextField("重量", text: $weightText).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
                     LabeledContent("回数") { TextField("回数", text: $repsText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
@@ -1390,7 +1426,9 @@ private struct EditSetSheet: View {
                         } else if isTime {
                             if let s = Int(durationText), s >= 0 { set.durationSeconds = s }
                         } else {
-                            if let w = Double(weightText.replacingOccurrences(of: ",", with: ".")), w.isFinite, w >= 0 {
+                            // 自重（符号付き: −=補助）は負値を許可。通常ウェイトは0以上のみ。
+                            if let w = Double(weightText.replacingOccurrences(of: ",", with: ".")), w.isFinite,
+                               w >= 0 || measurement == .bodyweight {
                                 set.weight = w
                             }
                             if let r = Int(repsText), r >= 0 { set.reps = r }

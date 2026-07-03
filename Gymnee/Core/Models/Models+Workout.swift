@@ -186,10 +186,10 @@ final class ExerciseSet {
     var workoutExercise: WorkoutExercise?
 
     /// このセットのボリューム（重量 × レップ）。
-    /// トレーニングボリューム。補助(アシスト)は自重を軽くする方向なので加重をボリュームに数えない。
-    /// 荷重/通常ウェイトは weight×reps、自重のみは weight=0 で 0。
+    /// 自重系は符号付き重量（−=補助 / ＋=加重）のため、加重(＋)のみ数える
+    /// （補助は自重を軽くする方向＝0扱い。体重が不明なため自重分も数えない）。
     var volume: Double {
-        if workoutExercise?.exercise?.loadMode == .assisted { return 0 }
+        if workoutExercise?.exercise?.measurementType == .bodyweight { return max(0, weight) * Double(reps) }
         return weight * Double(reps)
     }
 

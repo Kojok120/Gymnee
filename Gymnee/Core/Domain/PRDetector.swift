@@ -51,15 +51,18 @@ enum PRDetector {
                 if Double(reps) > bests.maxReps {
                     results.append(DetectedPR(type: .maxReps, value: Double(reps)))
                 }
-            case .weighted:
-                // 荷重がある時のみ最大荷重を判定（0kg はただの自重なので拾わない）。
-                if weight > 0, weight > bests.maxWeight {
-                    results.append(DetectedPR(type: .maxWeight, value: weight))
-                }
-            case .assisted:
-                // 補助は軽いほど強い。より小さい補助で挙げられたら PR（0=自重で挙げた最良）。
-                if weight < bests.minAssist {
-                    results.append(DetectedPR(type: .minAssist, value: weight))
+            case .weighted, .assisted:
+                // 一本軸（符号付き重量: −=補助 / 0=自重 / ＋=加重）。
+                // 加重(＋)は最大荷重、補助(−)は最小補助を判定する。
+                // 0(自重)は「補助の実績を初めて卒業した」時のみ最小補助PR（履歴なしの自重は PR にしない）。
+                if weight > 0 {
+                    if weight > bests.maxWeight {
+                        results.append(DetectedPR(type: .maxWeight, value: weight))
+                    }
+                } else if weight < 0 || bests.minAssist < .greatestFiniteMagnitude {
+                    if -weight < bests.minAssist {
+                        results.append(DetectedPR(type: .minAssist, value: -weight))
+                    }
                 }
             }
         case .time:

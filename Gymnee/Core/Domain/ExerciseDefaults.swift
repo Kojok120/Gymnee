@@ -61,8 +61,10 @@ enum ExerciseDefaults {
         // 全身
         "ケトルベルスイング": .init(startWeight: 12, weightStep: 4),
         "クリーン&ジャーク": .init(startWeight: 20, weightStep: 2.5),
-        // 加重自重（加重0=自重から。刻みはプレート2.5kg）
-        "懸垂": .init(startWeight: 0, weightStep: 2.5),
-        "ディップス": .init(startWeight: 0, weightStep: 2.5),
+        // 自重（符号付き一本軸: −補助/0自重/＋加重）。初心者は補助が必要なことが多いため
+        // 補助側を初期中央に（Strength Level 初心者基準: 懸垂 男-13/女-22、ディップス 男-8/女-20）。
+        // 刻みはルーラー側の区分定義（補助5kg/加重2.5kg）を使うため step は補助側の値。
+        "懸垂": .init(startWeight: -15, weightStep: 5),
+        "ディップス": .init(startWeight: -10, weightStep: 5),
     ]
 }
