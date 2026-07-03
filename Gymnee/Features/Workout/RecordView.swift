@@ -511,7 +511,11 @@ struct RecordContent: View {
                     onLogReps: { reps in logReps(reps, spec: spec) },
                     onLogDuration: { dur in logDuration(dur, spec: spec) },
                     onLogCardio: { dist, mins in logCardio(distanceKm: dist, minutes: mins, spec: spec) },
-                    onCustomWeight: { keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .armValue, decimal: true, title: "重量を入力") },
+                    onCustomWeight: {
+                        // バーベルの合計重量入力ではプレート換算（片側内訳）を併記する。
+                        let plates = spec.exercise.equipment == .barbell && spec.exercise.measurementType == .weight
+                        keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .armValue, decimal: true, title: "重量を入力", showPlates: plates)
+                    },
                     onCustomReps: {
                         let title: String
                         switch spec.exercise.measurementType {
@@ -1230,6 +1234,8 @@ struct KeypadRequest: Identifiable {
     let kind: Kind
     let decimal: Bool
     let title: String
+    /// バーベル種目の重量入力でプレート換算（片側内訳）を併記する。
+    var showPlates: Bool = false
 }
 
 private struct SlotKeypadSheet: View {
@@ -1239,6 +1245,8 @@ private struct SlotKeypadSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @FocusState private var focused: Bool
+    /// バーベルのバー重量（プレート換算用・ジムのバーに合わせて選択を記憶）。
+    @AppStorage("gymnee.barWeightKg") private var barWeight = 20.0
 
     var body: some View {
         NavigationStack {
@@ -1247,6 +1255,19 @@ private struct SlotKeypadSheet: View {
                     .keyboardType(request.decimal ? .decimalPad : .numberPad)
                     .font(.numL)
                     .focused($focused)
+                if request.showPlates {
+                    LabeledContent("バー") {
+                        Picker("", selection: $barWeight) {
+                            Text("20kg").tag(20.0)
+                            Text("15kg").tag(15.0)
+                            Text("10kg").tag(10.0)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 200)
+                    }
+                    Label(plateText, systemImage: "circle.circle")
+                        .font(.footnote).foregroundStyle(.secondary).monospacedDigit()
+                }
             }
             .navigationTitle(request.title).navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1260,7 +1281,23 @@ private struct SlotKeypadSheet: View {
             }
             .onAppear { focused = true }
         }
-        .presentationDetents([.height(180)])
+        .presentationDetents([.height(request.showPlates ? 300 : 180)])
+    }
+
+    /// 入力中の合計重量に対する片側プレート内訳（バーベル種目のみ表示）。
+    private var plateText: String {
+        guard let target = Double(text.replacingOccurrences(of: ",", with: ".")) else {
+            return "合計重量を入れると片側のプレート内訳が出ます"
+        }
+        guard let b = PlateCalculator.breakdown(target: target, bar: barWeight) else {
+            return "バー\(SetFormatting.weightString(barWeight))kg 未満です"
+        }
+        if b.perSide.isEmpty {
+            return b.remainder > 0 ? "バーのみ（端数 \(SetFormatting.weightString(b.remainder))kg）" : "バーのみ"
+        }
+        var s = "片側: \(b.perSide.map { SetFormatting.weightString($0) }.joined(separator: " + "))"
+        if b.remainder > 0 { s += "（端数 \(SetFormatting.weightString(b.remainder))kg）" }
+        return s
     }
 }
 
