@@ -39,17 +39,23 @@ enum RecordSlots {
         return Centers(weight: weight, reps: reps, duration: 30)
     }
 
-    /// 器具ごとの重量刻み。
+    /// 重量刻み。プリセットは種目別レビュー値（ExerciseDefaults）、無ければ器具既定。
+    /// ダンベルはレイズ/カール系の推奨値が2〜5kg域のため1kg刻み（1kg刻みラックの実態にも一致）。
     static func weightStep(_ exercise: Exercise) -> Double {
+        if let entry = ExerciseDefaults.entry(for: exercise.name) { return entry.weightStep }
         switch exercise.equipment {
         case .machine, .cable: return 5
         case .kettlebell: return 4
+        case .dumbbell: return 1
         default: return 2.5
         }
     }
 
     /// 履歴が無いときの既定重量（ルーラーの初期中央）。
+    /// プリセットは種目別レビュー値（ExerciseDefaults）、無ければ器具既定。
     static func defaultWeight(_ exercise: Exercise) -> Double {
+        if exercise.measurementType != .bodyweight,
+           let entry = ExerciseDefaults.entry(for: exercise.name) { return entry.startWeight }
         if exercise.measurementType == .bodyweight { return 0 }
         switch exercise.equipment {
         case .barbell: return 20

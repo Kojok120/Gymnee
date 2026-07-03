@@ -6,7 +6,8 @@ import SwiftData
 enum SeedData {
     /// プリセット定義の版数。プリセット種目/部位移行の内容を変えたら +1 する
     /// （次回起動時に一度だけ整備処理が走る）。
-    private static let presetVersion = 1
+    /// v2: 懸垂・ディップスを加重許可（loadMode=weighted）に変更（種目設定レビュー 2026-07）。
+    private static let presetVersion = 2
     private static let presetVersionKey = "gymnee.seed.presetVersion"
 
     /// プリセット投入が済んでいなければ投入する。複数回呼んでも安全（冪等）。
@@ -201,7 +202,8 @@ enum SeedData {
     /// 主要種目の最小マスタ（プリセット、§6.5）。各種目の設定はドメインレビュー済み。
     /// weightMode は表示ラベル：ダンベル=片側(perSide) / バーベルで左右合計を入力=両側(both) /
     /// マシン・ケーブル・自重・有酸素・ヒップスラスト等は区別なし(none・ラベル非表示)。
-    private static let presetExercises: [PresetExercise] = [
+    /// 初期表示重量・刻みは ExerciseDefaults（種目別）が持つ。internal はテストの網羅チェック用。
+    static let presetExercises: [PresetExercise] = [
         // 胸
         .init(name: "ベンチプレス", muscle: .chest, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "インクラインベンチプレス", muscle: .chest, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
@@ -209,13 +211,15 @@ enum SeedData {
         .init(name: "チェストプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "ペックフライ", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "スミスマシンベンチプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
-        .init(name: "ディップス", muscle: .chest, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        // ディップス/懸垂は加重（ベルト）が定番のため加重入力を既定で許可。
+        // アシスト派は種目編集（カード長押し）で assisted に切替できる。
+        .init(name: "ディップス", muscle: .chest, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .weighted),
         // 背中
         .init(name: "デッドリフト", muscle: .back, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "ベントオーバーロウ", muscle: .back, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "ラットプルダウン", muscle: .back, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "シーテッドロウ", muscle: .back, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
-        .init(name: "懸垂", muscle: .back, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        .init(name: "懸垂", muscle: .back, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .weighted),
         // 脚
         .init(name: "スクワット", muscle: .legs, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "スミスマシンスクワット", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
