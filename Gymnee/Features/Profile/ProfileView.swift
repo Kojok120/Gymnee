@@ -12,7 +12,8 @@ struct ProfileView: View {
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @State private var showProfileEdit = false
-    @State private var showWrapped = false
+    /// 表示中のまとめ期間（nil＝非表示）。先月リキャップと年間 Wrapped で共用。
+    @State private var wrappedPeriod: WrappedPeriod?
     @Query private var visits: [Visit]
 
     init(userId: UUID) {
@@ -82,8 +83,12 @@ struct ProfileView: View {
                 NavigationLink(value: AppRoute.photos) { Label("進捗写真", systemImage: "photo.stack") }
                 NavigationLink(value: AppRoute.body) { Label("身体メトリクス", systemImage: "ruler") }
                 // 分析は専用タブに集約したためここからは外す。
-                // Wrapped は sheet で提示（クロージャ型 NavigationLink の遷移先 init 連鎖ハングを回避）。
-                Button { showWrapped = true } label: {
+                // Wrapped/リキャップは sheet で提示（クロージャ型 NavigationLink の遷移先 init 連鎖ハングを回避）。
+                Button { wrappedPeriod = WrappedPeriod.previousMonth() } label: {
+                    Label("先月のまとめ", systemImage: "calendar.badge.clock")
+                        .foregroundStyle(Theme.lime)
+                }
+                Button { wrappedPeriod = .year(Calendar.current.component(.year, from: .now)) } label: {
                     Label("\(Calendar.current.component(.year, from: .now)) のまとめ", systemImage: "sparkles")
                         .foregroundStyle(Theme.lime)
                 }
@@ -96,7 +101,9 @@ struct ProfileView: View {
         .navigationTitle("マイページ")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showProfileEdit) { ProfileEditView() }
-        .sheet(isPresented: $showWrapped) { GymneeWrappedView(userId: userId, onClose: { showWrapped = false }) }
+        .sheet(item: $wrappedPeriod) { period in
+            GymneeWrappedView(userId: userId, period: period, onClose: { wrappedPeriod = nil })
+        }
         // 遷移先は値ベース（AppRoute）。destination は NavigationStack ルート側
         // （CalendarHomeView の gymneeNavigationDestinations）で一括宣言しており、
         // ここ（push されたビュー）では宣言しない。クロージャ型リンクで遷移先を先行生成すると
