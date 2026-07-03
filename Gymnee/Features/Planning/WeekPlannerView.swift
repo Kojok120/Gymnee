@@ -36,12 +36,17 @@ struct WeekPlannerView: View {
     @State private var aiSleepHours: Double?
     @State private var aiHRV: Double?
 
-    /// AI計画チャットの1メッセージ。
+    /// AI計画チャットの1メッセージ。assistant は生成/改訂後の計画プレビューを持てる
+    /// （シートを閉じずに結果を見ながら対話できるようにする）。
     struct AIChatMessage: Identifiable, Equatable {
         enum Role { case user, assistant }
         let id = UUID()
         let role: Role
         let text: String
+        var plan: [SupabaseClient.PlanItem]? = nil
+
+        // 内容は不変・追記のみなので identity 比較で十分（onChange のスクロール追従用）。
+        static func == (lhs: AIChatMessage, rhs: AIChatMessage) -> Bool { lhs.id == rhs.id }
     }
     /// カレンダー予定のキャッシュ（startOfDay→予定）。body 毎の同期列挙(hang)を避けるため一度だけ取得。
     @State private var eventsByDay: [Date: [CalendarEvent]] = [:]
@@ -373,16 +378,60 @@ struct WeekPlannerView: View {
     private func chatBubble(_ msg: AIChatMessage) -> some View {
         HStack {
             if msg.role == .user { Spacer(minLength: 40) }
-            Text(msg.text)
-                .font(.subheadline)
-                .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.sm)
-                .background(
-                    msg.role == .user ? Theme.lime.opacity(0.18) : Theme.bg2,
-                    in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous)
-                )
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text(msg.text)
+                    .font(.subheadline)
+                if let plan = msg.plan {
+                    planPreview(plan)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.sm)
+            .background(
+                msg.role == .user ? Theme.lime.opacity(0.18) : Theme.bg2,
+                in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous)
+            )
             if msg.role == .assistant { Spacer(minLength: 40) }
         }
         .frame(maxWidth: .infinity, alignment: msg.role == .user ? .trailing : .leading)
+    }
+
+    /// 生成/改訂された週計画のプレビュー（チャット内でそのまま結果を見て対話を続けられる）。
+    private func planPreview(_ items: [SupabaseClient.PlanItem]) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Divider()
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(Self.planDayLabel(item.date))
+                            .font(.caption.bold().monospacedDigit())
+                            .foregroundStyle(Theme.textPrimary)
+                        Text(item.exercises.isEmpty ? "休養" : item.title)
+                            .font(.caption.weight(item.exercises.isEmpty ? .regular : .semibold))
+                            .foregroundStyle(item.exercises.isEmpty ? Theme.textTertiary : Theme.textPrimary)
+                            .lineLimit(1)
+                    }
+                    if !item.exercises.isEmpty {
+                        Text(item.exercises.map { ex in
+                            let w = ex.weight > 0 ? " \(SetFormatting.weightString(ex.weight))kg" : ""
+                            return "\(ex.name) \(ex.sets)×\(ex.reps)\(w)"
+                        }.joined(separator: " · "))
+                            .font(.caption2).foregroundStyle(Theme.textSecondary)
+                    }
+                }
+            }
+        }
+    }
+
+    /// "yyyy-MM-dd" → "M/d(曜)"。パース不能ならそのまま返す。
+    private static func planDayLabel(_ iso: String) -> String {
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy-MM-dd"
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        guard let date = parser.date(from: iso) else { return iso }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "ja_JP")
+        out.dateFormat = "M/d(E)"
+        return out.string(from: date)
     }
 
     private var aiInputBar: some View {
@@ -448,7 +497,8 @@ struct WeekPlannerView: View {
                 let trained = result.items.filter { !$0.exercises.isEmpty }.count
                 aiMessages.append(AIChatMessage(
                     role: .assistant,
-                    text: result.message ?? "計画を更新しました（トレーニング\(trained)日）。"
+                    text: result.message ?? "計画を更新しました（トレーニング\(trained)日）。",
+                    plan: result.items.sorted { $0.date < $1.date }
                 ))
             } else if aiMessages.count <= 1 {
                 aiInfo = true   // 初回失敗はキー未設定の可能性 →「準備中」案内
