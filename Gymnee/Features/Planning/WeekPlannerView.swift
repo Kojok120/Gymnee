@@ -144,7 +144,9 @@ struct WeekPlannerView: View {
             }
         }
         .sheet(item: $addDay) { day in addSheet(day.date) }
-        .sheet(isPresented: $showAIOptions) { aiOptionsSheet }
+        // 未確定のままシートを閉じたら提案は破棄する（残すと、その後の手動編集を無視した
+        // 古い案が次回の練り直しベースになり、確定時に手動編集を消してしまう）。
+        .sheet(isPresented: $showAIOptions, onDismiss: { stagedPlan = nil }) { aiOptionsSheet }
         .alert("AIワークアウト計画", isPresented: $aiInfo) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -396,6 +398,8 @@ struct WeekPlannerView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent).prominentLime()
+                        // 練り直しの応答待ち中は確定不可（確定直後に新提案が届いて食い違うのを防ぐ）。
+                        .disabled(aiRunning)
                         Text("確定するまでカレンダーには反映されません。要望を送って練り直せます。")
                             .font(.caption2).foregroundStyle(Theme.textTertiary)
                     }

@@ -155,9 +155,10 @@ struct GymPickerView: View {
                         }
                     }
                     .tint(.primary)
-                    // 自分で登録したジムのみ削除可（プリセットは共有マスタのため対象外）。
+                    // 自分で登録したジムのみ削除可（プリセットは共有マスタ、他ユーザー作成分は
+                    // RLS で削除できず pending が残留するため、createdBy 一致も必須にする）。
                     .swipeActions {
-                        if gym.source == .user {
+                        if gym.source == .user, gym.createdBy == userId {
                             Button("削除", role: .destructive) { deleteTarget = gym }
                         }
                     }
