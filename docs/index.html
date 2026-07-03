@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gymnee — ジムを変えても、記録は続く。筋トレ記録アプリ</title>
-<meta name="description" content="引っ越しても出張先でも、ジムを変えても記録が1本につながる筋トレアプリ。チェックインは写真を一枚撮るだけ。個人開発のiPhoneアプリ、ベータ公開中。">
-<meta property="og:title" content="Gymnee — ジムを変えても、記録は続く。">
-<meta property="og:description" content="引っ越しても出張先でも、記録は同じカレンダーに。チェックインは写真を一枚。個人開発の筋トレアプリ、ベータ公開中。">
+<title>Gymnee — 記録はタップだけ。続く筋トレ記録アプリ</title>
+<meta name="description" content="重量も回数も数字を打ち込まない、タップだけの筋トレ記録。週の計画はAIと相談、友達と応援し合って続く。ジムを変えても記録は1本のまま。個人開発のiPhoneアプリ、ベータ公開中。">
+<meta property="og:title" content="Gymnee — 記録はタップだけ。あとは挙げるだけ。">
+<meta property="og:description" content="タップだけの記録、AIと相談する週の計画、友達との応援。「続く」に全部振った筋トレアプリ。ベータ公開中。">
 <meta property="og:image" content="assets/gymnee-icon.png">
 <meta name="theme-color" content="#0B0D0C">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
@@ -243,27 +243,27 @@ footer .cp{width:100%;border-top:1px solid var(--line);padding-top:20px;color:va
 <header class="hero" id="top">
   <div class="wrap hero-c">
     <span class="eyebrow">個人で作ってる iPhone アプリ・ベータ公開中</span>
-    <h1>ジムを変えても、<br><span class="lime">記録は<wbr>リセットされない。</span></h1>
-    <p class="sub">引っ越し。出張先のジム。友達と合トレ。場所が変わっても、これまでの記録は同じカレンダーに残ったまま。チェックインは、ジムで写真を一枚撮るだけです。</p>
+    <h1>記録は、タップだけ。<br><span class="lime">あとは挙げるだけ。</span></h1>
+    <p class="sub">重量も回数も、数字は打ち込みません。前回の重量が最初から出ているから、タップするだけでセット完了。考えることを減らして、「続く」に全部振った筋トレ記録アプリです。</p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="#join">ベータを試す →</a>
       <a class="btn btn-ghost" href="#features">どんなアプリ？</a>
     </div>
     <div class="trustline">
-      <span class="pill">オフラインでも記録</span>
-      <span class="pill">HealthKit</span>
-      <span class="pill">Apple Watch</span>
-      <span class="pill">ウィジェット</span>
-      <span class="pill">Siri</span>
+      <span class="pill">数値入力ゼロの記録</span>
+      <span class="pill">週の計画はAIと相談</span>
+      <span class="pill">友達と一緒に続く</span>
+      <span class="pill">ジムを変えても記録は1本</span>
+      <span class="pill">オフラインでも使える</span>
     </div>
     <div class="phone-cluster">
       <div class="phone pc-side pc-left"><img src="assets/screens/03-analytics.png" loading="lazy" alt="分析ダッシュボード" width="700" height="1521"></div>
       <div class="phone pc-center">
-        <img src="assets/screens/01-home-calendar.png" alt="Gymnee ホーム — ストリークとカレンダー" width="700" height="1521" fetchpriority="high">
-        <div class="chip lime chip-a"><div class="ov">STREAK</div><div class="big">17<span style="font-size:.7rem">日</span></div></div>
+        <img src="assets/screens/01-home-calendar.png" alt="Gymnee ホーム — 連続記録とカレンダー" width="700" height="1521" fetchpriority="high">
+        <div class="chip lime chip-a"><div class="ov">今週の達成</div><div class="big">4<span style="font-size:.7rem">/3</span></div></div>
         <div class="chip chip-b"><div class="ov">EST. 1RM</div><div class="big">100<span style="font-size:.7rem">kg</span></div></div>
       </div>
-      <div class="phone pc-side pc-right"><img src="assets/screens/02-workout-logger.png" loading="lazy" alt="ワークアウト記録" width="700" height="1521"></div>
+      <div class="phone pc-side pc-right"><img src="assets/screens/02-workout-logger.png" loading="lazy" alt="タップ式ワークアウト記録" width="700" height="1521"></div>
     </div>
   </div>
 </header>
@@ -280,56 +280,86 @@ footer .cp{width:100%;border-top:1px solid var(--line);padding-top:20px;color:va
 <section class="feat">
   <div class="wrap feat-row reveal">
     <div class="feat-text">
-      <h3>チェックインは、<span class="lime">写真を一枚。</span></h3>
-      <p>ジムに着いたら撮るだけ。それで来店が記録に残って、そのまま共有もできます。「ジムなう」を、ちゃんと記録として残しておく感じ。</p>
+      <h3>「前回、何キロだっけ」ごと、<span class="lime">タップで終わる。</span></h3>
+      <p>種目カードには前回の重量が最初から出ています。同じでいくなら真ん中を、ちょっと盛るなら隣をタップ。それだけでセット記録完了。トレ中にスマホと格闘する時間が、いちばん短いアプリを目指しました。</p>
       <ul class="feat-list">
-        <li>GPS が近くのジムを当ててくれる</li>
-        <li>初めてのジムは、地図からその場で登録できる</li>
-        <li>合トレ相手をタグ付けすれば、相手の記録にも残る</li>
+        <li>重量も回数もタップだけ。ピラミッドセットも編集ゼロ</li>
+        <li>バーベルは「片側に何枚付けるか」まで換算してくれる</li>
+        <li>セットを終えるとレストタイマーが勝手に開始。ロック画面でも続く</li>
+        <li>自己ベストは自動検出。更新した瞬間だけ、緑が灯る</li>
       </ul>
     </div>
-    <div class="feat-visual"><div class="phone"><img src="assets/screens/04-checkin.png" loading="lazy" alt="チェックイン画面" width="700" height="1521"></div></div>
+    <div class="feat-visual"><div class="phone"><img src="assets/screens/02-workout-logger.png" loading="lazy" alt="タップ式ワークアウト記録画面" width="700" height="1521"></div></div>
   </div>
 </section>
 
 <section class="feat" style="padding-top:0">
   <div class="wrap feat-row rev reveal">
     <div class="feat-text">
-      <h3>「前回、何キロだっけ」を、<span class="lime">無くす。</span></h3>
-      <p>種目を選ぶと、前回のセットが薄く出ます。同じ重量でいくか、ちょっと盛るか、決めるだけ。レストタイマーはロック画面にも出るし、自己ベストを更新したら勝手に教えてくれます。</p>
+      <h3>今週なにやるかは、<span class="lime">AIと相談して決める。</span></h3>
+      <p>「今週の計画を作って」と送ると、カレンダーの予定、部位ごとの疲労、昨夜の睡眠まで見た1週間ぶんのメニューが返ってきます。「肩が痛いから外して」「水曜は休みたい」と返せば、そこだけ組み直し。納得してから確定です。</p>
       <ul class="feat-list">
-        <li>前回の重量・レップをゴースト表示でオートフィル</li>
-        <li>レストタイマーはロック画面（ライブアクティビティ）にも</li>
-        <li>自己ベスト更新を自動検出、推定1RMも出る</li>
-        <li>プレート計算・ウォームアップ生成・スーパーセット対応</li>
+        <li>予定が詰まってる日は、自動で休養に回す</li>
+        <li>寝不足の日は、強度を落として提案してくる</li>
+        <li>種目・セット・重量まで入った状態で、そのまま記録画面へ</li>
       </ul>
     </div>
-    <div class="feat-visual"><div class="phone"><img src="assets/screens/02-workout-logger.png" loading="lazy" alt="ワークアウト記録画面" width="700" height="1521"></div></div>
+    <div class="feat-visual"><div class="phone"><img src="assets/screens/10-ai-plan.png" loading="lazy" alt="AIとの対話で週の計画を作る画面" width="700" height="1417"></div></div>
   </div>
 </section>
 
 <section class="feat" style="padding-top:0">
   <div class="wrap feat-row reveal">
     <div class="feat-text">
-      <h3>やった分が、<span class="lime">ちゃんと見える。</span></h3>
-      <p>どの部位をサボってるか、重量は伸びてるか。ヒートマップとグラフで一目で分かります。記録は全部CSVで書き出せるので、データは完全にあなたのもの。万一アプリを乗り換えても困りません。</p>
+      <h3>強くなってるのが、<span class="lime">数字で分かる。</span></h3>
+      <p>種目ごとの伸び、部位のバランス、自己ベストの歴史。やった分は、ぜんぶグラフになって返ってきます。次に挙げるべき重量の目安まで出るので、伸び悩んでも迷子になりません。</p>
       <ul class="feat-list">
-        <li>来店ヒートマップ・週ごとの頻度・種目別の伸び</li>
-        <li>部位バランスと、回復済み＝次やる候補の表示</li>
-        <li>体重・体組成は HealthKit と双方向</li>
-        <li>全記録を CSV でエクスポート</li>
+        <li>種目ごとに推定1RMの推移と「次回の目安」</li>
+        <li>来店ヒートマップと部位バランスで、サボりが一目で分かる</li>
+        <li>実績は静かに貯まる。月ごとのまとめは1枚のカードに</li>
+        <li>記録は全部CSVで書き出せる。データはあなたのもの</li>
       </ul>
     </div>
     <div class="feat-visual"><div class="phone"><img src="assets/screens/03-analytics.png" loading="lazy" alt="分析ダッシュボード" width="700" height="1521"></div></div>
   </div>
 </section>
 
+<section class="feat" style="padding-top:0">
+  <div class="wrap feat-row rev reveal">
+    <div class="feat-text">
+      <h3>ひとりだと折れる日も、<span class="lime">誰かが見てると続く。</span></h3>
+      <p>友達をリンク1本で招待して、お互いの記録に「応援」を送り合う。チェックインも自己ベスト更新も、友達のフィードに流れます。見られてると思うと行く。単純だけど、いちばん効くやつです。</p>
+      <ul class="feat-list">
+        <li>招待リンクを送るだけで、フォローし合える</li>
+        <li>合トレ相手をタグ付けすれば、相手の記録にも残る</li>
+        <li>見せたくない記録は友達限定・非公開にできる</li>
+      </ul>
+    </div>
+    <div class="feat-visual"><div class="phone"><img src="assets/screens/05-social-feed.png" loading="lazy" alt="友達のフィード画面" width="700" height="1521"></div></div>
+  </div>
+</section>
+
+<section class="feat" style="padding-top:0">
+  <div class="wrap feat-row reveal">
+    <div class="feat-text">
+      <h3>チェックインは、<span class="lime">写真を一枚。</span></h3>
+      <p>ジムに着いたら撮るだけ。GPSが「どこのジムか」を当ててくれて、来店が記録に残ります。出張先でも、引っ越し先でも、友達のジムでも。どこで撮っても、記録は同じカレンダーの1本につながっていきます。</p>
+      <ul class="feat-list">
+        <li>GPSが近くのジムを自動選択。初めてのジムは地図からその場で登録</li>
+        <li>いつものジムに近づくと、そっとチェックインを提案</li>
+        <li>Apple Watch や「Hey Siri, ジムに着いた」でも記録できる</li>
+      </ul>
+    </div>
+    <div class="feat-visual"><div class="phone"><img src="assets/screens/04-checkin.png" loading="lazy" alt="写真チェックイン画面" width="700" height="1521"></div></div>
+  </div>
+</section>
+
 <section class="stats">
   <div class="wrap stat-grid reveal">
-    <div class="stat"><div class="num">1枚</div><div class="lab">写真でチェックイン</div><div class="desc">撮るだけ</div></div>
+    <div class="stat"><div class="num">0回</div><div class="lab">数字を打つ回数</div><div class="desc">記録はタップだけ</div></div>
+    <div class="stat"><div class="num">1言</div><div class="lab">で週の計画</div><div class="desc">AIと相談して確定</div></div>
     <div class="stat"><div class="num">∞</div><div class="lab">ジム横断</div><div class="desc">何軒変えても1本の記録</div></div>
     <div class="stat"><div class="num">0円</div><div class="lab">ベータは無料</div><div class="desc">今のうちにどうぞ</div></div>
-    <div class="stat"><div class="num">CSV</div><div class="lab">書き出せる</div><div class="desc">記録は全部あなたの</div></div>
   </div>
 </section>
 
@@ -358,7 +388,9 @@ footer .cp{width:100%;border-top:1px solid var(--line);padding-top:20px;color:va
     <div class="gal-track reveal">
       <div class="phone"><img src="assets/screens/01-home-calendar.png" loading="lazy" alt="ホーム" width="700" height="1521"></div>
       <div class="phone"><img src="assets/screens/02-workout-logger.png" loading="lazy" alt="記録" width="700" height="1521"></div>
+      <div class="phone"><img src="assets/screens/10-ai-plan.png" loading="lazy" alt="AI計画チャット" width="700" height="1417"></div>
       <div class="phone"><img src="assets/screens/03-analytics.png" loading="lazy" alt="分析" width="700" height="1521"></div>
+      <div class="phone"><img src="assets/screens/09-profile.png" loading="lazy" alt="実績" width="700" height="1521"></div>
       <div class="phone"><img src="assets/screens/04-checkin.png" loading="lazy" alt="チェックイン" width="700" height="1521"></div>
       <div class="phone"><img src="assets/screens/05-social-feed.png" loading="lazy" alt="ソーシャル" width="700" height="1521"></div>
       <div class="phone"><img src="assets/screens/07-share-card.png" loading="lazy" alt="共有カード" width="700" height="1521"></div>
@@ -370,21 +402,21 @@ footer .cp{width:100%;border-top:1px solid var(--line);padding-top:20px;color:va
 
 <section class="more" id="more">
   <div class="wrap">
-    <h2 class="reveal">iPhone の機能、ちゃんと使います。</h2>
-    <p class="lead reveal">ウィジェットも、Watch も、Siri も。記録の手間を1秒でも減らすために、使えるものは全部。</p>
+    <h2 class="reveal">続けるための仕掛け、全部入り。</h2>
+    <p class="lead reveal">派手じゃないけど、毎日ちょっとずつ効いてくるやつ。</p>
     <div class="grid reveal">
-      <div class="card"><div class="ic">📸</div><h4>写真チェックイン</h4><p>撮るだけで来店記録 & 共有導線</p></div>
-      <div class="card"><div class="ic">🗺️</div><h4>ジム図鑑</h4><p>訪れたジムをコレクション化</p></div>
-      <div class="card"><div class="ic">👥</div><h4>ソーシャル</h4><p>フォロー・相互フォロー・合トレ</p></div>
-      <div class="card"><div class="ic">🎴</div><h4>共有カード</h4><p>写真にサマリを重ねて投稿</p></div>
-      <div class="card"><div class="ic">⌚️</div><h4>Apple Watch</h4><p>手首からクイックチェックイン</p></div>
-      <div class="card"><div class="ic">⏱️</div><h4>Live Activity</h4><p>レストタイマーをロック画面に</p></div>
-      <div class="card"><div class="ic">🔲</div><h4>ウィジェット</h4><p>連続日数・最終ワークアウト</p></div>
-      <div class="card"><div class="ic">🗣️</div><h4>Siri</h4><p>「ジムに着いた」で即記録</p></div>
-      <div class="card"><div class="ic">📍</div><h4>自動チェックイン</h4><p>登録ジム接近で提案</p></div>
-      <div class="card"><div class="ic">❤️</div><h4>HealthKit</h4><p>体重・体組成を双方向</p></div>
-      <div class="card"><div class="ic">📷</div><h4>進捗写真</h4><p>ビフォーアフター比較（既定 非公開）</p></div>
-      <div class="card"><div class="ic">🛒</div><h4>ショップ</h4><p>ゴール連動の厳選ギア・サプリ</p></div>
+      <div class="card"><div class="ic">🧮</div><h4>プレート換算</h4><p>片側に何枚付けるか、まで出す</p></div>
+      <div class="card"><div class="ic">⏱️</div><h4>レストタイマー</h4><p>ポケットにしまってもロック画面で続く</p></div>
+      <div class="card"><div class="ic">💪</div><h4>補助も加重も</h4><p>懸垂・ディップスはアシストの重さまで記録</p></div>
+      <div class="card"><div class="ic">🏆</div><h4>実績</h4><p>続けた分だけ静かに貯まる。うるさい通知は無し</p></div>
+      <div class="card"><div class="ic">🎴</div><h4>共有カード</h4><p>今日の成果を1枚にして自慢できる</p></div>
+      <div class="card"><div class="ic">📅</div><h4>先月のまとめ</h4><p>がんばった証拠が毎月1枚のカードに</p></div>
+      <div class="card"><div class="ic">🗣️</div><h4>「ジムに着いた」</h4><p>Siri への一言で来店が記録される</p></div>
+      <div class="card"><div class="ic">📍</div><h4>自動チェックイン</h4><p>いつものジムに近づくと、そっと提案</p></div>
+      <div class="card"><div class="ic">⌚️</div><h4>手首で完結</h4><p>Apple Watch からもチェックイン</p></div>
+      <div class="card"><div class="ic">❤️</div><h4>体重・体組成</h4><p>ヘルスケアと自動で行き来する</p></div>
+      <div class="card"><div class="ic">📷</div><h4>進捗写真</h4><p>ビフォーアフター比較。既定は非公開</p></div>
+      <div class="card"><div class="ic">📤</div><h4>CSV書き出し</h4><p>記録は全部あなたのもの。囲い込まない</p></div>
     </div>
   </div>
 </section>
