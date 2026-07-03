@@ -179,6 +179,13 @@ final class SwiftDataSyncStore: SyncBackingStore {
             let locals = (try? context.fetch(FetchDescriptor<FeedItem>())) ?? []
             let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
             for f in locals where orphans.contains(f.id) { context.delete(f); changed = true }
+        case "gyms":
+            // 他端末で削除した誤登録ジムを掃除する（残すとジオフェンス通知が出続ける）。
+            // プリセットはサーバに行が無い（ローカル seed のみ・端末ごとに別id）ため対象外＝
+            // ユーザー作成分だけを照合する。削除時は設備が cascade、来店の参照は nullify される。
+            let locals = (try? context.fetch(FetchDescriptor<Gym>(predicate: #Predicate { $0.sourceRaw == "user" }))) ?? []
+            let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
+            for g in locals where orphans.contains(g.id) { context.delete(g); changed = true }
         default:
             return
         }

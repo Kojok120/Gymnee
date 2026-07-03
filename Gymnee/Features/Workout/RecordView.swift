@@ -25,18 +25,15 @@ struct RecordView: View {
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
+    /// 完了ワークアウト（テンプレ導線の表示判定）。body 内の fetchCount を避け @Query で反応的に観測する。
+    @Query(filter: #Predicate<Workout> { $0.completedAt != nil })
+    private var completedWorkouts: [Workout]
 
     /// 中身（セット or メモ）のある自動保存下書きをすべて返す（新しい順）。各々をゲートにカード表示する。
     private func resumableDrafts(for uid: UUID) -> [Workout] {
         openDrafts.filter { w in
             w.userId == uid && (w.exercises.contains { !$0.sets.isEmpty } || !(w.note ?? "").isEmpty)
         }
-    }
-
-    /// 完了ワークアウトが1件でもあるか（テンプレ導線の表示判定。件数だけ数える軽いクエリ）。
-    private func hasCompletedWorkout(_ uid: UUID) -> Bool {
-        let descriptor = FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
-        return ((try? context.fetchCount(descriptor)) ?? 0) > 0
     }
 
     /// テンプレからルーティンを作成・保存し、それを初期モードにして記録を開始する
@@ -86,7 +83,7 @@ struct RecordView: View {
                         onResume: { draft in resumeTarget = draft; startMode = nil; gateOpen = true },
                         onDiscard: { draft in discardDraft(draft) },
                         onTemplates: { showTemplatePicker = true },
-                        showTemplates: !hasCompletedWorkout(uid)
+                        showTemplates: !completedWorkouts.contains { $0.userId == uid }
                     )
                     .sheet(isPresented: $showTemplatePicker) {
                         RoutineTemplatePicker(
