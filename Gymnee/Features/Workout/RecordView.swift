@@ -33,6 +33,12 @@ struct RecordView: View {
         }
     }
 
+    /// 完了ワークアウトが1件でもあるか（テンプレ導線の表示判定。件数だけ数える軽いクエリ）。
+    private func hasCompletedWorkout(_ uid: UUID) -> Bool {
+        let descriptor = FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
+        return ((try? context.fetchCount(descriptor)) ?? 0) > 0
+    }
+
     /// テンプレからルーティンを作成・保存し、それを初期モードにして記録を開始する
     /// （初回アクティベーション導線。保存＋同期は RoutineEditorView の完了時と同じ形）。
     private func startWithTemplate(_ template: RoutineTemplates.Template, userId: UUID) {
@@ -79,7 +85,8 @@ struct RecordView: View {
                         onStart: { resumeTarget = nil; startMode = nil; gateOpen = true },
                         onResume: { draft in resumeTarget = draft; startMode = nil; gateOpen = true },
                         onDiscard: { draft in discardDraft(draft) },
-                        onTemplates: { showTemplatePicker = true }
+                        onTemplates: { showTemplatePicker = true },
+                        showTemplates: !hasCompletedWorkout(uid)
                     )
                     .sheet(isPresented: $showTemplatePicker) {
                         RoutineTemplatePicker(
@@ -121,6 +128,8 @@ private struct StartGateView: View {
     var onDiscard: (Workout) -> Void = { _ in }
     /// テンプレ選択シートを開く（テンプレのルーティンで即開始）。
     var onTemplates: () -> Void = {}
+    /// テンプレ導線の表示（新規ユーザー＝完了記録なしのみ true）。
+    var showTemplates: Bool = true
 
 
     var body: some View {
@@ -141,28 +150,34 @@ private struct StartGateView: View {
                             Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
                             Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
-                        VStack(spacing: Theme.Spacing.sm) {
+                        VStack(spacing: Theme.Spacing.md) {
                             Button(action: onStart) {
                                 Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
                                     .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
                                     .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
                             }
-                            // これまでの記録を振り返る導線（記録一覧＝日付/種目ごと。下書きも含む）。
-                            // 単発クロージャ型リンク：RecordContent が push 経由(カレンダー編集/ワークアウト詳細)で
-                            // 開かれても pushed view 上の navigationDestination(for:) に依存せず確実に遷移する
-                            // （iOS 26.5 で子リンクが解決されない問題の回避。List/ForEach 内ではないのでハングもしない）。
-                            // 何をやるか決まっていない人向けの即開始導線（テンプレ→ルーティン作成→開始）。
-                            Button(action: onTemplates) {
-                                Label("テンプレから始める", systemImage: "square.grid.2x2")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            NavigationLink {
-                                HistoryView(userId: userId)
-                            } label: {
-                                Label("これまでの記録を見る", systemImage: "list.bullet.rectangle")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(Theme.textSecondary)
+                            // 補助導線は1行に収める（CTA 下の縦積みは圧迫感が出るため）。
+                            // テンプレは新規ユーザー（完了記録なし）だけに出す活性化導線。
+                            // 履歴リンクは単発クロージャ型：RecordContent が push 経由(カレンダー編集/
+                            // ワークアウト詳細)で開かれても pushed view 上の navigationDestination(for:) に
+                            // 依存せず確実に遷移する（iOS 26.5 で子リンクが解決されない問題の回避。
+                            // List/ForEach 内ではないのでハングもしない）。
+                            HStack(spacing: Theme.Spacing.xl) {
+                                if showTemplates {
+                                    Button(action: onTemplates) {
+                                        Label("テンプレから始める", systemImage: "square.grid.2x2")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(Theme.textSecondary)
+                                    }
+                                }
+                                NavigationLink {
+                                    HistoryView(userId: userId)
+                                } label: {
+                                    Label(showTemplates ? "記録を見る" : "これまでの記録を見る",
+                                          systemImage: "list.bullet.rectangle")
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
                             }
                         }
                     }

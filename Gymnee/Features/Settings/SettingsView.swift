@@ -202,45 +202,7 @@ struct SettingsView: View {
             }
 
             Section {
-                if calendarService.authorized {
-                    if calendarService.isEnabled {
-                        LabeledContent("Apple カレンダー", value: "連携中")
-                        Button("Apple 連携を解除", role: .destructive) { calendarService.isEnabled = false }
-                    } else {
-                        LabeledContent("Apple カレンダー", value: "オフ")
-                        Button { calendarService.isEnabled = true } label: {
-                            Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
-                        }
-                        .tint(Theme.lime)
-                    }
-                } else {
-                    Button { Task { await calendarService.requestAccess() } } label: {
-                        Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
-                    }
-                    .tint(Theme.lime)
-                }
-                if googleCalendar.isConfigured {
-                    if googleCalendar.isSignedIn {
-                        LabeledContent("Google カレンダー", value: googleCalendar.email ?? "連携済み")
-                        if !googleCalendar.isConnected {
-                            Button { Task { await googleCalendar.connect() } } label: {
-                                Label("カレンダー権限を許可（再連携）", systemImage: "exclamationmark.triangle")
-                            }
-                            .tint(.orange)
-                        }
-                        Button("Google 連携を解除", role: .destructive) { googleCalendar.disconnect() }
-                    } else {
-                        Button { Task { await googleCalendar.connect() } } label: {
-                            Label("Google カレンダーと連携", systemImage: "calendar.badge.plus")
-                        }
-                        .tint(Theme.lime)
-                    }
-                } else {
-                    LabeledContent("Google カレンダー", value: "未設定")
-                }
-                if let err = googleCalendar.lastError {
-                    Text(err).font(.caption).foregroundStyle(.secondary)
-                }
+                CalendarLinkRows()
             } header: {
                 Text("カレンダー連携")
             } footer: {
@@ -385,6 +347,56 @@ struct SettingsView: View {
             if !ok {
                 errors.report("サーバ側データの削除に失敗しました。時間をおいて再度お試しください。")
             }
+        }
+    }
+}
+
+// MARK: - カレンダー連携（共用）
+
+/// カレンダー連携の行（Apple/Google の接続・解除）。設定画面と週プランナーの連携シートで共用する。
+struct CalendarLinkRows: View {
+    @Environment(CalendarService.self) private var calendarService
+    @Environment(GoogleCalendarService.self) private var googleCalendar
+
+    var body: some View {
+        if calendarService.authorized {
+            if calendarService.isEnabled {
+                LabeledContent("Apple カレンダー", value: "連携中")
+                Button("Apple 連携を解除", role: .destructive) { calendarService.isEnabled = false }
+            } else {
+                LabeledContent("Apple カレンダー", value: "オフ")
+                Button { calendarService.isEnabled = true } label: {
+                    Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
+                }
+                .tint(Theme.lime)
+            }
+        } else {
+            Button { Task { await calendarService.requestAccess() } } label: {
+                Label("Apple カレンダーと連携", systemImage: "calendar.badge.plus")
+            }
+            .tint(Theme.lime)
+        }
+        if googleCalendar.isConfigured {
+            if googleCalendar.isSignedIn {
+                LabeledContent("Google カレンダー", value: googleCalendar.email ?? "連携済み")
+                if !googleCalendar.isConnected {
+                    Button { Task { await googleCalendar.connect() } } label: {
+                        Label("カレンダー権限を許可（再連携）", systemImage: "exclamationmark.triangle")
+                    }
+                    .tint(.orange)
+                }
+                Button("Google 連携を解除", role: .destructive) { googleCalendar.disconnect() }
+            } else {
+                Button { Task { await googleCalendar.connect() } } label: {
+                    Label("Google カレンダーと連携", systemImage: "calendar.badge.plus")
+                }
+                .tint(Theme.lime)
+            }
+        } else {
+            LabeledContent("Google カレンダー", value: "未設定")
+        }
+        if let err = googleCalendar.lastError {
+            Text(err).font(.caption).foregroundStyle(.secondary)
         }
     }
 }

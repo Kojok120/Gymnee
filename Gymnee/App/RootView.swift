@@ -57,7 +57,7 @@ struct RootView: View {
         if let inviter = DebugSupport.inviteUserId {
             UserDefaults.standard.set(inviter.uuidString, forKey: InviteLink.pendingDefaultsKey)
         }
-        if !auth.isSignedIn { auth.signIn(displayName: "デモ太郎") }
+        if !auth.isSignedIn { auth.signIn(displayName: "ユウト") }
         guard let uid = auth.currentUserId else { return }
         DemoData.seedIfNeeded(context, userId: uid)
         if DebugSupport.screen == "logger", debugWorkout == nil {
