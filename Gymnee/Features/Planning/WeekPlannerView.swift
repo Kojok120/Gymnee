@@ -155,9 +155,9 @@ struct WeekPlannerView: View {
         }
         .sheet(isPresented: $showCalendarLink) { calendarLinkSheet }
         .sheet(item: $addDay) { day in addSheet(day.date) }
-        // 未確定のままシートを閉じたら提案は破棄する（残すと、その後の手動編集を無視した
-        // 古い案が次回の練り直しベースになり、確定時に手動編集を消してしまう）。
-        .sheet(isPresented: $showAIOptions, onDismiss: { stagedPlan = nil }) { aiOptionsSheet }
+        // シートを閉じたら会話ごと破棄する（提案だけでなく履歴も。残すと、その後の手動編集を
+        // 無視した古い案が画面に見えたまま、実計画ベースの練り直しと食い違う）。
+        .sheet(isPresented: $showAIOptions, onDismiss: resetAIChat) { aiOptionsSheet }
         .alert("AIワークアウト計画", isPresented: $aiInfo) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -548,6 +548,9 @@ struct WeekPlannerView: View {
                 condition: condition, messages: Array(messages), currentPlan: currentPlanPayload(formatter: fmt)
             )
             aiRunning = false
+            // シートを閉じた（＝会話を破棄した）後に届いた遅延応答は捨てる。
+            // 破棄済みの提案が復活し、確定時に手動編集を上書きするのを防ぐ。
+            guard showAIOptions else { return }
             if let result, !result.items.isEmpty {
                 // 即時反映せずステージング（「この計画で確定」で初めてカレンダーへ書き込む）。
                 let sorted = result.items.sorted { $0.date < $1.date }
@@ -569,6 +572,13 @@ struct WeekPlannerView: View {
     /// 直近の提案メッセージ（確定ボタンを付ける対象）。
     private var latestPlanMessageId: UUID? {
         aiMessages.last { $0.plan != nil }?.id
+    }
+
+    /// AIチャットの状態を破棄する（シートを閉じる＝会話の終了。次回はまっさらから）。
+    private func resetAIChat() {
+        stagedPlan = nil
+        aiMessages = []
+        aiInput = ""
     }
 
     /// ステージング中の計画を確定＝カレンダーへ反映する。
