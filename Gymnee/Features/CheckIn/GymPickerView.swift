@@ -18,6 +18,8 @@ struct GymPickerView: View {
     @State private var search = ""
     @State private var showAdd = false
     @State private var mode: Mode = .list
+    /// 削除確認中のジム（誤登録ジムの整理用。§6.3）。
+    @State private var deleteTarget: Gym?
 
     /// 地図(MapKit)から見つけた近隣ジム候補（DB 未登録の初訪問ジムを含む）。
     @State private var nearbyPlaces: [NearbyPlace] = []
@@ -91,6 +93,19 @@ struct GymPickerView: View {
             .sheet(isPresented: $showAdd) {
                 AddGymView(userId: userId)
             }
+            .confirmationDialog(
+                "「\(deleteTarget?.name ?? "")」を削除しますか？",
+                isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("削除", role: .destructive) {
+                    if let gym = deleteTarget { deleteGym(gym) }
+                    deleteTarget = nil
+                }
+                Button("キャンセル", role: .cancel) { deleteTarget = nil }
+            } message: {
+                Text("このジムの近くに来た時の自動チェックイン通知も止まります。過去のチェックイン記録は残ります。")
+            }
             .onAppear {
                 mode = initialMode
                 location.requestWhenInUse()
@@ -140,6 +155,12 @@ struct GymPickerView: View {
                         }
                     }
                     .tint(.primary)
+                    // 自分で登録したジムのみ削除可（プリセットは共有マスタのため対象外）。
+                    .swipeActions {
+                        if gym.source == .user {
+                            Button("削除", role: .destructive) { deleteTarget = gym }
+                        }
+                    }
                 }
             }
 
@@ -152,6 +173,24 @@ struct GymPickerView: View {
             }
         }
         .searchable(text: $search, prompt: "ジムを検索")
+    }
+
+    /// 誤登録ジムの削除。ローカル削除（visits は nullify・設備は cascade）→ 同期キューへ
+    /// 削除を積む（サーバも visits.gym_id は set null）→ ジオフェンスを即時更新する
+    /// （放置すると削除済みジムの接近通知が届き続けるため。CalendarHome の再監視を待たない）。
+    private func deleteGym(_ gym: Gym) {
+        let gymId = gym.id
+        let equipmentIds = gym.equipment.map(\.id)
+        context.delete(gym)
+        try? context.save()
+        var pending = [PendingChange(entity: "gyms", recordId: gymId, operation: .delete, updatedAt: .now)]
+        pending += equipmentIds.map { PendingChange(entity: "gym_equipment", recordId: $0, operation: .delete, updatedAt: .now) }
+        sync.enqueueBatch(pending)
+        let regions = gyms.filter { $0.id != gymId }.compactMap { g -> (id: UUID, name: String, lat: Double, lng: Double)? in
+            guard let lat = g.lat, let lng = g.lng else { return nil }
+            return (g.id, g.name, lat, lng)
+        }
+        location.startMonitoring(gymRegions: regions)
     }
 
     // MARK: - Map mode
