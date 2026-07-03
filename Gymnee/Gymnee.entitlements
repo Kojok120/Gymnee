@@ -26,5 +26,13 @@
          ※ Developer Portal の App ID で「Push Notifications」capability を有効化すること。 -->
     <key>aps-environment</key>
     <string>development</string>
+    <!-- フレンド招待の Universal Link（https://gymnee.app/invite/?u=...）。
+         AASA は docs/.well-known/apple-app-site-association（GitHub Pages）で配信する。
+         ※ Developer Portal の App ID で「Associated Domains」capability を有効化し、
+           TestFlight CI の配布プロファイル（PROV_PROFILE_APP secret）を更新すること。 -->
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>applinks:gymnee.app</string>
+    </array>
 </dict>
 </plist>

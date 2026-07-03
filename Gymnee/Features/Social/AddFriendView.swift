@@ -26,9 +26,6 @@ struct AddFriendView: View {
         _myBlocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
-    /// 招待リンク（公式サイト。将来 App Store / ディープリンクへ差し替え）。
-    private static let inviteURL = URL(string: "https://gymnee.app")!
-
     private var followingIds: Set<UUID> { Set(myFollows.map(\.followeeId)) }
     private var blockedIds: Set<UUID> { Set(myBlocks.map(\.blockedId)) }
     /// ブロック中のユーザーは検索結果から除外する。
@@ -76,8 +73,10 @@ struct AddFriendView: View {
             }
 
             // コールドスタート対策：知り合いをGymneeに招待する導線。
+            // 招待リンク（Universal Link）は自分の id 入りで、アプリ所持者が開くと
+            // 自分のプロフィール（フォローボタン付き）に直行する。未所持者にはガイドページが開く。
             Section {
-                ShareLink(item: Self.inviteURL, message: Text("Gymneeで一緒にトレーニングを記録しよう！")) {
+                ShareLink(item: InviteLink.url(for: userId), message: Text("Gymneeで一緒にトレーニングを記録しよう！")) {
                     Label("友達を招待", systemImage: "person.badge.plus")
                 }
             } footer: {

@@ -24,8 +24,17 @@ struct GymneeApp: App {
                 .environment(env.calendar)
                 .environment(env.googleCalendar)
                 .modelContainer(env.container)
-                // Google サインインの OAuth コールバック（reversed client id スキーム）を処理。
-                .onOpenURL { url in _ = env.googleCalendar.handleURL(url) }
+                // Google サインインの OAuth コールバック（reversed client id スキーム）と
+                // フレンド招待の Universal Link（https://gymnee.app/invite/?u=...）を処理。
+                .onOpenURL { url in
+                    if env.googleCalendar.handleURL(url) { return }
+                    guard let inviter = InviteLink.userId(from: url) else { return }
+                    // 未サインインでも後で拾えるよう保留し、ソーシャルタブへの遷移を要求する。
+                    UserDefaults.standard.set(inviter.uuidString, forKey: InviteLink.pendingDefaultsKey)
+                    NotificationCenter.default.post(
+                        name: .gymneeOpenDestination, object: nil, userInfo: ["type": "invite"]
+                    )
+                }
                 // 起動時にバックエンドセッションを復元（トークン更新）→ その後の同期が認証付きで通る。
                 .task { await env.bootstrapBackend() }
                 // Premium 商品取得＋権限同期。
