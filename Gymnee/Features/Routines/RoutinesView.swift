@@ -64,25 +64,13 @@ struct RoutinesView: View {
     }
 
     private var templatePicker: some View {
-        NavigationStack {
-            List(RoutineTemplates.all) { template in
-                Button {
-                    showTemplates = false
-                    session = .template(template, userId: userId, container: context.container)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(template.name).font(.body).foregroundStyle(.primary)
-                        Text("\(template.detail)・\(template.exerciseNames.count)種目×\(template.sets)セット")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .navigationTitle("テンプレを選択")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { showTemplates = false } }
-            }
-        }
+        RoutineTemplatePicker(
+            onSelect: { template in
+                showTemplates = false
+                session = .template(template, userId: userId, container: context.container)
+            },
+            onCancel: { showTemplates = false }
+        )
     }
 
     /// ルーティン削除＝本体と配下種目の削除を送出（即時。サーバ側 FK でも連鎖するが明示的に積む）。
@@ -96,3 +84,31 @@ struct RoutinesView: View {
         sync.enqueueBatch(pending)
     }
 }
+
+/// テンプレ一覧の選択シート（ルーティン管理と記録開始ゲートで共用）。
+struct RoutineTemplatePicker: View {
+    let onSelect: (RoutineTemplates.Template) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List(RoutineTemplates.all) { template in
+                Button {
+                    onSelect(template)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(template.name).font(.body).foregroundStyle(.primary)
+                        Text("\(template.detail)・\(template.exerciseNames.count)種目×\(template.sets)セット")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("テンプレを選択")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { onCancel() } }
+            }
+        }
+    }
+}
+

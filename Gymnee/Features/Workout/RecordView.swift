@@ -14,10 +14,14 @@ struct PRSpark: Identifiable, Equatable {
 struct RecordView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.modelContext) private var context
+    @Environment(LocalSyncEngine.self) private var sync
     /// タブから入った時は「記録を開始する」ゲートを挟む。チェックイン経由は飛ばす。
     @State private var gateOpen = false
     /// 計画/予定の「開始」から渡された、記録タブで再開するワークアウト（nil＝新規ライブ記録）。
     @State private var resumeTarget: Workout?
+    /// ゲートの「テンプレから始める」で作ったルーティンを初期モードにする（nil＝既定の計画/フリー）。
+    @State private var startMode: RecordMode?
+    @State private var showTemplatePicker = false
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
@@ -27,6 +31,25 @@ struct RecordView: View {
         openDrafts.filter { w in
             w.userId == uid && (w.exercises.contains { !$0.sets.isEmpty } || !(w.note ?? "").isEmpty)
         }
+    }
+
+    /// テンプレからルーティンを作成・保存し、それを初期モードにして記録を開始する
+    /// （初回アクティベーション導線。保存＋同期は RoutineEditorView の完了時と同じ形）。
+    private func startWithTemplate(_ template: RoutineTemplates.Template, userId: UUID) {
+        let routine = RoutineTemplates.create(template, userId: userId, context: context)
+        routine.isDirty = true
+        try? context.save()
+        var pending = [PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt)]
+        for re in routine.routineExercises {
+            if let ex = re.exercise {
+                pending.append(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
+            }
+            pending.append(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
+        }
+        sync.enqueueBatch(pending)
+        resumeTarget = nil
+        startMode = .routine(routine.id)
+        gateOpen = true
     }
 
     /// 下書きを破棄する。計画から開始していた下書きは、リンクした PlannedWorkout を未消化へ戻してから削除する
@@ -47,15 +70,26 @@ struct RecordView: View {
         NavigationStack {
             if let uid = auth.currentUserId {
                 if gateOpen {
-                    RecordContent(userId: uid, resuming: resumeTarget, onEnd: { gateOpen = false; resumeTarget = nil })
+                    RecordContent(userId: uid, resuming: resumeTarget, initialMode: startMode,
+                                  onEnd: { gateOpen = false; resumeTarget = nil; startMode = nil })
                 } else {
                     StartGateView(
                         userId: uid,
                         resumables: resumableDrafts(for: uid),
-                        onStart: { resumeTarget = nil; gateOpen = true },
-                        onResume: { draft in resumeTarget = draft; gateOpen = true },
-                        onDiscard: { draft in discardDraft(draft) }
+                        onStart: { resumeTarget = nil; startMode = nil; gateOpen = true },
+                        onResume: { draft in resumeTarget = draft; startMode = nil; gateOpen = true },
+                        onDiscard: { draft in discardDraft(draft) },
+                        onTemplates: { showTemplatePicker = true }
                     )
+                    .sheet(isPresented: $showTemplatePicker) {
+                        RoutineTemplatePicker(
+                            onSelect: { t in
+                                showTemplatePicker = false
+                                startWithTemplate(t, userId: uid)
+                            },
+                            onCancel: { showTemplatePicker = false }
+                        )
+                    }
                 }
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
@@ -85,6 +119,8 @@ private struct StartGateView: View {
     let onStart: () -> Void
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
+    /// テンプレ選択シートを開く（テンプレのルーティンで即開始）。
+    var onTemplates: () -> Void = {}
 
 
     var body: some View {
@@ -115,6 +151,12 @@ private struct StartGateView: View {
                             // 単発クロージャ型リンク：RecordContent が push 経由(カレンダー編集/ワークアウト詳細)で
                             // 開かれても pushed view 上の navigationDestination(for:) に依存せず確実に遷移する
                             // （iOS 26.5 で子リンクが解決されない問題の回避。List/ForEach 内ではないのでハングもしない）。
+                            // 何をやるか決まっていない人向けの即開始導線（テンプレ→ルーティン作成→開始）。
+                            Button(action: onTemplates) {
+                                Label("テンプレから始める", systemImage: "square.grid.2x2")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
                             NavigationLink {
                                 HistoryView(userId: userId)
                             } label: {
@@ -197,6 +239,8 @@ struct RecordContent: View {
     let userId: UUID
     /// 既存ワークアウトを開いて続き/編集する場合に指定（計画開始・過去編集）。nil は新規ライブ記録。
     var resuming: Workout?
+    /// 開始時のモード指定（ゲートの「テンプレから始める」用）。nil＝既定（今日計画あれば計画、無ければフリー）。
+    var initialMode: RecordMode?
     /// 完了時にタブのゲートへ戻すコールバック（タブ起点のみ）。nil＝従来の待機リセット。
     var onEnd: (() -> Void)?
 
@@ -248,9 +292,10 @@ struct RecordContent: View {
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
 
-    init(userId: UUID, resuming: Workout? = nil, onEnd: (() -> Void)? = nil) {
+    init(userId: UUID, resuming: Workout? = nil, initialMode: RecordMode? = nil, onEnd: (() -> Void)? = nil) {
         self.userId = userId
         self.resuming = resuming
+        self.initialMode = initialMode
         self.onEnd = onEnd
         _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
         let dayStart = Calendar.current.startOfDay(for: Date())
@@ -985,7 +1030,7 @@ struct RecordContent: View {
 
     private func initializeModeIfNeeded() {
         guard !modeInitialized else { return }
-        mode = todayPlan != nil ? .plan : .free
+        mode = initialMode ?? (todayPlan != nil ? .plan : .free)
         modeInitialized = true
     }
 
