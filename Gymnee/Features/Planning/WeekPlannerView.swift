@@ -13,6 +13,7 @@ struct WeekPlannerView: View {
     @Environment(GoogleCalendarService.self) private var googleCalendar
     @Environment(SubscriptionService.self) private var subscription
     @Environment(AuthService.self) private var auth
+    @Environment(HealthKitService.self) private var health
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
     @Query private var planned: [PlannedWorkout]
     @Query private var routines: [Routine]
@@ -26,6 +27,22 @@ struct WeekPlannerView: View {
     @AppStorage("gymnee.aiFreeUsed") private var aiFreeUsed = false
     @State private var aiInfo = false
     @State private var aiRunning = false
+    /// AI計画のチャットシート（体調シグナルの確認＋対話での生成/調整）。
+    @State private var showAIOptions = false
+    @State private var aiInput = ""
+    /// 対話履歴（シートを開いている間のセッションスコープ。永続化しない）。
+    @State private var aiMessages: [AIChatMessage] = []
+    /// HealthKit から取れた体調シグナル（nil＝データ無し）。シート表示時に取得。
+    @State private var aiSleepHours: Double?
+    @State private var aiHRV: Double?
+
+    /// AI計画チャットの1メッセージ。
+    struct AIChatMessage: Identifiable, Equatable {
+        enum Role { case user, assistant }
+        let id = UUID()
+        let role: Role
+        let text: String
+    }
     /// カレンダー予定のキャッシュ（startOfDay→予定）。body 毎の同期列挙(hang)を避けるため一度だけ取得。
     @State private var eventsByDay: [Date: [CalendarEvent]] = [:]
 
@@ -114,12 +131,12 @@ struct WeekPlannerView: View {
                 if aiRunning {
                     ProgressView()
                 } else {
-                    Button { aiPlan() } label: { Label("AIで計画", systemImage: "sparkles") }
+                    Button { openAIOptions() } label: { Label("AIで計画", systemImage: "sparkles") }
                 }
             }
         }
         .sheet(item: $addDay) { day in addSheet(day.date) }
-        .sheet(isPresented: $showPaywall) { PaywallView() }
+        .sheet(isPresented: $showAIOptions) { aiOptionsSheet }
         .alert("AIワークアウト計画", isPresented: $aiInfo) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -260,12 +277,146 @@ struct WeekPlannerView: View {
         onStart(PlanStarter.start(plan, userId: userId, routines: routines, context: context))
     }
 
-    private func aiPlan() {
+    /// AI計画のオプションシートを開く（Paywall 判定は生成時に行う）。
+    /// 体調シグナル（昨夜の睡眠・HRV）は開いた時点で取得して表示する。
+    /// HealthKit のクエリは許諾プロンプトを出さないため、先に read 許可（睡眠/HRV含む）を要求する
+    /// （許諾済みタイプはスキップされ、非対応端末では no-op）。非有限値はここで弾く。
+    private func openAIOptions() {
+        showAIOptions = true
+        Task {
+            await health.requestAuthorization()
+            aiSleepHours = (await health.lastNightSleepHours()).flatMap { $0.isFinite ? $0 : nil }
+            aiHRV = (await health.recentHRV()).flatMap { $0.isFinite ? $0 : nil }
+        }
+    }
+
+    private var aiOptionsSheet: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                conditionBanner
+                aiChatList
+                aiInputBar
+            }
+            .navigationTitle("AIで計画")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showAIOptions = false } }
+            }
+            // Paywall は AI シートの中から提示する（兄弟 sheet だと表示中の AI シートに阻まれて出ない）。
+            .sheet(isPresented: $showPaywall) { PaywallView() }
+        }
+        .presentationDetents([.large])
+    }
+
+    /// 体調シグナルの1行バナー（取れた項目のみ）。
+    @ViewBuilder private var conditionBanner: some View {
+        if aiSleepHours != nil || aiHRV != nil {
+            HStack(spacing: Theme.Spacing.md) {
+                if let sleep = aiSleepHours {
+                    Label("睡眠 \(String(format: "%.1f", sleep))h", systemImage: "moon.zzz.fill")
+                }
+                if let hrv = aiHRV {
+                    Label("HRV \(Int(hrv))ms", systemImage: "waveform.path.ecg")
+                }
+                Spacer()
+            }
+            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            .padding(.horizontal, Theme.Spacing.lg).padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.bg1)
+        }
+    }
+
+    private var aiChatList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    if aiMessages.isEmpty {
+                        VStack(spacing: Theme.Spacing.md) {
+                            Text("今週の計画を対話で作成・調整できます。\n体調（睡眠・HRV）と部位の回復状況も反映されます。")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button {
+                                sendChat("今週の計画を作って")
+                            } label: {
+                                Label("今週の計画を作成", systemImage: "sparkles")
+                            }
+                            .buttonStyle(.borderedProminent).prominentLime()
+                            Text("例:「肩が痛いので肩は避けて」「水曜は休みにして」「脚を重点的に」")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
+                    }
+                    ForEach(aiMessages) { msg in
+                        chatBubble(msg).id(msg.id)
+                    }
+                    if aiRunning {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            ProgressView().controlSize(.small)
+                            Text("計画を作成中…").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .id("running")
+                    }
+                }
+                .padding(Theme.Spacing.lg)
+            }
+            .onChange(of: aiMessages) { _, msgs in
+                if let last = msgs.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+            }
+            .onChange(of: aiRunning) { _, running in
+                if running { withAnimation { proxy.scrollTo("running", anchor: .bottom) } }
+            }
+        }
+    }
+
+    private func chatBubble(_ msg: AIChatMessage) -> some View {
+        HStack {
+            if msg.role == .user { Spacer(minLength: 40) }
+            Text(msg.text)
+                .font(.subheadline)
+                .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.sm)
+                .background(
+                    msg.role == .user ? Theme.lime.opacity(0.18) : Theme.bg2,
+                    in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous)
+                )
+            if msg.role == .assistant { Spacer(minLength: 40) }
+        }
+        .frame(maxWidth: .infinity, alignment: msg.role == .user ? .trailing : .leading)
+    }
+
+    private var aiInputBar: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            TextField("要望を送る（例: 水曜は休みに）", text: $aiInput, axis: .vertical)
+                .lineLimit(1...3)
+                .textFieldStyle(.roundedBorder)
+                .disabled(aiRunning)
+            Button {
+                sendChat(aiInput)
+            } label: {
+                Image(systemName: "arrow.up.circle.fill").font(.title2)
+            }
+            .disabled(aiRunning || aiInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.bg1)
+    }
+
+    /// チャット送信 → AI 生成/改訂を実行。
+    private func sendChat(_ text: String) {
+        let trimmed = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+        guard !trimmed.isEmpty, !aiRunning else { return }
         // 初回は無料で体験 → 価値を感じてから課金（無料ユーザーは2回目以降 Paywall）。
         if !subscription.isPremium {
             if aiFreeUsed { showPaywall = true; return }
             aiFreeUsed = true
         }
+        aiMessages.append(AIChatMessage(role: .user, text: trimmed))
+        aiInput = ""
+        runAIPlan()
+    }
+
+    private func runAIPlan() {
         aiRunning = true
         Task {
             let fmt = DateFormatter()
@@ -281,13 +432,41 @@ struct WeekPlannerView: View {
             }
             let history = buildHistory(formatter: fmt)
             let recovery = buildRecovery()
-            let result = await auth.planWorkouts(days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal, events: evs, history: history, recovery: recovery)
+            // 体調シグナル（取れた項目のみ渡す。無ければ空＝従来どおり）。
+            var condition: [String: Any] = [:]
+            if let sleep = aiSleepHours { condition["sleepHours"] = (sleep * 10).rounded() / 10 }
+            if let hrv = aiHRV { condition["hrvMs"] = Int(hrv) }
+            let messages = aiMessages.suffix(10).map { ["role": $0.role == .user ? "user" : "assistant", "text": $0.text] }
+            let result = await auth.planWorkouts(
+                days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal,
+                events: evs, history: history, recovery: recovery,
+                condition: condition, messages: Array(messages), currentPlan: currentPlanPayload(formatter: fmt)
+            )
             aiRunning = false
-            if let result, !result.isEmpty {
-                applyPlan(result, formatter: fmt)
+            if let result, !result.items.isEmpty {
+                applyPlan(result.items, formatter: fmt)
+                let trained = result.items.filter { !$0.exercises.isEmpty }.count
+                aiMessages.append(AIChatMessage(
+                    role: .assistant,
+                    text: result.message ?? "計画を更新しました（トレーニング\(trained)日）。"
+                ))
+            } else if aiMessages.count <= 1 {
+                aiInfo = true   // 初回失敗はキー未設定の可能性 →「準備中」案内
             } else {
-                aiInfo = true   // キー未設定/失敗時は「準備中」案内
+                aiMessages.append(AIChatMessage(role: .assistant, text: "うまく更新できませんでした。数秒おいてもう一度送ってください。"))
             }
+        }
+    }
+
+    /// 現在の週計画を AI の改訂ベースとして渡すペイロード。
+    private func currentPlanPayload(formatter: DateFormatter) -> [[String: Any]] {
+        weekPlans.map { p in
+            var d: [String: Any] = ["date": formatter.string(from: p.date), "title": p.title, "done": p.isDone]
+            if let json = p.detailJSON, let data = json.data(using: .utf8),
+               let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
+                d["exercises"] = arr
+            }
+            return d
         }
     }
 

@@ -52,6 +52,11 @@ struct RootView: View {
     private func runDebugHarnessIfNeeded() async {
         #if DEBUG
         guard DebugSupport.demoRequested else { return }
+        // 招待リンク受信の再現（-gymneeInvite <uuid>）。サインイン前に保留させ、
+        // 実際のコールドスタート（onOpenURL → 保留 → ソーシャルで消費）と同じ経路を通す。
+        if let inviter = DebugSupport.inviteUserId {
+            UserDefaults.standard.set(inviter.uuidString, forKey: InviteLink.pendingDefaultsKey)
+        }
         if !auth.isSignedIn { auth.signIn(displayName: "デモ太郎") }
         guard let uid = auth.currentUserId else { return }
         DemoData.seedIfNeeded(context, userId: uid)
@@ -137,6 +142,13 @@ struct RootView: View {
         .fullScreenCover(isPresented: Binding(get: { shouldShowSetup }, set: { _ in })) {
             SetupOnboardingView()
         }
+        // 招待リンク経由の起動（未サインイン→サインイン完了後を含む）: 保留中の招待が
+        // あればソーシャルタブへ。招待者プロフィールの表示は SocialFeedView 側が保留を消費して行う。
+        .onAppear {
+            if UserDefaults.standard.string(forKey: InviteLink.pendingDefaultsKey) != nil {
+                selection = .social
+            }
+        }
         // チェックイン完了後は記録タブへ（今日の計画の「開始」導線を見せる）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in
             selection = .workout
@@ -156,7 +168,7 @@ struct RootView: View {
         // 通知タップのルーティング（type に応じて該当タブへ）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
-            case "reaction", "friend_checkin", "follow": selection = .social
+            case "reaction", "friend_checkin", "follow", "invite": selection = .social
             case "workout": selection = .workout
             case "analytics": selection = .analytics
             case "recap", "checkin": selection = .calendar

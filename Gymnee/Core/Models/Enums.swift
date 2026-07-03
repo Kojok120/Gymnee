@@ -196,12 +196,11 @@ enum LoadMode: String, Codable, CaseIterable, Sendable {
         case .assisted: return "−"
         }
     }
-    /// 記録カード等の重量軸ラベル。
+    /// 記録カード等の重量軸ラベル。加重/補助は一本軸（−補助 / 0自重 / ＋加重）を示す。
     var loadAxisLabel: String {
         switch self {
         case .none: return "自重"
-        case .weighted: return "荷重 ＋"
-        case .assisted: return "補助 −"
+        case .weighted, .assisted: return "補助− · 自重 · 加重＋"
         }
     }
     /// セットの加重大きさ(magnitude≥0)を表示用テキストに。荷重「＋20kg」/ 補助「補助20kg」/ 自重「自重」。

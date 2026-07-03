@@ -152,12 +152,14 @@ jobs:
       - name: Export IPA
         run: |
           set -euo pipefail
-          # 「Install provisioning profiles」で App Store 配布プロファイル(Xcode管理)を
+          # 「Install provisioning profiles」で App Store 配布プロファイルを
           # ~/Library/MobileDevice/Provisioning Profiles/ へ復元済み。Export は
-          # signingStyle=automatic でそれをローカル発見し、持ち込みの配布証明書(.p12)で署名する。
+          # signingStyle=manual で明示マッピングし、持ち込みの配布証明書(.p12)で署名する。
+          # プロファイルは ASC API で作成した手動管理（"Gymnee AppStore" / "Gymnee Widgets AppStore"、
+          # PROV_PROFILE_APP / PROV_PROFILE_WIDGET secret）。Associated Domains 対応で
+          # Xcode管理(automatic発見)から切替（2026-07 招待ディープリンク導入時）。
           # Export に auth key を渡すとクラウド署名(Apple管理証明書)を試みて権限エラーに
           # なるため渡さない（= 既存のオンディスク・プロファイル＋ローカル証明書に固定）。
-          # ※ manual は「手動管理プロファイル」を要求し Xcode管理プロファイルを弾くため automatic を使う。
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -165,8 +167,13 @@ jobs:
           <dict>
             <key>method</key><string>app-store-connect</string>
             <key>teamID</key><string>$TEAM_ID</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.gymnee.app</key><string>Gymnee AppStore</string>
+              <key>com.gymnee.app.widgets</key><string>Gymnee Widgets AppStore</string>
+            </dict>
             <key>destination</key><string>export</string>
             <key>uploadSymbols</key><true/>
           </dict>

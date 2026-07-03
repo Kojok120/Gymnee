@@ -12,7 +12,10 @@ struct ProfileView: View {
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @State private var showProfileEdit = false
-    @State private var showWrapped = false
+    /// 表示中のまとめ期間（nil＝非表示）。先月リキャップと年間 Wrapped で共用。
+    @State private var wrappedPeriod: WrappedPeriod?
+    /// 実績（静かな実績システム）。全ワークアウト走査を伴うため body で毎回計算せず task で導出。
+    @State private var achievements: [AchievementCalculator.Status] = []
     @Query private var visits: [Visit]
 
     init(userId: UUID) {
@@ -30,6 +33,57 @@ struct ProfileView: View {
     /// 週次ストリーク（筋トレは休息が正義のため日次でなく「週N回×連続週」を主指標に）。
     private var weeklyStreak: StreakCalculator.WeeklyStreak {
         StreakCalculator.currentWeeklyStreak(visitDays: visits.map(\.visitedAt), weeklyGoal: weeklyGoal)
+    }
+
+    /// 実績を集計する（総挙上量のみ全ワークアウト実体化が必要。プロフィール表示時に一度だけ）。
+    private func computeAchievements() {
+        let uid = userId
+        let completed = (try? context.fetch(
+            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
+        )) ?? []
+        let volume = completed.flatMap { $0.exercises.flatMap(\.sets) }.reduce(0.0) { $0 + $1.volume }
+        let prCount = (try? context.fetchCount(
+            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == uid })
+        )) ?? 0
+        achievements = AchievementCalculator.statuses(
+            totalVolumeKg: volume,
+            workoutCount: completed.count,
+            prCount: prCount,
+            visitCount: visits.count,
+            longestWeeklyStreakWeeks: StreakCalculator.longestWeeklyStreak(visitDays: visits.map(\.visitedAt), weeklyGoal: weeklyGoal)
+        )
+    }
+
+    /// 実績1種別の行（達成済みチップ＋次の目標への細い進捗）。通知は出さない静かな表示。
+    private func achievementRow(_ st: AchievementCalculator.Status) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: st.systemImage)
+                    .font(.subheadline)
+                    .foregroundStyle(st.earnedLabels.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.lime))
+                    .frame(width: 22)
+                Text(st.title).font(.subheadline)
+                Spacer()
+                ForEach(st.earnedLabels, id: \.self) { label in
+                    Text(label)
+                        .font(.caption2.bold().monospacedDigit())
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Theme.lime.opacity(0.15), in: Capsule())
+                        .foregroundStyle(Theme.lime)
+                }
+            }
+            if let next = st.nextLabel {
+                HStack(spacing: Theme.Spacing.sm) {
+                    ProgressView(value: st.progressToNext)
+                        .tint(st.earnedLabels.isEmpty ? Color.secondary : Theme.lime)
+                        .scaleEffect(y: 0.6)
+                    Text("次: \(next)")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     /// 週次ストリークの補足（今週の進捗・フリーズ使用）。日次と違い「休んだ罪悪感」を出さない文面に。
@@ -78,12 +132,24 @@ struct ProfileView: View {
                 .listRowBackground(Color.clear)
             }
 
+            if !achievements.isEmpty {
+                Section("実績") {
+                    ForEach(achievements) { st in
+                        achievementRow(st)
+                    }
+                }
+            }
+
             Section("マイデータ") {
                 NavigationLink(value: AppRoute.photos) { Label("進捗写真", systemImage: "photo.stack") }
                 NavigationLink(value: AppRoute.body) { Label("身体メトリクス", systemImage: "ruler") }
                 // 分析は専用タブに集約したためここからは外す。
-                // Wrapped は sheet で提示（クロージャ型 NavigationLink の遷移先 init 連鎖ハングを回避）。
-                Button { showWrapped = true } label: {
+                // Wrapped/リキャップは sheet で提示（クロージャ型 NavigationLink の遷移先 init 連鎖ハングを回避）。
+                Button { wrappedPeriod = WrappedPeriod.previousMonth() } label: {
+                    Label("先月のまとめ", systemImage: "calendar.badge.clock")
+                        .foregroundStyle(Theme.lime)
+                }
+                Button { wrappedPeriod = .year(Calendar.current.component(.year, from: .now)) } label: {
                     Label("\(Calendar.current.component(.year, from: .now)) のまとめ", systemImage: "sparkles")
                         .foregroundStyle(Theme.lime)
                 }
@@ -95,8 +161,11 @@ struct ProfileView: View {
         }
         .navigationTitle("マイページ")
         .navigationBarTitleDisplayMode(.inline)
+        .task { computeAchievements() }
         .sheet(isPresented: $showProfileEdit) { ProfileEditView() }
-        .sheet(isPresented: $showWrapped) { GymneeWrappedView(userId: userId, onClose: { showWrapped = false }) }
+        .sheet(item: $wrappedPeriod) { period in
+            GymneeWrappedView(userId: userId, period: period, onClose: { wrappedPeriod = nil })
+        }
         // 遷移先は値ベース（AppRoute）。destination は NavigationStack ルート側
         // （CalendarHomeView の gymneeNavigationDestinations）で一括宣言しており、
         // ここ（push されたビュー）では宣言しない。クロージャ型リンクで遷移先を先行生成すると

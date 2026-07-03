@@ -48,6 +48,25 @@ struct ExerciseDetailView: View {
                 }
             }
 
+            // 次回の目安（プログレッシブオーバーロード支援）。カードはミニマル原則で
+            // 補助情報を載せないため、提案はこの詳細画面に置く。
+            if let suggestion = nextSuggestion {
+                Section {
+                    ForEach(suggestion.rows, id: \.reps) { row in
+                        HStack {
+                            Text("\(row.reps)回").foregroundStyle(Theme.textSecondary)
+                            Spacer()
+                            Text("\(SetFormatting.weightString(row.weight))kg")
+                                .bold().monospacedDigit()
+                        }
+                    }
+                } header: {
+                    Text("次回の目安")
+                } footer: {
+                    Text("履歴ベストの推定1RM \(SetFormatting.weightString(suggestion.e1RM))kg からの逆算。各レップ数をこなせる理論上限なので、作業セットはこの少し下から。")
+                }
+            }
+
             Section("履歴") {
                 if sessions.isEmpty {
                     Text("記録なし").foregroundStyle(.secondary)
@@ -118,6 +137,17 @@ struct ExerciseDetailView: View {
 
     private var personalRecords: [PersonalRecord] {
         exercise.personalRecords.filter { $0.userId == userId }.sorted { $0.typeRaw < $1.typeRaw }
+    }
+
+    /// %1RM ベースのレップ別推奨重量（weight 種目で履歴があるときのみ）。
+    /// 刻みは器具に合わせる（マシン/ケーブル=5kg、ケトルベル=4kg、他=2.5kg）。
+    private var nextSuggestion: (e1RM: Double, rows: [(reps: Int, weight: Double)])? {
+        guard exercise.measurementType == .weight else { return nil }
+        let e1RM = WorkoutMetrics.bestE1RM(for: exercise, userId: userId, excludingWorkoutId: nil)
+        guard e1RM > 0 else { return nil }
+        let rows = StrengthSuggester.suggestions(e1RM: e1RM, increment: RecordSlots.weightStep(exercise))
+            .filter { $0.weight > 0 }
+        return rows.isEmpty ? nil : (e1RM, rows)
     }
 
     private func formatPR(_ pr: PersonalRecord) -> String {

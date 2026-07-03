@@ -80,7 +80,7 @@ targets:
         NSPhotoLibraryAddUsageDescription: "生成した共有カードを写真ライブラリに保存するために使用します。"
         NSLocationWhenInUseUsageDescription: "現在地から近くのジムを自動で候補表示するために使用します。"
         NSLocationAlwaysAndWhenInUseUsageDescription: "登録したジムへの接近時に自動チェックインを提案するために使用します。"
-        NSHealthShareUsageDescription: "体重・体組成を読み込み、記録に反映するために使用します。"
+        NSHealthShareUsageDescription: "体重・体組成・睡眠・心拍変動を読み込み、記録への反映とワークアウト計画の強度調整に使用します。"
         NSHealthUpdateUsageDescription: "ワークアウト記録をヘルスケアへ書き戻すために使用します。"
         NSMotionUsageDescription: "アクティビティの記録に使用します。"
         NSCalendarsFullAccessUsageDescription: "予定に合わせてワークアウト計画を立て、自動で組み替えるために使用します。"

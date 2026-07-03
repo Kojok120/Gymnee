@@ -119,19 +119,19 @@ final class PRDetectorTests: XCTestCase {
     }
 
     func testBodyweightAssistedDetectsLessAssist() {
-        // 初回(∞より小)はPR。さらに軽い補助で更新。
-        let first = PRDetector.detect(measurementType: .bodyweight, weight: 20, reps: 6, durationSeconds: nil, against: .init(), loadMode: .assisted)
+        // 補助は符号付き重量の −側で保存（大きさ＝補助kg）。初回(∞より小)はPR、さらに軽い補助で更新。
+        let first = PRDetector.detect(measurementType: .bodyweight, weight: -20, reps: 6, durationSeconds: nil, against: .init(), loadMode: .assisted)
         XCTAssertEqual(first.map(\.type), [.minAssist])
         XCTAssertEqual(first.first?.value, 20)
         let bests = PRDetector.Bests(minAssist: 20)
-        let lighter = PRDetector.detect(measurementType: .bodyweight, weight: 12, reps: 5, durationSeconds: nil, against: bests, loadMode: .assisted)
+        let lighter = PRDetector.detect(measurementType: .bodyweight, weight: -12, reps: 5, durationSeconds: nil, against: bests, loadMode: .assisted)
         XCTAssertEqual(lighter.map(\.type), [.minAssist])
         XCTAssertEqual(lighter.first?.value, 12)
     }
 
     func testBodyweightAssistedNoPRWhenHeavierAssist() {
         let bests = PRDetector.Bests(minAssist: 10)
-        XCTAssertTrue(PRDetector.detect(measurementType: .bodyweight, weight: 15, reps: 8, durationSeconds: nil, against: bests, loadMode: .assisted).isEmpty)
+        XCTAssertTrue(PRDetector.detect(measurementType: .bodyweight, weight: -15, reps: 8, durationSeconds: nil, against: bests, loadMode: .assisted).isEmpty)
     }
 
     func testTimeDetectsMaxDuration() {

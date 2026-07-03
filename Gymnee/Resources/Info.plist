@@ -40,7 +40,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>ジムでの写真チェックインと進捗写真の撮影に使用します。</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>体重・体組成を読み込み、記録に反映するために使用します。</string>
+	<string>体重・体組成・睡眠・心拍変動を読み込み、記録への反映とワークアウト計画の強度調整に使用します。</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>ワークアウト記録をヘルスケアへ書き戻すために使用します。</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

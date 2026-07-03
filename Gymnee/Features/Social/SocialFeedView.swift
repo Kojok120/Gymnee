@@ -5,14 +5,18 @@ import SwiftData
 /// フレンドは右上アイコンから開く画面に集約。実マルチユーザ連携は Supabase 接続後。
 struct SocialFeedView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(LocalSyncEngine.self) private var sync
     /// 起動時に表示するタブ（0=フィード, 1=ランキング）。ディープリンク/検証ハーネス用。
     var initialTab: Int = 0
     /// 起動時にフレンド画面を開く（検証ハーネス -gymneeScreen friends 用）。
     var openFriends: Bool = false
 
-    /// 値ベース遷移用のパス（フレンド画面の自動 push にも使う）。
+    /// 値ベース遷移用のパス（フレンド画面・招待者プロフィールの自動 push にも使う）。
     @State private var path = NavigationPath()
     @State private var didAutoOpenFriends = false
+    /// ガイドライン同意ゲート（SocialContent と同一キー）。未同意の間は List が描画されず
+    /// navigationDestination が未登録のため、招待の消費（push）は同意後まで保留する。
+    @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -24,11 +28,35 @@ struct SocialFeedView: View {
                             didAutoOpenFriends = true
                             path.append(SocialRoute.friends)
                         }
+                        consumePendingInvite(currentUserId: uid)
+                    }
+                    // アプリ起動中に招待リンクを開いた場合（RootView がタブを切替えた直後に届く）。
+                    .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
+                        if note.userInfo?["type"] as? String == "invite" {
+                            consumePendingInvite(currentUserId: uid)
+                        }
+                    }
+                    // 招待経由の新規ユーザー: ガイドライン同意の瞬間に保留招待を拾う。
+                    .onChange(of: agreedGuidelines) { _, agreed in
+                        if agreed { consumePendingInvite(currentUserId: uid) }
                     }
             } else {
                 EmptyStateView(systemImage: "person.2", title: "未ログイン")
             }
         }
+    }
+
+    /// 保留中の招待（招待リンクで開いた相手）があれば一度だけ消費し、招待者プロフィールを push する。
+    /// 未サインインで開いた場合もサインイン完了後にここで拾う。
+    private func consumePendingInvite(currentUserId: UUID) {
+        guard agreedGuidelines else { return } // 同意前は消費せず持ち越す
+        let defaults = UserDefaults.standard
+        guard let raw = defaults.string(forKey: InviteLink.pendingDefaultsKey) else { return }
+        defaults.removeObject(forKey: InviteLink.pendingDefaultsKey)
+        guard let inviter = UUID(uuidString: raw), inviter != currentUserId else { return }
+        // 先に画面を出し、プロフィール（名前/アバター）は裏で取り込んで @Query の反映に任せる。
+        path.append(UserRef(id: inviter, name: "ユーザー"))
+        Task { await sync.ensureProfiles(ids: [inviter]) }
     }
 }
 

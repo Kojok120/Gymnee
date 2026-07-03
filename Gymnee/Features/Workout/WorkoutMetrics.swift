@@ -60,7 +60,8 @@ enum WorkoutMetrics {
             }
             if s.reps > 0 {
                 b.maxReps = max(b.maxReps, Double(s.reps))
-                b.minAssist = min(b.minAssist, s.weight)  // 補助種目のみ detect で使用（軽いほど良い）
+                // 補助は符号付き重量の −側（大きさに変換）。0=自重が最良。detect の自重系のみ使用。
+                if s.weight <= 0 { b.minAssist = min(b.minAssist, -s.weight) }
             }
             if let d = s.durationSeconds, d > 0 {
                 b.maxDuration = max(b.maxDuration, Double(d))

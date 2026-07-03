@@ -14,6 +14,14 @@ enum DebugSupport {
         guard let i = args.firstIndex(of: "-gymneeScreen"), i + 1 < args.count else { return nil }
         return args[i + 1]
     }
+
+    /// 招待リンクの受信をシミュレータで再現する（AASA 未配備でも遷移を検証できる）。
+    /// 例: `-gymneeInvite <uuid>` → 保留招待として保存され、ソーシャル画面が消費する。
+    static var inviteUserId: UUID? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-gymneeInvite"), i + 1 < args.count else { return nil }
+        return UUID(uuidString: args[i + 1])
+    }
 }
 
 enum DemoData {

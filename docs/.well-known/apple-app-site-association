@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["PG5P26J3W2.com.gymnee.app"],
+        "components": [
+          { "/": "/invite", "?": { "u": "?*" }, "comment": "フレンド招待リンク（末尾スラッシュ無し・招待者id必須）" },
+          { "/": "/invite/", "?": { "u": "?*" }, "comment": "フレンド招待リンク（id無しの素の /invite/ はWebガイドに任せる）" }
+        ]
+      }
+    ]
+  }
+}

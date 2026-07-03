@@ -14,10 +14,14 @@ struct PRSpark: Identifiable, Equatable {
 struct RecordView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.modelContext) private var context
+    @Environment(LocalSyncEngine.self) private var sync
     /// タブから入った時は「記録を開始する」ゲートを挟む。チェックイン経由は飛ばす。
     @State private var gateOpen = false
     /// 計画/予定の「開始」から渡された、記録タブで再開するワークアウト（nil＝新規ライブ記録）。
     @State private var resumeTarget: Workout?
+    /// ゲートの「テンプレから始める」で作ったルーティンを初期モードにする（nil＝既定の計画/フリー）。
+    @State private var startMode: RecordMode?
+    @State private var showTemplatePicker = false
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
@@ -27,6 +31,25 @@ struct RecordView: View {
         openDrafts.filter { w in
             w.userId == uid && (w.exercises.contains { !$0.sets.isEmpty } || !(w.note ?? "").isEmpty)
         }
+    }
+
+    /// テンプレからルーティンを作成・保存し、それを初期モードにして記録を開始する
+    /// （初回アクティベーション導線。保存＋同期は RoutineEditorView の完了時と同じ形）。
+    private func startWithTemplate(_ template: RoutineTemplates.Template, userId: UUID) {
+        let routine = RoutineTemplates.create(template, userId: userId, context: context)
+        routine.isDirty = true
+        try? context.save()
+        var pending = [PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt)]
+        for re in routine.routineExercises {
+            if let ex = re.exercise {
+                pending.append(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
+            }
+            pending.append(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
+        }
+        sync.enqueueBatch(pending)
+        resumeTarget = nil
+        startMode = .routine(routine.id)
+        gateOpen = true
     }
 
     /// 下書きを破棄する。計画から開始していた下書きは、リンクした PlannedWorkout を未消化へ戻してから削除する
@@ -47,15 +70,26 @@ struct RecordView: View {
         NavigationStack {
             if let uid = auth.currentUserId {
                 if gateOpen {
-                    RecordContent(userId: uid, resuming: resumeTarget, onEnd: { gateOpen = false; resumeTarget = nil })
+                    RecordContent(userId: uid, resuming: resumeTarget, initialMode: startMode,
+                                  onEnd: { gateOpen = false; resumeTarget = nil; startMode = nil })
                 } else {
                     StartGateView(
                         userId: uid,
                         resumables: resumableDrafts(for: uid),
-                        onStart: { resumeTarget = nil; gateOpen = true },
-                        onResume: { draft in resumeTarget = draft; gateOpen = true },
-                        onDiscard: { draft in discardDraft(draft) }
+                        onStart: { resumeTarget = nil; startMode = nil; gateOpen = true },
+                        onResume: { draft in resumeTarget = draft; startMode = nil; gateOpen = true },
+                        onDiscard: { draft in discardDraft(draft) },
+                        onTemplates: { showTemplatePicker = true }
                     )
+                    .sheet(isPresented: $showTemplatePicker) {
+                        RoutineTemplatePicker(
+                            onSelect: { t in
+                                showTemplatePicker = false
+                                startWithTemplate(t, userId: uid)
+                            },
+                            onCancel: { showTemplatePicker = false }
+                        )
+                    }
                 }
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
@@ -85,6 +119,8 @@ private struct StartGateView: View {
     let onStart: () -> Void
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
+    /// テンプレ選択シートを開く（テンプレのルーティンで即開始）。
+    var onTemplates: () -> Void = {}
 
 
     var body: some View {
@@ -115,6 +151,12 @@ private struct StartGateView: View {
                             // 単発クロージャ型リンク：RecordContent が push 経由(カレンダー編集/ワークアウト詳細)で
                             // 開かれても pushed view 上の navigationDestination(for:) に依存せず確実に遷移する
                             // （iOS 26.5 で子リンクが解決されない問題の回避。List/ForEach 内ではないのでハングもしない）。
+                            // 何をやるか決まっていない人向けの即開始導線（テンプレ→ルーティン作成→開始）。
+                            Button(action: onTemplates) {
+                                Label("テンプレから始める", systemImage: "square.grid.2x2")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
                             NavigationLink {
                                 HistoryView(userId: userId)
                             } label: {
@@ -197,6 +239,8 @@ struct RecordContent: View {
     let userId: UUID
     /// 既存ワークアウトを開いて続き/編集する場合に指定（計画開始・過去編集）。nil は新規ライブ記録。
     var resuming: Workout?
+    /// 開始時のモード指定（ゲートの「テンプレから始める」用）。nil＝既定（今日計画あれば計画、無ければフリー）。
+    var initialMode: RecordMode?
     /// 完了時にタブのゲートへ戻すコールバック（タブ起点のみ）。nil＝従来の待機リセット。
     var onEnd: (() -> Void)?
 
@@ -248,9 +292,10 @@ struct RecordContent: View {
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
 
-    init(userId: UUID, resuming: Workout? = nil, onEnd: (() -> Void)? = nil) {
+    init(userId: UUID, resuming: Workout? = nil, initialMode: RecordMode? = nil, onEnd: (() -> Void)? = nil) {
         self.userId = userId
         self.resuming = resuming
+        self.initialMode = initialMode
         self.onEnd = onEnd
         _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
         let dayStart = Calendar.current.startOfDay(for: Date())
@@ -511,7 +556,15 @@ struct RecordContent: View {
                     onLogReps: { reps in logReps(reps, spec: spec) },
                     onLogDuration: { dur in logDuration(dur, spec: spec) },
                     onLogCardio: { dist, mins in logCardio(distanceKm: dist, minutes: mins, spec: spec) },
-                    onCustomWeight: { keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .armValue, decimal: true, title: "重量を入力") },
+                    onCustomWeight: {
+                        // バーベルの合計重量入力ではプレート換算（片側内訳）を併記する。
+                        // 自重（加重/補助）は符号切替（加重＋/補助−）を出す。
+                        let plates = spec.exercise.equipment == .barbell && spec.exercise.measurementType == .weight
+                        let signed = spec.exercise.measurementType == .bodyweight && spec.exercise.loadMode != .none
+                        keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .armValue, decimal: true,
+                                               title: signed ? "加重/補助を入力" : "重量を入力",
+                                               showPlates: plates, signedLoad: signed)
+                    },
                     onCustomReps: {
                         let title: String
                         switch spec.exercise.measurementType {
@@ -981,7 +1034,7 @@ struct RecordContent: View {
 
     private func initializeModeIfNeeded() {
         guard !modeInitialized else { return }
-        mode = todayPlan != nil ? .plan : .free
+        mode = initialMode ?? (todayPlan != nil ? .plan : .free)
         modeInitialized = true
     }
 
@@ -1090,33 +1143,38 @@ private struct ExerciseCardView: View {
     }
 
     private var weightRuler: some View {
-        // 0kg も選べる（下限0）。アシスト/ウォームアップ等で0を記録したいケースに対応。
-        SlotRuler(selection: $weightCenter,
-                  step: RecordSlots.weightStep(exercise),
-                  lowerBound: 0,
+        // 値列は種目特性で決まる（ダンベル1kg→2kg区分、自重は補助−⟷加重＋の一本軸、他は等差・下限0）。
+        let ex = exercise
+        return SlotRuler(selection: $weightCenter,
+                  makeValues: { RecordSlots.weightRulerValues(for: ex, center: $0) },
                   decimals: true, unit: "", isAction: false,
+                  signedLoad: ex.measurementType == .bodyweight,
                   onCommit: nil, onLongPress: onCustomWeight)
     }
     private var repsRuler: some View {
         SlotRuler(selection: $repCenter,
-                  step: 1, lowerBound: 1, decimals: false, unit: "", isAction: true,
+                  makeValues: { RecordSlots.rulerValues(center: $0, step: 1, lowerBound: 1) },
+                  decimals: false, unit: "", isAction: true,
                   onCommit: { onLogReps(Int($0)) }, onLongPress: onCustomReps)
     }
     private var durationRuler: some View {
         SlotRuler(selection: $durCenter,
-                  step: 5, lowerBound: 5, decimals: false, unit: "秒", isAction: true,
+                  makeValues: { RecordSlots.rulerValues(center: $0, step: 5, lowerBound: 5) },
+                  decimals: false, unit: "秒", isAction: true,
                   onCommit: { onLogDuration(Int($0)) }, onLongPress: onCustomReps)
     }
     /// 有酸素の距離（km）。中央＝アーム（記録時の距離）。
     private var distanceRuler: some View {
         SlotRuler(selection: $distanceCenter,
-                  step: 0.5, lowerBound: 0, decimals: true, unit: "km", isAction: false,
+                  makeValues: { RecordSlots.rulerValues(center: $0, step: 0.5, lowerBound: 0) },
+                  decimals: true, unit: "km", isAction: false,
                   onCommit: nil, onLongPress: onCustomDistance)
     }
     /// 有酸素の時間（分）。タップで「距離＋その時間」を1セット記録。
     private var cardioMinuteRuler: some View {
         SlotRuler(selection: $durCenter,
-                  step: 5, lowerBound: 5, decimals: false, unit: "分", isAction: true,
+                  makeValues: { RecordSlots.rulerValues(center: $0, step: 5, lowerBound: 5) },
+                  decimals: false, unit: "分", isAction: true,
                   onCommit: { onLogCardio(distanceCenter, Int($0)) }, onLongPress: onCustomReps)
     }
 }
@@ -1126,11 +1184,13 @@ private struct ExerciseCardView: View {
 /// セルタップ＝その値へ寄せて選択、長押し＝キーパッド。値列は onAppear で一度だけ生成し再描画でリセットしない。
 private struct SlotRuler: View {
     @Binding var selection: Double
-    let step: Double
-    let lowerBound: Double
+    /// 中心値 → ルーラーの値列。等差だけでなく区分刻み（ダンベル/自重の補助⟷加重）にも対応する。
+    let makeValues: (Double) -> [Double]
     let decimals: Bool
     let unit: String
     let isAction: Bool
+    /// 負値を「補助」として表示する（自重の一本軸）。
+    var signedLoad: Bool = false
     let onCommit: ((Double) -> Void)?
     let onLongPress: () -> Void
 
@@ -1155,7 +1215,7 @@ private struct SlotRuler: View {
         .frame(height: 38)
         .onAppear {
             if values.isEmpty {
-                values = RecordSlots.rulerValues(center: selection, step: step, lowerBound: lowerBound)
+                values = makeValues(selection)
             }
             scrolledID = nearest(selection)
         }
@@ -1165,7 +1225,7 @@ private struct SlotRuler: View {
         .onChange(of: selection) { _, sel in
             // 外部ジャンプ(キーパッド)で範囲外なら作り直し。スクロール由来(sel∈values)では作り直さない＝位置維持。
             if !values.contains(sel) {
-                values = RecordSlots.rulerValues(center: sel, step: step, lowerBound: lowerBound)
+                values = makeValues(sel)
             }
             if scrolledID != sel { scrolledID = nearest(sel) }
         }
@@ -1194,6 +1254,13 @@ private struct SlotRuler: View {
 
     private func nearest(_ c: Double) -> Double { values.min(by: { abs($0 - c) < abs($1 - c) }) ?? c }
     private func label(_ v: Double) -> String {
+        // 符号付き（自重の一本軸）: 負=補助、0=自重、正=加重。
+        if signedLoad {
+            if v == 0 { return "自重" }
+            let mag = abs(v)
+            let s = mag == mag.rounded() ? String(Int(mag)) : String(format: "%.1f", mag)
+            return v < 0 ? "補\(s)" : "+\(s)"
+        }
         let s = decimals ? (v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)) : String(Int(v))
         return unit.isEmpty ? s : "\(s)\(unit)"
     }
@@ -1230,6 +1297,10 @@ struct KeypadRequest: Identifiable {
     let kind: Kind
     let decimal: Bool
     let title: String
+    /// バーベル種目の重量入力でプレート換算（片側内訳）を併記する。
+    var showPlates: Bool = false
+    /// 自重（加重/補助）の符号付き入力（加重＋/補助−の切替を表示）。
+    var signedLoad: Bool = false
 }
 
 private struct SlotKeypadSheet: View {
@@ -1239,6 +1310,10 @@ private struct SlotKeypadSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @FocusState private var focused: Bool
+    /// 符号付き入力（自重の加重＋/補助−）の方向。テンキーに±が無いためセグメントで切替える。
+    @State private var loadDirection = 1.0
+    /// バーベルのバー重量（プレート換算用・ジムのバーに合わせて選択を記憶）。
+    @AppStorage("gymnee.barWeightKg") private var barWeight = 20.0
 
     var body: some View {
         NavigationStack {
@@ -1247,20 +1322,59 @@ private struct SlotKeypadSheet: View {
                     .keyboardType(request.decimal ? .decimalPad : .numberPad)
                     .font(.numL)
                     .focused($focused)
+                if request.signedLoad {
+                    Picker("種別", selection: $loadDirection) {
+                        Text("加重 ＋").tag(1.0)
+                        Text("補助 −").tag(-1.0)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                if request.showPlates {
+                    LabeledContent("バー") {
+                        Picker("", selection: $barWeight) {
+                            Text("20kg").tag(20.0)
+                            Text("15kg").tag(15.0)
+                            Text("10kg").tag(10.0)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 200)
+                    }
+                    Label(plateText, systemImage: "circle.circle")
+                        .font(.footnote).foregroundStyle(.secondary).monospacedDigit()
+                }
             }
             .navigationTitle(request.title).navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("決定") {
-                        if let v = Double(text.replacingOccurrences(of: ",", with: ".")) { onSubmit(v) }
+                        if let v = Double(text.replacingOccurrences(of: ",", with: ".")) {
+                            // 符号付き入力（自重）は選択方向（加重＋/補助−）を符号に反映。
+                            onSubmit(request.signedLoad ? abs(v) * loadDirection : v)
+                        }
                         dismiss()
                     }.bold().disabled(Double(text.replacingOccurrences(of: ",", with: ".")) == nil)
                 }
             }
             .onAppear { focused = true }
         }
-        .presentationDetents([.height(180)])
+        .presentationDetents([.height(request.showPlates ? 300 : 180)])
+    }
+
+    /// 入力中の合計重量に対する片側プレート内訳（バーベル種目のみ表示）。
+    private var plateText: String {
+        guard let target = Double(text.replacingOccurrences(of: ",", with: ".")) else {
+            return "合計重量を入れると片側のプレート内訳が出ます"
+        }
+        guard let b = PlateCalculator.breakdown(target: target, bar: barWeight) else {
+            return "バー\(SetFormatting.weightString(barWeight))kg 未満です"
+        }
+        if b.perSide.isEmpty {
+            return b.remainder > 0 ? "バーのみ（端数 \(SetFormatting.weightString(b.remainder))kg）" : "バーのみ"
+        }
+        var s = "片側: \(b.perSide.map { SetFormatting.weightString($0) }.joined(separator: " + "))"
+        if b.remainder > 0 { s += "（端数 \(SetFormatting.weightString(b.remainder))kg）" }
+        return s
     }
 }
 
@@ -1289,6 +1403,10 @@ private struct EditSetSheet: View {
                     LabeledContent("時間(分)") { TextField("分", text: $minutesText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
                 } else if isTime {
                     LabeledContent("秒") { TextField("秒", text: $durationText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
+                } else if measurement == .bodyweight {
+                    // 符号付き（−=補助 / 0=自重 / ＋=加重）。テンキーに±が無いため標準キーボードで受ける。
+                    LabeledContent("加重(kg・補助は−)") { TextField("0", text: $weightText).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing) }
+                    LabeledContent("回数") { TextField("回数", text: $repsText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
                 } else {
                     LabeledContent("重量(kg)") { TextField("重量", text: $weightText).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
                     LabeledContent("回数") { TextField("回数", text: $repsText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
@@ -1308,7 +1426,9 @@ private struct EditSetSheet: View {
                         } else if isTime {
                             if let s = Int(durationText), s >= 0 { set.durationSeconds = s }
                         } else {
-                            if let w = Double(weightText.replacingOccurrences(of: ",", with: ".")), w.isFinite, w >= 0 {
+                            // 自重（符号付き: −=補助）は負値を許可。通常ウェイトは0以上のみ。
+                            if let w = Double(weightText.replacingOccurrences(of: ",", with: ".")), w.isFinite,
+                               w >= 0 || measurement == .bodyweight {
                                 set.weight = w
                             }
                             if let r = Int(repsText), r >= 0 { set.reps = r }
