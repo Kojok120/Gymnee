@@ -32,6 +32,9 @@ struct WeekPlannerView: View {
     @State private var aiInput = ""
     /// 対話履歴（シートを開いている間のセッションスコープ。永続化しない）。
     @State private var aiMessages: [AIChatMessage] = []
+    /// ステージング中の AI 計画（「この計画で確定」までカレンダーへ反映しない）。
+    /// nil = 未提案 or 確定済み。追加要望のたびに置き換わる。
+    @State private var stagedPlan: [SupabaseClient.PlanItem]?
     /// HealthKit から取れた体調シグナル（nil＝データ無し）。シート表示時に取得。
     @State private var aiSleepHours: Double?
     @State private var aiHRV: Double?
@@ -337,7 +340,7 @@ struct WeekPlannerView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                     if aiMessages.isEmpty {
                         VStack(spacing: Theme.Spacing.md) {
-                            Text("今週の計画を対話で作成・調整できます。\n体調（睡眠・HRV）と部位の回復状況も反映されます。")
+                            Text("今週の計画を対話で作成・調整できます。\n体調（睡眠・HRV）と部位の回復状況も反映されます。\n計画は「確定」を押すまでカレンダーに反映されません。")
                                 .font(.subheadline).foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                             Button {
@@ -383,6 +386,19 @@ struct WeekPlannerView: View {
                     .font(.subheadline)
                 if let plan = msg.plan {
                     planPreview(plan)
+                    // 最新の提案にだけ確定導線を出す（過去の案は表示のみ）。
+                    if stagedPlan != nil, msg.id == latestPlanMessageId {
+                        Button {
+                            confirmStagedPlan()
+                        } label: {
+                            Label("この計画で確定", systemImage: "checkmark.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).prominentLime()
+                        Text("確定するまでカレンダーには反映されません。要望を送って練り直せます。")
+                            .font(.caption2).foregroundStyle(Theme.textTertiary)
+                    }
                 }
             }
             .padding(.horizontal, Theme.Spacing.md).padding(.vertical, Theme.Spacing.sm)
@@ -493,12 +509,14 @@ struct WeekPlannerView: View {
             )
             aiRunning = false
             if let result, !result.items.isEmpty {
-                applyPlan(result.items, formatter: fmt)
-                let trained = result.items.filter { !$0.exercises.isEmpty }.count
+                // 即時反映せずステージング（「この計画で確定」で初めてカレンダーへ書き込む）。
+                let sorted = result.items.sorted { $0.date < $1.date }
+                stagedPlan = sorted
+                let trained = sorted.filter { !$0.exercises.isEmpty }.count
                 aiMessages.append(AIChatMessage(
                     role: .assistant,
-                    text: result.message ?? "計画を更新しました（トレーニング\(trained)日）。",
-                    plan: result.items.sorted { $0.date < $1.date }
+                    text: result.message ?? "計画案です（トレーニング\(trained)日）。",
+                    plan: sorted
                 ))
             } else if aiMessages.count <= 1 {
                 aiInfo = true   // 初回失敗はキー未設定の可能性 →「準備中」案内
@@ -508,9 +526,33 @@ struct WeekPlannerView: View {
         }
     }
 
-    /// 現在の週計画を AI の改訂ベースとして渡すペイロード。
+    /// 直近の提案メッセージ（確定ボタンを付ける対象）。
+    private var latestPlanMessageId: UUID? {
+        aiMessages.last { $0.plan != nil }?.id
+    }
+
+    /// ステージング中の計画を確定＝カレンダーへ反映する。
+    private func confirmStagedPlan() {
+        guard let staged = stagedPlan else { return }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.calendar = cal
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        applyPlan(staged, formatter: fmt)
+        stagedPlan = nil
+        aiMessages.append(AIChatMessage(role: .assistant, text: "計画を確定しました。カレンダーと記録タブの「計画」モードに反映されています。"))
+    }
+
+    /// AI の改訂ベースとして渡す現在計画。ステージング中はその案を優先し、
+    /// 無ければ確定済みの週計画を渡す（対話の続きが常に最新案の練り直しになる）。
     private func currentPlanPayload(formatter: DateFormatter) -> [[String: Any]] {
-        weekPlans.map { p in
+        if let staged = stagedPlan {
+            return staged.map { item in
+                ["date": item.date, "title": item.title,
+                 "exercises": item.exercises.map { ["name": $0.name, "sets": $0.sets, "reps": $0.reps, "weight": $0.weight] }]
+            }
+        }
+        return weekPlans.map { p in
             var d: [String: Any] = ["date": formatter.string(from: p.date), "title": p.title, "done": p.isDone]
             if let json = p.detailJSON, let data = json.data(using: .utf8),
                let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
