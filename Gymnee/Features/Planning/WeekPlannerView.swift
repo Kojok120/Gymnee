@@ -137,7 +137,6 @@ struct WeekPlannerView: View {
         }
         .sheet(item: $addDay) { day in addSheet(day.date) }
         .sheet(isPresented: $showAIOptions) { aiOptionsSheet }
-        .sheet(isPresented: $showPaywall) { PaywallView() }
         .alert("AIワークアウト計画", isPresented: $aiInfo) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -280,11 +279,14 @@ struct WeekPlannerView: View {
 
     /// AI計画のオプションシートを開く（Paywall 判定は生成時に行う）。
     /// 体調シグナル（昨夜の睡眠・HRV）は開いた時点で取得して表示する。
+    /// HealthKit のクエリは許諾プロンプトを出さないため、先に read 許可（睡眠/HRV含む）を要求する
+    /// （許諾済みタイプはスキップされ、非対応端末では no-op）。非有限値はここで弾く。
     private func openAIOptions() {
         showAIOptions = true
         Task {
-            aiSleepHours = await health.lastNightSleepHours()
-            aiHRV = await health.recentHRV()
+            await health.requestAuthorization()
+            aiSleepHours = (await health.lastNightSleepHours()).flatMap { $0.isFinite ? $0 : nil }
+            aiHRV = (await health.recentHRV()).flatMap { $0.isFinite ? $0 : nil }
         }
     }
 
@@ -300,6 +302,8 @@ struct WeekPlannerView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showAIOptions = false } }
             }
+            // Paywall は AI シートの中から提示する（兄弟 sheet だと表示中の AI シートに阻まれて出ない）。
+            .sheet(isPresented: $showPaywall) { PaywallView() }
         }
         .presentationDetents([.large])
     }

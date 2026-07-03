@@ -367,11 +367,13 @@ actor SupabaseClient {
         request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
         if let accessToken { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
+        // condition（HealthKit由来）等の非有限 Double は JSONSerialization が Obj-C 例外で
+        // 落とすため、upsert と同じサニタイズを通す。
+        request.httpBody = try JSONSerialization.data(withJSONObject: Self.sanitizeForJSON([
             "days": days, "routines": routines, "weeklyGoal": weeklyGoal,
             "events": events, "history": history, "recovery": recovery,
             "condition": condition, "messages": messages, "currentPlan": currentPlan,
-        ])
+        ]))
         // AI 生成は REST 用の短いタイムアウト（15s/30s）では打ち切られるため、functions 用 session で送る。
         let data = try await send(request, via: functionsSession)
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
