@@ -241,12 +241,18 @@ final class AuthService {
         }
 
         // ローカル経路: Apple ユーザー識別子を決定的にローカル userId へ対応付ける。
+        let oldUserId = session?.userId
         guard let local = try? provider.signInWithApple(userIdentifier: credential.user, displayName: displayName) else {
             return false
         }
         session = local
         ensureProfile(for: local)
         currentNonce = nil
+        // ゲスト等の旧ローカル uid からこの決定的 uid へ変わった場合もデータを付け替える
+        // （バックエンド経路と同じフック。ここを通さないとゲスト期間の記録が孤児化する）。
+        if let oldUserId, oldUserId != local.userId {
+            onBackendSignIn?(oldUserId, local.userId)
+        }
         return true
     }
 

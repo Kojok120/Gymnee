@@ -40,6 +40,10 @@ actor SupabaseClient {
         }
     }
 
+    /// ユーザートークンを保持しているか（＝RLS を通る認証付きリクエストが可能か）。
+    /// 同期エンジンが「ゲスト期間は送受信しない」判定に使う。
+    var isAuthenticated: Bool { accessToken != nil }
+
     /// サインイン後のユーザーアクセストークン（JWT）を設定する。未設定時は anon キーのみ。
     func setAccessToken(_ token: String?) {
         self.accessToken = token
