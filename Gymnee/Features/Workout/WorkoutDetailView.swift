@@ -5,6 +5,8 @@ import SwiftData
 struct WorkoutDetailView: View {
     let workout: Workout
 
+    @State private var showTimeEdit = false
+
     var body: some View {
         List {
             Section {
@@ -12,6 +14,12 @@ struct WorkoutDetailView: View {
                     Text(workout.date, format: .dateTime.year().month().day().weekday(.wide))
                         .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
                     Text(headerStats).font(.caption).foregroundStyle(.secondary)
+                }
+                // 後追い記録で総合時間が実態と合わない場合の修正導線（完了済みのみ）。
+                if workout.completedAt != nil {
+                    Button { showTimeEdit = true } label: {
+                        Label("時間を編集", systemImage: "clock")
+                    }
                 }
             }
             if let visit = workout.visit {
@@ -37,6 +45,9 @@ struct WorkoutDetailView: View {
         }
         .navigationTitle(workout.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showTimeEdit) {
+            WorkoutTimeEditSheet(workout: workout)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 // 編集はロガー画面を再利用（セット・種目の追加/修正、完了の付け直しが可能）。
@@ -66,8 +77,9 @@ struct WorkoutDetailView: View {
     /// ヘッダの集計行（種目数・セット数・総容量・所要時間）。
     private var headerStats: String {
         var parts = ["\(visibleExercises.count)種目", "\(totalSets)セット", "総容量 \(totalVolume)kg"]
-        if let end = workout.completedAt {
-            let mins = max(1, Int(end.timeIntervalSince(workout.date) / 60))
+        if let mins = WorkoutDuration.minutes(
+            date: workout.date, completedAt: workout.completedAt, durationSeconds: workout.durationSeconds
+        ) {
             parts.append("\(mins)分")
         }
         return parts.joined(separator: "・")

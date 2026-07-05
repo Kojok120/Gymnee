@@ -242,8 +242,7 @@ enum FeedBuilder {
                 FeedStat(label: "セット", value: "\(totalSets)"),
             ]
             if totalVolume > 0 { stats.append(FeedStat(label: "ボリューム", value: "\(totalVolume) kg")) }
-            if let end = w.completedAt {
-                let mins = max(1, Int(end.timeIntervalSince(w.date) / 60))
+            if let mins = WorkoutDuration.minutes(date: w.date, completedAt: w.completedAt, durationSeconds: w.durationSeconds) {
                 stats.append(FeedStat(label: "時間", value: "\(mins)分"))
             }
 
