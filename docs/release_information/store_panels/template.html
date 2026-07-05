@@ -21,7 +21,9 @@
   --mono:"Space Mono",ui-monospace,monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{width:1320px;height:2868px;overflow:hidden;background:var(--bg0)}
+/* 背景: 下方向へ持ち上げるグラデ（ダークスクショの端末が黒背景に溶けないように） */
+html,body{width:1320px;height:2868px;overflow:hidden;
+  background:linear-gradient(180deg,#0D100E 0%,#171C12 40%,#28311D 100%)}
 body.wide{width:2640px}
 
 .panel{position:absolute;top:0;width:1320px;height:2868px;overflow:hidden}
@@ -33,6 +35,9 @@ body.wide{width:2640px}
   background:radial-gradient(50% 50% at 50% 50%, rgba(199,255,61,.16), transparent 70%)}
 .glow-pano{position:absolute;top:-10%;left:15%;width:70%;height:55%;z-index:0;
   background:radial-gradient(50% 50% at 50% 50%, rgba(199,255,61,.14), transparent 70%)}
+/* 端末背後のグロー: ダークモードのスクショと背景を分離する */
+.glow-stage{bottom:-10%;left:50%;transform:translateX(-50%);width:170%;height:62%;
+  background:radial-gradient(50% 50% at 50% 50%, rgba(199,255,61,.22), transparent 68%)}
 /* ノイズ（LP 由来。fixed→absolute） */
 .grain{position:absolute;inset:0;pointer-events:none;z-index:1;opacity:.05;mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
@@ -51,8 +56,9 @@ h1 .lime{color:var(--lime);text-shadow:0 0 70px rgba(199,255,61,.45)}
 /* 端末フレーム（LP .phone の3倍スケール・下端見切れで統一） */
 .stage{position:absolute;left:50%;transform:translateX(-50%);bottom:-170px;width:900px;z-index:2}
 .phone{position:relative;border-radius:126px;padding:30px;
-  background:linear-gradient(160deg,#23282440,#0c0e0d);border:3px solid rgba(255,255,255,.09);
-  box-shadow:0 90px 200px -60px rgba(0,0,0,.95),0 0 260px -40px rgba(199,255,61,.25)}
+  background:linear-gradient(160deg,#454C46,#171A18);border:3px solid rgba(255,255,255,.34);
+  box-shadow:0 90px 200px -60px rgba(0,0,0,.95),0 0 400px -10px rgba(199,255,61,.5),
+    0 0 0 2px rgba(199,255,61,.22)}
 .phone img{display:block;width:100%;height:auto;border-radius:96px}
 
 /* 数値チップ（LP .chip の3倍スケール） */
@@ -146,6 +152,7 @@ function panelHTML(p) {
     : "";
   return `<div class="inner">
     <div class="glow glow-main"></div>
+    <div class="glow glow-stage"></div>
     <div class="grain"></div>
     <div class="copy">
       <div class="eyebrow">${esc(p.eyebrow)}</div>
