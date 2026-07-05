@@ -20,7 +20,11 @@ struct SocialFeedView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            if let uid = auth.currentUserId {
+            if sync.isRemoteEnabled && !auth.isBackendAuthenticated {
+                // ゲスト（未サインイン）にはフィードの代わりにサインイン促しを出す。
+                // フレンド機能は実マルチユーザー連携＝バックエンド必須（サインアップ遅延化の要求ゲート）。
+                signInPrompt
+            } else if let uid = auth.currentUserId {
                 SocialContent(userId: uid, initialTab: initialTab)
                     .onAppear {
                         // 検証ハーネス: 一度だけフレンド画面を自動 push（戻り時の再 push を防ぐ）。
@@ -44,6 +48,30 @@ struct SocialFeedView: View {
                 EmptyStateView(systemImage: "person.2", title: "未ログイン")
             }
         }
+    }
+
+    /// ゲスト向けのサインイン促し（フレンド機能の入口で初めてサインインを求める）。
+    private var signInPrompt: some View {
+        ScrollView {
+            VStack(spacing: Theme.Spacing.lg) {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 52))
+                    .foregroundStyle(Theme.lime)
+                    .padding(.top, 48)
+                Text("フレンド機能にはサインインが必要です")
+                    .font(.title3.bold())
+                    .multilineTextAlignment(.center)
+                Text("友達のフォロー、応援の送り合い、招待リンクを使うにはサインインしてください。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                BackendSignInButtons()
+                    .padding(.top, Theme.Spacing.sm)
+            }
+            .padding(Theme.Spacing.xl)
+        }
+        .navigationTitle("ソーシャル")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     /// 保留中の招待（招待リンクで開いた相手）があれば一度だけ消費し、招待者プロフィールを push する。
@@ -131,9 +159,11 @@ private struct SocialContent: View {
             sync: sync
         )
         await sync.syncNow()
-        // フォロー相手・フィード著者のプロフィール（名前/アバター）を id 指定で確実に取り込む。
-        // 差分 pull が後追いフォロー相手の古い行を取り込まず「ユーザー」表示になるのを防ぐ。
+        // フォロー相手・フォロワー・フィード著者のプロフィール（名前/アバター）を id 指定で確実に取り込む。
+        // 差分 pull は相手プロフィールの古い行を取り込まないため、ここに含めない相手は「ユーザー」表示に
+        // なってしまう（過去にフォロワーが漏れており、フォローバックするまで名前が出ないバグがあった）。
         let profileIds = Set(following.map(\.followeeId))
+            .union(followerIds)
             .union(feedItems.map(\.userId))
             .subtracting([userId])
         await sync.ensureProfiles(ids: profileIds)

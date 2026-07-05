@@ -33,6 +33,12 @@
 	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>instagram-stories</string>
+	</array>
+	<key>MetaAppID</key>
+	<string>$(META_APP_ID)</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>予定に合わせてワークアウト計画を立て、自動で組み替えるために使用します。</string>
 	<key>NSCalendarsUsageDescription</key>

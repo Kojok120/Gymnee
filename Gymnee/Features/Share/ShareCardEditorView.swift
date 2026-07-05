@@ -71,6 +71,22 @@ struct ShareCardEditorView: View {
                 .buttonStyle(.borderedProminent)
                 .prominentLime()
 
+                // ストーリーズ直接共有（Meta App ID 設定済み＋Instagram インストール時のみ表示）。
+                // 9:16 のブランド背景に載せた画像を渡す。
+                if InstagramSharing.isAvailable {
+                    Button {
+                        if let story = ShareCardRenderer.renderStory(content: content, theme: theme) {
+                            InstagramSharing.shareToStories(background: story)
+                        } else {
+                            saveMessage = "画像の生成に失敗しました"
+                        }
+                    } label: {
+                        Label("Instagramストーリーズ", systemImage: "camera.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 Button {
                     UIImageWriteToSavedPhotosAlbum(rendered, nil, nil, nil)
                     saveMessage = "写真に保存しました"

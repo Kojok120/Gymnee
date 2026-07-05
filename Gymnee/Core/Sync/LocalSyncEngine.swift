@@ -149,6 +149,10 @@ final class LocalSyncEngine: SyncEngine {
     /// ローカルの変更を Supabase へ送出する。成功分を outbox から除去する。
     func push() async throws {
         guard let remote, let store else { return } // リモート未設定＝no-op（ローカルのみ）
+        // 未サインイン（ゲスト）期間は送信しない。anon キーで送っても RLS(42501) で拒否され、
+        // 無駄な通信と lastError だけが残る。変更は outbox に貯まり、サインイン後の
+        // LocalDataMigrator 付け替え＋syncNow(force:) でまとめて流れる。
+        guard await remote.isAuthenticated else { return }
 
         // FK 親依存（visits→gyms 等）を補完。未enqueue/詰まりの親も先に送れ、既存の詰まりを自己修復する。
         var snapshot = outbox
@@ -237,6 +241,8 @@ final class LocalSyncEngine: SyncEngine {
     /// リモート差分を取り込み、ConflictResolver でローカルへ統合する。
     func pull() async throws {
         guard let remote, let store else { return } // リモート未設定＝no-op
+        // 未サインイン（ゲスト）期間は取得もしない（認証前提の RLS で実質何も返らないため）。
+        guard await remote.isAuthenticated else { return }
 
         // ネットワーク取得(select)だけを並列化し、直列だと 19 テーブル分積み上がる往復レイテンシを解消する。
         // ただし apply は FK 依存順（親→子）で順次に行う必要がある：SwiftDataSyncStore は

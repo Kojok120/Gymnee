@@ -22,6 +22,7 @@ enum LocalDataMigrator {
         reassignOwned(Subscription.self, entity: "subscriptions", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(FeedItem.self, entity: "feed_items", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(PostReaction.self, entity: "post_reactions", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
+        reassignOwned(Comment.self, entity: "comments", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         // フォローは follower 側を付け替え。
         reassignOwned(Follow.self, entity: "follows", context: context, into: &pending) { $0.followerId == old } set: { $0.followerId = new }
         // ブロック/通報は実行者(blocker / reporter)側を付け替え。
@@ -38,6 +39,15 @@ enum LocalDataMigrator {
         reenqueueAll(ExerciseSet.self, entity: "exercise_sets", context: context, into: &pending)
         reenqueueAll(RoutineExercise.self, entity: "routine_exercises", context: context, into: &pending)
         reenqueueAll(GymEquipment.self, entity: "gym_equipment", context: context, into: &pending)
+
+        // 計画（PlannedWorkout）は端末ローカル専用（同期対象外）だが、各画面が userId で絞って表示するため
+        // 付け替えないとサインイン後に旧計画が見えなくなる（孤児化）。送出は不要。
+        if let plans = try? context.fetch(FetchDescriptor<PlannedWorkout>()) {
+            for plan in plans where plan.userId == old {
+                plan.userId = new
+                plan.updatedAt = .now
+            }
+        }
 
         // 旧 userId のローカル Profile は孤児になるため削除（新 Profile は ensureProfile / トリガで存在）。
         if let oldProfile = try? context.fetch(FetchDescriptor<Profile>(predicate: #Predicate { $0.id == old })).first {
@@ -98,6 +108,7 @@ extension ProgressPhoto: SyncIdentifiable { var syncId: UUID { id }; func markDi
 extension SupplyLog: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Subscription: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension FeedItem: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
+extension Comment: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Follow: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Gym: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Exercise: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }

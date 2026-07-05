@@ -2,19 +2,13 @@ import SwiftUI
 import AuthenticationServices
 
 /// サインイン・初期設定（§5 / §6.1）。アプリの第一印象。
-/// Sign in with Apple / Google / メールでアカウント作成（オフライン/ゲスト開始は廃止）。
-/// アカウント必須にすることで、サインイン方法の違いによる多重ID・孤児データの発生を防ぐ。
+/// Sign in with Apple / Google / メール、または「サインインせずに始める」（ゲスト＝ローカルのみ）。
+/// ゲストは価値を体験してから必要な場面（ソーシャル等）でサインインする。後からのサインインでは
+/// LocalDataMigrator がローカルデータを新しい userId へ付け替えるため、多重ID・孤児データは生じない。
 struct OnboardingView: View {
     @Environment(AuthService.self) private var auth
     @State private var showEmailSignIn = false
     @State private var appeared = false
-
-    /// 特徴はタイトルのみ（説明文は画面高が足りない端末で途切れ、情報過多だったため廃止）。
-    private let features: [(icon: String, title: String)] = [
-        ("door.right.hand.open", "写真でチェックイン"),
-        ("dumbbell.fill", "セット・レップ・重量をフル記録"),
-        ("flame.fill", "ヒートマップで継続を可視化")
-    ]
 
     var body: some View {
         ZStack {
@@ -23,8 +17,6 @@ struct OnboardingView: View {
             VStack(spacing: 0) {
                 Spacer(minLength: Theme.Spacing.xxl)
                 hero
-                Spacer(minLength: Theme.Spacing.xl)
-                featureList
                 Spacer(minLength: Theme.Spacing.xl)
                 actions
             }
@@ -85,33 +77,6 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Feature list
-
-    private var featureList: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            ForEach(Array(features.enumerated()), id: \.offset) { index, f in
-                HStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: f.icon)
-                        .font(.title3)
-                        .foregroundStyle(Theme.limeFill)
-                        .frame(width: 44, height: 44)
-                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
-                    Text(f.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Theme.Spacing.md)
-                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 20)
-                .animation(.smooth.delay(0.12 + Double(index) * 0.08), value: appeared)
-            }
-        }
-    }
-
     // MARK: - Actions
 
     private var actions: some View {
@@ -139,6 +104,23 @@ struct OnboardingView: View {
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.5))
                 .multilineTextAlignment(.center)
+
+            // まず使ってから決めたい人向けのゲスト開始（記録は端末に保存。後からのサインインで引き継ぎ）。
+            Button {
+                auth.signIn(displayName: "")
+            } label: {
+                Text("サインインせずに始める")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .underline()
+            }
+            .padding(.top, Theme.Spacing.xs)
+
+            Text("記録は端末に保存。あとからサインインすればそのまま引き継げます。")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.4))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)   // 画面高が足りない端末でも途切れさせない
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 16)
