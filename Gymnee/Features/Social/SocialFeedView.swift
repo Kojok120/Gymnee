@@ -20,7 +20,11 @@ struct SocialFeedView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            if let uid = auth.currentUserId {
+            if sync.isRemoteEnabled && !auth.isBackendAuthenticated {
+                // ゲスト（未サインイン）にはフィードの代わりにサインイン促しを出す。
+                // フレンド機能は実マルチユーザー連携＝バックエンド必須（サインアップ遅延化の要求ゲート）。
+                signInPrompt
+            } else if let uid = auth.currentUserId {
                 SocialContent(userId: uid, initialTab: initialTab)
                     .onAppear {
                         // 検証ハーネス: 一度だけフレンド画面を自動 push（戻り時の再 push を防ぐ）。
@@ -44,6 +48,30 @@ struct SocialFeedView: View {
                 EmptyStateView(systemImage: "person.2", title: "未ログイン")
             }
         }
+    }
+
+    /// ゲスト向けのサインイン促し（フレンド機能の入口で初めてサインインを求める）。
+    private var signInPrompt: some View {
+        ScrollView {
+            VStack(spacing: Theme.Spacing.lg) {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 52))
+                    .foregroundStyle(Theme.lime)
+                    .padding(.top, 48)
+                Text("フレンド機能にはサインインが必要です")
+                    .font(.title3.bold())
+                    .multilineTextAlignment(.center)
+                Text("友達のフォロー、応援の送り合い、招待リンクを使うにはサインインしてください。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                BackendSignInButtons()
+                    .padding(.top, Theme.Spacing.sm)
+            }
+            .padding(Theme.Spacing.xl)
+        }
+        .navigationTitle("ソーシャル")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     /// 保留中の招待（招待リンクで開いた相手）があれば一度だけ消費し、招待者プロフィールを push する。

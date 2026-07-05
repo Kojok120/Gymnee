@@ -14,6 +14,7 @@ struct WeekPlannerView: View {
     @Environment(SubscriptionService.self) private var subscription
     @Environment(AuthService.self) private var auth
     @Environment(HealthKitService.self) private var health
+    @Environment(LocalSyncEngine.self) private var syncEngine
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
     @Query private var planned: [PlannedWorkout]
     @Query private var routines: [Routine]
@@ -29,6 +30,8 @@ struct WeekPlannerView: View {
     @State private var aiRunning = false
     /// カレンダー連携のミニシート（設定と同じ行を共用）。
     @State private var showCalendarLink = false
+    /// ゲスト（未サインイン）がAI計画に触れた時のサインイン促しシート。
+    @State private var showSignInPrompt = false
     /// AI計画のチャットシート（体調シグナルの確認＋対話での生成/調整）。
     @State private var showAIOptions = false
     @State private var aiInput = ""
@@ -158,6 +161,7 @@ struct WeekPlannerView: View {
         // シートを閉じたら会話ごと破棄する（提案だけでなく履歴も。残すと、その後の手動編集を
         // 無視した古い案が画面に見えたまま、実計画ベースの練り直しと食い違う）。
         .sheet(isPresented: $showAIOptions, onDismiss: resetAIChat) { aiOptionsSheet }
+        .sheet(isPresented: $showSignInPrompt) { aiSignInSheet }
         .alert("AIワークアウト計画", isPresented: $aiInfo) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -298,6 +302,40 @@ struct WeekPlannerView: View {
         onStart(PlanStarter.start(plan, userId: userId, routines: routines, context: context))
     }
 
+    /// AI計画のサインイン促し（ゲストがAIボタンを押した時。生成はクラウドで行うためサインイン必須）。
+    private var aiSignInSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: Theme.Spacing.lg) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 44))
+                        .foregroundStyle(Theme.lime)
+                        .padding(.top, 24)
+                    Text("AI計画にはサインインが必要です")
+                        .font(.title3.bold())
+                        .multilineTextAlignment(.center)
+                    Text("週の計画づくりはクラウドのAIが生成します。サインインすると初回は無料で試せます。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    BackendSignInButtons()
+                        .padding(.top, Theme.Spacing.sm)
+                }
+                .padding(Theme.Spacing.xl)
+            }
+            .navigationTitle("AIで計画")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showSignInPrompt = false } }
+            }
+        }
+        .presentationDetents([.medium])
+        // サインインが成立したらこのシートを閉じる（そのままAIチャットを開けるように）。
+        .onChange(of: auth.isBackendAuthenticated) { _, authed in
+            if authed { showSignInPrompt = false }
+        }
+    }
+
     /// いずれかのカレンダーと連携済みか（Apple はアプリ内トグルまで含めて有効判定）。
     private var calendarLinked: Bool {
         (calendarService.authorized && calendarService.isEnabled) || googleCalendar.isConnected
@@ -324,10 +362,15 @@ struct WeekPlannerView: View {
     }
 
     /// AI計画のオプションシートを開く（Paywall 判定は生成時に行う）。
+    /// ゲスト（未サインイン）はここがサインイン要求ポイント（AI生成はバックエンド必須のため）。
     /// 体調シグナル（昨夜の睡眠・HRV）は開いた時点で取得して表示する。
     /// HealthKit のクエリは許諾プロンプトを出さないため、先に read 許可（睡眠/HRV含む）を要求する
     /// （許諾済みタイプはスキップされ、非対応端末では no-op）。非有限値はここで弾く。
     private func openAIOptions() {
+        if syncEngine.isRemoteEnabled && !auth.isBackendAuthenticated {
+            showSignInPrompt = true
+            return
+        }
         showAIOptions = true
         Task {
             await health.requestAuthorization()

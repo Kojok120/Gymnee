@@ -2,8 +2,9 @@ import SwiftUI
 import AuthenticationServices
 
 /// サインイン・初期設定（§5 / §6.1）。アプリの第一印象。
-/// Sign in with Apple / Google / メールでアカウント作成（オフライン/ゲスト開始は廃止）。
-/// アカウント必須にすることで、サインイン方法の違いによる多重ID・孤児データの発生を防ぐ。
+/// Sign in with Apple / Google / メール、または「サインインせずに始める」（ゲスト＝ローカルのみ）。
+/// ゲストは価値を体験してから必要な場面（ソーシャル等）でサインインする。後からのサインインでは
+/// LocalDataMigrator がローカルデータを新しい userId へ付け替えるため、多重ID・孤児データは生じない。
 struct OnboardingView: View {
     @Environment(AuthService.self) private var auth
     @State private var showEmailSignIn = false
@@ -138,6 +139,22 @@ struct OnboardingView: View {
             Text("サインインすると、複数端末での同期・通知・フレンド機能が使えます。")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.5))
+                .multilineTextAlignment(.center)
+
+            // まず使ってから決めたい人向けのゲスト開始（記録は端末に保存。後からのサインインで引き継ぎ）。
+            Button {
+                auth.signIn(displayName: "")
+            } label: {
+                Text("サインインせずに始める")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .underline()
+            }
+            .padding(.top, Theme.Spacing.xs)
+
+            Text("記録はこの端末に保存されます。あとからサインインすれば、そのまま引き継いでクラウドに同期できます。")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.4))
                 .multilineTextAlignment(.center)
         }
         .opacity(appeared ? 1 : 0)
