@@ -13,6 +13,7 @@ struct WorkoutSummaryView: View {
 
     @State private var appeared = false
     @State private var showShare = false
+    @State private var showTimeEdit = false
 
     private var workingSets: [ExerciseSet] {
         workout.exercises.flatMap(\.sets)
@@ -45,9 +46,9 @@ struct WorkoutSummaryView: View {
     private var hasPR: Bool { !prs.isEmpty }
 
     private var durationText: String? {
-        guard let end = workout.completedAt else { return nil }
-        let mins = max(1, Int(end.timeIntervalSince(workout.date) / 60))
-        return "\(mins)分"
+        WorkoutDuration.minutes(
+            date: workout.date, completedAt: workout.completedAt, durationSeconds: workout.durationSeconds
+        ).map { "\($0)分" }
     }
 
     var body: some View {
@@ -74,6 +75,9 @@ struct WorkoutSummaryView: View {
             .sensoryFeedback(hasPR ? .success : .impact(weight: .light), trigger: appeared)
             .sheet(isPresented: $showShare) {
                 ShareCardEditorView(content: .from(workout: workout, streak: streak > 0 ? streak : nil))
+            }
+            .sheet(isPresented: $showTimeEdit) {
+                WorkoutTimeEditSheet(workout: workout)
             }
         }
     }
@@ -138,8 +142,28 @@ struct WorkoutSummaryView: View {
             stat("種目", "\(exerciseCount)")
             stat("セット", "\(totalSets)")
             stat("総ボリューム", "\(totalVolume) kg")
-            if let d = durationText { stat("所要時間", d) }
+            durationStat
         }
+    }
+
+    /// 所要時間セル。まとめて後入力した場合はライブ経過が実態と合わないため、
+    /// タップで開始時刻・所要時間を手動修正できるようにする（未計測は「—」）。
+    private var durationStat: some View {
+        Button { showTimeEdit = true } label: {
+            VStack(spacing: 4) {
+                Text(durationText ?? "—")
+                    .font(.title2.bold().monospacedDigit()).foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                HStack(spacing: 4) {
+                    Text("所要時間").font(.caption).foregroundStyle(.secondary)
+                    Image(systemName: "pencil").font(.caption2).foregroundStyle(Theme.lime)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(Theme.Spacing.md)
+            .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func stat(_ label: String, _ value: String) -> some View {

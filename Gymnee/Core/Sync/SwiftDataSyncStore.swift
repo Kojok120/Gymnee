@@ -335,7 +335,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "visit_id": opt(m.visit?.id.uuidString.lowercased()),
          "date": iso(m.date), "name": m.name, "routine_id": opt(m.routineId?.uuidString.lowercased()),
          "note": opt(m.note), "is_planned": m.isPlanned, "completed_at": opt(m.completedAt.map(iso)),
-         "updated_at": iso(m.updatedAt)]
+         "duration_seconds": opt(m.durationSeconds), "updated_at": iso(m.updatedAt)]
     }
     private func applyWorkout(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -350,6 +350,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.note = str(row["note"])
         m.isPlanned = bool(row["is_planned"]) ?? m.isPlanned
         m.completedAt = date(row["completed_at"])
+        m.durationSeconds = int(row["duration_seconds"])
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
     }

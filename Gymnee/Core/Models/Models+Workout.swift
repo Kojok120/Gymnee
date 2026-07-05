@@ -14,6 +14,9 @@ final class Workout {
     /// 予定→実績（§6.2）。未来日に計画したワークアウトかどうか、消化済みか。
     var isPlanned: Bool
     var completedAt: Date?
+    /// 総合時間（秒）。完了時にライブ経過から確定、またはユーザーが手動で登録/修正する。
+    /// nil は未計測（過去日の後追い記録など）。表示は WorkoutDuration で導出する。
+    var durationSeconds: Int? = nil
     var updatedAt: Date
     var isDirty: Bool
 
@@ -31,6 +34,7 @@ final class Workout {
         note: String? = nil,
         isPlanned: Bool = false,
         completedAt: Date? = nil,
+        durationSeconds: Int? = nil,
         visit: Visit? = nil,
         updatedAt: Date = .now,
         isDirty: Bool = true
@@ -43,6 +47,7 @@ final class Workout {
         self.note = note
         self.isPlanned = isPlanned
         self.completedAt = completedAt
+        self.durationSeconds = durationSeconds
         self.visit = visit
         self.updatedAt = updatedAt
         self.isDirty = isDirty

@@ -67,7 +67,7 @@ enum FeedPublisher {
             let allSets = w.exercises.flatMap(\.sets)
             let vol = allSets.reduce(0.0) { $0 + $1.volume }
             let totalVolume = vol.isFinite ? Int(vol) : 0
-            let minutes = w.completedAt.map { max(1, Int($0.timeIntervalSince(w.date) / 60)) }
+            let minutes = WorkoutDuration.minutes(date: w.date, completedAt: w.completedAt, durationSeconds: w.durationSeconds)
             let prCount = prCountByWorkout[w.id] ?? 0
             var seenMuscle = Set<MuscleGroup>()
             let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }.map(\.rawValue)

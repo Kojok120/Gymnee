@@ -949,7 +949,19 @@ struct RecordContent: View {
         guard let w = activeWorkout else { return }
         // セット0件の種目エントリは投稿/同期前に取り除く（記録ミスで残った空種目を「セットなし」で残さない）。
         for we in Array(w.exercises) where we.sets.isEmpty { context.delete(we) }
-        w.completedAt = .now
+        // 初回完了のみ時刻を確定する（編集での再完了は既存の完了時刻・総合時間を保持）。
+        if w.completedAt == nil {
+            let now = Date.now
+            if let secs = WorkoutDuration.finalizedSeconds(date: w.date, completedAt: now) {
+                // ライブ記録：実経過を総合時間として確定。
+                w.completedAt = now
+                w.durationSeconds = secs
+            } else {
+                // 経過が実時間でない場合（過去日の後追い記録など）：完了日はワークアウトの
+                // 日付側に合わせ、総合時間は未計測(nil)のままサマリーでの手動入力に委ねる。
+                w.completedAt = Calendar.current.isDate(w.date, inSameDayAs: now) ? now : w.date
+            }
+        }
         w.isPlanned = false
         w.updatedAt = .now
         w.isDirty = true
