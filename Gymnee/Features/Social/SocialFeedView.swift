@@ -131,9 +131,11 @@ private struct SocialContent: View {
             sync: sync
         )
         await sync.syncNow()
-        // フォロー相手・フィード著者のプロフィール（名前/アバター）を id 指定で確実に取り込む。
-        // 差分 pull が後追いフォロー相手の古い行を取り込まず「ユーザー」表示になるのを防ぐ。
+        // フォロー相手・フォロワー・フィード著者のプロフィール（名前/アバター）を id 指定で確実に取り込む。
+        // 差分 pull は相手プロフィールの古い行を取り込まないため、ここに含めない相手は「ユーザー」表示に
+        // なってしまう（過去にフォロワーが漏れており、フォローバックするまで名前が出ないバグがあった）。
         let profileIds = Set(following.map(\.followeeId))
+            .union(followerIds)
             .union(feedItems.map(\.userId))
             .subtracting([userId])
         await sync.ensureProfiles(ids: profileIds)
