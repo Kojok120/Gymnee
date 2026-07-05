@@ -156,7 +156,7 @@ struct WorkoutSummaryView: View {
                     .lineLimit(1).minimumScaleFactor(0.6)
                 HStack(spacing: 4) {
                     Text("所要時間").font(.caption).foregroundStyle(.secondary)
-                    Image(systemName: "pencil").font(.caption2).foregroundStyle(Theme.lime)
+                    Image(systemName: "pencil").font(.caption2).foregroundStyle(Theme.textSecondary)
                 }
             }
             .frame(maxWidth: .infinity)
