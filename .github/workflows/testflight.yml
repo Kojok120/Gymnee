@@ -8,7 +8,10 @@ name: TestFlight
 #   ASC_ISSUER_ID         同ページの Issuer ID
 #   ASC_API_KEY_P8        同 API キー(.p8) の中身を base64 化した文字列  例) base64 -i AuthKey_XXXX.p8 | pbcopy
 #   DIST_CERT_P12         Apple Distribution 証明書(.p12) を base64 化した文字列（Xcode/Keychain から書き出し。秘密鍵込み）
-#   DIST_CERT_PASSWORD    その .p12 のパスワード
+#   DIST_CERT_PASSWORD    その .p12 のパスワード（DEV_CERT_P12 も同じパスワードを使う）
+#   DEV_CERT_P12          Apple Development 証明書(.p12) を base64 化した文字列（ASC cert id 949Y6ACJ7K・秘密鍵込み）。
+#                         これが無いと automatic 署名の Archive が実行ごとに開発証明書をクラウド新規作成し、
+#                         アカウントの証明書上限に達して失敗する（2026-07-06 に実際に発生）
 #   PROV_PROFILE_APP      com.gymnee.app の App Store 配布プロビジョニングプロファイル(.mobileprovision)を base64 化した文字列
 #   PROV_PROFILE_WIDGET   com.gymnee.app.widgets の App Store 配布プロファイルを base64 化した文字列
 #   SECRETS_PROD_XCCONFIG （任意）Config/Secrets.prod.xcconfig の中身を base64 化した文字列。未設定だと example で配信＝バックエンド未接続ビルドになる
@@ -82,9 +85,10 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Import Apple Distribution certificate
+      - name: Import signing certificates
         env:
           DIST_CERT_P12: ${{ secrets.DIST_CERT_P12 }}
+          DEV_CERT_P12: ${{ secrets.DEV_CERT_P12 }}
           DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
         run: |
           set -euo pipefail
@@ -95,10 +99,14 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
           security import "$RUNNER_TEMP/cert.p12" -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          # 開発証明書（Archive の automatic 署名用）。ランナーは使い捨てのため、これを
+          # 持ち込まないと Xcode が毎回クラウドで開発証明書を新規作成し、上限到達で失敗する。
+          echo "$DEV_CERT_P12" | base64 --decode > "$RUNNER_TEMP/dev_cert.p12"
+          security import "$RUNNER_TEMP/dev_cert.p12" -P "$DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
           # ビルド中に証明書を参照できるよう検索リストへ追加＋partition list 設定（UIプロンプト回避）。
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed s/\"//g)
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
-          rm -f "$RUNNER_TEMP/cert.p12"
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/dev_cert.p12"
 
       - name: Install provisioning profiles
         # Export の手動署名用に App Store 配布プロファイルを所定の場所へ復元。
