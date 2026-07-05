@@ -74,56 +74,56 @@ const PANELS = {
   "01": {
     eyebrow: "TAP TO LOG",
     img: "screens/02-record.png",
-    h: "筋トレの記録は、\n『タップだけ。』",
+    h: "筋トレの記録は\n『タップだけ。』",
     sub: "前回の重量が選ばれた状態で開く。数字を打たずに1セット記録",
     chip: { pos: "br", ov: "SET LOG", big: "1タップ" }
   },
   "02": {
     eyebrow: "AI WEEKLY PLAN",
     img: "screens/10-ai-plan.png",
-    h: "週の計画は、\n『AIと相談。』",
+    h: "週の計画は\n『AIと相談。』",
     sub: "予定と疲労に合わせて、1週間分のメニューを提案",
     chip: { pos: "br", ov: "PLAN", big: "1週間分" }
   },
   "03": {
     eyebrow: "KEEP GOING",
     img: "screens/01-home-calendar.png",
-    h: "サボった日も、\n『続いた日も、残る。』",
+    h: "サボった日も\n『続いた日も、残る。』",
     sub: "ジム通いがカレンダーに積み上がる。連続記録が励みになる",
     chip: { pos: "br", ov: "STREAK", big: "連続3日" }
   },
   "04": {
     eyebrow: "PROGRESS",
     img: "screens/03-analytics.png",
-    h: "成長が、\n『ひと目でわかる。』",
+    h: "成長が\n『ひと目でわかる。』",
     sub: "推定1RM・部位バランス・自己ベストの推移をグラフで分析",
     chip: { pos: "br", ov: "EST. 1RM", big: "100kg" }
   },
   "05": {
     eyebrow: "PHOTO CHECK-IN",
     img: "screens/04-checkin.png",
-    h: "写真を撮るだけで、\n『チェックイン。』",
+    h: "写真を撮るだけで\n『チェックイン。』",
     sub: "GPSがジムを自動判定。ジムを変えても記録は1本のまま",
     chip: { pos: "br", ov: "GYMS", big: "何軒でも" }
   },
   "06": {
     eyebrow: "TRAIN TOGETHER",
     img: "screens/05-social.png",
-    h: "友達と応援し合うから、\n『続けられる。』",
+    h: "友達と応援し合うから\n『続けられる。』",
     sub: "チェックインや自己ベストがフィードに。合トレのタグ付けも",
     chip: null
   },
   "07": {
     eyebrow: "ACHIEVEMENTS",
     img: "screens/09-profile.png",
-    h: "続けた分だけ、\n『実績が貯まる。』",
+    h: "続けた分だけ\n『実績が貯まる。』",
     sub: "総挙上量・連続週数・来店数。積み上げが形になる",
     chip: { pos: "br", ov: "TOTAL LIFTED", big: "10t →" }
   },
   "08": {
     eyebrow: "SHARE",
     img: "screens/07-share.png",
-    h: "今日の成果を、\n『1枚にして共有。』",
+    h: "今日の成果を\n『1枚にして共有。』",
     sub: "写真にサマリを重ねた共有カードをストーリーズへ",
     chip: null
   },
@@ -135,7 +135,7 @@ function esc(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 function heading(h) {
-  // 『』をライム span に、\n を <br> に変換
+  // 『』をライム span に\n を <br> に変換
   return esc(h)
     .replace(/『/g, '<span class="lime">').replace(/』/g, "</span>")
     .replace(/\n/g, "<br>");
