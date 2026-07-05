@@ -199,7 +199,7 @@ enum FeedBuilder {
                 id: v.id,
                 date: v.visitedAt,
                 kind: .visit,
-                title: v.gym?.name ?? "チェックイン",
+                title: v.gym?.name ?? "ジム活",
                 subtitle: v.note,
                 photoFilename: v.localPhotoFilename,
                 visibility: vis(v.id),

@@ -45,7 +45,7 @@ enum AchievementCalculator {
                   value: Double(workoutCount), tiers: workoutTiers.map(Double.init), label: { "\(Int($0))回" }),
             build(kind: .prs, title: "自己ベスト", systemImage: "trophy.fill",
                   value: Double(prCount), tiers: prTiers.map(Double.init), label: { "\(Int($0))" }),
-            build(kind: .visits, title: "来店", systemImage: "mappin.and.ellipse",
+            build(kind: .visits, title: "ジム活", systemImage: "mappin.and.ellipse",
                   value: Double(visitCount), tiers: visitTiers.map(Double.init), label: { "\(Int($0))回" }),
             build(kind: .weeklyStreak, title: "連続週", systemImage: "flame.fill",
                   value: Double(longestWeeklyStreakWeeks), tiers: weeklyStreakTiers.map(Double.init), label: { "\(Int($0))週" }),

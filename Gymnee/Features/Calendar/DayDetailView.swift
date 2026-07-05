@@ -89,9 +89,9 @@ struct DayDetailView: View {
                 }
             }
 
-            Section("来店") {
+            Section("ジム活") {
                 if visits.isEmpty {
-                    Text("来店記録なし").foregroundStyle(.secondary)
+                    Text("ジム活の記録なし").foregroundStyle(.secondary)
                 } else {
                     ForEach(visits) { visit in
                         VisitRow(visit: visit)
@@ -103,7 +103,7 @@ struct DayDetailView: View {
                 // 来店の追加は「未来日」では不可（過去・今日のみ）。
                 if !isFuture {
                     Button { showAddVisit = true } label: {
-                        Label("この日に来店を追加", systemImage: "plus.circle")
+                        Label("この日にジム活を追加", systemImage: "plus.circle")
                     }
                 }
             }

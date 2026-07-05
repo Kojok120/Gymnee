@@ -350,7 +350,7 @@ private struct CalendarHomeContent: View {
 
     private var legend: some View {
         HStack(spacing: Theme.Spacing.lg) {
-            legendItem(color: Theme.lime, label: "来店")
+            legendItem(color: Theme.lime, label: "ジム活")
             legendItem(color: Theme.warning, label: "ワークアウト")
             legendItem(color: Theme.info, label: "計画")
             Spacer()

@@ -23,7 +23,7 @@ struct WorkoutDetailView: View {
                 }
             }
             if let visit = workout.visit {
-                Section("来店") {
+                Section("ジム活") {
                     Label(visit.gym?.name ?? "ジム", systemImage: "building.2.fill")
                 }
             }

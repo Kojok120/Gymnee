@@ -34,7 +34,7 @@ struct CheckInEditView: View {
                     Label(visit.gym?.name ?? "ジム", systemImage: "building.2.fill")
                 }
                 Section("日時") {
-                    DatePicker("来店日時", selection: $visit.visitedAt)
+                    DatePicker("記録日時", selection: $visit.visitedAt)
                 }
                 Section("メモ") {
                     TextField("今日の調子・メニューなど", text: noteBinding, axis: .vertical)
@@ -51,7 +51,7 @@ struct CheckInEditView: View {
                     Text("この投稿を誰に見せるか。既定値は設定で変更できます。")
                 }
             }
-            .navigationTitle("チェックインを編集")
+            .navigationTitle("ジム活を編集")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() } }
