@@ -60,7 +60,7 @@ enum FeedPublisher {
         for v in visits {
             // 写真をリモートに上げてある来店は参照を載せ、フォロワー側でも写真を表示できるようにする。
             let visitStats = v.photoURL.flatMap { FeedItemVisitStats(photoRef: $0).encodedJSON() }
-            upsert(refId: v.id, type: .visit, summary: v.gym?.name ?? "チェックイン", date: v.visitedAt, statsJSON: visitStats)
+            upsert(refId: v.id, type: .visit, summary: v.gym?.name ?? "ジム活", date: v.visitedAt, statsJSON: visitStats)
         }
         for w in workouts {
             // サマリは種目名のみ（数値は stats_json が運ぶ）。フォロワー側もリッチカードを描ける。

@@ -206,7 +206,7 @@ struct PostDetailView: View {
     /// 来店: ジム・日時・合トレ相手・メモ ＋ 編集導線（自分の投稿）。
     private func visitDetail(_ v: Visit) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            sectionHeader("来店", systemImage: "building.2.fill")
+            sectionHeader("ジム活", systemImage: "building.2.fill")
             Label(v.gym?.name ?? "ジム", systemImage: "building.2.fill")
                 .font(.subheadline).foregroundStyle(Theme.textPrimary)
             Label(v.visitedAt.formatted(.dateTime.year().month().day().hour().minute()), systemImage: "clock")
@@ -220,7 +220,7 @@ struct PostDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button { editVisit = v } label: {
-                Label("来店を編集", systemImage: "square.and.pencil")
+                Label("ジム活を編集", systemImage: "square.and.pencil")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.lime)
             }
             .padding(.top, 2)

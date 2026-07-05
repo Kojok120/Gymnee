@@ -89,7 +89,7 @@ struct CheckInView: View {
             }
             partnerSection
             Section("日時") {
-                DatePicker("来店日時", selection: $visitedAt)
+                DatePicker("記録日時", selection: $visitedAt)
             }
         }
         .navigationTitle("チェックイン")
@@ -164,7 +164,7 @@ struct CheckInView: View {
         } header: {
             Text("写真でチェックイン")
         } footer: {
-            Text("ジムでの 1 枚が来店記録になります。")
+            Text("ジムでの 1 枚がジム活の記録になります。")
         }
     }
 

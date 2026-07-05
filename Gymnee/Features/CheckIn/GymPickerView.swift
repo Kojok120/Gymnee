@@ -104,7 +104,7 @@ struct GymPickerView: View {
                 }
                 Button("キャンセル", role: .cancel) { deleteTarget = nil }
             } message: {
-                Text("このジムの近くに来た時の自動チェックイン通知も止まります。過去のチェックイン記録は残ります。")
+                Text("このジムの近くに来た時の自動チェックイン通知も止まります。過去のジム活の記録は残ります。")
             }
             .onAppear {
                 mode = initialMode

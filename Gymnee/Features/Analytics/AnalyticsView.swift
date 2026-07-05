@@ -87,7 +87,7 @@ struct AnalyticsView: View {
     /// 来店ヒートマップは直近3ヶ月（12週）の貢献グラフ（幅いっぱい）に固定する。
     private var heatmapCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "来店ヒートマップ（直近\(periodLabel)）")
+            SectionHeader(title: "ジム活ヒートマップ（直近\(periodLabel)）")
             HeatmapView(counts: visitCounts, weeks: periodWeeks, contribution: true)
         }
         .gymneeCard()
@@ -391,7 +391,7 @@ struct AnalyticsView: View {
                     .buttonStyle(.bordered)
                 Button {
                     csvURL = CSVExporter.writeTempFile(CSVExporter.visitsCSV(userId: userId, context: context), name: "gymnee_visits")
-                } label: { Label("来店", systemImage: "square.and.arrow.up").font(.caption) }
+                } label: { Label("ジム活", systemImage: "square.and.arrow.up").font(.caption) }
                     .buttonStyle(.bordered)
             }
             if let csvURL {

@@ -121,7 +121,7 @@ struct ProfileView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { showProfileEdit = true }
                     HStack(spacing: Theme.Spacing.md) {
-                        StatPill(value: "\(visits.count)", label: "来店数", tint: Theme.lime, systemImage: "mappin.and.ellipse")
+                        StatPill(value: "\(visits.count)", label: "ジム活", tint: Theme.lime, systemImage: "mappin.and.ellipse")
                         StatPill(value: "\(workoutCount)", label: "ワークアウト数", tint: Theme.info, systemImage: "dumbbell.fill")
                         StatPill(value: "\(weeklyStreak.weeks)", label: "連続週", tint: Theme.warning, systemImage: "flame.fill")
                     }
