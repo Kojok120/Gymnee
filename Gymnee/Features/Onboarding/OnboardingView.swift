@@ -10,13 +10,6 @@ struct OnboardingView: View {
     @State private var showEmailSignIn = false
     @State private var appeared = false
 
-    /// 特徴はタイトルのみ（説明文は画面高が足りない端末で途切れ、情報過多だったため廃止）。
-    private let features: [(icon: String, title: String)] = [
-        ("door.right.hand.open", "写真でチェックイン"),
-        ("dumbbell.fill", "セット・レップ・重量をフル記録"),
-        ("flame.fill", "ヒートマップで継続を可視化")
-    ]
-
     var body: some View {
         ZStack {
             backdrop
@@ -24,8 +17,6 @@ struct OnboardingView: View {
             VStack(spacing: 0) {
                 Spacer(minLength: Theme.Spacing.xxl)
                 hero
-                Spacer(minLength: Theme.Spacing.xl)
-                featureList
                 Spacer(minLength: Theme.Spacing.xl)
                 actions
             }
@@ -86,33 +77,6 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Feature list
-
-    private var featureList: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            ForEach(Array(features.enumerated()), id: \.offset) { index, f in
-                HStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: f.icon)
-                        .font(.title3)
-                        .foregroundStyle(Theme.limeFill)
-                        .frame(width: 44, height: 44)
-                        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
-                    Text(f.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Theme.Spacing.md)
-                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 20)
-                .animation(.smooth.delay(0.12 + Double(index) * 0.08), value: appeared)
-            }
-        }
-    }
-
     // MARK: - Actions
 
     private var actions: some View {
@@ -152,10 +116,11 @@ struct OnboardingView: View {
             }
             .padding(.top, Theme.Spacing.xs)
 
-            Text("記録はこの端末に保存されます。あとからサインインすれば、そのまま引き継いでクラウドに同期できます。")
+            Text("記録は端末に保存。あとからサインインすればそのまま引き継げます。")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.4))
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)   // 画面高が足りない端末でも途切れさせない
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 16)
