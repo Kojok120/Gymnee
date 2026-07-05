@@ -54,3 +54,14 @@ Gymnee リリース情報 一式（このフォルダの使い方）
   → App Store の「6.9インチディスプレイ」枠にそのまま使えます（最重要サイズ）。
 ・実機撮影や、上部に訴求コピーを載せた装飾版に差し替えると、より訴求力が上がります。
 ・順番の推奨: ①カレンダー(継続) ②ワークアウト記録 ③分析 ④チェックイン/共有 ⑤ソーシャル ⑥ショップ
+
+■ デザイン版スクリーンショット（2026-07 刷新）
+screenshots/ と screenshots_6.5inch/ は、キャッチコピー入りのデザインパネル
+（store_panels/ で生成）。1〜2枚目は検索結果表示を想定した背景連結ペア。
+再生成手順:
+  1. 文言・素材・チップは store_panels/template.html の PANELS を編集
+  2. bash docs/release_information/store_panels/build.sh を実行
+     （初回のみ: npx -y playwright install chromium）
+  3. 8枚 × 6.9"(1320x2868) / 6.5"(1284x2778) が自動生成・寸法検証される
+元UIキャプチャは store_panels/screens/（1179px幅）。撮り直す場合は
+シミュレータ(iPhone 16・ダークモード・-gymneeDemo)で撮影して差し替える。

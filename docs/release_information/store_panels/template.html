@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!--
+  App Store スクリーンショットパネルの雛形。
+  ヘッドレス Chrome で URL ハッシュ（#01〜#08 / #pano）を指定してレンダリングする（build.sh 参照）。
+  デザイントークンは LP（docs/index.html の :root）を 6.9インチ実寸（1320×2868）向けに約3倍で移植。
+  文言・素材・チップは下部 <script> の PANELS を編集して再ビルドする。
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Zen+Maru+Gothic:wght@900&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#0B0D0C; --bg1:#131614; --bg2:#1C201D; --bg3:#272C28;
+  --lime:#C6FF3D; --lime-bright:#D8FF6B;
+  --text:#F4F7F2; --muted:#A7AEA6; --line:#272C28;
+  --jp:"Zen Kaku Gothic New",sans-serif;
+  --round:"Zen Maru Gothic",sans-serif;
+  --mono:"Space Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1320px;height:2868px;overflow:hidden;background:var(--bg0)}
+body.wide{width:2640px}
+
+.panel{position:absolute;top:0;width:1320px;height:2868px;overflow:hidden}
+.panel .inner{position:relative;width:100%;height:100%}
+
+/* 背景: ダーク＋ライムグロー。パノラマ時はグローだけがシームをまたぐ（body直下に敷く） */
+.glow{position:absolute;pointer-events:none;z-index:0}
+.glow-main{top:-12%;left:50%;transform:translateX(-50%);width:170%;height:60%;
+  background:radial-gradient(50% 50% at 50% 50%, rgba(199,255,61,.16), transparent 70%)}
+.glow-pano{position:absolute;top:-10%;left:15%;width:70%;height:55%;z-index:0;
+  background:radial-gradient(50% 50% at 50% 50%, rgba(199,255,61,.14), transparent 70%)}
+/* ノイズ（LP 由来。fixed→absolute） */
+.grain{position:absolute;inset:0;pointer-events:none;z-index:1;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* 上部キャッチ（上下 40px は 6.5" クロップの安全マージン＝無地のまま） */
+.copy{position:relative;z-index:2;padding:190px 100px 0;text-align:center}
+.eyebrow{display:inline-flex;align-items:center;gap:22px;font-family:var(--mono);font-weight:700;
+  font-size:30px;letter-spacing:.24em;text-transform:uppercase;color:var(--lime)}
+.eyebrow::before,.eyebrow::after{content:"";width:56px;height:3px;background:var(--lime);opacity:.8}
+h1{margin-top:44px;font-family:var(--jp);font-weight:900;font-size:116px;line-height:1.3;
+  letter-spacing:-.015em;color:var(--text);font-feature-settings:"palt" 1;word-break:keep-all}
+h1 .lime{color:var(--lime);text-shadow:0 0 70px rgba(199,255,61,.45)}
+.sub{margin:40px auto 0;font-family:var(--jp);font-weight:500;font-size:43px;line-height:1.7;
+  color:var(--muted);max-width:1040px;word-break:keep-all;overflow-wrap:break-word}
+
+/* 端末フレーム（LP .phone の3倍スケール・下端見切れで統一） */
+.stage{position:absolute;left:50%;transform:translateX(-50%);bottom:-170px;width:900px;z-index:2}
+.phone{position:relative;border-radius:126px;padding:30px;
+  background:linear-gradient(160deg,#23282440,#0c0e0d);border:3px solid rgba(255,255,255,.09);
+  box-shadow:0 90px 200px -60px rgba(0,0,0,.95),0 0 260px -40px rgba(199,255,61,.25)}
+.phone img{display:block;width:100%;height:auto;border-radius:96px}
+
+/* 数値チップ（LP .chip の3倍スケール） */
+.chip{position:absolute;background:rgba(19,22,20,.9);backdrop-filter:blur(8px);
+  border:2px solid var(--line);border-radius:44px;padding:30px 44px;
+  box-shadow:0 50px 110px -40px #000;z-index:3;text-align:left}
+.chip .ov{font-family:var(--mono);font-weight:700;font-size:24px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--muted)}
+.chip .big{margin-top:6px;font-family:var(--round);font-weight:900;font-size:64px;line-height:1;
+  color:var(--lime);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip-tl{top:-40px;left:-120px}
+.chip-br{bottom:560px;right:-130px}
+</style>
+</head>
+<body>
+<script>
+// 見出しの『』内はライム表示。chip は {pos:"tl"|"br", ov, big}。
+const PANELS = {
+  "01": {
+    eyebrow: "TAP TO LOG",
+    img: "screens/02-record.png",
+    h: "筋トレの記録は\n『タップだけ。』",
+    sub: "前回の重量が選ばれた状態で開く。数字を打たずに1セット記録",
+    chip: { pos: "br", ov: "SET LOG", big: "1タップ" }
+  },
+  "02": {
+    eyebrow: "AI WEEKLY PLAN",
+    img: "screens/10-ai-plan.png",
+    h: "週の計画は\n『AIと相談。』",
+    sub: "予定と疲労に合わせて、1週間分のメニューを提案",
+    chip: { pos: "br", ov: "PLAN", big: "1週間分" }
+  },
+  "03": {
+    eyebrow: "KEEP GOING",
+    img: "screens/01-home-calendar.png",
+    h: "サボった日も\n『続いた日も、残る。』",
+    sub: "ジム通いがカレンダーに積み上がる。連続記録が励みになる",
+    chip: { pos: "br", ov: "STREAK", big: "連続3日" }
+  },
+  "04": {
+    eyebrow: "PROGRESS",
+    img: "screens/03-analytics.png",
+    h: "成長が\n『ひと目でわかる。』",
+    sub: "推定1RM・部位バランス・自己ベストの推移をグラフで分析",
+    chip: { pos: "br", ov: "EST. 1RM", big: "100kg" }
+  },
+  "05": {
+    eyebrow: "PHOTO CHECK-IN",
+    img: "screens/04-checkin.png",
+    h: "写真を撮るだけで\n『チェックイン。』",
+    sub: "GPSがジムを自動判定。ジムを変えても記録は1本のまま",
+    chip: { pos: "br", ov: "GYMS", big: "何軒でも" }
+  },
+  "06": {
+    eyebrow: "TRAIN TOGETHER",
+    img: "screens/05-social.png",
+    h: "友達と応援し合うから\n『続けられる。』",
+    sub: "チェックインや自己ベストがフィードに。合トレのタグ付けも",
+    chip: null
+  },
+  "07": {
+    eyebrow: "ACHIEVEMENTS",
+    img: "screens/09-profile.png",
+    h: "続けた分だけ\n『実績が貯まる。』",
+    sub: "総挙上量・連続週数・来店数。積み上げが形になる",
+    chip: { pos: "br", ov: "TOTAL LIFTED", big: "10t →" }
+  },
+  "08": {
+    eyebrow: "SHARE",
+    img: "screens/07-share.png",
+    h: "今日の成果を\n『1枚にして共有。』",
+    sub: "写真にサマリを重ねた共有カードをストーリーズへ",
+    chip: null
+  },
+  // 1〜2枚目の背景連結（検索結果で横並び表示された時に1つの面に見える）
+  "pano": { wide: true, left: "01", right: "02" }
+};
+
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function heading(h) {
+  // 『』をライム span に\n を <br> に変換
+  return esc(h)
+    .replace(/『/g, '<span class="lime">').replace(/』/g, "</span>")
+    .replace(/\n/g, "<br>");
+}
+function panelHTML(p) {
+  const chip = p.chip
+    ? `<div class="chip chip-${p.chip.pos}"><div class="ov">${esc(p.chip.ov)}</div><div class="big">${esc(p.chip.big)}</div></div>`
+    : "";
+  return `<div class="inner">
+    <div class="glow glow-main"></div>
+    <div class="grain"></div>
+    <div class="copy">
+      <div class="eyebrow">${esc(p.eyebrow)}</div>
+      <h1>${heading(p.h)}</h1>
+      <p class="sub">${esc(p.sub)}</p>
+    </div>
+    <div class="stage"><div class="phone"><img src="${p.img}">${chip}</div></div>
+  </div>`;
+}
+
+const id = (location.hash || "#01").slice(1);
+const spec = PANELS[id];
+if (spec && spec.wide) {
+  document.body.classList.add("wide");
+  // シームをまたぐ共有グローを body 直下に1つ敷き、各パネルは通常描画（単体表示でも破綻しない）
+  const shared = document.createElement("div");
+  shared.className = "glow-pano";
+  document.body.appendChild(shared);
+  for (const [i, key] of [spec.left, spec.right].entries()) {
+    const el = document.createElement("div");
+    el.className = "panel";
+    el.style.left = `${i * 1320}px`;
+    el.innerHTML = panelHTML(PANELS[key]);
+    // パノラマ側では各パネル個別のメイングローを弱める（共有グローが主役）
+    el.querySelector(".glow-main").style.opacity = "0.5";
+    document.body.appendChild(el);
+  }
+} else if (spec) {
+  const el = document.createElement("div");
+  el.className = "panel";
+  el.innerHTML = panelHTML(spec);
+  document.body.appendChild(el);
+} else {
+  document.body.textContent = `unknown panel: ${id}`;
+}
+document.fonts.ready.then(() => { document.documentElement.dataset.fonts = "ok"; });
+</script>
+</body>
+</html>
