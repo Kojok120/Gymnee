@@ -92,6 +92,8 @@ jobs:
           DIST_CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
         run: |
           set -euo pipefail
+          # 途中失敗でも秘密鍵入り .p12 をディスクに残さない。
+          trap 'rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/dev_cert.p12"' EXIT
           KEYCHAIN="$RUNNER_TEMP/app-signing.keychain-db"
           KEYCHAIN_PW="$(uuidgen)"
           echo "$DIST_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
@@ -106,7 +108,6 @@ jobs:
           # ビルド中に証明書を参照できるよう検索リストへ追加＋partition list 設定（UIプロンプト回避）。
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed s/\"//g)
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN" >/dev/null
-          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/dev_cert.p12"
 
       - name: Install provisioning profiles
         # Export の手動署名用に App Store 配布プロファイルを所定の場所へ復元。
