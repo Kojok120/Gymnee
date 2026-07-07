@@ -60,10 +60,17 @@ struct SettingsView: View {
                 Picker("投稿の既定の公開範囲", selection: $defaultVisibilityRaw) {
                     ForEach(Visibility.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
                 }
+                if let uid = auth.currentUserId {
+                    NavigationLink {
+                        BlockedUsersView(currentUserId: uid)
+                    } label: {
+                        Label("ブロック中のユーザー", systemImage: "hand.raised")
+                    }
+                }
             } header: {
                 Text("ソーシャル")
             } footer: {
-                Text("チェックインやワークアウトを共有するときの初期の公開範囲。投稿ごとに個別変更もできます。")
+                Text("チェックインやワークアウトを共有するときの初期の公開範囲。投稿ごとに個別変更もできます。ブロックした相手はいつでも解除できます。")
             }
 
             Section {
