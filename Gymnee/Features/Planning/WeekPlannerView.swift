@@ -11,7 +11,6 @@ struct WeekPlannerView: View {
     @Environment(\.modelContext) private var context
     @Environment(CalendarService.self) private var calendarService
     @Environment(GoogleCalendarService.self) private var googleCalendar
-    @Environment(SubscriptionService.self) private var subscription
     @Environment(AuthService.self) private var auth
     @Environment(HealthKitService.self) private var health
     @Environment(LocalSyncEngine.self) private var syncEngine
@@ -24,8 +23,6 @@ struct WeekPlannerView: View {
     // 計画追加の下書き選択（保存するまで永続化しない）。
     @State private var planDraftTitle: String?
     @State private var planDraftRoutineId: UUID?
-    @State private var showPaywall = false
-    @AppStorage("gymnee.aiFreeUsed") private var aiFreeUsed = false
     @State private var aiInfo = false
     @State private var aiRunning = false
     /// カレンダー連携のミニシート（設定と同じ行を共用）。
@@ -391,8 +388,6 @@ struct WeekPlannerView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showAIOptions = false } }
             }
-            // Paywall は AI シートの中から提示する（兄弟 sheet だと表示中の AI シートに阻まれて出ない）。
-            .sheet(isPresented: $showPaywall) { PaywallView() }
         }
         .presentationDetents([.large])
     }
@@ -554,11 +549,6 @@ struct WeekPlannerView: View {
     private func sendChat(_ text: String) {
         let trimmed = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
         guard !trimmed.isEmpty, !aiRunning else { return }
-        // 初回は無料で体験 → 価値を感じてから課金（無料ユーザーは2回目以降 Paywall）。
-        if !subscription.isPremium {
-            if aiFreeUsed { showPaywall = true; return }
-            aiFreeUsed = true
-        }
         aiMessages.append(AIChatMessage(role: .user, text: trimmed))
         aiInput = ""
         runAIPlan()
