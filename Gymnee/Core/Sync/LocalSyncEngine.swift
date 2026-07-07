@@ -38,10 +38,11 @@ final class LocalSyncEngine: SyncEngine {
     /// id だけをフル取得してサーバー id と差分照合（ローカルの余剰行を削除）するテーブル。
     /// set 的で小さく、tombstone を持たない。
     /// gyms は誤登録ジムの削除を他端末へ伝えるために対象（プリセットの扱いは store 側で除外）。
-    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments", "feed_items", "gyms"]
+    /// blocks はブロック解除（Block 削除）を他端末へ伝えるために対象（解除しても相手が隠れ続けるのを防ぐ）。
+    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments", "feed_items", "gyms", "blocks"]
     /// 削除照合の id 取得上限。取得がこの件数に達したら（＝ページ打ち切りの恐れ）当回は照合しない。
     @ObservationIgnored private let reconcileSafetyCap = 1000
-    /// 削除照合（reconcile）の実行間隔。毎 pull で 3 テーブルの id 全取得＋ローカル全件走査を
+    /// 削除照合（reconcile）の実行間隔。毎 pull で対象テーブルの id 全取得＋ローカル全件走査を
     /// 行うのは重いため間隔を空ける。エンジン生成後の初回 pull では必ず実行されるので、
     /// アプリを開き直せば他端末の削除は即反映される。
     @ObservationIgnored private let reconcileCooldown: TimeInterval = 300

@@ -186,6 +186,11 @@ final class SwiftDataSyncStore: SyncBackingStore {
             let locals = (try? context.fetch(FetchDescriptor<Gym>(predicate: #Predicate { $0.sourceRaw == "user" }))) ?? []
             let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
             for g in locals where orphans.contains(g.id) { context.delete(g); changed = true }
+        case "blocks":
+            // 他端末でのブロック解除（Block 削除）を伝播。isDirty な未push分は orphanIds が保護する。
+            let locals = (try? context.fetch(FetchDescriptor<Block>())) ?? []
+            let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
+            for b in locals where orphans.contains(b.id) { context.delete(b); changed = true }
         default:
             return
         }
