@@ -9,6 +9,9 @@
 //   APNS_BUNDLE_ID      … com.gymnee.app（既定値あり）
 //   APNS_HOST           … api.sandbox.push.apple.com（dev署名/Xcodeデバッグ）または api.push.apple.com（配布）
 //   PUSH_SHARED_SECRET  … DB トリガーと共有する任意の秘密。X-Push-Secret の照合に使う
+//   RESEND_API_KEY      … Resend の API キー（通報メール通知に使用。未設定ならメール送信をスキップ）
+//   REPORT_NOTIFY_TO    … 通報通知の宛先メール（運営の受信先。未設定ならスキップ）
+//   REPORT_NOTIFY_FROM  … 送信元アドレス（既定 "Gymnee <noreply@gymnee.app>"。Resend で検証済みのドメインにする）
 // 自動注入（Supabase が付与）: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -21,6 +24,9 @@ const APNS_TEAM_ID = Deno.env.get("APNS_TEAM_ID") ?? "";
 const APNS_BUNDLE_ID = Deno.env.get("APNS_BUNDLE_ID") ?? "com.gymnee.app";
 const APNS_HOST = Deno.env.get("APNS_HOST") ?? "api.sandbox.push.apple.com";
 const PUSH_SHARED_SECRET = Deno.env.get("PUSH_SHARED_SECRET") ?? "";
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
+const REPORT_NOTIFY_TO = Deno.env.get("REPORT_NOTIFY_TO") ?? "";
+const REPORT_NOTIFY_FROM = Deno.env.get("REPORT_NOTIFY_FROM") ?? "Gymnee <noreply@gymnee.app>";
 
 function base64UrlFromBytes(bytes: Uint8Array): string {
   let bin = "";
@@ -118,7 +124,7 @@ Deno.serve(async (req) => {
     return new Response("forbidden", { status: 403 });
   }
 
-  let payload: { event?: string; visitId?: string; reactionId?: string; commentId?: string; followId?: string };
+  let payload: { event?: string; visitId?: string; reactionId?: string; commentId?: string; followId?: string; reportId?: string };
   try {
     payload = await req.json();
   } catch {
@@ -216,6 +222,58 @@ Deno.serve(async (req) => {
       type: "follow", followerId,
     });
     return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
+  // --- 通報 → 運営へメール通知（Resend） ---
+  if (event === "report") {
+    const reportId = payload.reportId;
+    if (!reportId) return new Response("missing reportId", { status: 400 });
+    // メール設定（APIキー・宛先）が無ければ静かにスキップ（push 通知系と同様に縮退）。
+    if (!RESEND_API_KEY || !REPORT_NOTIFY_TO) {
+      return new Response(JSON.stringify({ sent: 0, reason: "email not configured" }), { status: 200 });
+    }
+    const { data: report } = await db
+      .from("reports")
+      .select("reporter_id, reported_user_id, context_type, context_id, reason, detail, created_at")
+      .eq("id", reportId).single();
+    if (!report) return new Response(JSON.stringify({ sent: 0, reason: "report not found" }), { status: 200 });
+
+    // 通報者・被通報者の表示名を補足（取得できなくても送る）。
+    const [{ data: reporter }, { data: reported }] = await Promise.all([
+      db.from("profiles").select("display_name").eq("id", report.reporter_id).single(),
+      db.from("profiles").select("display_name").eq("id", report.reported_user_id).single(),
+    ]);
+
+    const subject = `[Gymnee] 新しい通報 (${report.reason})`;
+    const text = [
+      "Gymnee に新しい通報が届きました。Supabase の reports テーブルで確認・対応してください。",
+      "",
+      `理由: ${report.reason}`,
+      `対象種別: ${report.context_type ?? "user"}`,
+      `対象ID: ${report.context_id ?? "(ユーザー通報)"}`,
+      `被通報ユーザー: ${reported?.display_name ?? "?"} (${report.reported_user_id})`,
+      `通報者: ${reporter?.display_name ?? "?"} (${report.reporter_id})`,
+      `詳細: ${report.detail ?? "(なし)"}`,
+      `日時: ${report.created_at}`,
+      `通報ID: ${reportId}`,
+    ].join("\n");
+
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: REPORT_NOTIFY_FROM, to: [REPORT_NOTIFY_TO], subject, text }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        console.error(`Resend ${res.status}: ${await res.text()}`);
+        return new Response(JSON.stringify({ sent: 0, reason: "resend failed" }), { status: 200 });
+      }
+    } catch (e) {
+      console.error("Resend 送信失敗:", String(e));
+      return new Response(JSON.stringify({ sent: 0, reason: "resend error" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ sent: 1 }), { headers: { "content-type": "application/json" } });
   }
 
   // --- フレンドのチェックイン → フォロワーへ通知（既定） ---
