@@ -40,7 +40,7 @@ struct LegalAgreementFooter: View {
 
     private var bodyColor: Color {
         switch appearance {
-        case .onDark: return .white.opacity(0.6)
+        case .onDark: return Theme.textOnDarkSecondary
         case .adaptive: return Theme.textSecondary
         }
     }
