@@ -12,12 +12,15 @@ struct UserProfileView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(\.dismiss) private var dismiss
     @Query private var theirFeedItems: [FeedItem]
     @Query private var profiles: [Profile]
     @Query private var myFollows: [Follow]
     @Query private var allReactions: [PostReaction]
     /// 表示中の欄（0=投稿, 1=ワークアウト, 2=自己ベスト）。
     @State private var tab = 0
+    /// このユーザーの通報シート提示用（App Store ガイドライン1.2）。
+    @State private var reportTarget: ReportUserTarget?
     private let calendar = Calendar.current
 
     init(targetUserId: UUID, currentUserId: UUID, fallbackName: String) {
@@ -72,6 +75,29 @@ struct UserProfileView: View {
         .background(Theme.groupedBackground)
         .navigationTitle(displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // 他ユーザーのプロフィールから通報・ブロックできる導線（App Store ガイドライン1.2）。
+            if targetUserId != currentUserId {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("通報", systemImage: "flag") {
+                            reportTarget = ReportUserTarget(id: targetUserId, displayName: displayName)
+                        }
+                        Button("ブロック", systemImage: "hand.raised", role: .destructive) {
+                            Moderation.block(blockerId: currentUserId, blockedId: targetUserId,
+                                             displayName: displayName, context: context, sync: sync)
+                            dismiss()
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle").accessibilityLabel("その他")
+                    }
+                }
+            }
+        }
+        .sheet(item: $reportTarget) { t in
+            ReportSheet(reporterId: currentUserId, reportedUserId: t.id, reportedDisplayName: t.displayName,
+                        contextType: t.contextType, contextId: t.contextId)
+        }
     }
 
     // MARK: - 投稿

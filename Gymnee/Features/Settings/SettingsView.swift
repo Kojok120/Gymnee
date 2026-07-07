@@ -210,11 +210,11 @@ struct SettingsView: View {
             }
 
             Section("規約・サポート") {
-                Button { browserURL = IdentifiableURL(url: Self.termsURL) } label: {
+                Button { browserURL = IdentifiableURL(url: LegalLinks.terms) } label: {
                     legalRow("利用規約", systemImage: "doc.text")
                 }
                 .tint(.primary)
-                Button { browserURL = IdentifiableURL(url: Self.privacyURL) } label: {
+                Button { browserURL = IdentifiableURL(url: LegalLinks.privacy) } label: {
                     legalRow("プライバシーポリシー", systemImage: "hand.raised")
                 }
                 .tint(.primary)
@@ -261,9 +261,7 @@ struct SettingsView: View {
         }
     }
 
-    // 規約・サポートの遷移先（公式ドメイン gymnee.app）。
-    private static let termsURL = URL(string: "https://gymnee.app/terms-of-service.html")!
-    private static let privacyURL = URL(string: "https://gymnee.app/privacy-policy.html")!
+    // 規約・プライバシーの URL は LegalLinks（単一の出所）を参照する。
     // 件名「Gymnee お問い合わせ」を percent-encode（生の日本語だと URL(string:) が nil になり得るため）。
     private static let contactURL = URL(string: "mailto:kojokamo120@gmail.com?subject=Gymnee%20%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B")!
 

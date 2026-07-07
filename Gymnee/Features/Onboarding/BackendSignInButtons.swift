@@ -6,6 +6,7 @@ import AuthenticationServices
 /// サインイン時に新しい userId へ引き継ぐため、その旨の説明文を添える。
 struct BackendSignInButtons: View {
     @Environment(AuthService.self) private var auth
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showEmailSignIn = false
 
     var body: some View {
@@ -15,7 +16,9 @@ struct BackendSignInButtons: View {
             } onCompletion: { result in
                 Task { await auth.completeSignInWithApple(result) }
             }
-            .signInWithAppleButtonStyle(.white)   // ダークファーストUIで視認できるのは白
+            // このボタンはシステム背景のシート上に出る。ライト背景では白ボタンが埋もれて
+            // 「ボタンと分からない」ため、背景に合わせて配色を反転する（App Store ガイドライン4）。
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
@@ -46,6 +49,9 @@ struct BackendSignInButtons: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            // 登録・ログイン前に EULA / 利用規約を提示（App Store ガイドライン1.2）。
+            LegalAgreementFooter(appearance: .adaptive)
         }
         .sheet(isPresented: $showEmailSignIn) {
             EmailSignInSheet()

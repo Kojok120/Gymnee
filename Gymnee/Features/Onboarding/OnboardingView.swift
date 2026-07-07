@@ -105,6 +105,9 @@ struct OnboardingView: View {
                 .foregroundStyle(.white.opacity(0.5))
                 .multilineTextAlignment(.center)
 
+            // 登録・ログイン前に EULA / 利用規約を提示（App Store ガイドライン1.2）。
+            LegalAgreementFooter(appearance: .onDark)
+
             // まず使ってから決めたい人向けのゲスト開始（記録は端末に保存。後からのサインインで引き継ぎ）。
             Button {
                 auth.signIn(displayName: "")

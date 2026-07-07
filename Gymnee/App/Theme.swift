@@ -58,6 +58,8 @@ enum Theme {
     static let textPrimary = Color(light: 0x16190F, dark: 0xF4F7F2)
     static let textSecondary = Color(light: 0x5A6152, dark: 0xA7AEA6)
     static let textTertiary = Color(light: 0x8C9384, dark: 0x6E756C)
+    /// 常時ダークなヒーロー/オンボーディング背景の上に置く二次テキスト（colorScheme に依らず明色）。
+    static let textOnDarkSecondary = Color.white.opacity(0.6)
 
     // MARK: - Semantic accents (Lime 以外は控えめに)
 

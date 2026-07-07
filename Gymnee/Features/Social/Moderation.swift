@@ -72,9 +72,12 @@ enum Moderation {
 }
 
 /// 通報シート提示用ターゲット（`sheet(item:)` 用）。
+/// contextType/contextId を持たせると、ユーザー通報だけでなく投稿（feed_item）単位の通報にも使える。
 struct ReportUserTarget: Identifiable {
     let id: UUID            // reportedUserId
     let displayName: String
+    var contextType: String = "user"
+    var contextId: UUID? = nil
 }
 
 /// 通報入力シート。理由を選び（任意で詳細）、送信すると運営に届く。
