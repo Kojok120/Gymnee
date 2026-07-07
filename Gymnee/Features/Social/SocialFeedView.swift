@@ -239,7 +239,8 @@ private struct SocialContent: View {
             }
         }
         .sheet(item: $reportTarget) { t in
-            ReportSheet(reporterId: userId, reportedUserId: t.id, reportedDisplayName: t.displayName)
+            ReportSheet(reporterId: userId, reportedUserId: t.id, reportedDisplayName: t.displayName,
+                        contextType: t.contextType, contextId: t.contextId)
         }
     }
 
@@ -317,8 +318,12 @@ private struct SocialContent: View {
         let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
         // コメント件数（ブロック相手のコメントは数えない）。
         let commentsByItem = Dictionary(grouping: allComments.filter { !blockedIds.contains($0.userId) }, by: \.feedItemId)
+        // ブロック相手の投稿はフィードから即座に除外（App Store ガイドライン1.2「即時にフィードから消える」）。
+        // blockedIds は @Query blocks 由来なので、ブロック実行で再描画され対象投稿がその場で消える。
+        let blocked = blockedIds
+        let visibleEntries = feedEntries.filter { $0.authorId.map { !blocked.contains($0) } ?? true }
         return List {
-            ForEach(feedEntries) { entry in
+            ForEach(visibleEntries) { entry in
                 feedRow(entry, reactions: reactionsByItem[entry.id] ?? [], commentCount: commentsByItem[entry.id]?.count ?? 0)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
@@ -330,7 +335,7 @@ private struct SocialContent: View {
         .refreshable { await refreshFeed() }
         .background(Theme.groupedBackground)
         .overlay {
-            if feedEntries.isEmpty {
+            if visibleEntries.isEmpty {
                 EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です",
                                message: "フレンドを見つけると、活動が時系列で並びます。",
                                actionTitle: "フレンドを探す", action: { showAddFriend = true })
@@ -393,7 +398,7 @@ private struct SocialContent: View {
         }
     }
 
-    /// 投稿の長押しメニュー：公開範囲の変更（自分の投稿のみ。編集はカードのタップで開く）。
+    /// 投稿の長押しメニュー：自分の投稿は公開範囲の変更、他人の投稿は通報・ブロック（App Store ガイドライン1.2）。
     @ViewBuilder
     private func postMenu(_ entry: FeedEntry) -> some View {
         if !entry.isFromOther {
@@ -406,6 +411,14 @@ private struct SocialContent: View {
                         Label(v.label, systemImage: (visStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
                     }
                 }
+            }
+        } else if let authorId = entry.authorId {
+            Button("通報", systemImage: "flag") {
+                reportTarget = ReportUserTarget(id: authorId, displayName: displayName(for: authorId),
+                                                contextType: "feed_item", contextId: entry.id)
+            }
+            Button("ブロック", systemImage: "hand.raised", role: .destructive) {
+                blockUser(authorId, name: displayName(for: authorId))
             }
         }
     }
