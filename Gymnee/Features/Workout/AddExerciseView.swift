@@ -91,9 +91,9 @@ struct AddExerciseView: View {
 
     /// 入力中の名前と一致する既存種目（前後空白・大小無視）。あれば重複作成せず既存を使う。
     private var duplicate: Exercise? {
-        let key = name.trimmingCharacters(in: .whitespaces).lowercased()
+        let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !key.isEmpty else { return nil }
-        return allExercises.first { $0.name.trimmingCharacters(in: .whitespaces).lowercased() == key }
+        return allExercises.first { $0.normalizedName == key }
     }
 
     private func save() {

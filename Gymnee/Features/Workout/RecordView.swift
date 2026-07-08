@@ -757,7 +757,7 @@ struct RecordContent: View {
         var seenNames = Set<String>()
         var ordered: [Exercise] = []
         func addIfNew(_ ex: Exercise) {
-            let nameKey = ex.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let nameKey = ex.normalizedName
             guard !seenNames.contains(nameKey), seenIds.insert(ex.id).inserted else { return }
             seenNames.insert(nameKey)
             ordered.append(ex)
