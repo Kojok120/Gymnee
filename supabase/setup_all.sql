@@ -219,6 +219,9 @@ create table if not exists public.feed_items (
     ref_id              uuid not null,
     summary             text,
     visibility          text not null default 'friends' check (visibility in ('private','friends','public')),
+    -- stats_json は本来 migration 0020 で後付けだが、先行するストレージポリシー(visit-photos)が
+    -- f.stats_json を参照するため、fresh DB 用に CREATE 時から含める（0020 の add column は no-op になる）。
+    stats_json          text,
     created_at          timestamptz not null default now(),
     updated_at          timestamptz not null default now()
 );
