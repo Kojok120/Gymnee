@@ -9,7 +9,6 @@ struct SettingsView: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(HealthKitService.self) private var health
     @Environment(AppErrorCenter.self) private var errors
-    @Environment(SubscriptionService.self) private var subscription
     @Environment(NotificationService.self) private var notifications
     @Environment(CalendarService.self) private var calendarService
     @Environment(GoogleCalendarService.self) private var googleCalendar
@@ -17,7 +16,6 @@ struct SettingsView: View {
     @State private var showDeleteConfirm = false
     @State private var showEmailSignIn = false
     @State private var showProfileEdit = false
-    @State private var showPaywall = false
     @State private var browserURL: IdentifiableURL?
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
@@ -186,29 +184,6 @@ struct SettingsView: View {
             }
 
             Section {
-                LabeledContent("現在のプラン", value: subscription.isPremium ? "Premium" : "Free")
-                if SubscriptionService.planOverrideAvailable {
-                    Toggle("Premium として表示（テスト用）", isOn: Bindable(subscription).planOverride)
-                        .tint(Theme.lime)
-                }
-                if !subscription.isPremium {
-                    Button { showPaywall = true } label: {
-                        Label("Premium にアップグレード", systemImage: "crown.fill")
-                    }
-                    .tint(Theme.lime)
-                } else {
-                    Button("購入を復元") { Task { await subscription.restore() } }
-                        .tint(.primary)
-                }
-            } header: {
-                Text("プラン")
-            } footer: {
-                if SubscriptionService.planOverrideAvailable {
-                    Text("TestFlight・開発ビルドのみ表示。Free/Premium を切り替えて動作確認できます（本番では表示されません）。")
-                }
-            }
-
-            Section {
                 CalendarLinkRows()
             } header: {
                 Text("カレンダー連携")
@@ -259,9 +234,6 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showProfileEdit) {
             ProfileEditView()
-        }
-        .sheet(isPresented: $showPaywall) {
-            PaywallView()
         }
         .sheet(item: $browserURL) { item in
             SafariView(url: item.url).ignoresSafeArea()
