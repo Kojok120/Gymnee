@@ -14,6 +14,16 @@ settings:
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: PG5P26J3W2
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    # dev/prod を同一端末に併存させるため bundle id / App Group / 表示名を構成で分ける。
+    # Debug = .dev サフィックス（Gymnee Dev・dev 接続）/ Release = 無印（Gymnee・prod 接続）。
+    APP_GROUP_ID: group.com.gymnee.app$(BUNDLE_ID_SUFFIX)
+  configs:
+    Debug:
+      BUNDLE_ID_SUFFIX: ".dev"
+      APP_NAME_SUFFIX: " Dev"
+    Release:
+      BUNDLE_ID_SUFFIX: ""
+      APP_NAME_SUFFIX: ""
 
 # 環境別シークレット（iOS の .env 相当）。Debug→dev / Release→prod。
 # 実ファイルは .gitignore 済み。Config/Secrets.example.xcconfig を複製して値を入れる。
@@ -43,7 +53,7 @@ targets:
         product: GoogleSignIn
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app$(BUNDLE_ID_SUFFIX)
         PRODUCT_NAME: Gymnee
         CODE_SIGN_ENTITLEMENTS: Gymnee/Gymnee.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -56,7 +66,8 @@ targets:
     info:
       path: Gymnee/Resources/Info.plist
       properties:
-        CFBundleDisplayName: Gymnee
+        CFBundleDisplayName: "Gymnee$(APP_NAME_SUFFIX)"
+        APP_GROUP_ID: "$(APP_GROUP_ID)"
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen:
@@ -100,7 +111,7 @@ targets:
       - path: SharedActivity
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app$(BUNDLE_ID_SUFFIX).widgets
         PRODUCT_NAME: GymneeWidgets
         CODE_SIGN_ENTITLEMENTS: GymneeWidgets/GymneeWidgets.entitlements
         GENERATE_INFOPLIST_FILE: "NO"
@@ -109,6 +120,7 @@ targets:
       path: GymneeWidgets/Info.plist
       properties:
         CFBundleDisplayName: Gymnee
+        APP_GROUP_ID: "$(APP_GROUP_ID)"
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
@@ -124,7 +136,7 @@ targets:
       - path: SharedConnectivity
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app$(BUNDLE_ID_SUFFIX).watchkitapp
         PRODUCT_NAME: GymneeWatch
         CODE_SIGN_ENTITLEMENTS: GymneeWatch/GymneeWatch.entitlements
         GENERATE_INFOPLIST_FILE: "NO"
@@ -132,12 +144,13 @@ targets:
     info:
       path: GymneeWatch/Info.plist
       properties:
-        CFBundleDisplayName: Gymnee
+        CFBundleDisplayName: "Gymnee$(APP_NAME_SUFFIX)"
+        APP_GROUP_ID: "$(APP_GROUP_ID)"
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         WKApplication: true
         # 本体アプリのコンパニオンとして対応付け（WCSession ペアリングの前提）。
-        WKCompanionAppBundleIdentifier: com.gymnee.app
+        WKCompanionAppBundleIdentifier: com.gymnee.app$(BUNDLE_ID_SUFFIX)
 
   GymneeTests:
     type: bundle.unit-test
@@ -148,7 +161,7 @@ targets:
       - target: Gymnee
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app$(BUNDLE_ID_SUFFIX).tests
         GENERATE_INFOPLIST_FILE: "YES"
 
 schemes:

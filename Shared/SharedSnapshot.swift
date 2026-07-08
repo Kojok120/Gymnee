@@ -17,7 +17,15 @@ struct GymneeSnapshot: Codable, Equatable, Sendable {
 
 /// App Group 共有ストア。エンタイトルメント未適用時は標準 UserDefaults にフォールバック（縮退）。
 enum SharedStore {
-    static let appGroup = "group.com.gymnee.app"
+    /// App Group ID は構成別（Debug=.dev / Release=無印）。各ターゲットの Info.plist の APP_GROUP_ID を読む。
+    /// 未設定・未置換（$(...) のまま）のときは prod の App Group にフォールバック。
+    static let appGroup: String = {
+        if let id = Bundle.main.object(forInfoDictionaryKey: "APP_GROUP_ID") as? String,
+           !id.isEmpty, !id.contains("$(") {
+            return id
+        }
+        return "group.com.gymnee.app"
+    }()
     private static let snapshotKey = "gymnee.snapshot"
 
     private static var defaults: UserDefaults {
