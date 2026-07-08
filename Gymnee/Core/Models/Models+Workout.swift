@@ -133,6 +133,15 @@ final class Exercise {
     }
 }
 
+extension Exercise {
+    /// 種目名の正規化キー（重複判定用）。前後の空白/改行を除去し小文字化する。
+    /// 記録候補の表示 dedup（RecordView）と作成時の重複防止（AddExerciseView）で共通利用し、
+    /// 大小・空白違いの重複を同一視する。
+    var normalizedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
 /// セッション内の種目並び（§4.2）。
 @Model
 final class WorkoutExercise {

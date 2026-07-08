@@ -10,6 +10,7 @@ struct AddExerciseView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
+    @Query private var allExercises: [Exercise]
 
     @State private var name = ""
     @State private var muscleGroup: MuscleGroup = .chest
@@ -22,6 +23,10 @@ struct AddExerciseView: View {
             Form {
                 Section("種目名") {
                     TextField("例: ランドマインプレス", text: $name)
+                    if duplicate != nil {
+                        Text("この名前の種目は既にあります。保存すると既存の種目を使います。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Section("部位") {
                     Picker("部位", selection: $muscleGroup) {
@@ -84,9 +89,24 @@ struct AddExerciseView: View {
         }
     }
 
+    /// 入力中の名前と一致する既存種目（前後空白・大小無視）。あれば重複作成せず既存を使う。
+    private var duplicate: Exercise? {
+        let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return nil }
+        return allExercises.first { $0.normalizedName == key }
+    }
+
     private func save() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        // 同名の既存種目があれば重複作成せずそれを使う（種目マスタの同名別id 増殖を防ぐ）。
+        if let existing = duplicate {
+            onCreated?(existing)
+            dismiss()
+            return
+        }
         let exercise = Exercise(
-            name: name.trimmingCharacters(in: .whitespaces),
+            name: trimmed,
             muscleGroup: muscleGroup,
             equipment: equipment,
             isCustom: true,

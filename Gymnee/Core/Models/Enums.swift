@@ -95,14 +95,16 @@ enum SubscriptionStatus: String, Codable, CaseIterable, Sendable {
 
 /// 部位（部位バランス・リカバリービュー・ボリューム集計に使用）。
 enum MuscleGroup: String, Codable, CaseIterable, Sendable {
+    // case 宣言順＝表示順（allCases）。記録カードの部位グルーピング・部位ピッカー共通で
+    // 頭→足（上半身→体幹→下半身→その他）に並べる。rawValue は文字列なので順序変更は既存データに無影響。
     case chest
     case back
-    case legs
     case shoulders
     case arms
     case abs
     case core
     case glutes
+    case legs
     case cardio
     case fullBody = "full_body"
     case other
