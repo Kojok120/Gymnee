@@ -68,8 +68,12 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
         # 環境別シークレット（xcconfig → ビルド設定 → ここ → 実行時に Bundle から読む）。
+        # SUPABASE_HOST/KEY は Debug=dev / Release=prod。SUPABASE_HOST_DEV/KEY_DEV は Release ビルドの
+        # TestFlight 実行時に使う dev 接続先（App Store は SUPABASE_HOST/KEY=prod を使う）。SupabaseConfig 参照。
         SUPABASE_HOST: "$(SUPABASE_HOST)"
         SUPABASE_KEY: "$(SUPABASE_KEY)"
+        SUPABASE_HOST_DEV: "$(SUPABASE_HOST_DEV)"
+        SUPABASE_KEY_DEV: "$(SUPABASE_KEY_DEV)"
         # Google サインイン（カレンダー連携）。Google Cloud の iOS OAuth クライアント設定。
         GIDClientID: "$(GOOGLE_IOS_CLIENT_ID)"
         CFBundleURLTypes:

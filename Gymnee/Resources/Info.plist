@@ -63,8 +63,12 @@
 	<true/>
 	<key>SUPABASE_HOST</key>
 	<string>$(SUPABASE_HOST)</string>
+	<key>SUPABASE_HOST_DEV</key>
+	<string>$(SUPABASE_HOST_DEV)</string>
 	<key>SUPABASE_KEY</key>
 	<string>$(SUPABASE_KEY)</string>
+	<key>SUPABASE_KEY_DEV</key>
+	<string>$(SUPABASE_KEY_DEV)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
