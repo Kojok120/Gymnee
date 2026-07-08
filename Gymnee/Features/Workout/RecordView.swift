@@ -751,16 +751,21 @@ struct RecordContent: View {
         let recent = allExercises.filter { ex in
             ex.workoutExercises.contains { $0.workout?.userId == userId && $0.workout?.completedAt != nil && !$0.sets.isEmpty }
         }
-        var seen = Set<UUID>()
+        var seenIds = Set<UUID>()
+        // 同名別id の重複種目（プリセットが同期で増殖するケース等）を1枚にまとめる。
+        // recent（履歴のある方）を先に処理するので、記録済みの種目を優先して残す。
+        var seenNames = Set<String>()
         var ordered: [Exercise] = []
+        func addIfNew(_ ex: Exercise) {
+            let nameKey = ex.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !seenNames.contains(nameKey), seenIds.insert(ex.id).inserted else { return }
+            seenNames.insert(nameKey)
+            ordered.append(ex)
+        }
         // ①最近中心（完了済み履歴のある種目）を先頭に。
-        for ex in recent where seen.insert(ex.id).inserted {
-            ordered.append(ex)
-        }
+        for ex in recent { addIfNew(ex) }
         // ②残りの全種目を名前順（allExercises は @Query で name ソート済み）で追加。
-        for ex in allExercises where seen.insert(ex.id).inserted {
-            ordered.append(ex)
-        }
+        for ex in allExercises { addIfNew(ex) }
         freeGroups = MuscleGroup.allCases.compactMap { mg in
             let items = ordered.filter { $0.muscleGroup == mg }
             return items.isEmpty ? nil : (mg, items)
