@@ -6,6 +6,9 @@ struct ExerciseDetailView: View {
     let exercise: Exercise
     let userId: UUID
 
+    /// 履歴の並び順（true=新しい順 / false=古い順）。
+    @State private var historyNewestFirst = true
+
     private struct Point: Identifiable {
         let id = UUID()
         let date: Date
@@ -68,6 +71,11 @@ struct ExerciseDetailView: View {
             }
 
             Section("履歴") {
+                Picker("並び順", selection: $historyNewestFirst) {
+                    Text("新しい順").tag(true)
+                    Text("古い順").tag(false)
+                }
+                .pickerStyle(.segmented)
                 if sessions.isEmpty {
                     Text("記録なし").foregroundStyle(.secondary)
                 } else {
@@ -132,7 +140,7 @@ struct ExerciseDetailView: View {
                 guard !valid.isEmpty else { return nil }
                 return Session(id: we.id, date: date, sets: valid, hasPR: valid.contains { $0.isPR })
             }
-            .sorted { $0.date > $1.date }
+            .sorted { historyNewestFirst ? $0.date > $1.date : $0.date < $1.date }
     }
 
     private var personalRecords: [PersonalRecord] {
