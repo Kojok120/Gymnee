@@ -10,6 +10,12 @@ enum SeedData {
     private static let presetVersion = 3
     private static let presetVersionKey = "gymnee.seed.presetVersion"
 
+    /// プリセット種目の決定的id用 namespace（固定値。変更すると全idが変わるので不変にする）。
+    static let presetNamespace = UUID(uuidString: "1b671a64-40d5-491e-99b0-da01ff1f3341")!
+    /// プリセット名から決定的な id を生成する。全端末・サーバで同一idに収束するため、
+    /// 起動時 backfill の push が冪等になり、同名別idのプリセット増殖（重複）を防ぐ。
+    static func presetId(_ name: String) -> UUID { UUID(v5Name: name, namespace: presetNamespace) }
+
     /// プリセット投入が済んでいなければ投入する。複数回呼んでも安全（冪等）。
     @MainActor
     static func seedIfNeeded(_ context: ModelContext) {
@@ -97,6 +103,7 @@ enum SeedData {
 
         for preset in presetExercises where !existingNames.contains(preset.name) {
             let exercise = Exercise(
+                id: presetId(preset.name),   // 決定的id（全端末・サーバで同一）＝push が冪等で重複増殖しない
                 name: preset.name,
                 muscleGroup: preset.muscle,
                 equipment: preset.equipment,
