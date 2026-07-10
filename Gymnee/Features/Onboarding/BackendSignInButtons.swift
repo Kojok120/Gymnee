@@ -2,8 +2,8 @@ import SwiftUI
 import AuthenticationServices
 
 /// 後入れサインインのボタン群（ソーシャル・AI計画などのサインイン促しで共用）。
-/// Apple / Google / メールの3経路。ゲスト期間のローカル記録は LocalDataMigrator が
-/// サインイン時に新しい userId へ引き継ぐため、その旨の説明文を添える。
+/// Apple / Google / メールの3経路。ゲスト期間の記録は匿名セッションの uid にあり、
+/// サインインは identity リンク（uid 不変）でそのまま引き継がれるため、その旨の説明文を添える。
 struct BackendSignInButtons: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.colorScheme) private var colorScheme

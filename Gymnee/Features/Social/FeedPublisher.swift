@@ -14,6 +14,7 @@ enum FeedPublisher {
         context: ModelContext,
         visibilityStore: PostVisibilityStore,
         defaultVisibility: Visibility,
+        isPermanentAccount: Bool,
         sync: LocalSyncEngine
     ) {
         let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == userId }))) ?? []
@@ -28,7 +29,11 @@ enum FeedPublisher {
         var pending: [PendingChange] = []
 
         func upsert(refId: UUID, type: FeedItemType, summary: String, date: Date, statsJSON: String? = nil) {
-            let vis = visibilityStore.visibility(for: refId) ?? defaultVisibility
+            var vis = visibilityStore.visibility(for: refId) ?? defaultVisibility
+            // 匿名（ゲスト）セッションの public は friends に丸める。RLS(0031) が匿名の public 投稿を
+            // 拒否するため、そのまま push すると outbox が詰まる。本登録（isPermanentAccount）後に
+            // 再発行されると vis が public に戻り、既存行も visibility 差分として更新・再 push される（自己修復）。
+            if !isPermanentAccount, vis == .public { vis = .friends }
             if let item = byRef.removeValue(forKey: refId) {
                 guard item.visibilityRaw != vis.rawValue || item.summary != summary
                         || item.statsJSON != statsJSON || item.authorDisplayName != authorName else { return }

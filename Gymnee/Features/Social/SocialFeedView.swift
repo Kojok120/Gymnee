@@ -20,9 +20,9 @@ struct SocialFeedView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            if sync.isRemoteEnabled && !auth.isBackendAuthenticated {
-                // ゲスト（未サインイン）にはフィードの代わりにサインイン促しを出す。
-                // フレンド機能は実マルチユーザー連携＝バックエンド必須（サインアップ遅延化の要求ゲート）。
+            if sync.isRemoteEnabled && !auth.isPermanentAccount {
+                // ゲスト（未サインイン・匿名セッション含む）にはフィードの代わりにサインイン促しを出す。
+                // フォロー・応援・コメント・公開投稿は本人性のあるアカウント限定（RLS 0031 とも整合）。
                 signInPrompt
             } else if let uid = auth.currentUserId {
                 SocialContent(userId: uid, initialTab: initialTab)
@@ -156,6 +156,7 @@ private struct SocialContent: View {
             context: context,
             visibilityStore: visStore,
             defaultVisibility: defaultVisibility,
+            isPermanentAccount: auth.isPermanentAccount,
             sync: sync
         )
         await sync.syncNow()

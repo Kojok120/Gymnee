@@ -85,6 +85,7 @@ struct WorkoutTimeEditSheet: View {
             userId: workout.userId, authorName: auth.session?.displayName, context: context,
             visibilityStore: PostVisibilityStore(),
             defaultVisibility: Visibility(rawValue: defaultVisibilityRaw) ?? .public,
+            isPermanentAccount: auth.isPermanentAccount,
             sync: sync
         )
         dismiss()

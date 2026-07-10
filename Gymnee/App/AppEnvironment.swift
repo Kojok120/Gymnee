@@ -57,6 +57,8 @@ final class AppEnvironment {
             Task { await self.sync.syncNow(force: true) }
         }
         // バックエンドサインイン成功時：旧ローカルデータを新 userId へ付け替え→同期。
+        // oldUserId は AuthService が IdentityAdoptionPolicy で選別済み（ゲスト/匿名期間の
+        // 引き継ぎのみ非 nil。恒久アカウント切替では nil＝付け替えなし）。
         auth.onBackendSignIn = { [weak self] oldUserId, newUserId in
             guard let self else { return }
             if let oldUserId, oldUserId != newUserId {
@@ -104,7 +106,9 @@ final class AppEnvironment {
     }
 
     /// 再起動後にバックエンドセッションを復元する（GymneeApp の起動 task から呼ぶ）。
+    /// 復元対象が無いゲストには匿名セッションを確立する（安定 uid・オフラインなら次回再試行）。
     func bootstrapBackend() async {
         await auth.restoreBackendSession()
+        await auth.ensureAnonymousSession()
     }
 }

@@ -328,7 +328,7 @@ struct WeekPlannerView: View {
         }
         .presentationDetents([.medium])
         // サインインが成立したらこのシートを閉じる（そのままAIチャットを開けるように）。
-        .onChange(of: auth.isBackendAuthenticated) { _, authed in
+        .onChange(of: auth.isPermanentAccount) { _, authed in
             if authed { showSignInPrompt = false }
         }
     }
@@ -364,7 +364,8 @@ struct WeekPlannerView: View {
     /// HealthKit のクエリは許諾プロンプトを出さないため、先に read 許可（睡眠/HRV含む）を要求する
     /// （許諾済みタイプはスキップされ、非対応端末では no-op）。非有限値はここで弾く。
     private func openAIOptions() {
-        if syncEngine.isRemoteEnabled && !auth.isBackendAuthenticated {
+        // 匿名（ゲスト）セッションはAI生成の対象外（使い捨てアカウントによるコスト濫用防止）。
+        if syncEngine.isRemoteEnabled && !auth.isPermanentAccount {
             showSignInPrompt = true
             return
         }

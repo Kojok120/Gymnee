@@ -34,7 +34,7 @@ struct AddFriendView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if !auth.isBackendAuthenticated {
+                if !auth.isPermanentAccount {
                     notAuthenticated
                 } else {
                     searchList
