@@ -153,7 +153,8 @@ struct MyPostsView: View {
             // （グループが空なら feed_item 削除＝フォロワーからも消える／残れば代表で再発行）。
             FeedPublisher.publishOwnPosts(userId: userId, authorName: auth.session?.displayName,
                                           context: context, visibilityStore: visibilityStore,
-                                          defaultVisibility: defaultVisibility, sync: sync)
+                                          defaultVisibility: defaultVisibility,
+                                          isPermanentAccount: auth.isPermanentAccount, sync: sync)
         case .workout:
             guard let w = workouts.first(where: { $0.id == entry.id }) else { return }
             context.delete(w)

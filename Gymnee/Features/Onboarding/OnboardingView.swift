@@ -2,9 +2,10 @@ import SwiftUI
 import AuthenticationServices
 
 /// サインイン・初期設定（§5 / §6.1）。アプリの第一印象。
-/// Sign in with Apple / Google / メール、または「サインインせずに始める」（ゲスト＝ローカルのみ）。
-/// ゲストは価値を体験してから必要な場面（ソーシャル等）でサインインする。後からのサインインでは
-/// LocalDataMigrator がローカルデータを新しい userId へ付け替えるため、多重ID・孤児データは生じない。
+/// Sign in with Apple / Google / メール、または「サインインせずに始める」（ゲスト）。
+/// ゲストには匿名セッションで安定 uid を発行し記録を自動バックアップする。後からのサインインは
+/// identity リンク（uid 不変）なので付け替え不要で、多重ID・孤児データは生じない
+/// （docs/identity-environment-design.md Phase 2）。
 struct OnboardingView: View {
     @Environment(AuthService.self) private var auth
     @State private var showEmailSignIn = false
@@ -108,7 +109,8 @@ struct OnboardingView: View {
             // 登録・ログイン前に EULA / 利用規約を提示（App Store ガイドライン1.2）。
             LegalAgreementFooter(appearance: .onDark)
 
-            // まず使ってから決めたい人向けのゲスト開始（記録は端末に保存。後からのサインインで引き継ぎ）。
+            // まず使ってから決めたい人向けのゲスト開始（匿名セッションで自動バックアップ。
+            // 後からのサインインは identity リンクでそのまま引き継ぎ）。
             Button {
                 auth.signIn(displayName: "")
             } label: {
@@ -119,7 +121,7 @@ struct OnboardingView: View {
             }
             .padding(.top, Theme.Spacing.xs)
 
-            Text("記録は端末に保存。あとからサインインすればそのまま引き継げます。")
+            Text("記録は端末に保存し、自動でクラウドにバックアップ。あとからサインインすればそのまま引き継げます。")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.4))
                 .multilineTextAlignment(.center)

@@ -1008,7 +1008,8 @@ struct RecordContent: View {
         restTimer.stop()
         FeedPublisher.publishOwnPosts(
             userId: userId, authorName: auth.session?.displayName, context: context,
-            visibilityStore: PostVisibilityStore(), defaultVisibility: defaultVisibility, sync: sync
+            visibilityStore: PostVisibilityStore(), defaultVisibility: defaultVisibility,
+            isPermanentAccount: auth.isPermanentAccount, sync: sync
         )
         showSummary = true
     }

@@ -22,23 +22,34 @@ final class AuthService {
     /// 進行中の Sign in with Apple の生 nonce（sha256 を request に載せ、生値を Supabase に渡す）。
     @ObservationIgnored private var currentNonce: String?
 
-    /// バックエンド(Supabase)で認証済みか（トークン保持中）。
+    /// バックエンド(Supabase)で認証済みか（トークン保持中。匿名セッションを含む）。
     private(set) var isBackendAuthenticated = false
+    /// 現在のバックエンドセッションが匿名（is_anonymous・identity 未リンク）か。
+    private(set) var isAnonymousBackendSession = false
     /// バックエンドサインイン成功時のフック（旧 userId, 新 userId）。AppEnvironment が移行＋同期を差し込む。
+    /// oldUserId は IdentityAdoptionPolicy で選別済み（恒久アカウント切替では nil）。
     @ObservationIgnored var onBackendSignIn: ((_ oldUserId: UUID?, _ newUserId: UUID) -> Void)?
 
     @ObservationIgnored private let defaults = UserDefaults.standard
     /// OAuth(Google) のブラウザ往復用（ASWebAuthenticationSession ラッパ）。
     @ObservationIgnored private let webAuth = WebAuthSession()
+    /// 匿名サインアップの多重実行ガード（起動時とゲスト開始時が重なり得る）。
+    @ObservationIgnored private var anonymousSignUpInFlight = false
+    /// 匿名 uid へのメール紐付け（requestEmailChange）を送った宛先。verify の検証タイプ判定に使う。
+    @ObservationIgnored private var pendingEmailLinkAddress: String?
     private let accessTokenKey = "gymnee.supabase.accessToken"
     private let refreshTokenKey = "gymnee.supabase.refreshToken"
     private let backendUserIdKey = "gymnee.supabase.userId"
     private let backendNameKey = "gymnee.supabase.displayName"
+    private let backendIsAnonymousKey = "gymnee.supabase.isAnonymous"
 
     var isSignedIn: Bool { session != nil }
     var currentUserId: UUID? { session?.userId }
     /// バックエンド(Supabase)が構成済みで、メール/Google サインインが使えるか。
     var isBackendAvailable: Bool { supabase != nil }
+    /// 本人性のあるアカウント（Apple/Google/メールを identity として持つ）でサインイン済みか。
+    /// 匿名セッションは含まない。ソーシャル・AI 等「サインイン済み」を要求する UI はこれで判定する。
+    var isPermanentAccount: Bool { isBackendAuthenticated && !isAnonymousBackendSession }
     /// 永続化済みのバックエンドセッションがあるか（再起動後の復元判定／Settings 表示用）。
     var hasPersistedBackendSession: Bool { Keychain.get(refreshTokenKey) != nil }
 
@@ -85,6 +96,8 @@ final class AuthService {
         guard let restored = try? provider.signIn(displayName: displayName) else { return }
         session = restored
         ensureProfile(for: restored)
+        // ゲスト開始直後に匿名セッションを確立する（安定 uid の発行。オフラインなら次回起動で再試行）。
+        Task { await ensureAnonymousSession() }
     }
 
     func signOut() {
@@ -92,6 +105,12 @@ final class AuthService {
         clearBackendSession()
         let client = supabase
         Task { await client?.setSession(accessToken: nil, refreshToken: nil) }
+        // ローカル識別（userId）も破棄して、次回ゲストを新規 uid で開始する。
+        // 旧アカウント uid をローカル識別に残すと、次の別アカウントサインイン時に
+        // 「直前セッション＝旧アカウント」となり付け替え判定の対象に載ってしまう
+        // （IdentityAdoptionPolicy が恒久アカウントを弾く前提を崩さないための恒久策）。
+        // ローカルの記録自体は保持され、同一アカウントへ再サインインすれば再び表示される。
+        provider.deleteLocalIdentity()
         session = nil
     }
 
@@ -103,9 +122,10 @@ final class AuthService {
             let remote = try await supabase.refreshSession(refreshToken: refresh)
             await supabase.setSession(accessToken: remote.accessToken, refreshToken: remote.refreshToken)
             let name = defaults.string(forKey: backendNameKey) ?? session?.displayName ?? "Apple ユーザー"
-            persistBackendSession(access: remote.accessToken, refresh: remote.refreshToken, userId: remote.userId, displayName: name)
+            persistBackendSession(access: remote.accessToken, refresh: remote.refreshToken, userId: remote.userId, displayName: name, isAnonymous: remote.isAnonymous)
             provider.persistSession(userId: remote.userId, displayName: name)
             isBackendAuthenticated = true
+            isAnonymousBackendSession = remote.isAnonymous
             let restored = UserSession(userId: remote.userId, displayName: name)
             session = restored
             ensureProfile(for: restored)
@@ -116,30 +136,86 @@ final class AuthService {
         }
     }
 
-    /// バックエンド認証成功（Apple / メール / Google 共通）後のセッション確立。
+    /// バックエンド未認証のゲストに匿名セッションを確立する（安定 uid の即時発行・Phase 2）。
+    /// 起動時（bootstrapBackend）とゲスト開始（オンボーディング完了）直後に呼ぶ。
+    /// オフライン・レート制限等で失敗してもローカルのみで継続し、次回起動時に再試行される。
+    /// ローカルゲスト uid のデータは establishBackendSession 経由で匿名 uid へ 1 回だけ付け替わり、
+    /// 以後のサインインは identity リンク（uid 不変）になるため付け替えは二度と走らない。
+    func ensureAnonymousSession() async {
+        guard let supabase,
+              !isBackendAuthenticated,
+              !hasPersistedBackendSession,
+              session != nil,          // オンボーディング完了（ローカルセッション確立）後のみ
+              !anonymousSignUpInFlight else { return }
+        anonymousSignUpInFlight = true
+        defer { anonymousSignUpInFlight = false }
+        do {
+            let remote = try await supabase.signInAnonymously()
+            await establishBackendSession(remote, displayName: session?.displayName ?? "ゲスト", previousSession: session)
+        } catch {
+            // ネットワーク断・レート制限（30件/時/IP）等。オフラインファーストのまま継続。
+        }
+    }
+
+    /// バックエンド認証成功（Apple / メール / Google / 匿名共通）後のセッション確立。
     /// アクセストークン設定・永続化・ローカル識別統一・Profile 整合・移行フックまでを一手に行う。
-    private func establishBackendSession(_ remote: SupabaseClient.AuthSession, displayName: String?, oldUserId: UUID?) async {
+    /// 直前セッションのローカルデータを引き継ぐか（付け替え）は IdentityAdoptionPolicy で判定する
+    /// （永続値は persistBackendSession で上書きされる前にここで読む）。
+    private func establishBackendSession(_ remote: SupabaseClient.AuthSession, displayName: String?, previousSession: UserSession?) async {
+        let persistedUserId = defaults.string(forKey: backendUserIdKey).flatMap(UUID.init)
+        let persistedIsAnonymous = defaults.bool(forKey: backendIsAnonymousKey)
+        let adoptableOldUserId: UUID? = IdentityAdoptionPolicy.shouldAdopt(
+            oldUserId: previousSession?.userId,
+            newUserId: remote.userId,
+            persistedBackendUserId: persistedUserId,
+            persistedBackendIsAnonymous: persistedIsAnonymous
+        ) ? previousSession?.userId : nil
+
         await supabase?.setSession(accessToken: remote.accessToken, refreshToken: remote.refreshToken)
-        let name = [displayName, remote.fullName, session?.displayName, remote.email]
+        let name = [displayName, remote.fullName, previousSession?.displayName, remote.email]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty } ?? "ユーザー"
-        persistBackendSession(access: remote.accessToken, refresh: remote.refreshToken, userId: remote.userId, displayName: name)
+        persistBackendSession(access: remote.accessToken, refresh: remote.refreshToken, userId: remote.userId, displayName: name, isAnonymous: remote.isAnonymous)
         provider.persistSession(userId: remote.userId, displayName: name) // ローカル識別も Supabase id に統一
         isBackendAuthenticated = true
+        isAnonymousBackendSession = remote.isAnonymous
         let newSession = UserSession(userId: remote.userId, displayName: name)
         session = newSession
         ensureProfile(for: newSession)
-        // 旧ローカルデータの付け替え＋同期を AppEnvironment 側で実行。
-        onBackendSignIn?(oldUserId, remote.userId)
+        // 旧ローカルデータの付け替え＋同期を AppEnvironment 側で実行（恒久アカウント切替では nil）。
+        onBackendSignIn?(adoptableOldUserId, remote.userId)
+    }
+
+    /// 匿名セッションから既存アカウントへ切り替える直前の後始末（returning-user・マージ例外）。
+    /// サーバー側の匿名ユーザーを削除して、同一 record id のローカル行を新アカウントとして
+    /// 再 push できるようにする（残すと PK 衝突→RLS 拒否で outbox が詰まる）。
+    /// 削除できなかったら false（呼び出し側は付け替えを見送る）。匿名はこの端末しかトークンを
+    /// 持たず、公開投稿・フォロー・コメント不可（RLS 0031）のため削除で失われるものは無い。
+    private func cleanUpAnonymousBeforeSwitch() async -> Bool {
+        guard isBackendAuthenticated, isAnonymousBackendSession, let supabase else { return true }
+        do { try await supabase.deleteAccount(); return true } catch { return false }
     }
 
     // MARK: - Email OTP（6桁コード）
 
     /// メールにワンタイムコードを送る。送信できたら true。
+    /// 匿名セッション中は「メールを現在の uid に紐付ける」（email_change・uid 不変の本登録化）を先に試し、
+    /// 既存アカウントのメール（email_exists）なら通常のサインイン OTP に切り替える（returning-user）。
     func sendEmailCode(_ email: String) async -> Bool {
         guard let supabase else { return false }
+        let addr = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isBackendAuthenticated, isAnonymousBackendSession {
+            do {
+                try await supabase.requestEmailChange(to: addr)
+                pendingEmailLinkAddress = addr
+                return true
+            } catch where SupabaseClient.authErrorCode(error) == "email_exists" {
+                // 既存アカウントのメール → 通常サインインへフォールスルー（verify 後に匿名を後始末）。
+            } catch { return false }
+        }
+        pendingEmailLinkAddress = nil
         do {
-            try await supabase.sendEmailOTP(email: email.trimmingCharacters(in: .whitespacesAndNewlines))
+            try await supabase.sendEmailOTP(email: addr)
             return true
         } catch { return false }
     }
@@ -148,11 +224,21 @@ final class AuthService {
     func verifyEmailCode(email: String, code: String) async -> Bool {
         guard let supabase else { return false }
         let addr = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = code.trimmingCharacters(in: .whitespaces)
+        let fallbackName = String(addr.split(separator: "@").first ?? "ユーザー")
+        let previous = session
         do {
-            let oldUserId = session?.userId
-            let remote = try await supabase.verifyEmailOTP(email: addr, token: code.trimmingCharacters(in: .whitespaces))
-            let fallbackName = String(addr.split(separator: "@").first ?? "ユーザー")
-            await establishBackendSession(remote, displayName: fallbackName, oldUserId: oldUserId)
+            if pendingEmailLinkAddress == addr {
+                // 匿名 uid へのメール紐付けの確定（uid 不変＝付け替え不要）。
+                let remote = try await supabase.verifyEmailChange(email: addr, token: token)
+                pendingEmailLinkAddress = nil
+                await establishBackendSession(remote, displayName: fallbackName, previousSession: previous)
+                return true
+            }
+            let remote = try await supabase.verifyEmailOTP(email: addr, token: token)
+            // 匿名セッションからの切替なら、サーバー側の匿名ユーザーを後始末してから引き継ぐ。
+            let cleaned = await cleanUpAnonymousBeforeSwitch()
+            await establishBackendSession(remote, displayName: fallbackName, previousSession: cleaned ? previous : nil)
             return true
         } catch { return false }
     }
@@ -160,34 +246,57 @@ final class AuthService {
     // MARK: - Google（OAuth via PKCE）
 
     /// Google でサインイン。ASWebAuthenticationSession で認可 → code を PKCE 交換。成功で true。
+    /// 匿名セッション中は identity リンク（uid 不変）の authorize URL を先に試し、
+    /// リンク不可（既に別アカウントへリンク済み等。callback に error が載る）なら通常サインインへ。
     func signInWithGoogle() async -> Bool {
         guard let supabase else { return false }
+        let previous = session
+        if isBackendAuthenticated, isAnonymousBackendSession {
+            do {
+                let challenge = try await supabase.linkGoogleAuthorizeURL(redirectTo: "gymnee://auth-callback")
+                let callback = try await webAuth.start(url: challenge.url, callbackScheme: "gymnee")
+                if let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "code" })?.value, !code.isEmpty {
+                    let remote = try await supabase.exchangeCodeForSession(authCode: code, codeVerifier: challenge.codeVerifier)
+                    await establishBackendSession(remote, displayName: nil, previousSession: previous)
+                    return true
+                }
+                // code 無し＝リンク失敗（identity_already_exists 等）。通常サインインでリカバリ。
+            } catch {
+                // ユーザーキャンセル・通信失敗。匿名のまま（再試行可能）。
+                return false
+            }
+        }
         let challenge = await supabase.googleAuthorizeURL(redirectTo: "gymnee://auth-callback")
         do {
             let callback = try await webAuth.start(url: challenge.url, callbackScheme: "gymnee")
             guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value, !code.isEmpty
             else { return false }
-            let oldUserId = session?.userId
             let remote = try await supabase.exchangeCodeForSession(authCode: code, codeVerifier: challenge.codeVerifier)
-            await establishBackendSession(remote, displayName: nil, oldUserId: oldUserId)
+            // 匿名セッションからの切替なら、サーバー側の匿名ユーザーを後始末してから引き継ぐ。
+            let cleaned = await cleanUpAnonymousBeforeSwitch()
+            await establishBackendSession(remote, displayName: nil, previousSession: cleaned ? previous : nil)
             return true
         } catch { return false }
     }
 
-    private func persistBackendSession(access: String, refresh: String, userId: UUID, displayName: String) {
-        // トークンは Keychain（端末外へ出ない）。非機微の id/表示名は UserDefaults。
+    private func persistBackendSession(access: String, refresh: String, userId: UUID, displayName: String, isAnonymous: Bool) {
+        // トークンは Keychain（端末外へ出ない）。非機微の id/表示名/匿名フラグは UserDefaults。
+        // 匿名フラグは「直前セッションが恒久アカウントか」の付け替え判定（IdentityAdoptionPolicy）に使う。
         Keychain.set(access, for: accessTokenKey)
         Keychain.set(refresh, for: refreshTokenKey)
         defaults.set(userId.uuidString, forKey: backendUserIdKey)
         defaults.set(displayName, forKey: backendNameKey)
+        defaults.set(isAnonymous, forKey: backendIsAnonymousKey)
     }
 
     private func clearBackendSession() {
         Keychain.delete(accessTokenKey)
         Keychain.delete(refreshTokenKey)
-        [backendUserIdKey, backendNameKey].forEach { defaults.removeObject(forKey: $0) }
+        [backendUserIdKey, backendNameKey, backendIsAnonymousKey].forEach { defaults.removeObject(forKey: $0) }
         isBackendAuthenticated = false
+        isAnonymousBackendSession = false
     }
 
     /// アカウントを完全に削除する（§7 / App Store 5.1.1(v)）。
@@ -224,15 +333,33 @@ final class AuthService {
         else { return false }
 
         let displayName = Self.displayName(from: credential.fullName)
+        let previous = session
 
         // Supabase 接続時: identityToken を Supabase Auth に渡してリモートセッションを得る。
         if let supabase,
            let tokenData = credential.identityToken,
            let identityToken = String(data: tokenData, encoding: .utf8) {
+            // 匿名セッション中は identity リンク（uid 不変＝付け替え不要）を最優先で試す。
+            if isBackendAuthenticated, isAnonymousBackendSession {
+                do {
+                    let remote = try await supabase.linkAppleIdentity(identityToken: identityToken, nonce: currentNonce)
+                    await establishBackendSession(remote, displayName: displayName, previousSession: previous)
+                    currentNonce = nil
+                    return true
+                } catch where SupabaseClient.authErrorCode(error) == "identity_already_exists" {
+                    // この Apple ID は既存アカウントのもの（returning-user）。通常サインインへフォールスルー。
+                } catch {
+                    // 通信等の一時失敗。匿名のまま失敗を返す（再試行可能。ローカル経路に落とすと
+                    // 決定的ローカル uid が生まれて匿名 uid と分裂するため落とさない）。
+                    currentNonce = nil
+                    return false
+                }
+            }
             do {
-                let oldUserId = session?.userId
                 let remote = try await supabase.signInWithApple(identityToken: identityToken, nonce: currentNonce)
-                await establishBackendSession(remote, displayName: displayName, oldUserId: oldUserId)
+                // 匿名セッションからの切替なら、サーバー側の匿名ユーザーを後始末してから引き継ぐ。
+                let cleaned = await cleanUpAnonymousBeforeSwitch()
+                await establishBackendSession(remote, displayName: displayName, previousSession: cleaned ? previous : nil)
                 currentNonce = nil
                 return true
             } catch {
@@ -241,17 +368,25 @@ final class AuthService {
         }
 
         // ローカル経路: Apple ユーザー識別子を決定的にローカル userId へ対応付ける。
-        let oldUserId = session?.userId
         guard let local = try? provider.signInWithApple(userIdentifier: credential.user, displayName: displayName) else {
             return false
         }
+        // 付け替え判定は establishBackendSession と同じ Policy（永続値はセッション確立前に読む）。
+        let persistedUserId = defaults.string(forKey: backendUserIdKey).flatMap(UUID.init)
+        let persistedIsAnonymous = defaults.bool(forKey: backendIsAnonymousKey)
+        let adopt = IdentityAdoptionPolicy.shouldAdopt(
+            oldUserId: previous?.userId,
+            newUserId: local.userId,
+            persistedBackendUserId: persistedUserId,
+            persistedBackendIsAnonymous: persistedIsAnonymous
+        )
         session = local
         ensureProfile(for: local)
         currentNonce = nil
         // ゲスト等の旧ローカル uid からこの決定的 uid へ変わった場合もデータを付け替える
         // （バックエンド経路と同じフック。ここを通さないとゲスト期間の記録が孤児化する）。
-        if let oldUserId, oldUserId != local.userId {
-            onBackendSignIn?(oldUserId, local.userId)
+        if adopt {
+            onBackendSignIn?(previous?.userId, local.userId)
         }
         return true
     }

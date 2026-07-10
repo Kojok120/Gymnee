@@ -52,7 +52,10 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "visits":            return fetchVisit(id).map(encodeVisit)
         case "visit_partners":    return fetchVisitPartner(id).map(encodeVisitPartner)
         case "workouts":          return fetchWorkout(id).map(encodeWorkout)
-        case "exercises":         return fetchExercise(id).map(encodeExercise)
+        // プリセット（is_custom=false）はサーバー側マスタ（created_by IS NULL・0030）が正で push しない。
+        // 他ユーザー所有だった旧マスタ行への upsert は RLS(42501) で outbox が永久滞留するため、
+        // 旧ビルドが積んだプリセットの pending もここで nil → 成功扱いになり自己解消する。
+        case "exercises":         return fetchExercise(id).flatMap { $0.isCustom ? encodeExercise($0) : nil }
         case "workout_exercises": return fetchWorkoutExercise(id).map(encodeWorkoutExercise)
         case "exercise_sets":     return fetchExerciseSet(id).map(encodeExerciseSet)
         case "routines":          return fetchRoutine(id).map(encodeRoutine)
@@ -368,9 +371,9 @@ final class SwiftDataSyncStore: SyncBackingStore {
             "measurement_type": m.measurementTypeRaw, "load_mode": m.loadModeRaw,
             "updated_at": iso(m.updatedAt),
         ]
-        // RLS(exercises_insert_own) は created_by = auth.uid() を要求する。プリセット(nil)や
-        // 旧 uid のままだと弾かれる。push できるのは本人のローカル種目だけなので、同期中の本人 id を
-        // 所有者として送る。
+        // RLS(exercises_insert_own) は created_by = auth.uid() を要求する。旧 uid のままだと
+        // 弾かれるため、同期中の本人 id を所有者として送る（ここに来るのは is_custom=true のみ。
+        // プリセットはサーバーマスタ＝push 対象外。payload(for:) 参照）。
         if let owner = currentUserId ?? m.createdBy { row["created_by"] = lower(owner) }
         return row
     }

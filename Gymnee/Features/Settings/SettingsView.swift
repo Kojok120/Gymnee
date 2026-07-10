@@ -130,7 +130,8 @@ struct SettingsView: View {
             Section("同期") {
                 LabeledContent("バックエンド", value: sync.isRemoteEnabled ? "接続済み" : "ローカルのみ")
                 if sync.isRemoteEnabled {
-                    LabeledContent("認証", value: auth.isBackendAuthenticated ? "サインイン済み" : "未サインイン")
+                    // 匿名（ゲスト）セッションは同期は動くが「サインイン済み」とは表示しない。
+                    LabeledContent("認証", value: auth.isPermanentAccount ? "サインイン済み" : "未サインイン")
                     LabeledContent("未同期の変更", value: "\(sync.pendingCount) 件")
                     if let last = sync.lastSyncedAt {
                         LabeledContent("最終同期", value: last.formatted(.relative(presentation: .named)))
@@ -144,7 +145,7 @@ struct SettingsView: View {
                     } label: {
                         Label("今すぐ同期", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    if !auth.isBackendAuthenticated {
+                    if !auth.isPermanentAccount {
                         SignInWithAppleButton(.signIn) { request in
                             auth.prepareAppleRequest(request)
                         } onCompletion: { result in
@@ -158,7 +159,7 @@ struct SettingsView: View {
                         Button { showEmailSignIn = true } label: {
                             Label("メールで続ける", systemImage: "envelope.fill")
                         }
-                        Text("サインインすると、これまでのローカル記録もクラウドに同期されます。")
+                        Text("サインインすると、これまでの記録を引き継いだまま複数端末・フレンド機能が使えます。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } else {
@@ -207,8 +208,12 @@ struct SettingsView: View {
             }
 
             Section {
-                Button("サインアウト", role: .destructive) {
-                    auth.signOut()
+                // サインアウトは本人性のあるアカウントのみ表示する。匿名（ゲスト）セッションで
+                // サインアウトすると匿名アカウントに二度と戻れず記録が孤児化するため出さない。
+                if auth.isPermanentAccount {
+                    Button("サインアウト", role: .destructive) {
+                        auth.signOut()
+                    }
                 }
                 Button("すべてのデータを削除", role: .destructive) {
                     showDeleteConfirm = true
