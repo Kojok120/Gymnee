@@ -71,18 +71,24 @@ final class AppEnvironment {
         }
     }
 
-    /// プリセット種目はローカル seed（isDirty=false）でアウトボックスに積まれず、サーバーに
-    /// 送られない。そのため routine_exercises/workout_exercises が参照する exercise_id が
-    /// サーバーに無く FK 違反（23503）になる。起動時に一度だけ全種目を upsert で積み、
+    /// ユーザー作成種目はローカル生成時点では outbox に積まれないことがあり、
+    /// routine_exercises/workout_exercises が参照する exercise_id がサーバーに無く
+    /// FK 違反（23503）になる。起動時に一度だけカスタム種目を upsert で積み、
     /// 依存行より先に送られるようにする（押し順は exercises → *_exercises）。
+    /// プリセット（is_custom=false）はサーバーマスタ（created_by IS NULL・migration 0030）が正で
+    /// push しない。旧実装は全プリセットを created_by=自分 で push しており、2人目以降の
+    /// 同 id upsert が RLS(42501) で outbox に永久滞留するバグの原因だった。
     private func backfillExercisesIfNeeded() {
         let key = "gymnee.exerciseSyncBackfill.v1"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
-        let exercises = (try? container.mainContext.fetch(FetchDescriptor<Exercise>())) ?? []
-        guard !exercises.isEmpty else { return }
-        sync.enqueueBatch(exercises.map {
-            PendingChange(entity: "exercises", recordId: $0.id, operation: .upsert, updatedAt: .now)
-        })
+        let exercises = (try? container.mainContext.fetch(
+            FetchDescriptor<Exercise>(predicate: #Predicate { $0.isCustom == true })
+        )) ?? []
+        if !exercises.isEmpty {
+            sync.enqueueBatch(exercises.map {
+                PendingChange(entity: "exercises", recordId: $0.id, operation: .upsert, updatedAt: .now)
+            })
+        }
         UserDefaults.standard.set(true, forKey: key)
     }
 
