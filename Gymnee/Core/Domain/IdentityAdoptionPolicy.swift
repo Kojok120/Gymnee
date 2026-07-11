@@ -13,18 +13,17 @@ enum IdentityAdoptionPolicy {
     ///   - oldUserId: サインイン直前のセッション userId（セッションが無ければ nil）
     ///   - newUserId: サインイン成立後の userId
     ///   - persistedBackendUserId: 端末に永続化済みのバックエンドセッション userId（無ければ nil）
-    ///   - persistedBackendIsAnonymous: その永続化セッションが匿名（is_anonymous）だったか
     /// - Returns: oldUserId 所有のローカルデータを newUserId へ付け替えてよいか
     static func shouldAdopt(
         oldUserId: UUID?,
         newUserId: UUID,
-        persistedBackendUserId: UUID?,
-        persistedBackendIsAnonymous: Bool
+        persistedBackendUserId: UUID?
     ) -> Bool {
         guard let oldUserId, oldUserId != newUserId else { return false }
-        // 直前セッションが恒久アカウント（バックエンド認証済みかつ非匿名）なら付け替え禁止（＝アカウント切替）。
-        if oldUserId == persistedBackendUserId && !persistedBackendIsAnonymous { return false }
-        // それ以外（ローカルゲスト・匿名セッション）はゲスト期間データの正規引き継ぎ。
+        // 直前セッションが恒久バックエンドアカウントなら付け替え禁止（＝アカウント切替。
+        // 恒久アカウントのデータを別アカウントのサインインで吸い上げない）。
+        if oldUserId == persistedBackendUserId { return false }
+        // それ以外（ローカルゲスト期間）のデータは初回サインインへ正規に引き継ぐ。
         return true
     }
 }

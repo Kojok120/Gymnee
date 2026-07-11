@@ -184,8 +184,6 @@ actor SupabaseClient {
         let userId: UUID
         let email: String?
         let fullName: String?
-        /// 匿名ユーザー（signInAnonymously 由来・identity 未リンク）か。
-        let isAnonymous: Bool
     }
 
     func signInWithApple(identityToken: String, nonce: String?) async throws -> AuthSession {
@@ -196,86 +194,6 @@ actor SupabaseClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let data = try await send(request)
         return try Self.parseAuthSession(data)
-    }
-
-    // MARK: - 匿名認証と identity リンク（アイデンティティ一本化・docs/identity-environment-design.md Phase 2）
-
-    /// 匿名サインアップ（ゲストに安定 uid を即時発行）。返るセッションは is_anonymous=true。
-    /// 要 Auth 設定 external_anonymous_users_enabled（IP あたり 30件/時のレート制限あり）。
-    func signInAnonymously() async throws -> AuthSession {
-        var request = authRequest(path: "signup")
-        request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: [String: Any]())
-        let data = try await send(request)
-        return try Self.parseAuthSession(data)
-    }
-
-    /// Sign in with Apple の identityToken を「現在のセッション（匿名）への identity リンク」として渡す。
-    /// uid は変わらず is_anonymous=false になる（GoTrue の link_identity。要 security_manual_linking_enabled）。
-    /// 対象 identity が既に他ユーザーへリンク済みなら 422 identity_already_exists（authErrorCode で判別）。
-    func linkAppleIdentity(identityToken: String, nonce: String?) async throws -> AuthSession {
-        var request = authRequest(path: "token", query: "grant_type=id_token")
-        request.httpMethod = "POST"
-        var body: [String: Any] = ["provider": "apple", "id_token": identityToken, "link_identity": true]
-        if let nonce { body["nonce"] = nonce }
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let data = try await send(request)
-        return try Self.parseAuthSession(data)
-    }
-
-    /// Google identity を現在のセッション（匿名）へリンクするための authorize URL を取得する（PKCE）。
-    /// `GET /auth/v1/user/identities/authorize` は要 Bearer で、skip_http_redirect=true なら
-    /// ブラウザで開くべき URL を JSON（{url}）で返す。callback の code は通常サインインと同じ
-    /// exchangeCodeForSession に codeVerifier とともに渡す（同一 uid のセッションが返る）。
-    func linkGoogleAuthorizeURL(redirectTo: String) async throws -> PKCEChallenge {
-        let verifier = Self.randomCodeVerifier()
-        let challenge = Self.codeChallenge(for: verifier)
-        var comps = URLComponents()
-        comps.queryItems = [
-            URLQueryItem(name: "provider", value: "google"),
-            URLQueryItem(name: "redirect_to", value: redirectTo),
-            URLQueryItem(name: "code_challenge", value: challenge),
-            URLQueryItem(name: "code_challenge_method", value: "s256"),
-            URLQueryItem(name: "skip_http_redirect", value: "true"),
-        ]
-        var request = authRequest(path: "user/identities/authorize", query: comps.percentEncodedQuery)
-        request.httpMethod = "GET"
-        let data = try await send(request)
-        guard
-            let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let urlString = dict["url"] as? String,
-            let url = URL(string: urlString)
-        else { throw SupabaseError.invalidResponse }
-        return PKCEChallenge(url: url, codeVerifier: verifier)
-    }
-
-    /// 現在のユーザー（匿名）に email を紐付ける（メール本登録の開始）。要 Bearer。
-    /// email_change テンプレートの確認コードが新アドレスへ送られる。
-    /// 既存ユーザーのメールなら 422 email_exists（authErrorCode で判別）。
-    func requestEmailChange(to email: String) async throws {
-        var request = authRequest(path: "user")
-        request.httpMethod = "PUT"
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["email": email])
-        try await send(request)
-    }
-
-    /// email_change の確認コードを検証してセッションを得る（uid 不変・is_anonymous=false 化）。
-    func verifyEmailChange(email: String, token: String) async throws -> AuthSession {
-        var request = authRequest(path: "verify")
-        request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["type": "email_change", "email": email, "token": token])
-        let data = try await send(request)
-        return try Self.parseAuthSession(data)
-    }
-
-    /// SupabaseError.http の JSON ボディから GoTrue の error_code を取り出す（無ければ nil）。
-    /// 例: identity_already_exists（既リンク）/ email_exists（既存メール）。
-    nonisolated static func authErrorCode(_ error: Error) -> String? {
-        guard case let SupabaseError.http(_, body) = error,
-              let data = body.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return nil }
-        return dict["error_code"] as? String
     }
 
     /// refresh_token でアクセストークンを更新（再起動後のセッション復元に使う）。
@@ -629,8 +547,7 @@ actor SupabaseClient {
         let email = user?["email"] as? String
         let meta = user?["user_metadata"] as? [String: Any]
         let fullName = (meta?["full_name"] as? String) ?? (meta?["name"] as? String)
-        let isAnonymous = (user?["is_anonymous"] as? Bool) ?? false
-        return AuthSession(accessToken: accessToken, refreshToken: refreshToken, userId: userId, email: email, fullName: fullName, isAnonymous: isAnonymous)
+        return AuthSession(accessToken: accessToken, refreshToken: refreshToken, userId: userId, email: email, fullName: fullName)
     }
 }
 

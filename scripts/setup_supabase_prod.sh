@@ -57,22 +57,16 @@ TMPL='<div style="font-family:-apple-system,Helvetica,sans-serif;max-width:480px
 echo "▶ 1/4 スキーマ適用（setup_all.sql）"
 runsql "$(cat "$ROOT/supabase/setup_all.sql")"
 
-echo "▶ 2/4 Auth 設定（Apple/Google/email/SMTP/redirect/OTP/匿名+手動リンク）"
-# 匿名認証（ゲストの安定uid）と手動リンク（linkIdentity で uid 不変の本登録化）は
-# アイデンティティ一本化の前提（docs/identity-environment-design.md Phase 2）。
-# email_change テンプレートは匿名→メール本登録（PUT /user → verify type=email_change）の OTP 用。
+echo "▶ 2/4 Auth 設定（Apple/Google/email/SMTP/redirect/OTP）"
 BODY="$(jq -n --arg gid "$GID" --arg gsec "$GSEC" --arg rkey "$RKEY" --arg tmpl "$TMPL" '{
   external_apple_enabled:true, external_apple_client_id:"com.gymnee.app",
   external_google_enabled:true, external_google_client_id:$gid, external_google_secret:$gsec,
   external_email_enabled:true,
-  external_anonymous_users_enabled:true, security_manual_linking_enabled:true,
   smtp_host:"smtp.resend.com", smtp_port:"465", smtp_user:"resend", smtp_pass:$rkey,
   smtp_admin_email:"noreply@gymnee.app", smtp_sender_name:"Gymnee",
   uri_allow_list:"gymnee://auth-callback",
   mailer_templates_magic_link_content:$tmpl, mailer_templates_confirmation_content:$tmpl,
-  mailer_templates_email_change_content:$tmpl,
-  mailer_subjects_magic_link:"Gymnee のサインインコード", mailer_subjects_confirmation:"Gymnee のサインインコード",
-  mailer_subjects_email_change:"Gymnee の確認コード"
+  mailer_subjects_magic_link:"Gymnee のサインインコード", mailer_subjects_confirmation:"Gymnee のサインインコード"
 }')"
 curl -s -w '\n[HTTP %{http_code}]\n' -X PATCH "$API/config/auth" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BODY" | jq -c '{message}' 2>/dev/null || true

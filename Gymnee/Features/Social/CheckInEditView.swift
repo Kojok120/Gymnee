@@ -4,7 +4,8 @@ import SwiftData
 /// チェックイン（来店）の編集（§6.11）。メモ・来店日時・公開範囲・合トレ相手を後から変更できる。
 struct CheckInEditView: View {
     @Bindable var visit: Visit
-    let visibilityStore: PostVisibilityStore
+    /// 現在の公開範囲（この来店の feed_item の visibility。未公開なら .private）。
+    let currentVisibility: Visibility
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -17,11 +18,10 @@ struct CheckInEditView: View {
     @State private var partners: [CheckInView.PartnerDraft]
     @State private var newPartner = ""
 
-    init(visit: Visit, visibilityStore: PostVisibilityStore) {
+    init(visit: Visit, currentVisibility: Visibility) {
         self.visit = visit
-        self.visibilityStore = visibilityStore
-        let fallback = Visibility(rawValue: UserDefaults.standard.string(forKey: "gymnee.defaultVisibility") ?? "") ?? .friends
-        _visibility = State(initialValue: visibilityStore.visibility(for: visit.id) ?? fallback)
+        self.currentVisibility = currentVisibility
+        _visibility = State(initialValue: currentVisibility)
         _partners = State(initialValue: visit.partners.map {
             CheckInView.PartnerDraft(id: $0.partnerUserId, name: $0.partnerDisplayName ?? "ユーザー")
         })
@@ -126,7 +126,12 @@ struct CheckInEditView: View {
         try? context.save()
         pending.append(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
         sync.enqueueBatch(pending)
-        visibilityStore.set(visibility, for: visit.id)
+        // 公開範囲の変更を feed_item へ反映（private＝非公開に戻す＝feed_item 削除、friends/public＝発行/更新）。
+        if visibility != currentVisibility {
+            FeedPublisher.setVisibility(visibility, forRefId: visit.id, type: .visit, userId: visit.userId,
+                                        authorName: auth.session?.displayName, isPermanentAccount: auth.isPermanentAccount,
+                                        context: context, sync: sync)
+        }
         dismiss()
     }
 }

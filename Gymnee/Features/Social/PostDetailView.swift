@@ -79,7 +79,7 @@ struct PostDetailView: View {
                             reportedDisplayName: t.name, contextType: "comment", contextId: t.id)
             }
             .sheet(item: $editVisit) { visit in
-                CheckInEditView(visit: visit, visibilityStore: PostVisibilityStore())
+                CheckInEditView(visit: visit, currentVisibility: entry.visibility)
             }
             .task(id: reactions.count + comments.count) { await ensureProfiles() }
         }

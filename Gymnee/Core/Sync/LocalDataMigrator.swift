@@ -32,13 +32,14 @@ enum LocalDataMigrator {
         reassignOwned(Gym.self, entity: "gyms", context: context, into: &pending) { $0.createdBy == old } set: { $0.createdBy = new }
         reassignOwned(Exercise.self, entity: "exercises", context: context, into: &pending) { $0.createdBy == old } set: { $0.createdBy = new }
 
-        // 子テーブルは所有者列を持たない（親の user_id で RLS 判定）が、親の付け替えで
-        // 通るようになるため再送出キューに積む。
-        reenqueueAll(VisitPartner.self, entity: "visit_partners", context: context, into: &pending)
-        reenqueueAll(WorkoutExercise.self, entity: "workout_exercises", context: context, into: &pending)
-        reenqueueAll(ExerciseSet.self, entity: "exercise_sets", context: context, into: &pending)
-        reenqueueAll(RoutineExercise.self, entity: "routine_exercises", context: context, into: &pending)
-        reenqueueAll(GymEquipment.self, entity: "gym_equipment", context: context, into: &pending)
+        // 子テーブルは所有者列を持たない（親の user_id で RLS 判定）。親を new へ付け替えた行だけを
+        // 再送出する。**全件を送ると、同端末に残る別アカウント所有の親を持つ子行まで new のトークンで
+        // push して RLS(42501) で永久滞留する**ため、親所有者が new の子行だけに限定する。
+        reenqueueOwned(VisitPartner.self, entity: "visit_partners", context: context, into: &pending) { $0.visit?.userId == new }
+        reenqueueOwned(WorkoutExercise.self, entity: "workout_exercises", context: context, into: &pending) { $0.workout?.userId == new }
+        reenqueueOwned(ExerciseSet.self, entity: "exercise_sets", context: context, into: &pending) { $0.workoutExercise?.workout?.userId == new }
+        reenqueueOwned(RoutineExercise.self, entity: "routine_exercises", context: context, into: &pending) { $0.routine?.userId == new }
+        reenqueueOwned(GymEquipment.self, entity: "gym_equipment", context: context, into: &pending) { $0.gym?.createdBy == new }
 
         // 計画（PlannedWorkout）は端末ローカル専用（同期対象外）だが、各画面が userId で絞って表示するため
         // 付け替えないとサインイン後に旧計画が見えなくなる（孤児化）。送出は不要。
@@ -72,14 +73,16 @@ enum LocalDataMigrator {
         }
     }
 
-    private static func reenqueueAll<T: PersistentModel>(
+    /// 親が new に付け替わった子行だけを再送出する（他アカウント所有の親を持つ子行は積まない）。
+    private static func reenqueueOwned<T: PersistentModel>(
         _ type: T.Type,
         entity: String,
         context: ModelContext,
-        into pending: inout [PendingChange]
+        into pending: inout [PendingChange],
+        ownedByNew: (T) -> Bool
     ) {
         guard let all = try? context.fetch(FetchDescriptor<T>()) else { return }
-        for model in all {
+        for model in all where ownedByNew(model) {
             if let change = touched(model, entity: entity) { pending.append(change) }
         }
     }

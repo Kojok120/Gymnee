@@ -304,7 +304,8 @@ struct RecordContent: View {
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
-    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
+    // 破損値は安全側（friends）へ。公開面の fail-closed 方針に合わせ public フォールバックにしない。
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
 
     init(userId: UUID, resuming: Workout? = nil, initialMode: RecordMode? = nil, onEnd: (() -> Void)? = nil) {
         self.userId = userId
@@ -542,7 +543,7 @@ struct RecordContent: View {
             if !frequentExercises.isEmpty {
                 Label("よくやる種目", systemImage: "clock.arrow.circlepath")
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Theme.lime)
+                    .foregroundStyle(Theme.textSecondary)
                 cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
             }
             ForEach(grouped, id: \.0) { mg, exercises in
@@ -1030,37 +1031,18 @@ struct RecordContent: View {
             try? context.save()
         }
         restTimer.stop()
-        // 完了時の自動投稿は行わない（fail-closed）。ワークアウトと今回確定した PR を
-        // 明示 private にマークし、サマリーの「ソーシャルに投稿」ボタン（publishConsented）を
-        // 押した時だけ公開範囲を付けて発行する。押さなくても後から投稿メニューで公開できる。
-        // 既に明示選択がある id（例: 上書き保持される PR 行を過去に公開済み）は上書きしない。
-        let store = PostVisibilityStore()
-        for id in [w.id] + prIds(of: w) where store.visibility(for: id) == nil {
-            store.set(.private, for: id)
-        }
+        // 完了時に feed_item は作らない（fail-closed）。公開はサマリーの「ソーシャルに投稿」
+        // ボタン（publishConsented）を押した時だけ。押さなければ feed_item は存在せず＝非公開。
         showSummary = true
     }
 
-    /// このワークアウトで確定した PR の id 群（feed_item の refId と同一）。
-    private func prIds(of workout: Workout) -> [UUID] {
-        let wid = workout.id
-        return workout.exercises.flatMap { we in
-            (we.exercise?.personalRecords ?? []).filter { $0.workoutId == wid }.map(\.id)
-        }
-    }
-
-    /// サマリーの「ソーシャルに投稿」: ワークアウトと今回の PR に公開範囲を付けて発行する。
+    /// サマリーの「ソーシャルに投稿」: このワークアウトと当日の最大重量 PR を公開範囲付きで発行する。
     /// 公開範囲はユーザー既定（既定が「非公開」の場合は投稿の意図が成立しないためフレンドに昇格）。
     private func publishConsented(_ workout: Workout) {
         let vis: Visibility = defaultVisibility == .private ? .friends : defaultVisibility
-        let store = PostVisibilityStore()
-        for id in [workout.id] + prIds(of: workout) {
-            store.set(vis, for: id)
-        }
-        FeedPublisher.publishOwnPosts(
-            userId: userId, authorName: auth.session?.displayName, context: context,
-            visibilityStore: store, defaultVisibility: vis,
-            isPermanentAccount: auth.isPermanentAccount, sync: sync
+        FeedPublisher.publishWorkout(
+            workout, authorName: auth.session?.displayName, visibility: vis,
+            isPermanentAccount: auth.isPermanentAccount, context: context, sync: sync
         )
         Task { await sync.syncNow(force: true) }
     }

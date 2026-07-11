@@ -11,6 +11,7 @@ struct SocialActivityView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AuthService.self) private var auth
 
     @Query private var allReactions: [PostReaction]
     @Query private var allComments: [Comment]
@@ -19,14 +20,13 @@ struct SocialActivityView: View {
     @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
+    @Query private var feedItems: [FeedItem]
     @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenRaw = 0.0
 
     /// 開いた瞬間に既読化するが、未読ドットは「開く前の lastSeen」基準で描くためのスナップショット。
     @State private var renderSince: Double?
     /// タップで開く投稿詳細。
     @State private var postDetail: FeedEntry?
-    @State private var visStore = PostVisibilityStore()
 
     init(userId: UUID, onClose: @escaping () -> Void) {
         self.userId = userId
@@ -35,9 +35,9 @@ struct SocialActivityView: View {
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
+        _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId == userId })
     }
 
-    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
     private var blockedIds: Set<UUID> { Set(blocks.map(\.blockedId)) }
     /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
     /// feed_item.id == 元データ id なので、削除直後でも実体（visit/pr/workout）から導く（stale な feedItems に依存しない）。
@@ -56,8 +56,10 @@ struct SocialActivityView: View {
 
     /// 自分の投稿の FeedEntry（詳細遷移用）。FeedItem.id == FeedEntry.id なので postId で引ける。
     private var entriesById: [UUID: FeedEntry] {
+        let publishedVisibility = Dictionary(feedItems.map { ($0.id, $0.visibility) }, uniquingKeysWith: { a, _ in a })
         let entries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts,
-                                        defaultVisibility: defaultVisibility, visibilityStore: visStore)
+                                        publishedVisibilityById: publishedVisibility,
+                                        ownerName: auth.session?.displayName)
         return Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
 

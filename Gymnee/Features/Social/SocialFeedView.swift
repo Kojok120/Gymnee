@@ -118,7 +118,6 @@ private struct SocialContent: View {
     @Query private var feedItems: [FeedItem]
     @Query private var allReactions: [PostReaction]
     @Query private var allComments: [Comment]
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     /// ソーシャル初回利用時のコミュニティガイドライン同意（1.2.5）。
     @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
     /// 通知（自分の投稿への他者反応）を最後に見た時刻。アイコンの未読バッジ算出に使う。
@@ -132,7 +131,6 @@ private struct SocialContent: View {
     @State private var postDetail: FeedEntry?
     /// ダブルタップいいね時のハート演出対象（feed_item id）。
     @State private var burstId: UUID?
-    @State private var visStore = PostVisibilityStore()
     @State private var feedEntries: [FeedEntry] = []
 
     init(userId: UUID, initialTab: Int = 0) {
@@ -146,19 +144,10 @@ private struct SocialContent: View {
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
-    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
 
-    /// 自分の投稿を feed_items として発行し、最新差分を同期（push＋pull）する。
+    /// 公開済み投稿を最新の元データへ追従させ（新規作成はしない）、最新差分を同期（push＋pull）する。
     private func refreshFeed() async {
-        FeedPublisher.publishOwnPosts(
-            userId: userId,
-            authorName: auth.session?.displayName,
-            context: context,
-            visibilityStore: visStore,
-            defaultVisibility: defaultVisibility,
-            isPermanentAccount: auth.isPermanentAccount,
-            sync: sync
-        )
+        FeedPublisher.syncPublishedPosts(userId: userId, authorName: auth.session?.displayName, context: context, sync: sync)
         await sync.syncNow()
         // フォロー相手・フォロワー・フィード著者のプロフィール（名前/アバター）を id 指定で確実に取り込む。
         // 差分 pull は相手プロフィールの古い行を取り込まないため、ここに含めない相手は「ユーザー」表示に
@@ -283,7 +272,7 @@ private struct SocialContent: View {
             }
         }
         .sheet(isPresented: $showMyPosts) {
-            NavigationStack { MyPostsView(userId: userId, visibilityStore: visStore, onClose: { showMyPosts = false }) }
+            NavigationStack { MyPostsView(userId: userId, onClose: { showMyPosts = false }) }
         }
         .onChange(of: showMyPosts) { _, shown in if !shown { Task { await refreshFeed() } } }
         .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
@@ -305,9 +294,13 @@ private struct SocialContent: View {
         let profilesById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         // 自分の投稿カードにも名前・アバターを出す（他人投稿とヘッダーを揃える）。
         let ownProfile = profilesById[userId]
+        // 公開範囲は自分の feed_items 由来（feed_item が無い記録は未公開＝.private 表示）。
+        let publishedVisibility = Dictionary(
+            feedItems.lazy.filter { $0.userId == userId }.map { ($0.id, $0.visibility) },
+            uniquingKeysWith: { a, _ in a })
         let ownEntries = FeedBuilder.build(
             visits: visits, personalRecords: prs, workouts: workouts,
-            defaultVisibility: defaultVisibility, visibilityStore: visStore,
+            publishedVisibilityById: publishedVisibility,
             ownerName: ownProfile?.displayName ?? auth.session?.displayName,
             ownerAvatarURL: ownProfile?.avatarURL
         )
@@ -413,10 +406,12 @@ private struct SocialContent: View {
             Menu("公開範囲") {
                 ForEach(Visibility.allCases, id: \.self) { v in
                     Button {
-                        visStore.set(v, for: entry.id)
-                        Task { await refreshFeed() }
+                        FeedPublisher.setVisibility(v, forRefId: entry.id, type: entry.feedItemType, userId: userId,
+                                                    authorName: auth.session?.displayName, isPermanentAccount: auth.isPermanentAccount,
+                                                    context: context, sync: sync)
+                        Task { await sync.syncNow(force: true) }
                     } label: {
-                        Label(v.label, systemImage: (visStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
+                        Label(v.label, systemImage: entry.visibility == v ? "checkmark" : "")
                     }
                 }
             }

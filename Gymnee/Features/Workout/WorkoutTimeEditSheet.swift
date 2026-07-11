@@ -80,14 +80,8 @@ struct WorkoutTimeEditSheet: View {
             return
         }
         sync.enqueue(PendingChange(entity: "workouts", recordId: workout.id, operation: .upsert, updatedAt: workout.updatedAt))
-        // 公開済みフィードの「時間」stat を新しい値へ追従させる（statsJSON 差分の upsert 再発行）。
-        FeedPublisher.publishOwnPosts(
-            userId: workout.userId, authorName: auth.session?.displayName, context: context,
-            visibilityStore: PostVisibilityStore(),
-            defaultVisibility: Visibility(rawValue: defaultVisibilityRaw) ?? .public,
-            isPermanentAccount: auth.isPermanentAccount,
-            sync: sync
-        )
+        // 公開済みならフィードの「時間」stat を新しい値へ追従させる（未公開なら何も作らない）。
+        FeedPublisher.syncPublishedPosts(userId: workout.userId, authorName: auth.session?.displayName, context: context, sync: sync)
         dismiss()
     }
 }
