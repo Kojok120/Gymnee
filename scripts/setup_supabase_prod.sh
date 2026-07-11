@@ -58,10 +58,13 @@ echo "▶ 1/4 スキーマ適用（setup_all.sql）"
 runsql "$(cat "$ROOT/supabase/setup_all.sql")"
 
 echo "▶ 2/4 Auth 設定（Apple/Google/email/SMTP/redirect/OTP）"
+# 匿名認証は不採用（IdentityAdoptionPolicy ガードで恒久対策・docs/identity-environment-design.md）。
+# anon key はアプリに同梱されるため、既に匿名を有効化した project でも false を明示して確実に無効化する。
 BODY="$(jq -n --arg gid "$GID" --arg gsec "$GSEC" --arg rkey "$RKEY" --arg tmpl "$TMPL" '{
   external_apple_enabled:true, external_apple_client_id:"com.gymnee.app",
   external_google_enabled:true, external_google_client_id:$gid, external_google_secret:$gsec,
   external_email_enabled:true,
+  external_anonymous_users_enabled:false, security_manual_linking_enabled:false,
   smtp_host:"smtp.resend.com", smtp_port:"465", smtp_user:"resend", smtp_pass:$rkey,
   smtp_admin_email:"noreply@gymnee.app", smtp_sender_name:"Gymnee",
   uri_allow_list:"gymnee://auth-callback",
