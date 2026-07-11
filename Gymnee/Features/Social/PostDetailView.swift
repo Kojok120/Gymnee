@@ -63,7 +63,16 @@ struct PostDetailView: View {
                     }
                     .padding(Theme.Spacing.md)
                 }
-                composer
+                // コメント入力は公開済み投稿のみ（未公開＝feed_item 不在の自分の記録に付けると
+                // 親不在で FK 違反・孤児化するため）。未公開はカード詳細の閲覧のみ。
+                if entry.isPublished {
+                    composer
+                } else {
+                    Text("この記録はまだ非公開です。投稿するとコメントや応援がつきます。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(Theme.Spacing.md)
+                }
             }
             .background(Theme.bg0)
             .navigationTitle("投稿")

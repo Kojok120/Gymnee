@@ -108,11 +108,14 @@ struct MyPostsView: View {
         }
     }
 
-    /// カード（タップで詳細）＋いいね/応援バー。
+    /// カード（タップで詳細）＋いいね/応援バー。応援は公開済み投稿のみ（未公開＝feed_item 不在の
+    /// 記録に反応を付けると親不在で FK 違反・孤児化するため）。
     private func row(_ entry: FeedEntry, reactions: [PostReaction]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             card(entry)
-            ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions)
+            if entry.isPublished {
+                ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions)
+            }
         }
     }
 

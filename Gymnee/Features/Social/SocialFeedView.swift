@@ -361,13 +361,17 @@ private struct SocialContent: View {
         return VStack(alignment: .leading, spacing: 4) {
             FeedCardView(entry: entry)
                 .contentShape(Rectangle())
-                // ダブルタップでいいね。シングルタップ（詳細/編集）と両立させるため count:2 を先に宣言。
-                .onTapGesture(count: 2) { doubleTapLike(entry, existing: myReaction) }
+                // ダブルタップいいねは公開済み投稿のみ（未公開＝feed_item 不在の記録に応援を付けると
+                // 親不在の post_reaction が FK 違反で滞留・孤児化するため）。
+                .onTapGesture(count: 2) { if entry.isPublished { doubleTapLike(entry, existing: myReaction) } }
                 .onTapGesture { openEntry(entry) }
                 .overlay { burstHeart(for: entry.id) }
-            ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions,
-                        commentCount: commentCount,
-                        onComment: { postDetail = entry })
+            // 応援/コメントバーは公開済み投稿にのみ表示。未公開の自分の記録はカードのみ。
+            if entry.isPublished {
+                ReactionBar(feedItemId: entry.id, userId: userId, reactions: reactions,
+                            commentCount: commentCount,
+                            onComment: { postDetail = entry })
+            }
         }
     }
 

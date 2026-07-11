@@ -111,6 +111,15 @@ final class AuthService {
         guard let supabase, let refresh = Keychain.get(refreshTokenKey) else { return }
         do {
             let remote = try await supabase.refreshSession(refreshToken: refresh)
+            // 旧ビルドで作られた匿名セッションは「恒久アカウント」ではない。復元しても isPermanentAccount
+            // 扱いにするとソーシャル/AI が匿名で開くため、バックエンドセッションを破棄してゲストへ落とす
+            // （ローカル記録はこの uid の所有のまま残り、次の本人サインインで正規に引き継がれる）。
+            if remote.isAnonymous {
+                await supabase.setSession(accessToken: nil, refreshToken: nil)
+                clearBackendSession()
+                defaults.removeObject(forKey: "gymnee.supabase.isAnonymous")   // 旧ビルドの残存フラグを掃除
+                return
+            }
             await supabase.setSession(accessToken: remote.accessToken, refreshToken: remote.refreshToken)
             let name = defaults.string(forKey: backendNameKey) ?? session?.displayName ?? "Apple ユーザー"
             persistBackendSession(access: remote.accessToken, refresh: remote.refreshToken, userId: remote.userId, displayName: name)

@@ -148,6 +148,11 @@ struct FeedEntry: Identifiable {
     /// 自分の投稿にも authorName を入れるため「名前の有無」からは導出せず明示フラグで持つ。
     var isFromOther: Bool = false
 
+    /// 公開済み（feed_item が存在する）か。他人の投稿は常に true。
+    /// 自分の未公開記録（feed_item 無し）では応援/コメントを出さない（親不在の post_reactions/comments が
+    /// FK 違反で滞留・孤児化するのを防ぐ）。表示は「非公開」バッジ付きのカードのみ。
+    var isPublished: Bool = true
+
     /// feed_item の種別（公開範囲変更で FeedPublisher に渡す）。
     var feedItemType: FeedItemType {
         switch kind {
@@ -181,6 +186,7 @@ enum FeedBuilder {
     ) -> [FeedEntry] {
         var entries: [FeedEntry] = []
         func vis(_ id: UUID) -> Visibility { publishedVisibilityById[id] ?? .private }
+        func published(_ id: UUID) -> Bool { publishedVisibilityById[id] != nil }
         // ワークアウトごとの PR 件数を先に索引化（workout×PR の全走査を避ける。FeedPublisher と同じ手法）。
         var prCountByWorkout: [UUID: Int] = [:]
         for pr in personalRecords { if let wid = pr.workoutId { prCountByWorkout[wid, default: 0] += 1 } }
@@ -196,7 +202,8 @@ enum FeedBuilder {
                 visibility: vis(v.id),
                 partners: v.partners.compactMap(\.partnerDisplayName),
                 authorName: ownerName,
-                authorAvatarURL: ownerAvatarURL
+                authorAvatarURL: ownerAvatarURL,
+                isPublished: published(v.id)
             ))
         }
 
@@ -216,7 +223,8 @@ enum FeedBuilder {
                 partners: [],
                 authorName: ownerName,
                 authorAvatarURL: ownerAvatarURL,
-                prKind: pr.type
+                prKind: pr.type,
+                isPublished: published(pr.id)
             ))
         }
 
@@ -254,7 +262,8 @@ enum FeedBuilder {
                 authorAvatarURL: ownerAvatarURL,
                 stats: stats,
                 muscles: muscles,
-                prCount: prCount
+                prCount: prCount,
+                isPublished: published(w.id)
             ))
         }
 

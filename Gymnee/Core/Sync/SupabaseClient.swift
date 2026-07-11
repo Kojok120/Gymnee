@@ -184,6 +184,9 @@ actor SupabaseClient {
         let userId: UUID
         let email: String?
         let fullName: String?
+        /// 匿名ユーザー（旧ビルドの signInAnonymously 由来）か。匿名認証は撤去したが、旧ビルドで
+        /// 匿名セッションを持つ端末の復元時に「恒久アカウント」と誤認しないための判定に使う。
+        let isAnonymous: Bool
     }
 
     func signInWithApple(identityToken: String, nonce: String?) async throws -> AuthSession {
@@ -547,7 +550,8 @@ actor SupabaseClient {
         let email = user?["email"] as? String
         let meta = user?["user_metadata"] as? [String: Any]
         let fullName = (meta?["full_name"] as? String) ?? (meta?["name"] as? String)
-        return AuthSession(accessToken: accessToken, refreshToken: refreshToken, userId: userId, email: email, fullName: fullName)
+        let isAnonymous = (user?["is_anonymous"] as? Bool) ?? false
+        return AuthSession(accessToken: accessToken, refreshToken: refreshToken, userId: userId, email: email, fullName: fullName, isAnonymous: isAnonymous)
     }
 }
 
