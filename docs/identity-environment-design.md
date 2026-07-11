@@ -198,6 +198,32 @@ Gymnee は自前 REST クライアント（`SupabaseClient`）のため、Swift 
 （prod 実データで確認: プリセット id は `uuid_generate_v5` 一致・ゲスト所有）、
 匿名セッション導入で「全ゲスト起動」が同経路を踏むため、Phase 2 より先に必須。
 
+### 公開面の fail-closed 設計（2026-07-11 追加・ユーザー指摘起点）
+
+Phase 2 実装後も、公開面は「同期は全部して、悪いものが出ないよう個別に堰き止める」
+ブロックリスト型（fail-open）だった。ゲスト期間の記録も feed_item 化され、サインアップ時に
+過去記録が既定 visibility（public）で一括発行される＝「投稿するつもりの無かった過去の記録が
+ネットに上がる」挙動が 1.0 から存在していた。これをアローリスト型（fail-closed）に反転する:
+
+> **公開されるのは「恒久アカウントが、サインアップ後に作った記録」だけ。
+> それ以前のものはすべて明示的に非公開。**
+
+- **非恒久（ゲスト/匿名）は feed_item を一切作らない**（`FeedPublisher.publishOwnPosts` の
+  guard）。同期されるのは RLS で本人のみの記録データだけになる。
+- **恒久化の遷移時**（リンクによる本登録化・ゲスト/匿名データの採用を伴うサインイン）に、
+  その時点で存在する本人の記録を `PostVisibilityStore` で明示 **private** にマークする
+  （`FeedPublisher.markGuestRecordsPrivate`・`AuthService.onBecamePermanent` フック）。
+  過去記録は「非公開の自分の記録」のまま残り、投稿メニュー（公開範囲）から個別に公開できる。
+  同一恒久アカウントの再認証・別端末での既存アカウントサインインでは発火しない。
+- **既存投稿の visibility は「明示選択 > 現状維持 > 既定」で解決**（`FeedVisibilityPolicy`）。
+  明示選択は端末ローカル保存のため、既定値で解決すると別端末の再発行で private が public に
+  巻き戻る（既存バグ・本変更で修正）。`PostVisibilityStore` はインスタンス内キャッシュを廃止し
+  UserDefaults を読み書きの正とする（画面の @State と一括マークのインスタンス間不整合の防止）。
+- これにより防御は「IdentityAdoptionPolicy → RLS(0031) → 公開面の設計」の三層になり、
+  仮に identity 層で回帰が起きても被害は本人の非公開領域に閉じる。
+  匿名 public の RLS ゲート・FeedPublisher の friends キャップ（撤去済み）が担っていた役割は
+  guard に置き換わり、RLS はサーバー側の防御として残す。
+
 **その他の実装決定**:
 - サインアウトはローカル識別（userId）を破棄して次回ゲストを新規 uid にする
   （旧アカウント uid のローカルデータが次のサインインで別アカウントに吸われる残穴を塞ぐ）。

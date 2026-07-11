@@ -1,23 +1,22 @@
 import Foundation
 import Observation
 
-/// 投稿ごとの公開範囲（端末ローカル保存）。
-/// 現状マルチユーザー共有は未稼働のため visibility は実効しないが、UI 上で投稿単位に
-/// 設定・表示できるようにする。共有実装時に各レコード列（visits/workouts.visibility）へ移行する。
+/// 投稿ごとの公開範囲の明示選択（端末ローカル保存）。feed_items の visibility に反映され同期される。
+/// UserDefaults を読み書きの正とし、インスタンス内キャッシュは持たない。
+/// 各画面の `@State` と恒久化時の一括マーク（FeedPublisher.markGuestRecordsPrivate）が
+/// 別インスタンスになるため、init 時スナップショットをキャッシュすると
+/// マーク後も古い値（未設定）で public 発行される事故が起きる。
 @Observable
 final class PostVisibilityStore {
     private let key = "gymnee.postVisibility"
-    private var map: [String: String]
-
-    init() {
-        map = (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
-    }
 
     func visibility(for id: UUID) -> Visibility? {
-        map[id.uuidString].flatMap { Visibility(rawValue: $0) }
+        let map = (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
+        return map[id.uuidString].flatMap { Visibility(rawValue: $0) }
     }
 
     func set(_ visibility: Visibility, for id: UUID) {
+        var map = (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
         map[id.uuidString] = visibility.rawValue
         UserDefaults.standard.set(map, forKey: key)
     }

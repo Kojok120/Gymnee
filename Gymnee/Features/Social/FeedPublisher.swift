@@ -5,6 +5,12 @@ import SwiftData
 /// 同期キューへ積む（§6.11）。フォロワーはサーバー（RLS=本人＋public＋friends&フォロー）から
 /// 取り込み、共有フィードに表示する。公開範囲は端末ローカルの PostVisibilityStore を反映する。
 ///
+/// 公開面は fail-closed（docs/identity-environment-design.md）:
+/// - 発行するのは本人性のあるアカウント（isPermanentAccount）のみ。ゲスト/匿名期間は
+///   feed_item を一切作らない（意図しない過去記録の公開を構造的に防ぐ）。
+/// - サインアップ時点で存在した記録は markGuestRecordsPrivate で明示 private になり、
+///   ユーザーが投稿メニューから個別に選んだものだけが公開される。
+///
 /// FeedItem.id は元投稿の id（refId）と同じにして 1 投稿 1 行に保つ。
 enum FeedPublisher {
     @MainActor
@@ -17,6 +23,9 @@ enum FeedPublisher {
         isPermanentAccount: Bool,
         sync: LocalSyncEngine
     ) {
+        // ゲスト/匿名は発行しない（ローカルにも作らない）。サインアップ前の記録が
+        // アカウント確立時の一括 push で公開面に載る経路を根元から断つ。
+        guard isPermanentAccount else { return }
         let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == userId }))) ?? []
         let workouts = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId && $0.completedAt != nil }))) ?? []
         let prs = (try? context.fetch(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == userId }))) ?? []
@@ -29,12 +38,13 @@ enum FeedPublisher {
         var pending: [PendingChange] = []
 
         func upsert(refId: UUID, type: FeedItemType, summary: String, date: Date, statsJSON: String? = nil) {
-            var vis = visibilityStore.visibility(for: refId) ?? defaultVisibility
-            // 匿名（ゲスト）セッションの public は friends に丸める。RLS(0031) が匿名の public 投稿を
-            // 拒否するため、そのまま push すると outbox が詰まる。本登録（isPermanentAccount）後に
-            // 再発行されると vis が public に戻り、既存行も visibility 差分として更新・再 push される（自己修復）。
-            if !isPermanentAccount, vis == .public { vis = .friends }
+            let explicit = visibilityStore.visibility(for: refId)
             if let item = byRef.removeValue(forKey: refId) {
+                // 既存投稿は明示選択が無ければ現状維持（FeedVisibilityPolicy）。
+                // 明示選択は端末ローカル保存のため、既定値で解決すると別端末の再発行で
+                // private にした投稿が public に巻き戻る事故が起きる。
+                let vis = FeedVisibilityPolicy.resolve(
+                    explicitChoice: explicit, existingItemVisibility: item.visibility, defaultVisibility: defaultVisibility)
                 guard item.visibilityRaw != vis.rawValue || item.summary != summary
                         || item.statsJSON != statsJSON || item.authorDisplayName != authorName else { return }
                 item.visibility = vis
@@ -51,6 +61,8 @@ enum FeedPublisher {
                 if (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == rid })))?.first != nil {
                     return
                 }
+                let vis = FeedVisibilityPolicy.resolve(
+                    explicitChoice: explicit, existingItemVisibility: nil, defaultVisibility: defaultVisibility)
                 let item = FeedItem(id: refId, userId: userId, authorDisplayName: authorName, type: type, refId: refId, summary: summary, statsJSON: statsJSON, visibility: vis, createdAt: date)
                 context.insert(item)
                 pending.append(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
@@ -135,6 +147,22 @@ enum FeedPublisher {
             if !pending.isEmpty { sync.enqueueBatch(pending) }
         } catch {
             // 保存失敗時は enqueue しない（次回の発行で再試行）。
+        }
+    }
+
+    /// サインアップ（恒久アカウント確立）時点で存在する本人の記録を、投稿単位の明示選択として
+    /// **非公開（private）にマーク**する（公開面の fail-closed 化）。
+    /// これにより、ゲスト/匿名期間の過去記録がサインアップ後の一括発行で公開されることは無く、
+    /// ユーザーが投稿メニュー（公開範囲）から選んだものだけが公開される。
+    /// 既に明示選択がある記録は上書きしない。冪等（再実行しても同じ結果）。
+    @MainActor
+    static func markGuestRecordsPrivate(userId: UUID, context: ModelContext, visibilityStore: PostVisibilityStore) {
+        let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == userId }))) ?? []
+        let workouts = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId }))) ?? []
+        let prs = (try? context.fetch(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == userId }))) ?? []
+        let ids = visits.map(\.id) + workouts.map(\.id) + prs.map(\.id)
+        for id in ids where visibilityStore.visibility(for: id) == nil {
+            visibilityStore.set(.private, for: id)
         }
     }
 
