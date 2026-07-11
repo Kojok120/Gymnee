@@ -62,8 +62,10 @@ enum DemoData {
         context.insert(Follow(followerId: userId, followeeId: UUID(), followeeDisplayName: "ゆうき", isDirty: false))
 
         // ベンチプレスの履歴（強度進捗・PRタイムライン用に複数セッション）。
+        // ラットプルダウンも混ぜて完了種目を3種以上にする（「よくやる種目」セクションの表示検証用）。
         let bench = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "ベンチプレス" })))?.first
         let squat = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "スクワット" })))?.first
+        let lat = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "ラットプルダウン" })))?.first
         // (日数前, トップ重量) を過去→現在で漸増。
         let benchHistory: [(Int, Double)] = [(23, 70), (16, 72.5), (9, 77.5), (2, 80)]
         for (off, topWeight) in benchHistory {
@@ -84,6 +86,13 @@ enum DemoData {
                 context.insert(we)
                 for i in 0..<3 {
                     context.insert(ExerciseSet(setIndex: i, weight: 100, reps: 5, isCompleted: true, workoutExercise: we, isDirty: false))
+                }
+            }
+            if let lat, off <= 16 {
+                let we = WorkoutExercise(orderIndex: 2, workout: workout, exercise: lat, isDirty: false)
+                context.insert(we)
+                for i in 0..<3 {
+                    context.insert(ExerciseSet(setIndex: i, weight: 55, reps: 10, isCompleted: true, workoutExercise: we, isDirty: false))
                 }
             }
         }

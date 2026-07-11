@@ -64,6 +64,12 @@ final class RestTimer {
             isRunning = false
             task?.cancel()
             task = nil
+            // フォアグラウンドで終了を迎えたらチャイムを鳴らす（サイレントスイッチでも鳴る）。
+            // バックグラウンド中の終了は通知音が担い、復帰時の refresh はここを通るが
+            // endDate をとうに過ぎた「復帰同期」で今さら鳴らさない（終了直後 2 秒以内のみ）。
+            if let end = endDate, Date.now.timeIntervalSince(end) < 2 {
+                RestChime.playIfEnabled()
+            }
         }
     }
 

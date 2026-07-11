@@ -58,7 +58,8 @@ struct MyPostsView: View {
             personalRecords: prs,
             workouts: workouts,
             defaultVisibility: defaultVisibility,
-            visibilityStore: visibilityStore
+            visibilityStore: visibilityStore,
+            ownerName: auth.session?.displayName
         )
     }
 

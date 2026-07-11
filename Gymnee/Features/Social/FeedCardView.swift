@@ -56,13 +56,14 @@ struct FeedCardView: View {
     }
 
     /// 本文。ワークアウトはスタッツがあればリッチに（自分/他人とも）、PRはトロフィー、
-    /// それ以外（来店/スタッツ無しの旧投稿）は他人投稿のみ summary を1行表示。
+    /// それ以外（来店/スタッツ無しの旧投稿）は summary を1行表示。
+    /// ヘッダーを「アバター＋名前」に統一したため、タイトルは自分の投稿でもここで出す。
     @ViewBuilder private var bodyContent: some View {
         if entry.kind == .workout, !entry.stats.isEmpty {
             workoutBody
         } else if entry.kind == .pr, entry.prKind != nil {
             prBody
-        } else if entry.isFromOther {
+        } else {
             Label(entry.title, systemImage: entry.icon)
                 .font(.subheadline).foregroundStyle(Theme.textPrimary)
         }
@@ -139,38 +140,19 @@ struct FeedCardView: View {
 
     private var header: some View {
         HStack {
-            if entry.isFromOther {
-                AvatarView(urlString: entry.authorAvatarURL, size: 32)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.authorName ?? "ユーザー").font(.subheadline.bold())
-                    Text(entry.date, format: .dateTime.month().day().hour().minute())
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            } else {
-                Image(systemName: entry.icon)
-                    .foregroundStyle(iconColor)
-                    .frame(width: 28, height: 28)
-                    .background(iconColor.opacity(0.15), in: Circle())
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.title).font(.subheadline.bold())
-                        .lineLimit(2)
-                    Text(entry.date, format: .dateTime.month().day().hour().minute())
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+            // 自分の投稿も他人と同じ「アバター＋名前＋日時」ヘッダーに統一する
+            // （タイトルは bodyContent 側で表示）。
+            AvatarView(urlString: entry.authorAvatarURL, size: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entry.authorName ?? "自分").font(.subheadline.bold())
+                Text(entry.date, format: .dateTime.month().day().hour().minute())
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: Theme.Spacing.sm)
             Label(entry.visibility.label, systemImage: visibilityIcon)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1).layoutPriority(1)
-        }
-    }
-
-    private var iconColor: Color {
-        switch entry.kind {
-        case .visit: return Theme.energy
-        case .pr: return Theme.lime
-        case .workout: return .orange
         }
     }
 

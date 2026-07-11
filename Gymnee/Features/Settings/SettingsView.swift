@@ -23,6 +23,8 @@ struct SettingsView: View {
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
     // 記録のレスト既定秒数（RestTimer が参照）。
     @AppStorage("gymnee.restSeconds") private var restSeconds: Int = 90
+    // レスト終了チャイム（RestChime が参照。サイレントスイッチでも鳴る）。
+    @AppStorage(RestChime.enabledKey) private var restSoundEnabled = true
     // 通知の種類別 ON/OFF。ローカル通知はこの @AppStorage を NotificationService が参照。
     @AppStorage(NotificationService.PrefKey.streak) private var notifStreak = true
     @AppStorage(NotificationService.PrefKey.planned) private var notifPlanned = true
@@ -78,10 +80,11 @@ struct SettingsView: View {
                 Stepper(value: $restSeconds, in: 30...300, step: 5) {
                     LabeledContent("レストタイマー", value: "\(restSeconds) 秒")
                 }
+                Toggle("レスト終了に音を鳴らす", isOn: $restSoundEnabled)
             } header: {
                 Text("ワークアウト")
             } footer: {
-                Text("「今週の達成」リングの目標日数と、セット記録後に始まるレストの既定秒数。")
+                Text("「今週の達成」リングの目標日数と、セット記録後に始まるレストの既定秒数。終了音はマナーモードでも鳴ります（アプリを開いている間）。")
             }
 
             Section {
