@@ -149,9 +149,9 @@ struct FeedEntry: Identifiable {
     let partners: [String]
     /// 他人の投稿のとき著者の userId（プロフィール遷移用。自分の投稿は nil）。
     var authorId: UUID? = nil
-    /// 他人の投稿のとき著者名（自分の投稿は nil）。
+    /// 著者名（自分の投稿にも自分の表示名を入れてカードのヘッダーを他人投稿と揃える）。
     var authorName: String? = nil
-    /// 他人の投稿のとき著者アバターの公開URL。
+    /// 著者アバターの公開URL。
     var authorAvatarURL: String? = nil
     /// 自動ハイライトする主要スタッツ（種目/セット/ボリューム/時間など）。ワークアウト投稿で使う。
     var stats: [FeedStat] = []
@@ -166,8 +166,9 @@ struct FeedEntry: Identifiable {
     /// 他人の来店投稿の写真ストレージ参照（"bucket/path"）。SyncedPhoto で取得して表示する。
     var photoRef: String? = nil
 
-    /// 他ユーザーの投稿か（フィード上の表示分岐用）。
-    var isFromOther: Bool { authorName != nil }
+    /// 他ユーザーの投稿か（メニュー・写真取得経路などの分岐用）。
+    /// 自分の投稿にも authorName を入れるため「名前の有無」からは導出せず明示フラグで持つ。
+    var isFromOther: Bool = false
 
     var icon: String {
         switch kind {
@@ -180,12 +181,16 @@ struct FeedEntry: Identifiable {
 
 enum FeedBuilder {
     /// 来店・PR・完了ワークアウトを統合し、新しい順に並べる。
+    /// ownerName/ownerAvatarURL を渡すと自分の投稿カードにも名前・アバターを表示できる
+    /// （他人投稿とヘッダーを揃える）。
     static func build(
         visits: [Visit],
         personalRecords: [PersonalRecord],
         workouts: [Workout],
         defaultVisibility: Visibility,
-        visibilityStore: PostVisibilityStore? = nil
+        visibilityStore: PostVisibilityStore? = nil,
+        ownerName: String? = nil,
+        ownerAvatarURL: String? = nil
     ) -> [FeedEntry] {
         var entries: [FeedEntry] = []
         func vis(_ id: UUID) -> Visibility { visibilityStore?.visibility(for: id) ?? defaultVisibility }
@@ -202,7 +207,9 @@ enum FeedBuilder {
                 subtitle: v.note,
                 photoFilename: v.localPhotoFilename,
                 visibility: vis(v.id),
-                partners: v.partners.compactMap(\.partnerDisplayName)
+                partners: v.partners.compactMap(\.partnerDisplayName),
+                authorName: ownerName,
+                authorAvatarURL: ownerAvatarURL
             ))
         }
 
@@ -220,6 +227,8 @@ enum FeedBuilder {
                 photoFilename: nil,
                 visibility: vis(pr.id),
                 partners: [],
+                authorName: ownerName,
+                authorAvatarURL: ownerAvatarURL,
                 prKind: pr.type
             ))
         }
@@ -254,6 +263,8 @@ enum FeedBuilder {
                 photoFilename: nil,
                 visibility: vis(w.id),
                 partners: [],
+                authorName: ownerName,
+                authorAvatarURL: ownerAvatarURL,
                 stats: stats,
                 muscles: muscles,
                 prCount: prCount
@@ -298,7 +309,8 @@ enum FeedBuilder {
                 muscles: stats?.muscleGroups ?? [],
                 prCount: stats?.prCount ?? 0,
                 workoutLines: stats?.exerciseLines,
-                photoRef: visitPhotoRef
+                photoRef: visitPhotoRef,
+                isFromOther: true
             )
         }
     }

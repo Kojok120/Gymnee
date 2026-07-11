@@ -299,6 +299,8 @@ struct RecordContent: View {
     @State private var prSpark: PRSpark?
     /// フリーのカード（部位ごと）。種目数×完了履歴の関連走査が重いので毎描画ではなくキャッシュする。
     @State private var freeGroups: [(MuscleGroup, [Exercise])] = []
+    /// 「よくやる種目」（直近60日の使用回数トップ10）。freeGroups と同時に再計算・キャッシュ。
+    @State private var frequentExercises: [Exercise] = []
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
@@ -377,6 +379,9 @@ struct RecordContent: View {
                 WorkoutSummaryView(
                     workout: w,
                     streak: currentStreak,
+                    // 投稿は明示同意（fail-closed）。バックエンド未接続・未サインインでは出さない。
+                    postVisibilityLabel: (defaultVisibility == .private ? Visibility.friends : defaultVisibility).label,
+                    onPost: (sync.isRemoteEnabled && auth.isPermanentAccount) ? { publishConsented(w) } : nil,
                     onAnalytics: {
                         showSummary = false
                         NotificationCenter.default.post(name: .gymneeShowAnalytics, object: nil)
@@ -525,13 +530,21 @@ struct RecordContent: View {
         }
     }
 
-    /// フリー：最近/よく使う＋このセッション＋手動追加。部位ごとにまとめ、③でジャンプ。
+    /// フリー：よくやる種目（先頭固定）＋部位ごとの全種目。③でジャンプ。
     @ViewBuilder
     private var freeCardsBody: some View {
         let grouped = freeGroups
         if grouped.isEmpty {
             emptyFreeState
         } else {
+            // 毎回部位から探さなくて済むよう、直近60日でよく使う種目を最上部に固定する
+            // （3種目未満なら非表示＝新規ユーザーに空枠を見せない。カードの挙動は下と同一）。
+            if !frequentExercises.isEmpty {
+                Label("よくやる種目", systemImage: "clock.arrow.circlepath")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Theme.lime)
+                cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
+            }
             ForEach(grouped, id: \.0) { mg, exercises in
                 Text(mg.label)
                     .font(.subheadline.weight(.bold))
@@ -770,6 +783,17 @@ struct RecordContent: View {
             let items = ordered.filter { $0.muscleGroup == mg }
             return items.isEmpty ? nil : (mg, items)
         }
+        // 「よくやる種目」: dedupe 済みの ordered を対象に、完了ワークアウトの日付を集計してランク。
+        let usage: [UUID: [Date]] = Dictionary(uniqueKeysWithValues: ordered.compactMap { ex in
+            let dates = ex.workoutExercises.compactMap { we -> Date? in
+                guard let w = we.workout, w.userId == userId, let done = w.completedAt, !we.sets.isEmpty else { return nil }
+                return done
+            }
+            return dates.isEmpty ? nil : (ex.id, dates)
+        })
+        let rankedIds = FrequentExerciseRanker.rank(usage: usage, asOf: .now)
+        let byId = Dictionary(uniqueKeysWithValues: ordered.map { ($0.id, $0) })
+        frequentExercises = rankedIds.compactMap { byId[$0] }
     }
 
     // MARK: - 記録アクション
@@ -1006,12 +1030,39 @@ struct RecordContent: View {
             try? context.save()
         }
         restTimer.stop()
+        // 完了時の自動投稿は行わない（fail-closed）。ワークアウトと今回確定した PR を
+        // 明示 private にマークし、サマリーの「ソーシャルに投稿」ボタン（publishConsented）を
+        // 押した時だけ公開範囲を付けて発行する。押さなくても後から投稿メニューで公開できる。
+        // 既に明示選択がある id（例: 上書き保持される PR 行を過去に公開済み）は上書きしない。
+        let store = PostVisibilityStore()
+        for id in [w.id] + prIds(of: w) where store.visibility(for: id) == nil {
+            store.set(.private, for: id)
+        }
+        showSummary = true
+    }
+
+    /// このワークアウトで確定した PR の id 群（feed_item の refId と同一）。
+    private func prIds(of workout: Workout) -> [UUID] {
+        let wid = workout.id
+        return workout.exercises.flatMap { we in
+            (we.exercise?.personalRecords ?? []).filter { $0.workoutId == wid }.map(\.id)
+        }
+    }
+
+    /// サマリーの「ソーシャルに投稿」: ワークアウトと今回の PR に公開範囲を付けて発行する。
+    /// 公開範囲はユーザー既定（既定が「非公開」の場合は投稿の意図が成立しないためフレンドに昇格）。
+    private func publishConsented(_ workout: Workout) {
+        let vis: Visibility = defaultVisibility == .private ? .friends : defaultVisibility
+        let store = PostVisibilityStore()
+        for id in [workout.id] + prIds(of: workout) {
+            store.set(vis, for: id)
+        }
         FeedPublisher.publishOwnPosts(
             userId: userId, authorName: auth.session?.displayName, context: context,
-            visibilityStore: PostVisibilityStore(), defaultVisibility: defaultVisibility,
+            visibilityStore: store, defaultVisibility: vis,
             isPermanentAccount: auth.isPermanentAccount, sync: sync
         )
-        showSummary = true
+        Task { await sync.syncNow(force: true) }
     }
 
     /// サマリーを閉じた後：待機状態へ戻す。

@@ -302,8 +302,15 @@ private struct SocialContent: View {
     /// フィード描画コストの大きい構築(FeedBuilder＋ソート)を毎描画で行わずキャッシュする。
     /// データ件数が変わった時だけ再構築（タブ切替時の再計算ラグを排除）。
     private func rebuildFeedEntries() {
-        let ownEntries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts, defaultVisibility: defaultVisibility, visibilityStore: visStore)
         let profilesById = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // 自分の投稿カードにも名前・アバターを出す（他人投稿とヘッダーを揃える）。
+        let ownProfile = profilesById[userId]
+        let ownEntries = FeedBuilder.build(
+            visits: visits, personalRecords: prs, workouts: workouts,
+            defaultVisibility: defaultVisibility, visibilityStore: visStore,
+            ownerName: ownProfile?.displayName ?? auth.session?.displayName,
+            ownerAvatarURL: ownProfile?.avatarURL
+        )
         let otherEntries = FeedBuilder.othersEntries(feedItems: feedItems, excludingUser: userId, profilesById: profilesById)
         // id 重複（自分の投稿と他者feed_itemのrefId衝突・多重ID孤児）で ForEach がアサーション落ちするのを防ぐ。
         var seen = Set<UUID>()

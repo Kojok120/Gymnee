@@ -156,7 +156,13 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound, .list])
+        // レストタイマーはフォアグラウンドではアプリ内チャイム（RestChime・サイレントでも鳴る）が
+        // 担当するため通知音を出さない（二重に鳴るのを防ぐ）。バナーは残す。
+        if notification.request.identifier == "gymnee.restTimer" {
+            completionHandler([.banner, .list])
+        } else {
+            completionHandler([.banner, .sound, .list])
+        }
     }
 
     /// 通知タップ時のルーティング（ローカル/リモート共通）。userInfo の type を見て該当タブへ。
