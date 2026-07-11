@@ -6,22 +6,27 @@ import XCTest
 final class EnvironmentGuardTests: XCTestCase {
 
     private let prod = EnvironmentGuard.prodHost               // ibtrbymfmxrruuwuzell.supabase.co
-    private let dev = "bdeaeykruwxazdoewxmg.supabase.co"
+    private let nonProd = "some-other-project.supabase.co"     // 本番以外の任意ホスト
     private let appProd = "com.gymnee.app"
     private let appDev = "com.gymnee.app.dev"
 
     func testReleaseBuildAllowsOnlyProd() {
         XCTAssertTrue(EnvironmentGuard.allowsRemote(bundleIdentifier: appProd, host: prod))
-        XCTAssertFalse(EnvironmentGuard.allowsRemote(bundleIdentifier: appProd, host: dev))
+        XCTAssertFalse(EnvironmentGuard.allowsRemote(bundleIdentifier: appProd, host: nonProd))
         XCTAssertFalse(EnvironmentGuard.allowsRemote(bundleIdentifier: appProd, host: "someone-else.supabase.co"))
     }
 
     func testDebugBuildRejectsProd() {
         // 本件の直接対策: dev ビルドが本番へ繋ぐのを禁止（デモ/検証データが prod を汚さない）。
         XCTAssertFalse(EnvironmentGuard.allowsRemote(bundleIdentifier: appDev, host: prod))
-        // dev ビルドは dev や任意の非本番ホストには繋いでよい。
-        XCTAssertTrue(EnvironmentGuard.allowsRemote(bundleIdentifier: appDev, host: dev))
+        // dev ビルドは任意の非本番ホスト・ローカル Supabase（supabase start）には繋いでよい。
         XCTAssertTrue(EnvironmentGuard.allowsRemote(bundleIdentifier: appDev, host: "my-local-dev.supabase.co"))
+        XCTAssertTrue(EnvironmentGuard.allowsRemote(bundleIdentifier: appDev, host: "127.0.0.1:54321"))
+    }
+
+    func testReleaseRejectsLocalHost() {
+        // 本番ビルドはローカル Supabase にも繋がない（本番は prod のみ）。
+        XCTAssertFalse(EnvironmentGuard.allowsRemote(bundleIdentifier: appProd, host: "127.0.0.1:54321"))
     }
 
     func testHostNormalization() {
@@ -35,6 +40,6 @@ final class EnvironmentGuardTests: XCTestCase {
     func testUnknownBundleTreatedAsRelease() {
         // .dev サフィックスが無い bundle は Release 扱い（本番のみ許可）＝安全側。
         XCTAssertTrue(EnvironmentGuard.allowsRemote(bundleIdentifier: appProd, host: prod))
-        XCTAssertFalse(EnvironmentGuard.allowsRemote(bundleIdentifier: nil, host: dev))
+        XCTAssertFalse(EnvironmentGuard.allowsRemote(bundleIdentifier: nil, host: nonProd))
     }
 }

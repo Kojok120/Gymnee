@@ -19,7 +19,7 @@ struct SupabaseConfig: Sendable {
             !host.contains("YOUR_"),     // example のプレースホルダは未設定扱い
             !key.contains("YOUR_"),
             !host.contains("$("),        // ビルド設定の置換に失敗したケースを弾く
-            let url = URL(string: host.hasPrefix("http") ? host : "https://\(host)")
+            let url = URL(string: host.hasPrefix("http") ? host : "\(Self.scheme(for: host))://\(host)")
         else {
             return nil
         }
@@ -30,5 +30,16 @@ struct SupabaseConfig: Sendable {
             return nil
         }
         return SupabaseConfig(url: url, anonKey: key)
+    }
+
+    /// 接続スキームを決める。ローカル開発（`supabase start` のローカル Supabase＝loopback/プライベートIP）は
+    /// http、それ以外（本番などの公開ホスト）は https。xcconfig は `//` をコメント扱いするため
+    /// SUPABASE_HOST にスキームを書けず、host からローカル判定して補う。
+    /// Release がローカル host に繋ぐことは EnvironmentGuard が別途禁止するため安全。
+    private static func scheme(for host: String) -> String {
+        let h = host.lowercased()
+        let isLocal = h.hasPrefix("127.0.0.1") || h.hasPrefix("localhost")
+            || h.hasPrefix("0.0.0.0") || h.hasPrefix("192.168.") || h.hasPrefix("10.")
+        return isLocal ? "http" : "https"
     }
 }
