@@ -382,9 +382,9 @@ struct CheckInView: View {
             return
         }
         sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
-        // ワークアウト完了時と同様、来店もこの時点でフィード(feed_item)へ発行してフォロワーへ同期する
-        // （これをしないと自分がソーシャルを開くまで来店がフィードに出ない）。
-        publishToFeed()
+        // チェックインは「共有する意図の操作」として、この来店を既定公開範囲で発行する
+        // （記録のみのカレンダー/Siri 経由の来店は発行しない＝未公開のまま）。
+        publishToFeed(visit)
         // 来店写真をリモートにもアップロード（再インストール後の消失を防ぐ・best-effort）。
         if let filename, let img = image {
             let vid = visit.id
@@ -397,8 +397,8 @@ struct CheckInView: View {
                 // 保存成功時のみ enqueue/再発行へ進む（未保存の写真参照を同期しない）。
                 do { try context.save() } catch { return }
                 sync.enqueue(PendingChange(entity: "visits", recordId: vid, operation: .upsert, updatedAt: fresh.updatedAt))
-                // 写真アップロード完了後に再発行し、feed_item に写真参照(photoRef)を載せてフォロワーにも写真を表示する。
-                publishToFeed()
+                // 写真アップロード完了後、既に公開済みの来店 feed_item に写真参照(photoRef)を追従させる。
+                FeedPublisher.syncPublishedPosts(userId: userId, authorName: auth.session?.displayName, context: context, sync: sync)
             }
         }
         savedVisit = visit
@@ -407,13 +407,11 @@ struct CheckInView: View {
     // 不正/破損値は安全側（既定の friends）へ。来店をフィード発行するため public フォールバックは避ける。
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
 
-    /// 来店を feed_item として発行し、フォロワーへ即同期する（ワークアウト完了時と同じ仕組み）。
-    private func publishToFeed() {
-        guard let userId = auth.currentUserId else { return }
-        FeedPublisher.publishOwnPosts(
-            userId: userId, authorName: auth.session?.displayName, context: context,
-            visibilityStore: PostVisibilityStore(), defaultVisibility: defaultVisibility,
-            isPermanentAccount: auth.isPermanentAccount, sync: sync
+    /// この来店を既定公開範囲で feed_item として発行し、フォロワーへ即同期する。
+    private func publishToFeed(_ visit: Visit) {
+        FeedPublisher.publishVisit(
+            visit, authorName: auth.session?.displayName, visibility: defaultVisibility,
+            isPermanentAccount: auth.isPermanentAccount, context: context, sync: sync
         )
         Task { await sync.syncNow(force: true) }
     }

@@ -30,8 +30,8 @@ final class AuthService {
     /// oldUserId は IdentityAdoptionPolicy で選別済み（恒久アカウント切替では nil）。
     @ObservationIgnored var onBackendSignIn: ((_ oldUserId: UUID?, _ newUserId: UUID) -> Void)?
     /// ゲスト/匿名期間から本人性のあるアカウントへ確定した直後のフック（onBackendSignIn の後に発火）。
-    /// AppEnvironment がゲスト期間の記録の非公開マーク（FeedPublisher.markGuestRecordsPrivate）を差し込む。
     /// 同一恒久アカウントの再認証・別端末での既存アカウントサインインでは発火しない。
+    /// （Fix C でプロフィール生成の差し込み先に使う。現状 Fix A では未配線。）
     @ObservationIgnored var onBecamePermanent: ((_ userId: UUID) -> Void)?
 
     @ObservationIgnored private let defaults = UserDefaults.standard

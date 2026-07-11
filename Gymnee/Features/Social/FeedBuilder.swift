@@ -1,26 +1,4 @@
 import Foundation
-import Observation
-
-/// 投稿ごとの公開範囲の明示選択（端末ローカル保存）。feed_items の visibility に反映され同期される。
-/// UserDefaults を読み書きの正とし、インスタンス内キャッシュは持たない。
-/// 各画面の `@State` と恒久化時の一括マーク（FeedPublisher.markGuestRecordsPrivate）が
-/// 別インスタンスになるため、init 時スナップショットをキャッシュすると
-/// マーク後も古い値（未設定）で public 発行される事故が起きる。
-@Observable
-final class PostVisibilityStore {
-    private let key = "gymnee.postVisibility"
-
-    func visibility(for id: UUID) -> Visibility? {
-        let map = (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
-        return map[id.uuidString].flatMap { Visibility(rawValue: $0) }
-    }
-
-    func set(_ visibility: Visibility, for id: UUID) {
-        var map = (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
-        map[id.uuidString] = visibility.rawValue
-        UserDefaults.standard.set(map, forKey: key)
-    }
-}
 
 /// フィードカードに自動ハイライトする 1 メトリクス（⑦）。
 struct FeedStat: Identifiable {
@@ -170,6 +148,15 @@ struct FeedEntry: Identifiable {
     /// 自分の投稿にも authorName を入れるため「名前の有無」からは導出せず明示フラグで持つ。
     var isFromOther: Bool = false
 
+    /// feed_item の種別（公開範囲変更で FeedPublisher に渡す）。
+    var feedItemType: FeedItemType {
+        switch kind {
+        case .visit: return .visit
+        case .pr: return .pr
+        case .workout: return .workout
+        }
+    }
+
     var icon: String {
         switch kind {
         case .visit: return "camera.fill"
@@ -181,19 +168,19 @@ struct FeedEntry: Identifiable {
 
 enum FeedBuilder {
     /// 来店・PR・完了ワークアウトを統合し、新しい順に並べる。
-    /// ownerName/ownerAvatarURL を渡すと自分の投稿カードにも名前・アバターを表示できる
-    /// （他人投稿とヘッダーを揃える）。
+    /// 公開範囲は自分の feed_items 由来（`publishedVisibilityById`）。feed_item が無い記録は
+    /// 未公開＝`.private` 表示（自分だけに見える。フォロワーには出ない）。
+    /// ownerName/ownerAvatarURL を渡すと自分の投稿カードにも名前・アバターを表示できる。
     static func build(
         visits: [Visit],
         personalRecords: [PersonalRecord],
         workouts: [Workout],
-        defaultVisibility: Visibility,
-        visibilityStore: PostVisibilityStore? = nil,
+        publishedVisibilityById: [UUID: Visibility],
         ownerName: String? = nil,
         ownerAvatarURL: String? = nil
     ) -> [FeedEntry] {
         var entries: [FeedEntry] = []
-        func vis(_ id: UUID) -> Visibility { visibilityStore?.visibility(for: id) ?? defaultVisibility }
+        func vis(_ id: UUID) -> Visibility { publishedVisibilityById[id] ?? .private }
         // ワークアウトごとの PR 件数を先に索引化（workout×PR の全走査を避ける。FeedPublisher と同じ手法）。
         var prCountByWorkout: [UUID: Int] = [:]
         for pr in personalRecords { if let wid = pr.workoutId { prCountByWorkout[wid, default: 0] += 1 } }

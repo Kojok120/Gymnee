@@ -1,174 +1,102 @@
 import Foundation
 import SwiftData
 
-/// 自分の投稿（来店／完了ワークアウト／自己ベスト）を `feed_items` として発行・更新・削除し、
-/// 同期キューへ積む（§6.11）。フォロワーはサーバー（RLS=本人＋public＋friends&フォロー）から
-/// 取り込み、共有フィードに表示する。公開範囲は端末ローカルの PostVisibilityStore を反映する。
+/// 自分の公開投稿（`feed_items`）の作成・更新・削除。
 ///
-/// 公開面は fail-closed（docs/identity-environment-design.md）:
-/// - 発行するのは本人性のあるアカウント（isPermanentAccount）のみ。ゲスト/匿名期間は
-///   feed_item を一切作らない（意図しない過去記録の公開を構造的に防ぐ）。
-/// - サインアップ時点で存在した記録は markGuestRecordsPrivate で明示 private になり、
-///   ユーザーが投稿メニューから個別に選んだものだけが公開される。
+/// 公開モデル（fail-closed / docs/identity-environment-design.md「公開面の設計」）:
+/// - **feed_item が存在する＝公開済み。`visibility` がその公開範囲。**
+/// - 新規作成はユーザーの明示操作だけ: 完了サマリーの「ソーシャルに投稿」（`publishWorkout`）、
+///   チェックイン（`publishVisit`）、投稿メニューの公開範囲変更（`setVisibility`）。
+/// - 定期同期（`syncPublishedPosts`）は**既存 feed_item の内容追従と、元データが消えた feed_item の
+///   削除のみ**。未公開の記録から feed_item を勝手に作らない。これにより「マークを持たない端末
+///   （2 台目・再インストール・pull 済み履歴）で過去記録が既定公開範囲で一括発行される」経路
+///   （旧 `publishOwnPosts` の穴）を根絶する。
+/// - 非恒久（ゲスト/匿名）アカウントは一切発行しない。
 ///
-/// FeedItem.id は元投稿の id（refId）と同じにして 1 投稿 1 行に保つ。
+/// FeedItem.id == 元データ id（refId）。1 投稿 1 行。
 enum FeedPublisher {
+
+    /// feed_item に載せる 1 投稿分の内容（公開範囲以外）。
+    private struct PostContent {
+        let summary: String
+        let date: Date
+        let statsJSON: String?
+    }
+
+    // MARK: - 明示公開（作成/更新）
+
+    /// 完了ワークアウトと、そのワークアウトで更新した最大重量 PR を指定 visibility で公開する。
     @MainActor
-    static func publishOwnPosts(
-        userId: UUID,
-        authorName: String?,
-        context: ModelContext,
-        visibilityStore: PostVisibilityStore,
-        defaultVisibility: Visibility,
-        isPermanentAccount: Bool,
-        sync: LocalSyncEngine
-    ) {
-        // ゲスト/匿名は発行しない（ローカルにも作らない）。サインアップ前の記録が
-        // アカウント確立時の一括 push で公開面に載る経路を根元から断つ。
-        guard isPermanentAccount else { return }
-        let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == userId }))) ?? []
-        let workouts = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId && $0.completedAt != nil }))) ?? []
-        let prs = (try? context.fetch(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == userId }))) ?? []
-        let existing = (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.userId == userId }))) ?? []
-
-        var byRef: [UUID: FeedItem] = [:]
-        for item in existing { byRef[item.refId] = item }
-        var changed = false
-        // enqueue は呼ぶたびに outbox 全書き出し(persist)が走るため、発行分はここに溜めて末尾で1回 batch する。
+    static func publishWorkout(_ workout: Workout, authorName: String?, visibility: Visibility,
+                               isPermanentAccount: Bool, context: ModelContext, sync: LocalSyncEngine) {
+        guard isPermanentAccount, workout.completedAt != nil else { return }
         var pending: [PendingChange] = []
+        upsert(refId: workout.id, userId: workout.userId, authorName: authorName, type: .workout,
+               content: workoutContent(workout), visibility: visibility, context: context, pending: &pending)
+        for pr in workoutMaxWeightPRs(workout) {
+            upsert(refId: pr.id, userId: pr.userId, authorName: authorName, type: .pr,
+                   content: prContent(pr, context: context), visibility: visibility, context: context, pending: &pending)
+        }
+        commit(pending, context: context, sync: sync)
+    }
 
-        func upsert(refId: UUID, type: FeedItemType, summary: String, date: Date, statsJSON: String? = nil) {
-            let explicit = visibilityStore.visibility(for: refId)
-            if let item = byRef.removeValue(forKey: refId) {
-                // 既存投稿は明示選択が無ければ現状維持（FeedVisibilityPolicy）。
-                // 明示選択は端末ローカル保存のため、既定値で解決すると別端末の再発行で
-                // private にした投稿が public に巻き戻る事故が起きる。
-                let vis = FeedVisibilityPolicy.resolve(
-                    explicitChoice: explicit, existingItemVisibility: item.visibility, defaultVisibility: defaultVisibility)
-                guard item.visibilityRaw != vis.rawValue || item.summary != summary
-                        || item.statsJSON != statsJSON || item.authorDisplayName != authorName else { return }
-                item.visibility = vis
-                item.summary = summary
-                item.statsJSON = statsJSON
+    /// 来店を指定 visibility で公開する（チェックイン）。
+    @MainActor
+    static func publishVisit(_ visit: Visit, authorName: String?, visibility: Visibility,
+                             isPermanentAccount: Bool, context: ModelContext, sync: LocalSyncEngine) {
+        guard isPermanentAccount else { return }
+        var pending: [PendingChange] = []
+        upsert(refId: visit.id, userId: visit.userId, authorName: authorName, type: .visit,
+               content: visitContent(visit), visibility: visibility, context: context, pending: &pending)
+        commit(pending, context: context, sync: sync)
+    }
+
+    /// 投稿メニューの公開範囲変更。private は「非公開に戻す」＝feed_item 削除（フォロワーから消える）、
+    /// friends/public は既存 feed_item を更新（無ければ作成）する。
+    @MainActor
+    static func setVisibility(_ visibility: Visibility, forRefId refId: UUID, type: FeedItemType,
+                             userId: UUID, authorName: String?, isPermanentAccount: Bool,
+                             context: ModelContext, sync: LocalSyncEngine) {
+        guard isPermanentAccount else { return }
+        if visibility == .private { deleteFeedItem(forRefId: refId, context: context, sync: sync); return }
+        guard let content = content(forRefId: refId, type: type, userId: userId, context: context) else { return }
+        var pending: [PendingChange] = []
+        upsert(refId: refId, userId: userId, authorName: authorName, type: type,
+               content: content, visibility: visibility, context: context, pending: &pending)
+        commit(pending, context: context, sync: sync)
+    }
+
+    // MARK: - 同期（更新/削除のみ・新規作成しない）
+
+    /// 既存の自分の feed_item を最新の元データに追従させる（stats/summary の編集反映）。
+    /// **新規作成も削除もしない**。ソーシャル表示・pull 後の整合に使う。
+    /// - 新規作成しない: 未公開記録を公開しない（公開は明示操作のみ）。
+    /// - 削除しない: 元データがまだ pull されていないだけの feed_item を消さない（2 台目・部分同期で
+    ///   公開済み投稿を誤削除する事故の防止）。実際の削除は `deleteFeedItem`（元データ削除・非公開化）
+    ///   とサーバーからの reconcile 伝播に一本化する。
+    /// - PR 投稿は「発行時点の値のスナップショット」とし、非同意の後続セッションで更新された新 PR 値が
+    ///   自動再公開されないよう内容追従の対象外にする。
+    @MainActor
+    static func syncPublishedPosts(userId: UUID, authorName: String?, context: ModelContext, sync: LocalSyncEngine) {
+        let items = (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.userId == userId }))) ?? []
+        var pending: [PendingChange] = []
+        for item in items {
+            let type = item.type
+            // PR はスナップショット。元データ未着（content=nil）でも消さず据え置く。
+            guard type != .pr, let content = content(forRefId: item.refId, type: type, userId: userId, context: context) else { continue }
+            if item.summary != content.summary || item.statsJSON != content.statsJSON || item.authorDisplayName != authorName {
+                item.summary = content.summary
+                item.statsJSON = content.statsJSON
                 item.authorDisplayName = authorName
                 item.updatedAt = .now
                 item.isDirty = true
                 pending.append(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
-                changed = true
-            } else {
-                // 同 id(=refId) の FeedItem が既に存在する場合の unique 衝突insertを避ける（保険）。
-                let rid = refId
-                if (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == rid })))?.first != nil {
-                    return
-                }
-                let vis = FeedVisibilityPolicy.resolve(
-                    explicitChoice: explicit, existingItemVisibility: nil, defaultVisibility: defaultVisibility)
-                let item = FeedItem(id: refId, userId: userId, authorDisplayName: authorName, type: type, refId: refId, summary: summary, statsJSON: statsJSON, visibility: vis, createdAt: date)
-                context.insert(item)
-                pending.append(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
-                changed = true
             }
         }
-
-        // ワークアウトごとの PR 件数を先に索引化（毎回 prs を全走査する N+1 を避ける）。
-        var prCountByWorkout: [UUID: Int] = [:]
-        for pr in prs { if let wid = pr.workoutId { prCountByWorkout[wid, default: 0] += 1 } }
-
-        for v in visits {
-            // 写真をリモートに上げてある来店は参照を載せ、フォロワー側でも写真を表示できるようにする。
-            let visitStats = v.photoURL.flatMap { FeedItemVisitStats(photoRef: $0).encodedJSON() }
-            upsert(refId: v.id, type: .visit, summary: v.gym?.name ?? "ジム活", date: v.visitedAt, statsJSON: visitStats)
-        }
-        for w in workouts {
-            // サマリは種目名のみ（数値は stats_json が運ぶ）。フォロワー側もリッチカードを描ける。
-            let allSets = w.exercises.flatMap(\.sets)
-            let vol = allSets.reduce(0.0) { $0 + $1.volume }
-            let totalVolume = vol.isFinite ? Int(vol) : 0
-            let minutes = WorkoutDuration.minutes(date: w.date, completedAt: w.completedAt, durationSeconds: w.durationSeconds)
-            let prCount = prCountByWorkout[w.id] ?? 0
-            var seenMuscle = Set<MuscleGroup>()
-            let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }.map(\.rawValue)
-            // 種目別セット内訳（他人の投稿でも「メニュー」を再現するため）。空種目は出さない。
-            let visibleExercises = w.exercises.filter { !$0.sets.isEmpty }
-            let lines = visibleExercises
-                .sorted { $0.orderIndex < $1.orderIndex }
-                .map { we in
-                    FeedItemStats.ExerciseLine(
-                        name: we.exercise?.name ?? "種目",
-                        sets: we.sets.sorted { $0.setIndex < $1.setIndex }
-                            .map { FeedItemStats.SetLine(text: $0.detailText, isPR: $0.isPR) }
-                    )
-                }
-            // 「種目」件数は内訳(lines)と一致させる（空種目を数に含めない）。
-            let stats = FeedItemStats(exercises: visibleExercises.count, sets: allSets.count, volume: totalVolume,
-                                      minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines)
-            upsert(refId: w.id, type: .workout, summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
-        }
-        // 自己ベストは「最大重量」の更新だけをフィードに投稿する。推定1RM/最大レップ/最長時間/最小補助
-        // などその他のトロフィーはフィードに出さず、各セットの記録内（ワークアウト詳細のトロフィー表示）に
-        // 内包する。最大重量 PR は種目ごとに 1 行を上書き保持するため、種目ごとに 1 投稿へ自然にまとまる。
-        let cal = Calendar.current
-        // 種目ごとの「初めて記録した日」（完了ワークアウト基準）。PR の achievedAt は更新のたびに
-        // 上書きされ初回日を失うため、初回判定はワークアウトの日付から導出する。
-        var firstWorkoutDay: [UUID: Date] = [:]
-        for w in workouts {
-            let day = cal.startOfDay(for: w.date)
-            for we in w.exercises where !we.sets.isEmpty {
-                guard let exId = we.exercise?.id else { continue }
-                if let cur = firstWorkoutDay[exId] { firstWorkoutDay[exId] = min(cur, day) }
-                else { firstWorkoutDay[exId] = day }
-            }
-        }
-        for pr in prs where pr.type == .maxWeight {
-            guard let exId = pr.exercise?.id else { continue }
-            let name = pr.exercise?.name ?? "種目"
-            // 現在の最大重量が種目の初回記録日のままなら「新しい種目に挑戦」、更新後は「自己ベスト更新」。
-            let isFirst = firstWorkoutDay[exId].map { cal.isDate(pr.achievedAt, inSameDayAs: $0) } ?? false
-            let summary = isFirst ? "新しい種目に挑戦: \(name)" : "\(name) 自己ベスト更新"
-            let prStats = FeedItemPRStats(
-                exercise: name,
-                items: [FeedItemPRStats.Item(type: PRType.maxWeight.rawValue, value: pr.value)]
-            )
-            upsert(refId: pr.id, type: .pr, summary: summary, date: pr.achievedAt, statsJSON: prStats.encodedJSON())
-        }
-
-        // 残った既存 = もう存在しない投稿 → feed_item を削除して同期。
-        for stale in byRef.values {
-            let id = stale.id
-            context.delete(stale)
-            pending.append(PendingChange(entity: "feed_items", recordId: id, operation: .delete, updatedAt: .now))
-            changed = true
-        }
-
-        guard changed else { return }
-        do {
-            try context.save()
-            // 保存成功時だけ同期キューへ積む（保存できなかった変更を push してローカルと乖離させない）。
-            if !pending.isEmpty { sync.enqueueBatch(pending) }
-        } catch {
-            // 保存失敗時は enqueue しない（次回の発行で再試行）。
-        }
+        commit(pending, context: context, sync: sync)
     }
 
-    /// サインアップ（恒久アカウント確立）時点で存在する本人の記録を、投稿単位の明示選択として
-    /// **非公開（private）にマーク**する（公開面の fail-closed 化）。
-    /// これにより、ゲスト/匿名期間の過去記録がサインアップ後の一括発行で公開されることは無く、
-    /// ユーザーが投稿メニュー（公開範囲）から選んだものだけが公開される。
-    /// 既に明示選択がある記録は上書きしない。冪等（再実行しても同じ結果）。
-    @MainActor
-    static func markGuestRecordsPrivate(userId: UUID, context: ModelContext, visibilityStore: PostVisibilityStore) {
-        let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == userId }))) ?? []
-        let workouts = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId }))) ?? []
-        let prs = (try? context.fetch(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == userId }))) ?? []
-        let ids = visits.map(\.id) + workouts.map(\.id) + prs.map(\.id)
-        for id in ids where visibilityStore.visibility(for: id) == nil {
-            visibilityStore.set(.private, for: id)
-        }
-    }
-
-    /// 来店/ワークアウト削除時に、対応する feed_item（id == 元データ id）も削除して同期する。
-    /// これによりフォロワーのフィードからも消える（feed_items は reconcile 対象なので削除が伝播する）。
-    /// 注: PR は feed_item を種目×日でグルーピングするため対象外（publishOwnPosts の再発行に委ねる）。
+    /// 元データ削除時・非公開化時に対応 feed_item を消す（ローカルに無くてもサーバー削除を積む）。
     @MainActor
     static func deleteFeedItem(forRefId refId: UUID, context: ModelContext, sync: LocalSyncEngine) {
         let rid = refId
@@ -176,7 +104,120 @@ enum FeedPublisher {
             context.delete(fi)
             try? context.save()
         }
-        // ローカルに feed_item が無くても、サーバー側を確実に消すため delete を積む。
         sync.enqueue(PendingChange(entity: "feed_items", recordId: refId, operation: .delete, updatedAt: .now))
+    }
+
+    // MARK: - 内部: upsert / commit
+
+    @MainActor
+    private static func upsert(refId: UUID, userId: UUID, authorName: String?, type: FeedItemType,
+                              content: PostContent, visibility: Visibility,
+                              context: ModelContext, pending: inout [PendingChange]) {
+        let rid = refId
+        if let item = (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == rid })))?.first {
+            guard item.visibilityRaw != visibility.rawValue || item.summary != content.summary
+                    || item.statsJSON != content.statsJSON || item.authorDisplayName != authorName else { return }
+            item.visibility = visibility
+            item.summary = content.summary
+            item.statsJSON = content.statsJSON
+            item.authorDisplayName = authorName
+            item.updatedAt = .now
+            item.isDirty = true
+            pending.append(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
+        } else {
+            let item = FeedItem(id: refId, userId: userId, authorDisplayName: authorName, type: type, refId: refId,
+                                summary: content.summary, statsJSON: content.statsJSON, visibility: visibility, createdAt: content.date)
+            context.insert(item)
+            pending.append(PendingChange(entity: "feed_items", recordId: item.id, operation: .upsert, updatedAt: item.updatedAt))
+        }
+    }
+
+    @MainActor
+    private static func commit(_ pending: [PendingChange], context: ModelContext, sync: LocalSyncEngine) {
+        guard !pending.isEmpty else { return }
+        do {
+            try context.save()
+            sync.enqueueBatch(pending)
+        } catch {
+            // 保存失敗時は enqueue しない（次回の操作で再試行）。
+        }
+    }
+
+    // MARK: - 内部: 元データ → PostContent
+
+    /// refId + type から元データを引いて投稿内容を組む（元データが無ければ nil）。
+    @MainActor
+    private static func content(forRefId refId: UUID, type: FeedItemType, userId: UUID, context: ModelContext) -> PostContent? {
+        let rid = refId
+        switch type {
+        case .visit:
+            guard let v = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == rid && $0.userId == userId })))?.first else { return nil }
+            return visitContent(v)
+        case .workout:
+            guard let w = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == rid && $0.userId == userId })))?.first,
+                  w.completedAt != nil else { return nil }
+            return workoutContent(w)
+        case .pr:
+            guard let pr = (try? context.fetch(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.id == rid && $0.userId == userId })))?.first else { return nil }
+            return prContent(pr, context: context)
+        }
+    }
+
+    @MainActor
+    private static func visitContent(_ v: Visit) -> PostContent {
+        let stats = v.photoURL.flatMap { FeedItemVisitStats(photoRef: $0).encodedJSON() }
+        return PostContent(summary: v.gym?.name ?? "ジム活", date: v.visitedAt, statsJSON: stats)
+    }
+
+    @MainActor
+    private static func workoutContent(_ w: Workout) -> PostContent {
+        let allSets = w.exercises.flatMap(\.sets)
+        let vol = allSets.reduce(0.0) { $0 + $1.volume }
+        let totalVolume = vol.isFinite ? Int(vol) : 0
+        let minutes = WorkoutDuration.minutes(date: w.date, completedAt: w.completedAt, durationSeconds: w.durationSeconds)
+        let prCount = w.exercises.flatMap { $0.exercise?.personalRecords ?? [] }.filter { $0.workoutId == w.id }.count
+        var seenMuscle = Set<MuscleGroup>()
+        let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }.map(\.rawValue)
+        let visibleExercises = w.exercises.filter { !$0.sets.isEmpty }
+        let lines = visibleExercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map { we in
+                FeedItemStats.ExerciseLine(
+                    name: we.exercise?.name ?? "種目",
+                    sets: we.sets.sorted { $0.setIndex < $1.setIndex }.map { FeedItemStats.SetLine(text: $0.detailText, isPR: $0.isPR) }
+                )
+            }
+        let stats = FeedItemStats(exercises: visibleExercises.count, sets: allSets.count, volume: totalVolume,
+                                  minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines)
+        return PostContent(summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
+    }
+
+    /// PR 投稿の summary は「初回記録＝新しい種目に挑戦／更新＝自己ベスト更新」。初回判定は完了
+    /// ワークアウトの日付から導出（PR.achievedAt は更新で上書きされ初回日を失うため）。
+    @MainActor
+    private static func prContent(_ pr: PersonalRecord, context: ModelContext) -> PostContent {
+        let name = pr.exercise?.name ?? "種目"
+        var isFirst = false
+        if let exId = pr.exercise?.id {
+            let cal = Calendar.current
+            let days = pr.exercise?.workoutExercises.compactMap { we -> Date? in
+                guard let w = we.workout, w.completedAt != nil, !we.sets.isEmpty else { return nil }
+                return cal.startOfDay(for: w.date)
+            } ?? []
+            if let first = days.min() { isFirst = cal.isDate(pr.achievedAt, inSameDayAs: first) }
+            _ = exId
+        }
+        let summary = isFirst ? "新しい種目に挑戦: \(name)" : "\(name) 自己ベスト更新"
+        let stats = FeedItemPRStats(exercise: name, items: [FeedItemPRStats.Item(type: PRType.maxWeight.rawValue, value: pr.value)])
+        return PostContent(summary: summary, date: pr.achievedAt, statsJSON: stats.encodedJSON())
+    }
+
+    /// このワークアウトで更新した最大重量 PR（feed に出すのは maxWeight のみ）。
+    @MainActor
+    private static func workoutMaxWeightPRs(_ workout: Workout) -> [PersonalRecord] {
+        let wid = workout.id
+        return workout.exercises.flatMap { we in
+            (we.exercise?.personalRecords ?? []).filter { $0.workoutId == wid && $0.type == .maxWeight }
+        }
     }
 }

@@ -7,7 +7,6 @@ struct MyPostsView: View {
     let userId: UUID
     /// シートを閉じる。NavigationStack 内の \.dismiss はシートを閉じないため明示的に渡す。
     var onClose: () -> Void
-    let visibilityStore: PostVisibilityStore
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
@@ -18,6 +17,7 @@ struct MyPostsView: View {
     @Query private var allReactions: [PostReaction]
     @Query private var allComments: [Comment]
     @Query private var blocks: [Block]
+    @Query private var feedItems: [FeedItem]
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     /// 通知を最後に見た時刻。ベルの未読バッジ算出に使う。
     @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
@@ -26,14 +26,14 @@ struct MyPostsView: View {
     /// 通知一覧（ベルから push）。
     @State private var showInbox = false
 
-    init(userId: UUID, visibilityStore: PostVisibilityStore, onClose: @escaping () -> Void) {
+    init(userId: UUID, onClose: @escaping () -> Void) {
         self.userId = userId
-        self.visibilityStore = visibilityStore
         self.onClose = onClose
         _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
+        _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId == userId })
     }
 
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
@@ -53,12 +53,12 @@ struct MyPostsView: View {
     }
 
     private var entries: [FeedEntry] {
-        FeedBuilder.build(
+        let publishedVisibility = Dictionary(feedItems.map { ($0.id, $0.visibility) }, uniquingKeysWith: { a, _ in a })
+        return FeedBuilder.build(
             visits: visits,
             personalRecords: prs,
             workouts: workouts,
-            defaultVisibility: defaultVisibility,
-            visibilityStore: visibilityStore,
+            publishedVisibilityById: publishedVisibility,
             ownerName: auth.session?.displayName
         )
     }
@@ -129,8 +129,13 @@ struct MyPostsView: View {
     private func postMenu(_ entry: FeedEntry) -> some View {
         Menu("公開範囲") {
             ForEach(Visibility.allCases, id: \.self) { v in
-                Button { visibilityStore.set(v, for: entry.id) } label: {
-                    Label(v.label, systemImage: (visibilityStore.visibility(for: entry.id) ?? defaultVisibility) == v ? "checkmark" : "")
+                Button {
+                    FeedPublisher.setVisibility(v, forRefId: entry.id, type: entry.feedItemType, userId: userId,
+                                                authorName: auth.session?.displayName, isPermanentAccount: auth.isPermanentAccount,
+                                                context: context, sync: sync)
+                    Task { await sync.syncNow(force: true) }
+                } label: {
+                    Label(v.label, systemImage: entry.visibility == v ? "checkmark" : "")
                 }
             }
         }
@@ -150,12 +155,8 @@ struct MyPostsView: View {
             context.delete(pr)
             try? context.save()
             sync.enqueue(PendingChange(entity: "personal_records", recordId: entry.id, operation: .delete, updatedAt: .now))
-            // PR は種目×日でグルーピングして feed_item 化するため、削除後は再発行で feed_item を整合させる
-            // （グループが空なら feed_item 削除＝フォロワーからも消える／残れば代表で再発行）。
-            FeedPublisher.publishOwnPosts(userId: userId, authorName: auth.session?.displayName,
-                                          context: context, visibilityStore: visibilityStore,
-                                          defaultVisibility: defaultVisibility,
-                                          isPermanentAccount: auth.isPermanentAccount, sync: sync)
+            // PR の元データが消えたので、公開済みなら対応 feed_item も削除して同期整合させる。
+            FeedPublisher.deleteFeedItem(forRefId: entry.id, context: context, sync: sync)
         case .workout:
             guard let w = workouts.first(where: { $0.id == entry.id }) else { return }
             context.delete(w)

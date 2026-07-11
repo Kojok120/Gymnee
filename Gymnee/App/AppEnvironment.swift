@@ -71,14 +71,6 @@ final class AppEnvironment {
             }
             Task { await self.sync.syncNow(force: true) }
         }
-        // ゲスト/匿名期間 → 本人アカウント確定時：既存の記録を投稿単位で「非公開」にマークする。
-        // サインアップ前の記録が一括発行で公開面に載ることを防ぎ、公開はユーザーの個別選択に委ねる
-        // （公開面の fail-closed 化。docs/identity-environment-design.md）。
-        auth.onBecamePermanent = { [weak self] userId in
-            guard let self else { return }
-            FeedPublisher.markGuestRecordsPrivate(
-                userId: userId, context: self.container.mainContext, visibilityStore: PostVisibilityStore())
-        }
     }
 
     /// ユーザー作成種目はローカル生成時点では outbox に積まれないことがあり、
