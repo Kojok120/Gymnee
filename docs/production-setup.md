@@ -1,7 +1,7 @@
 # 本番 Supabase プロジェクト セットアップ手順
 
 公開（App Store / 外部テスター本格投入）の**直前**に、dev/beta から独立した**本番 Supabase プロジェクト**を新規作成して切り替えるための手順。
-dev/beta プロジェクト（ref `bdeaeykruwxazdoewxmg`）はそのまま開発用に残す。
+> 注（2026-07）: 本番（ref `ibtrbymfmxrruuwuzell`）公開後、コスト削減のため **dev/beta プロジェクト（旧 ref `bdeaeykruwxazdoewxmg`）は削除**した。以後ステージング環境は無く、スキーマ検証は `supabase start`（ローカル Docker）で行い、prod へは Management API で適用する。新しい dev が必要になったら本手順で再作成できる。
 
 > なぜ分けるか：本番ユーザーのデータを dev のテスト残骸と隔離する／破壊的マイグレーションの巻き込み防止／鍵の分離／
 > APNs 環境を dev=sandbox・prod=production にきれいに分けるため。

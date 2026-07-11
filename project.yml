@@ -80,6 +80,11 @@ targets:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
         NSSupportsLiveActivities: true
+        # ローカル開発（Debug で `supabase start` のローカル Supabase＝http://127.0.0.1:54321 に接続）用の
+        # ATS 例外。ローカル/プライベート宛の HTTP のみ許可し、公開ホスト(prod https)には無影響＝審査上も安全。
+        # 本番の接続先は EnvironmentGuard で prod(https) のみに強制されるため、Release でこの例外が悪用される余地は無い。
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         # 環境別シークレット（xcconfig → ビルド設定 → ここ → 実行時に Bundle から読む）。
         SUPABASE_HOST: "$(SUPABASE_HOST)"
         SUPABASE_KEY: "$(SUPABASE_KEY)"

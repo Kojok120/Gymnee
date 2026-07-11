@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; case \"$f\" in *supabase/migrations/*.sql) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"[ルール] supabase/migrations/ を変更しました。必ず supabase/setup_all.sql にも同じSQLを番号順で反映し、dev Supabase project bdeaeykruwxazdoewxmg に Management API で適用してください（memory: gymnee-sql-migration-rule）。\"}}' ;; esac; } 2>/dev/null || true"
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; case \"$f\" in *supabase/migrations/*.sql) printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"[ルール] supabase/migrations/ を変更しました。必ず supabase/setup_all.sql にも同じSQLを番号順で反映すること。dev プロジェクトは削除済みでステージング環境が無いため、まず supabase start（ローカルDocker）で検証してから prod(ibtrbymfmxrruuwuzell) に Management API で適用する（memory: gymnee-sql-migration-rule）。\"}}' ;; esac; } 2>/dev/null || true"
           }
         ]
       }
