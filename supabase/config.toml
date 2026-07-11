@@ -1,6 +1,7 @@
-# Supabase CLI 設定。`supabase link --project-ref <ref>` で対象プロジェクトに紐づける。
-# project_id は現状 dev/beta（本番化時に prod プロジェクトの ref へ差し替え）。
-project_id = "bdeaeykruwxazdoewxmg"
+# Supabase CLI 設定。ローカル検証（supabase start）では project_id はローカル識別子として使う。
+# dev プロジェクトは削除済み。prod 操作は Management API（setup_supabase_prod.sh の runsql /
+# --project-ref 明示指定）で行い、ここを prod ref にはしない（bare `supabase db push` の誤爆防止）。
+project_id = "gymnee-local"
 
 # send-push は DB トリガーから X-Push-Secret 認証で呼ぶため、Supabase の JWT 検証は無効化する。
 [functions.send-push]
