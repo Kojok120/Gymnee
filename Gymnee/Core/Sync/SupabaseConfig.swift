@@ -23,6 +23,12 @@ struct SupabaseConfig: Sendable {
         else {
             return nil
         }
+        // 環境不変条件: ビルド種別（Release/Debug）と接続先ホストがズレていたらリモートを無効化する
+        // （本番ビルドが dev へ／dev ビルドが prod へ繋ぐのを構造的に遮断。docs の F2）。
+        guard EnvironmentGuard.allowsRemote(bundleIdentifier: bundle.bundleIdentifier, host: host) else {
+            assertionFailure("環境不整合: bundle=\(bundle.bundleIdentifier ?? "nil") host=\(host) → リモート同期を無効化")
+            return nil
+        }
         return SupabaseConfig(url: url, anonKey: key)
     }
 }
