@@ -29,6 +29,10 @@ final class AuthService {
     /// バックエンドサインイン成功時のフック（旧 userId, 新 userId）。AppEnvironment が移行＋同期を差し込む。
     /// oldUserId は IdentityAdoptionPolicy で選別済み（恒久アカウント切替では nil）。
     @ObservationIgnored var onBackendSignIn: ((_ oldUserId: UUID?, _ newUserId: UUID) -> Void)?
+    /// ゲスト/匿名期間から本人性のあるアカウントへ確定した直後のフック（onBackendSignIn の後に発火）。
+    /// AppEnvironment がゲスト期間の記録の非公開マーク（FeedPublisher.markGuestRecordsPrivate）を差し込む。
+    /// 同一恒久アカウントの再認証・別端末での既存アカウントサインインでは発火しない。
+    @ObservationIgnored var onBecamePermanent: ((_ userId: UUID) -> Void)?
 
     @ObservationIgnored private let defaults = UserDefaults.standard
     /// OAuth(Google) のブラウザ往復用（ASWebAuthenticationSession ラッパ）。
@@ -184,6 +188,14 @@ final class AuthService {
         ensureProfile(for: newSession)
         // 旧ローカルデータの付け替え＋同期を AppEnvironment 側で実行（恒久アカウント切替では nil）。
         onBackendSignIn?(adoptableOldUserId, remote.userId)
+        // ゲスト/匿名期間 → 本人アカウント確定の遷移でのみ発火（付け替え後＝記録が新 uid 所有になった後）。
+        // - リンクによる本登録化: persistedIsAnonymous（uid 不変・adoptableOld は nil）
+        // - ゲスト期間データの採用を伴うサインイン: adoptableOldUserId != nil
+        // 同一恒久アカウントの再認証（wasPermanentSameAccount）では発火しない。
+        let wasPermanentSameAccount = (persistedUserId == remote.userId && !persistedIsAnonymous)
+        if !remote.isAnonymous, !wasPermanentSameAccount, adoptableOldUserId != nil || persistedIsAnonymous {
+            onBecamePermanent?(remote.userId)
+        }
     }
 
     /// 匿名セッションから既存アカウントへ切り替える直前の後始末（returning-user・マージ例外）。
