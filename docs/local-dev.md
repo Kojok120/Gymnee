@@ -14,18 +14,18 @@ cd <repo>
 supabase start          # 初回は Docker イメージを取得（数分）。migrations/*.sql と seed.sql を適用して起動
 supabase status         # API URL と anon key を確認（下の xcconfig と一致させる）
 ```
-- API URL は既定で `http://127.0.0.1:54321`
-- anon key は CLI 既定のローカルデモ鍵（全ローカル共通・非機密）
+- API URL は 127.0.0.1:54421（config.toml で既定+100 の専用ポートブロックを割当。他ローカル Supabase と共存可）
+- anon key は `supabase status` の Publishable（`sb_publishable_...`・ローカル既定・非機密）
 
 ## アプリ（Debug）から繋ぐ
 `Config/Secrets.dev.xcconfig`（gitignore 済み）:
 ```
-SUPABASE_HOST = 127.0.0.1:54321
+SUPABASE_HOST = 127.0.0.1:54421
 SUPABASE_KEY  = <supabase status の anon key>
 ```
-- `SUPABASE_HOST` にスキームは付けない（xcconfig は `//` をコメント扱い）。host が `127.0.0.1` 等の
+- `SUPABASE_HOST` にスキームは付けない（xcconfig は `//` をコメント扱い）。host が 127.0.0.1:54421 等の
   ローカル/プライベート宛なら **アプリが自動で http を使う**（`SupabaseConfig.scheme(for:)`）。
-- iOS シミュレータは Mac の localhost を共有するので `127.0.0.1` で届く（実機は Mac の LAN IP を使う）。
+- iOS シミュレータは Mac の localhost を共有するので 127.0.0.1:54421 で届く（実機は Mac の LAN IP を使う）。
 - HTTP 接続は ATS の `NSAllowsLocalNetworking`（ローカル宛のみ許可）で通す。公開ホストには無影響。
 - **`EnvironmentGuard`**: Debug(`.dev` bundle)はローカル/非本番ホストのみ許可、本番ホストは不可。
   Release(無印 bundle)は本番ホストのみ許可（ローカルにも繋がない）。
