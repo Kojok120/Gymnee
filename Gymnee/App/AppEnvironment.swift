@@ -106,9 +106,7 @@ final class AppEnvironment {
     }
 
     /// 再起動後にバックエンドセッションを復元する（GymneeApp の起動 task から呼ぶ）。
-    /// 復元対象が無いゲストには匿名セッションを確立する（安定 uid・オフラインなら次回再試行）。
     func bootstrapBackend() async {
         await auth.restoreBackendSession()
-        await auth.ensureAnonymousSession()
     }
 }

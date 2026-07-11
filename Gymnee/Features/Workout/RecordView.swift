@@ -304,7 +304,8 @@ struct RecordContent: View {
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
-    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
+    // 破損値は安全側（friends）へ。公開面の fail-closed 方針に合わせ public フォールバックにしない。
+    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
 
     init(userId: UUID, resuming: Workout? = nil, initialMode: RecordMode? = nil, onEnd: (() -> Void)? = nil) {
         self.userId = userId
@@ -542,7 +543,7 @@ struct RecordContent: View {
             if !frequentExercises.isEmpty {
                 Label("よくやる種目", systemImage: "clock.arrow.circlepath")
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Theme.lime)
+                    .foregroundStyle(Theme.textSecondary)
                 cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
             }
             ForEach(grouped, id: \.0) { mg, exercises in

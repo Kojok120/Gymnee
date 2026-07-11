@@ -158,7 +158,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     ) {
         // レストタイマーはフォアグラウンドではアプリ内チャイム（RestChime・サイレントでも鳴る）が
         // 担当するため通知音を出さない（二重に鳴るのを防ぐ）。バナーは残す。
-        if notification.request.identifier == "gymnee.restTimer" {
+        if notification.request.identifier == RestTimer.notificationId {
             completionHandler([.banner, .list])
         } else {
             completionHandler([.banner, .sound, .list])

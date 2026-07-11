@@ -118,7 +118,6 @@ private struct SocialContent: View {
     @Query private var feedItems: [FeedItem]
     @Query private var allReactions: [PostReaction]
     @Query private var allComments: [Comment]
-    @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     /// ソーシャル初回利用時のコミュニティガイドライン同意（1.2.5）。
     @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
     /// 通知（自分の投稿への他者反応）を最後に見た時刻。アイコンの未読バッジ算出に使う。
@@ -145,7 +144,6 @@ private struct SocialContent: View {
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
     }
 
-    private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .public }
 
     /// 公開済み投稿を最新の元データへ追従させ（新規作成はしない）、最新差分を同期（push＋pull）する。
     private func refreshFeed() async {

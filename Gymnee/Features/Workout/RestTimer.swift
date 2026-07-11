@@ -21,7 +21,8 @@ final class RestTimer {
     /// レスト終了の実時刻。残りはここからの差分で算出する（真実は endDate）。
     private var endDate: Date?
     private var task: Task<Void, Never>?
-    private let notificationId = "gymnee.restTimer"
+    /// レスト終了ローカル通知の識別子。NotificationService の willPresent が同値でフォアグラウンド音を抑止する。
+    static let notificationId = "gymnee.restTimer"
 
     var exerciseName: String = "レスト"
     private var activity: Activity<RestTimerActivityAttributes>?
@@ -52,11 +53,13 @@ final class RestTimer {
         endDate = nil
         task?.cancel()
         task = nil
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notificationId])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.notificationId])
         endLiveActivity()
     }
 
     /// 実時計から残りを再計算して反映する（毎秒の tick／フォアグラウンド復帰時に即時同期）。
+    /// チャイムはここでは鳴らさない（フォアグラウンド復帰の再計算で二重に鳴るのを防ぐ）。
+    /// フォアグラウンドで自然終了した時のチャイムは tick ループ（startTicking）が担う。
     func refresh() {
         guard isRunning else { return }
         remaining = secondsUntilEnd()
@@ -64,12 +67,6 @@ final class RestTimer {
             isRunning = false
             task?.cancel()
             task = nil
-            // フォアグラウンドで終了を迎えたらチャイムを鳴らす（サイレントスイッチでも鳴る）。
-            // バックグラウンド中の終了は通知音が担い、復帰時の refresh はここを通るが
-            // endDate をとうに過ぎた「復帰同期」で今さら鳴らさない（終了直後 2 秒以内のみ）。
-            if let end = endDate, Date.now.timeIntervalSince(end) < 2 {
-                RestChime.playIfEnabled()
-            }
         }
     }
 
@@ -79,6 +76,8 @@ final class RestTimer {
     }
 
     /// 毎秒 endDate から残りを再計算する（減算ではないのでバックグラウンド中断後も復帰時に正しい値へ戻る）。
+    /// この tick はフォアグラウンドでのみ進むため、ここで 0 到達を検知した時だけチャイムを鳴らす。
+    /// バックグラウンド終了は tick が止まっているため鳴らさず、ローカル通知の音が担う（二重鳴り防止）。
     private func startTicking() {
         task?.cancel()
         task = Task { [weak self] in
@@ -86,6 +85,9 @@ final class RestTimer {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self, self.isRunning else { break }
                 self.refresh()
+                if !self.isRunning {   // この tick で自然終了した（フォアグラウンド）→ チャイム。
+                    RestChime.playIfEnabled()
+                }
             }
         }
     }
@@ -142,8 +144,8 @@ final class RestTimer {
         content.sound = .default
         let secs = max(1, Int((endDate ?? Date.now).timeIntervalSinceNow.rounded(.up)))
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(secs), repeats: false)
-        let request = UNNotificationRequest(identifier: notificationId, content: content, trigger: trigger)
-        center.removePendingNotificationRequests(withIdentifiers: [notificationId])
+        let request = UNNotificationRequest(identifier: Self.notificationId, content: content, trigger: trigger)
+        center.removePendingNotificationRequests(withIdentifiers: [Self.notificationId])
         center.add(request)
     }
 }

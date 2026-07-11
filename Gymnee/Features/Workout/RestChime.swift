@@ -6,6 +6,8 @@ import AVFoundation
 /// タイマー終了に気づけないため、フォアグラウンドでは `.playback` カテゴリで再生して
 /// サイレントスイッチに関わらず鳴らす。音楽再生中は一瞬だけダッキングする。
 /// バックグラウンド時は従来どおりローカル通知の音に委ねる（OS 制約でサイレント時は鳴らない）。
+/// 呼び出しは常に @MainActor（RestTimer 経由）。static player を安全に保つため型ごと MainActor 隔離する。
+@MainActor
 enum RestChime {
     /// 設定トグル（Settings）。未設定は ON。
     static let enabledKey = "gymnee.restSoundEnabled"
