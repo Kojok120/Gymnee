@@ -38,10 +38,16 @@ struct ShareCardView: View {
         } else {
             // 写真なし：単色グラデだけだと「真っ暗な空き地」に見えるため、
             // 薄い斜めストライプ＋透かしロゴで質感を足す（文字の可読性を損なわない濃度）。
+            // ライトテーマは黒文字のため、下地も明るいグラデに切り替える。
             ZStack(alignment: .bottomTrailing) {
-                LinearGradient(colors: [Theme.deep, theme.accent.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                LinearGradient(
+                    colors: theme == .light
+                        ? [.white, theme.accent.opacity(0.45)]
+                        : [Theme.deep, theme.accent.opacity(0.6)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
                 DiagonalStripes()
-                    .foregroundStyle(.white.opacity(0.045))
+                    .foregroundStyle(theme.textColor.opacity(0.045))
                 Image(systemName: "figure.strengthtraining.traditional")
                     .font(.system(size: side * 0.55, weight: .bold))
                     .foregroundStyle(theme.accent.opacity(0.10))
