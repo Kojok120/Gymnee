@@ -97,6 +97,8 @@ struct RootView: View {
                 prText: "ベンチ 80kg", exerciseSummary: "胸・三頭 3種目"
             ))
         case "workout", "record": RecordView()
+        case "calendar": CalendarHomeView()
+        case "other": OtherTabView(userId: userId)
         case "logger":
             if let w = debugWorkout {
                 NavigationStack { RecordContent(userId: userId, resuming: w) }
@@ -169,9 +171,10 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
             case "reaction", "friend_checkin", "follow", "invite": selection = .social
-            case "workout": selection = .workout
+            // チェックイン導線は記録タブ（開始ゲート）にあるため、checkin 通知も記録タブへ。
+            case "workout", "checkin": selection = .workout
             case "analytics": selection = .analytics
-            case "recap", "checkin": selection = .calendar
+            case "recap": selection = .calendar
             case "shop": selection = .other
             default: break
             }

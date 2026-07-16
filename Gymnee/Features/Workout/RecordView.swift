@@ -22,6 +22,8 @@ struct RecordView: View {
     /// ゲートの「テンプレから始める」で作ったルーティンを初期モードにする（nil＝既定の計画/フリー）。
     @State private var startMode: RecordMode?
     @State private var showTemplatePicker = false
+    /// チェックインフロー（フルスクリーン）。完了は .gymneeDidCheckIn 経由でゲートが開く。
+    @State private var showCheckIn = false
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
@@ -80,6 +82,7 @@ struct RecordView: View {
                         userId: uid,
                         resumables: resumableDrafts(for: uid),
                         onStart: { resumeTarget = nil; startMode = nil; gateOpen = true },
+                        onCheckIn: { showCheckIn = true },
                         onResume: { draft in resumeTarget = draft; startMode = nil; gateOpen = true },
                         onDiscard: { draft in discardDraft(draft) },
                         onTemplates: { showTemplatePicker = true },
@@ -99,6 +102,9 @@ struct RecordView: View {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
         }
+        // ゲートからのチェックイン。cover はゲートの外（ここ）に付ける：完了通知で
+        // ゲートが RecordContent に差し替わっても提示元が消えず、閉じアニメーションが乱れない。
+        .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
         // チェックイン直後はゲートを飛ばして記録画面へ直行（新規記録）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in resumeTarget = nil; gateOpen = true }
         // 計画/予定の「開始」→ 記録タブで当該ワークアウトを再開（カレンダータブから遷移してくる）。
@@ -121,6 +127,8 @@ private struct StartGateView: View {
     /// 自動保存された中断中の下書き（あれば1件ずつカードで再開/破棄導線を出す）。
     var resumables: [Workout] = []
     let onStart: () -> Void
+    /// チェックインフローを開く（ジム到着時の入口。完了後は自動で記録が始まる）。
+    var onCheckIn: () -> Void = {}
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
     /// テンプレ選択シートを開く（テンプレのルーティンで即開始）。
@@ -148,10 +156,22 @@ private struct StartGateView: View {
                             Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
                         VStack(spacing: Theme.Spacing.md) {
-                            Button(action: onStart) {
-                                Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
-                                    .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
-                                    .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                            // 入口は横並びツイン：ジム到着時はチェックイン（完了で自動的に記録開始）、
+                            // それ以外（自宅トレ等）は記録を直接開始。主 CTA のライムは記録側に残す。
+                            HStack(spacing: Theme.Spacing.sm) {
+                                Button(action: onCheckIn) {
+                                    Label("チェックイン", systemImage: "door.right.hand.open")
+                                        .font(.headline).foregroundStyle(Theme.textPrimary)
+                                        .lineLimit(1).minimumScaleFactor(0.8)
+                                        .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
+                                        .background(Theme.bg3, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                                }
+                                Button(action: onStart) {
+                                    Text("記録を開始").font(.headline).foregroundStyle(Theme.onLime)
+                                        .lineLimit(1).minimumScaleFactor(0.8)
+                                        .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
+                                        .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                                }
                             }
                             // 補助導線は1行に収める（CTA 下の縦積みは圧迫感が出るため）。
                             // テンプレは新規ユーザー（完了記録なし）だけに出す活性化導線。

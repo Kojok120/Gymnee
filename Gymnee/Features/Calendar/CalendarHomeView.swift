@@ -31,7 +31,6 @@ private struct CalendarHomeContent: View {
 
     @State private var anchor = Date.now
     @State private var selectedDate: SelectedDay?
-    @State private var showCheckIn = false
     @State private var editingWorkout: Workout?
     @State private var showPlanner = false
     @State private var showRoutines = false
@@ -68,17 +67,11 @@ private struct CalendarHomeContent: View {
         .background(Theme.bg0)
         .navigationTitle("Gymnee")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { showCheckIn = true } label: {
-                    Label("チェックイン", systemImage: "door.right.hand.open")
-                }
-                .tint(Theme.energy)
-            }
+            // チェックイン導線は記録タブ（開始ゲート）へ移設した。
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(value: AppRoute.profile) { Image(systemName: "person.crop.circle") }
             }
         }
-        .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
         .sheet(isPresented: $showPlanner) {
             NavigationStack {
                 WeekPlannerView(userId: userId, onStart: { w in
