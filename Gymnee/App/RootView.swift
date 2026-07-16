@@ -5,12 +5,12 @@ enum AppTab: Hashable {
 }
 
 /// アプリのルート。未ログインは Onboarding、ログイン済みはタブ骨格を表示する（§5）。
-/// 中央の「チェックイン」タブは選択時にフルスクリーンのチェックインフローを起動する（§6.3）。
+/// 起動直後は「記録」タブ（記録開始とチェックインの入口）を表示する。
 struct RootView: View {
     @Environment(AuthService.self) private var auth
     @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
-    @State private var selection: AppTab = .calendar
+    @State private var selection: AppTab = .workout
     @AppStorage("gymnee.setupDone") private var setupDone = false
     #if DEBUG
     @State private var debugWorkout: Workout?
@@ -118,13 +118,13 @@ struct RootView: View {
 
     private var mainTabs: some View {
         TabView(selection: $selection) {
-            CalendarHomeView()
-                .tabItem { Label("カレンダー", systemImage: "calendar") }
-                .tag(AppTab.calendar)
-
             RecordView()
                 .tabItem { Label("記録", systemImage: "dumbbell.fill") }
                 .tag(AppTab.workout)
+
+            CalendarHomeView()
+                .tabItem { Label("カレンダー", systemImage: "calendar") }
+                .tag(AppTab.calendar)
 
             SocialFeedView()
                 .tabItem { Label("ソーシャル", systemImage: "person.2.fill") }
