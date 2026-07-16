@@ -103,6 +103,10 @@ struct RootView: View {
                     ShareCardExerciseLine(name: "プッシュアップ", detail: "自重 × 15・2セット", isPR: false),
                     ShareCardExerciseLine(name: "プランク", detail: "60秒・2セット", isPR: false),
                     ShareCardExerciseLine(name: "サイドレイズ", detail: "8kg × 15・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "ラットプルダウン", detail: "65kg × 10・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "シーテッドロー", detail: "55kg × 12・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "レッグプレス", detail: "160kg × 10・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "カーフレイズ", detail: "自重 × 20・2セット", isPR: false),
                 ],
                 stats: [
                     ShareCardStat(value: "7,470kg", label: "総量"),

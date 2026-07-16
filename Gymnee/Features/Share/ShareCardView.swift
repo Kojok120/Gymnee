@@ -4,8 +4,21 @@ import SwiftUI
 struct ShareCardView: View {
     let content: ShareCardContent
     let theme: ShareCardTheme
-    /// 基準サイズ（正方形）。レンダリング時は scale で高解像度化する。
+    /// 基準サイズ（カード幅）。レンダリング時は scale で高解像度化する。
     var side: CGFloat = 360
+
+    /// メニュー一覧の最大表示行数（超過分は「＋他N種目」に畳む）。
+    static let maxLines = 10
+
+    private var shownLineCount: Int {
+        content.showExercises ? min(content.exerciseLines.count, Self.maxLines) : 0
+    }
+
+    /// カードの高さ。一覧が6行以下なら正方形、それ以上は行数に応じて縦長にする
+    /// （maxLines 到達時に 4:5 ＝ Instagram フィードの縦長上限に収まる伸び幅）。
+    private var cardHeight: CGFloat {
+        side + CGFloat(max(0, shownLineCount - 6)) * side * 0.0625
+    }
 
     var body: some View {
         ZStack {
@@ -21,7 +34,7 @@ struct ShareCardView: View {
                 // 透過テンプレは下地が分からないので、文字に影を付けて可読性を担保。
                 .shadow(color: theme.isTransparent ? .black.opacity(0.55) : .clear, radius: 4, y: 1)
         }
-        .frame(width: side, height: side)
+        .frame(width: side, height: cardHeight)
         .clipped()
     }
 
@@ -100,9 +113,9 @@ struct ShareCardView: View {
         .padding(side * 0.06)
     }
 
-    /// 中央のメニュー一覧。1種目=1行（名前｜ベストセット・セット数）。最大6件＋「他N種目」。
+    /// 中央のメニュー一覧。1種目=1行（名前｜ベストセット・セット数）。最大 maxLines 件＋「他N種目」。
     private var exerciseList: some View {
-        let shown = content.exerciseLines.prefix(6)
+        let shown = content.exerciseLines.prefix(Self.maxLines)
         return VStack(alignment: .leading, spacing: side * 0.024) {
             ForEach(shown) { line in
                 HStack(spacing: side * 0.015) {
