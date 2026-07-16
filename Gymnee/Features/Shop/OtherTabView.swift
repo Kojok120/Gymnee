@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 「その他」タブ（§5 ナビ）。ショップを大きなカードで選び、選択するとショップ画面を表示する。
-/// （プロフィール/設定/マイデータはカレンダーのプロフィールから到達する。）
+/// 「その他」タブ（§5 ナビ）。ショップ・設定を大きなカードで選ぶ。
+/// （プロフィール/マイデータはカレンダーのプロフィールから到達する。）
 struct OtherTabView: View {
     let userId: UUID
 
@@ -12,6 +12,9 @@ struct OtherTabView: View {
             VStack(spacing: Theme.Spacing.lg) {
                 NavigationLink(value: Dest.shop) {
                     card(title: "ショップ", subtitle: "サプリ・ギアを探す", icon: "bag.fill", tint: Theme.lime)
+                }
+                NavigationLink(value: AppRoute.settings) {
+                    card(title: "設定", subtitle: "通知・目標・アカウント", icon: "gearshape.fill", tint: Theme.info)
                 }
                 Spacer()
             }
