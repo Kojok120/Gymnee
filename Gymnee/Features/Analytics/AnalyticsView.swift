@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import Charts
 
-/// 分析ダッシュボード（§6.8）。頻度・部位バランス・リカバリービュー・ヒートマップ・強度進捗・CSV。
+/// 分析ダッシュボード（§6.8）。ヒートマップ・強度進捗・部位バランス・リカバリービュー・CSV。
 struct AnalyticsView: View {
     let userId: UUID
 
@@ -38,7 +38,6 @@ struct AnalyticsView: View {
             VStack(spacing: Theme.Spacing.lg) {
                 historyLink
                 heatmapCard
-                frequencyCard
                 strengthCard
                 balanceCard
                 recoveryCard
@@ -97,46 +96,6 @@ struct AnalyticsView: View {
         var counts: [Date: Int] = [:]
         for v in visits { counts[calendar.startOfDay(for: v.visitedAt), default: 0] += 1 }
         return counts
-    }
-
-    // MARK: - Frequency
-
-    private var frequencyCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "週次頻度（直近\(periodLabel)）")
-            if weeklyCounts.allSatisfy({ $0.count == 0 }) {
-                Text("記録が増えると表示されます。").font(.caption).foregroundStyle(.secondary)
-            } else {
-                Chart(weeklyCounts, id: \.weekStart) { item in
-                    BarMark(x: .value("週", item.weekStart, unit: .weekOfYear), y: .value("日数", item.count))
-                        .foregroundStyle(Theme.energy)
-                }
-                .chartYScale(domain: 0...7)   // 1週間＝最大7日。
-                .chartYAxis { AxisMarks(values: Array(0...7)) }
-                .frame(height: 160)
-            }
-        }
-        .gymneeCard()
-    }
-
-    private struct WeeklyCount { let weekStart: Date; let count: Int }
-    private var weeklyCounts: [WeeklyCount] {
-        let today = calendar.startOfDay(for: .now)
-        guard let thisWeek = calendar.dateInterval(of: .weekOfYear, for: today)?.start else { return [] }
-        return (0..<periodWeeks).reversed().compactMap { offset in
-            guard let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: thisWeek),
-                  let interval = calendar.dateInterval(of: .weekOfYear, for: start) else { return nil }
-            // 頻度＝その週にトレーニングした「日数」（最大7。1日に複数回でも1日）。
-            // 週判定・日付の重複排除とも completedAt 基準に統一（date 基準だと日跨ぎや後完了でズレる）。
-            let days = Set(
-                workouts.compactMap { workout -> Date? in
-                    guard let completedAt = workout.completedAt,
-                          interval.contains(completedAt) else { return nil }
-                    return calendar.startOfDay(for: completedAt)
-                }
-            )
-            return WeeklyCount(weekStart: start, count: min(days.count, 7))
-        }
     }
 
     // MARK: - Muscle balance
@@ -238,7 +197,7 @@ struct AnalyticsView: View {
     private var byExerciseInPeriod: [String: [WorkoutExercise]] {
         let start = periodStart
         var byExercise: [String: [WorkoutExercise]] = [:]
-        // 期間判定は週次頻度と揃えて完了時刻(completedAt)基準にする（深夜跨ぎの日ズレ防止）。
+        // 期間判定は完了時刻(completedAt)基準にする（深夜跨ぎの日ズレ防止）。
         for w in workouts where (w.completedAt ?? .distantPast) >= start {
             for we in w.exercises {
                 guard let name = we.exercise?.name else { continue }
@@ -267,7 +226,7 @@ struct AnalyticsView: View {
         var points: [StrengthPoint] = []
         for name in displayed {
             for we in by[name] ?? [] {
-                // プロット日付も完了時刻基準（週次頻度と同じ）。byExerciseInPeriod で完了済みのみ。
+                // プロット日付も完了時刻基準。byExerciseInPeriod で完了済みのみ。
                 guard let date = we.workout?.completedAt else { continue }
                 let best = we.sets
                     .filter { $0.weight > 0 && $0.reps > 0 }

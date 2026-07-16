@@ -1,9 +1,8 @@
 import SwiftUI
 import SwiftData
-import Charts
 
 /// フォロー中などの他ユーザーのプロフィール（§6.11）。
-/// 公開投稿（feed_items）から、投稿フィード／ワークアウト集計（ヒートマップ・週次頻度）／自己ベスト一覧を
+/// 公開投稿（feed_items）から、投稿フィード／ワークアウト集計（ヒートマップ）／自己ベスト一覧を
 /// セグメントで切替表示する。フレンドは別ユーザーで生データは RLS で同期されないため、すべて feed_items 由来。
 struct UserProfileView: View {
     let targetUserId: UUID
@@ -119,31 +118,13 @@ struct UserProfileView: View {
         }
     }
 
-    // MARK: - ワークアウト（ヒートマップ＋週次頻度・直近4週）
+    // MARK: - ワークアウト（ヒートマップ・直近4週）
     // フレンドの生 Workout は同期されないため、公開された .workout feed_items の日付から集計する。
 
-    @ViewBuilder
     private var workoutSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             SectionHeader(title: "活動ヒートマップ（直近4週）")
             HeatmapView(counts: workoutDayCounts, weeks: 4, fillWidth: true)
-        }
-        .gymneeCard()
-
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "週次頻度（直近4週）")
-            if weeklyWorkoutDays.allSatisfy({ $0.count == 0 }) {
-                Text("公開されたワークアウトがありません。").font(.caption).foregroundStyle(.secondary)
-            } else {
-                Chart(weeklyWorkoutDays) { item in
-                    BarMark(x: .value("週", item.weekStart, unit: .weekOfYear),
-                            y: .value("日数", item.count))
-                        .foregroundStyle(Theme.energy)
-                }
-                .chartYScale(domain: 0...7)
-                .chartYAxis { AxisMarks(values: Array(0...7)) }
-                .frame(height: 160)
-            }
         }
         .gymneeCard()
     }
@@ -155,25 +136,6 @@ struct UserProfileView: View {
             counts[calendar.startOfDay(for: item.createdAt), default: 0] += 1
         }
         return counts
-    }
-
-    private struct WeekBar: Identifiable {
-        let id: Date
-        let weekStart: Date
-        let count: Int
-    }
-    /// 直近4週の各週のワークアウト日数（最大7。1日複数回でも1日）。
-    private var weeklyWorkoutDays: [WeekBar] {
-        let today = calendar.startOfDay(for: .now)
-        guard let thisWeek = calendar.dateInterval(of: .weekOfYear, for: today)?.start else { return [] }
-        return (0..<4).reversed().compactMap { offset in
-            guard let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: thisWeek),
-                  let interval = calendar.dateInterval(of: .weekOfYear, for: start) else { return nil }
-            let days = Set(theirFeedItems
-                .filter { $0.type == .workout && interval.contains($0.createdAt) }
-                .map { calendar.startOfDay(for: $0.createdAt) })
-            return WeekBar(id: start, weekStart: start, count: min(days.count, 7))
-        }
     }
 
     // MARK: - 自己ベスト
