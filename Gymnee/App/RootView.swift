@@ -94,7 +94,21 @@ struct RootView: View {
         case "share":
             ShareCardEditorView(content: ShareCardContent(
                 image: nil, gymName: "Gymnee 渋谷", streak: 3,
-                prText: "ベンチ 80kg", exerciseSummary: "胸・三頭 3種目"
+                prText: "PR 2", exerciseSummary: "胸・三頭 3種目",
+                exerciseLines: [
+                    ShareCardExerciseLine(name: "ベンチプレス", detail: "80kg × 8・3セット", isPR: true),
+                    ShareCardExerciseLine(name: "インクラインダンベルプレス", detail: "28kg × 10・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "ケーブルクロスオーバー", detail: "20kg × 12・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "スカルクラッシャー", detail: "30kg × 10・3セット", isPR: true),
+                    ShareCardExerciseLine(name: "プッシュアップ", detail: "自重 × 15・2セット", isPR: false),
+                    ShareCardExerciseLine(name: "プランク", detail: "60秒・2セット", isPR: false),
+                    ShareCardExerciseLine(name: "サイドレイズ", detail: "8kg × 15・3セット", isPR: false),
+                ],
+                stats: [
+                    ShareCardStat(value: "7,470kg", label: "総量"),
+                    ShareCardStat(value: "19", label: "セット"),
+                    ShareCardStat(value: "52分", label: "時間"),
+                ]
             ))
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()

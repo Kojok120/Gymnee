@@ -56,7 +56,9 @@ struct ShareCardEditorView: View {
             if content.gymName != nil { Toggle("ジム名", isOn: $content.showGym) }
             if content.streak != nil { Toggle("連続日数", isOn: $content.showStreak) }
             if content.prText != nil { Toggle("PR", isOn: $content.showPR) }
-            if content.exerciseSummary != nil { Toggle("種目", isOn: $content.showExercises) }
+            if content.exerciseSummary != nil || !content.exerciseLines.isEmpty {
+                Toggle("種目", isOn: $content.showExercises)
+            }
         }
         .tint(Theme.energy)
     }
@@ -118,13 +120,42 @@ extension ShareCardContent {
             .flatMap(\.personalRecords)
             .filter { $0.workoutId == workout.id }
             .count
+
+        // メニュー一覧：種目ごとに代表セット（最重量→最多reps→最長時間）＋セット数を1行に。
+        let lines = workout.exercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .compactMap { we -> ShareCardExerciseLine? in
+                guard let name = we.exercise?.name,
+                      let best = we.sets.max(by: { a, b in
+                          if a.weight != b.weight { return a.weight < b.weight }
+                          if a.reps != b.reps { return a.reps < b.reps }
+                          return (a.durationSeconds ?? 0) < (b.durationSeconds ?? 0)
+                      })
+                else { return nil }
+                return ShareCardExerciseLine(
+                    name: name,
+                    detail: "\(best.detailText)・\(we.sets.count)セット",
+                    isPR: we.sets.contains(where: \.isPR)
+                )
+            }
+
+        // スタット行：値が無い項目（自重のみの総量0、時間未計測）は載せない。
+        var stats: [ShareCardStat] = []
+        if totalVolume > 0 { stats.append(ShareCardStat(value: "\(totalVolume.formatted())kg", label: "総量")) }
+        if !sets.isEmpty { stats.append(ShareCardStat(value: "\(sets.count)", label: "セット")) }
+        if let secs = workout.durationSeconds, secs > 0 {
+            stats.append(ShareCardStat(value: "\(max(1, secs / 60))分", label: "時間"))
+        }
+
         return ShareCardContent(
             image: nil,
             date: workout.completedAt ?? workout.date,
             gymName: nil,
             streak: streak,
             prText: prCount > 0 ? "PR \(prCount)" : nil,
-            exerciseSummary: "\(workout.name)・\(workout.exercises.count)種目・\(totalVolume)kg"
+            exerciseSummary: "\(workout.name)・\(workout.exercises.count)種目・\(totalVolume)kg",
+            exerciseLines: lines,
+            stats: stats
         )
     }
 

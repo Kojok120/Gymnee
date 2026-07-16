@@ -37,6 +37,21 @@ enum ShareCardTheme: String, CaseIterable, Identifiable {
     var isTransparent: Bool { self == .transparent }
 }
 
+/// メニュー一覧の1行（種目名＋ベストセット表記＋セット数。PR 種目はトロフィー付き）。
+struct ShareCardExerciseLine: Identifiable {
+    let id = UUID()
+    let name: String
+    let detail: String
+    let isPR: Bool
+}
+
+/// 下部スタット行の1項目（値＋ラベル。例: "7,470kg" / "総量"）。
+struct ShareCardStat: Identifiable {
+    var id: String { label }
+    let value: String
+    let label: String
+}
+
 /// 共有カードに載せる内容（§6.6 種目/連続日数/PR/ジム名）。表示項目はトグルで選択可能。
 struct ShareCardContent {
     var image: UIImage?
@@ -45,6 +60,10 @@ struct ShareCardContent {
     var streak: Int?
     var prText: String?
     var exerciseSummary: String?
+    /// カード中央のメニュー一覧（空なら従来どおりサマリ1行のみの表示）。
+    var exerciseLines: [ShareCardExerciseLine] = []
+    /// 下部のスタット行（総量・セット数・時間）。空なら exerciseSummary を表示する。
+    var stats: [ShareCardStat] = []
 
     var showGym = true
     var showStreak = true
