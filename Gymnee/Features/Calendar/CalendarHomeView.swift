@@ -66,13 +66,8 @@ private struct CalendarHomeContent: View {
         }
         .background(Theme.bg0)
         // 大見出し「Gymnee」は削除（縦スペース節約・スクロールなしでカレンダーまで見せる）。
+        // ツールバー導線も無し：チェックインは記録タブ、プロフィールは「その他」タブへ移設した。
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // チェックイン導線は記録タブ（開始ゲート）へ移設した。
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: AppRoute.profile) { Image(systemName: "person.crop.circle") }
-            }
-        }
         .sheet(isPresented: $showPlanner) {
             NavigationStack {
                 WeekPlannerView(userId: userId, onStart: { w in
