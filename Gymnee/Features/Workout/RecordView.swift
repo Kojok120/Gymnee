@@ -141,7 +141,6 @@ private struct StartGateView: View {
         GeometryReader { geo in
             ScrollView {
                 VStack(spacing: Theme.Spacing.xl) {
-                    brandHeader
                     if !resumables.isEmpty {
                         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                             Text("途中の記録").font(.subheadline.bold()).foregroundStyle(Theme.textSecondary)
@@ -150,11 +149,19 @@ private struct StartGateView: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    // 記録の開始導線（ヘッダー＋タイル＋行カード）を画面中央にまとめる。
+                    // ブランドヒーロー＋開始導線（タイル＋行カード）を画面中央にまとめる。
+                    // 記録タブは起動直後のトップ＝アプリの顔なので、見出しは「Gymnee」を大きく出す。
                     VStack(spacing: Theme.Spacing.xl) {
                         VStack(spacing: Theme.Spacing.md) {
-                            Image(systemName: "dumbbell.fill").font(.system(size: 48)).foregroundStyle(Theme.lime)
-                            Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
+                            ZStack {
+                                Circle().fill(Theme.lime.opacity(0.16)).frame(width: 96, height: 96)
+                                Image(systemName: "figure.strengthtraining.traditional")
+                                    .font(.system(size: 46, weight: .bold))
+                                    .foregroundStyle(Theme.lime)
+                            }
+                            Text("Gymnee")
+                                .font(.system(size: 40, weight: .heavy, design: .rounded))
+                                .foregroundStyle(Theme.textPrimary)
                             Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
                         VStack(spacing: Theme.Spacing.md) {
@@ -192,24 +199,8 @@ private struct StartGateView: View {
             }
             .background(Theme.bg0)
         }
-        // 記録タブは起動直後のトップ＝アプリの顔。ナビバーの「記録」をやめ、ブランドヘッダーを置く。
+        // 記録タブは起動直後のトップ＝アプリの顔。ナビバーは隠し、中央のブランドヒーローに任せる。
         .toolbar(.hidden, for: .navigationBar)
-    }
-
-    /// ブランドヘッダー（アイコン＋Gymnee）。
-    private var brandHeader: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            ZStack {
-                Circle().fill(Theme.lime.opacity(0.16)).frame(width: 40, height: 40)
-                Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(Theme.lime)
-            }
-            Text("Gymnee")
-                .font(.system(size: 26, weight: .heavy, design: .rounded))
-                .foregroundStyle(Theme.textPrimary)
-            Spacer()
-        }
     }
 
     /// 入口タイル（チェックイン/記録を開始）。大きな面で押しやすく、押下で沈み込む。
