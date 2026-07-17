@@ -15,6 +15,18 @@ struct OverlineLabel: View {
     }
 }
 
+// MARK: - Pressable button style（押下の沈み込み）
+
+/// 押している間だけ縮小・減光するボタンスタイル。カード/タイル型の大きなボタンの操作感を出す。
+struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.snappy(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
 // MARK: - Flow layout（折返し配置）
 
 /// 子要素を左から並べ、行幅を超えたら折り返す簡易フローレイアウト。

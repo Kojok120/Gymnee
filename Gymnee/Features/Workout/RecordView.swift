@@ -141,6 +141,7 @@ private struct StartGateView: View {
         GeometryReader { geo in
             ScrollView {
                 VStack(spacing: Theme.Spacing.xl) {
+                    brandHeader
                     if !resumables.isEmpty {
                         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                             Text("途中の記録").font(.subheadline.bold()).foregroundStyle(Theme.textSecondary)
@@ -148,64 +149,117 @@ private struct StartGateView: View {
                             ForEach(resumables) { draft in resumeCard(draft) }
                         }
                     }
-                    // 記録の開始導線（ヘッダー＋ボタン）を画面中央にまとめる。
-                    VStack(spacing: Theme.Spacing.lg) {
+                    Spacer(minLength: 0)
+                    // 記録の開始導線（ヘッダー＋タイル＋行カード）を画面中央にまとめる。
+                    VStack(spacing: Theme.Spacing.xl) {
                         VStack(spacing: Theme.Spacing.md) {
-                            Image(systemName: "dumbbell.fill").font(.system(size: 52)).foregroundStyle(Theme.lime)
+                            Image(systemName: "dumbbell.fill").font(.system(size: 48)).foregroundStyle(Theme.lime)
                             Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
                             Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
                         VStack(spacing: Theme.Spacing.md) {
-                            // 入口は横並びツイン：ジム到着時はチェックイン（完了で自動的に記録開始）、
-                            // それ以外（自宅トレ等）は記録を直接開始。主 CTA のライムは記録側に残す。
-                            HStack(spacing: Theme.Spacing.sm) {
-                                Button(action: onCheckIn) {
-                                    Label("チェックイン", systemImage: "door.right.hand.open")
-                                        .font(.headline).foregroundStyle(Theme.textPrimary)
-                                        .lineLimit(1).minimumScaleFactor(0.8)
-                                        .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
-                                        .background(Theme.bg3, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
-                                }
-                                Button(action: onStart) {
-                                    Text("記録を開始").font(.headline).foregroundStyle(Theme.onLime)
-                                        .lineLimit(1).minimumScaleFactor(0.8)
-                                        .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
-                                        .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
-                                }
+                            // 入口は横並びツインのタイル：ジム到着時はチェックイン（完了で自動的に
+                            // 記録開始）、それ以外（自宅トレ等）は記録を直接開始。主 CTA のライムは記録側。
+                            HStack(spacing: Theme.Spacing.md) {
+                                gateTile(title: "チェックイン", caption: "ジムに着いたら",
+                                         icon: "door.right.hand.open", primary: false, action: onCheckIn)
+                                gateTile(title: "記録を開始", caption: "今すぐ始める",
+                                         icon: "play.fill", primary: true, action: onStart)
                             }
-                            // 補助導線は1行に収める（CTA 下の縦積みは圧迫感が出るため）。
+                            // 補助導線は全幅の行カード（テキストリンクだと見落とされ押しづらいため）。
                             // テンプレは新規ユーザー（完了記録なし）だけに出す活性化導線。
+                            if showTemplates {
+                                gateRow(title: "テンプレから始める", icon: "square.grid.2x2", action: onTemplates)
+                            }
                             // 履歴リンクは単発クロージャ型：RecordContent が push 経由(カレンダー編集/
                             // ワークアウト詳細)で開かれても pushed view 上の navigationDestination(for:) に
                             // 依存せず確実に遷移する（iOS 26.5 で子リンクが解決されない問題の回避。
                             // List/ForEach 内ではないのでハングもしない）。
-                            HStack(spacing: Theme.Spacing.xl) {
-                                if showTemplates {
-                                    Button(action: onTemplates) {
-                                        Label("テンプレから始める", systemImage: "square.grid.2x2")
-                                            .font(.subheadline.weight(.medium))
-                                            .foregroundStyle(Theme.textSecondary)
-                                    }
-                                }
-                                NavigationLink {
-                                    HistoryView(userId: userId)
-                                } label: {
-                                    Label(showTemplates ? "記録を見る" : "これまでの記録を見る",
-                                          systemImage: "list.bullet.rectangle")
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
+                            NavigationLink {
+                                HistoryView(userId: userId)
+                            } label: {
+                                gateRowLabel(title: "これまでの記録を見る", icon: "list.bullet.rectangle")
                             }
+                            .buttonStyle(PressableButtonStyle())
                         }
                     }
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
-                // 中身が画面より短ければ縦中央、長ければスクロール。
-                .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
+                .padding(.vertical, Theme.Spacing.md)
+                // 中身が画面より短ければ Spacer が中央へ寄せ、長ければスクロール。
+                .frame(maxWidth: .infinity, minHeight: geo.size.height)
             }
             .background(Theme.bg0)
         }
-        .navigationTitle("記録").navigationBarTitleDisplayMode(.inline)
+        // 記録タブは起動直後のトップ＝アプリの顔。ナビバーの「記録」をやめ、ブランドヘッダーを置く。
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// ブランドヘッダー（アイコン＋Gymnee）。
+    private var brandHeader: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            ZStack {
+                Circle().fill(Theme.lime.opacity(0.16)).frame(width: 40, height: 40)
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Theme.lime)
+            }
+            Text("Gymnee")
+                .font(.system(size: 26, weight: .heavy, design: .rounded))
+                .foregroundStyle(Theme.textPrimary)
+            Spacer()
+        }
+    }
+
+    /// 入口タイル（チェックイン/記録を開始）。大きな面で押しやすく、押下で沈み込む。
+    private func gateTile(title: String, caption: String, icon: String, primary: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(primary ? Theme.onLime : Theme.lime)
+                VStack(spacing: 1) {
+                    Text(title).font(.headline)
+                        .foregroundStyle(primary ? Theme.onLime : Theme.textPrimary)
+                    Text(caption).font(.caption2)
+                        .foregroundStyle(primary ? Theme.onLime.opacity(0.75) : Theme.textTertiary)
+                }
+            }
+            .lineLimit(1).minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Theme.Spacing.lg)
+            .background(primary ? Theme.limeFill : Theme.bg1,
+                        in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay {
+                if !primary {
+                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                        .strokeBorder(Theme.bg3, lineWidth: 1)
+                }
+            }
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
+    /// 補助導線の行カード（アイコン＋タイトル＋シェブロン）。
+    private func gateRowLabel(title: String, icon: String) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 24)
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textTertiary)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .contentShape(Rectangle())
+    }
+
+    private func gateRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { gateRowLabel(title: title, icon: icon) }
+            .buttonStyle(PressableButtonStyle())
     }
 
     /// 中断中の記録1件を再開/破棄するカード（開始日時＋内容の一部を表示）。
