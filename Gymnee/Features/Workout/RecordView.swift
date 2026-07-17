@@ -418,6 +418,7 @@ struct RecordContent: View {
                 WorkoutSummaryView(
                     workout: w,
                     streak: currentStreak,
+                    weeklyCount: weeklyActiveDays,
                     // 投稿は明示同意（fail-closed）。バックエンド未接続・未サインインでは出さない。
                     postVisibilityLabel: (defaultVisibility == .private ? Visibility.friends : defaultVisibility).label,
                     onPost: (sync.isRemoteEnabled && auth.isPermanentAccount) ? { publishConsented(w) } : nil,
@@ -1272,12 +1273,22 @@ struct RecordContent: View {
         return String(format: "%d:%02d", secs / 60, secs % 60)
     }
 
-    private var currentStreak: Int {
+    /// 連続記録・週次進捗の元になる活動日（来店＋完了ワークアウト）。
+    /// サマリーは finish() 後に出るため、いま完了したワークアウト自身も含まれる。
+    private var activeDays: [Date] {
         let uid = userId
         let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == uid }))) ?? []
         let completed = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil }))) ?? []
-        let days = visits.map(\.visitedAt) + completed.map { $0.completedAt ?? $0.date }
-        return StreakCalculator.currentStreak(visitDays: days, calendar: .current)
+        return visits.map(\.visitedAt) + completed.map { $0.completedAt ?? $0.date }
+    }
+
+    private var currentStreak: Int {
+        StreakCalculator.currentStreak(visitDays: activeDays, calendar: .current)
+    }
+
+    /// 今週のアクティブ日数（サマリーの週次ゴールタイル「3/5」の分子）。
+    private var weeklyActiveDays: Int {
+        StreakCalculator.weeklyVisitDays(visitDays: activeDays)
     }
 }
 

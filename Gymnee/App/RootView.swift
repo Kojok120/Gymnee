@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 enum AppTab: Hashable {
     case calendar, workout, social, analytics, other
@@ -117,6 +118,11 @@ struct RootView: View {
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()
         case "other": OtherTabView(userId: userId)
+        case "summary":
+            // 完了サマリーの検証用：デモの最新完了ワークアウトを表示（週次はゴール達成状態）。
+            if let w = latestCompletedWorkout(userId: userId) {
+                WorkoutSummaryView(workout: w, streak: 3, weeklyCount: 3, onAnalytics: {}, onClose: {})
+            }
         case "logger":
             if let w = debugWorkout {
                 NavigationStack { RecordContent(userId: userId, resuming: w) }
@@ -125,6 +131,16 @@ struct RootView: View {
             }
         default: mainTabs
         }
+    }
+
+    /// summary ハーネス用：デモの最新完了ワークアウト。
+    private func latestCompletedWorkout(userId: UUID) -> Workout? {
+        var descriptor = FetchDescriptor<Workout>(
+            predicate: #Predicate { $0.userId == userId && $0.completedAt != nil },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return ((try? context.fetch(descriptor)) ?? []).first
     }
     #endif
 
