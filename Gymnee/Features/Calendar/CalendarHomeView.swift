@@ -65,7 +65,8 @@ private struct CalendarHomeContent: View {
             .padding(Theme.Spacing.lg)
         }
         .background(Theme.bg0)
-        .navigationTitle("Gymnee")
+        // 大見出し「Gymnee」は削除（縦スペース節約・スクロールなしでカレンダーまで見せる）。
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // チェックイン導線は記録タブ（開始ゲート）へ移設した。
             ToolbarItem(placement: .topBarTrailing) {
@@ -211,17 +212,7 @@ private struct CalendarHomeContent: View {
                     weekDots
                 }
             }
-
-            Divider().overlay(Theme.bg3)
-
-            HStack(spacing: Theme.Spacing.md) {
-                Image(systemName: encouragement.icon)
-                    .foregroundStyle(Theme.lime)
-                Text(encouragement.text)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Theme.textPrimary)
-                Spacer(minLength: 0)
-            }
+            // 励ましの文章セクションは削除（スクロールなしでカレンダーまで見せる・ユーザー確定）。
         }
         .gymneeCard(padding: Theme.Spacing.xl, highlighted: weekCount >= weeklyGoal)
     }
@@ -454,20 +445,6 @@ private struct CalendarHomeContent: View {
     private var goalProgress: Double {
         guard weeklyGoal > 0 else { return 0 }
         return min(1, Double(weekCount) / Double(weeklyGoal))
-    }
-
-    /// 励まし文（Gentler Streak 流：責めない・前向き）。
-    private var encouragement: (icon: String, text: String) {
-        if weekCount >= weeklyGoal {
-            return ("checkmark.seal.fill", "今週は\(weekCount)日トレ — 目標達成、最高の週！")
-        }
-        if currentStreak >= 3 {
-            return ("flame.fill", "\(currentStreak)日連続。この調子で続けよう。")
-        }
-        if weekCount > 0 {
-            return ("bolt.fill", "今週は\(weekCount)日。あと\(weeklyGoal - weekCount)日で目標達成。")
-        }
-        return ("sparkles", "新しい週。まずは1回チェックインしてみよう。")
     }
 
     /// 曜日記号・月タイトル用の DateFormatter は生成コストが高いため共有する（毎描画で作らない）。
