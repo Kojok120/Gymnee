@@ -352,6 +352,9 @@ struct RecordContent: View {
     @State private var showModePicker = false
     @State private var editingExercise: Exercise?
     @State private var editingSet: ExerciseSet?
+    /// 編集シートの「このセットを削除」の遅延実行先。シートが完全に閉じてから削除する
+    /// （閉じアニメーション中に @Bindable の削除済みモデルへ body アクセスが走るとクラッシュし得るため）。
+    @State private var pendingDeleteSet: ExerciseSet?
     @State private var keypad: KeypadRequest?
     @State private var showOnboarding = false
     @State private var showCancelConfirm = false
@@ -439,12 +442,18 @@ struct RecordContent: View {
         // 除外対象（編集中ワークアウト）が変わると前回値の計算結果も変わるためキャッシュを捨てる。
         .onChange(of: activeWorkout?.id) { _, _ in centersCache.values.removeAll() }
         .sheet(isPresented: $showModePicker) { modePickerSheet }
-        // 「その他」カード: その部位の種目ピッカー。選んだ/作った種目を開いているタブへ永続追加する。
+        // 「その他」カード: その部位の種目ピッカー。選んだ/作った種目をタブへ永続追加する。
+        // 新規作成でフォーム上の部位を変えた場合は、その種目の部位タブへ追加して切り替える
+        // （開いていたタブに別部位の種目が居座らないように。一覧からの選択は常に同部位）。
         .sheet(item: $pickingTarget) { target in
             ExercisePickerView(
                 exercises: pickerExercises,
                 group: target.group,
-                onSelect: { ex in addToShelf(ex, group: target.group) }
+                onSelect: { ex in
+                    let group = ex.muscleGroup
+                    addToShelf(ex, group: group)
+                    if group != target.group { selectedTab = .group(group) }
+                }
             )
         }
         // 種目編集（器具・計測タイプ変更）は centers の既定値に影響するため、閉じたらキャッシュを捨てる。
@@ -455,8 +464,13 @@ struct RecordContent: View {
             centersCache.values.removeAll()
             rebuildCatalog()
         }) { ex in ExerciseInspectorView(exercise: ex, userId: userId) }
-        .sheet(item: $editingSet) { set in
-            EditSetSheet(set: set, onCommit: { commitSetEdit(set) }, onDelete: { deleteSet(set) })
+        .sheet(item: $editingSet, onDismiss: {
+            if let set = pendingDeleteSet {
+                pendingDeleteSet = nil
+                deleteSet(set)
+            }
+        }) { set in
+            EditSetSheet(set: set, onCommit: { commitSetEdit(set) }, onDelete: { pendingDeleteSet = set })
         }
         .sheet(isPresented: $showMemo) {
             if let w = activeWorkout { WorkoutMemoSheet(workout: w) { try? context.save() } }

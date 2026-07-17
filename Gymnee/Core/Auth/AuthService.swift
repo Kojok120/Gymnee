@@ -106,9 +106,24 @@ final class AuthService {
         session = nil
     }
 
+    /// 復元のシングルフライト共有。GymneeApp の起動 task と RootView のゲスト自動開始が
+    /// 同時に呼んでも refresh は1回だけ実行される（refresh_token はローテーションするため、
+    /// 二重 refresh は後発が失効トークンで失敗し復元済みフラグを壊し得る）。
+    @ObservationIgnored private var restoreTask: Task<Void, Never>?
+
     /// 再起動後にバックエンドセッションを復元する（refresh_token でアクセストークンを更新）。
-    /// GymneeApp の起動時 task から呼ぶ。成功すると push/pull が認証付きで通る。
+    /// 起動時 task / ゲスト自動開始前から呼ぶ。成功すると push/pull が認証付きで通る。
     func restoreBackendSession() async {
+        if let restoreTask {
+            await restoreTask.value
+            return
+        }
+        let task = Task { await performRestoreBackendSession() }
+        restoreTask = task
+        await task.value
+    }
+
+    private func performRestoreBackendSession() async {
         guard let supabase, let refresh = Keychain.get(refreshTokenKey) else { return }
         do {
             let remote = try await supabase.refreshSession(refreshToken: refresh)

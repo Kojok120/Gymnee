@@ -25,6 +25,12 @@ struct RootView: View {
             .task {
                 // DEBUG デモのサインイン（ユウト）を先に通し、それ以外はゲストで自動開始。
                 await runDebugHarnessIfNeeded()
+                // 再インストール直後は Keychain にバックエンドセッションが残っていることがある。
+                // 復元前にゲストを発行するとその窓の記録が新ゲスト uid の孤児になるため、
+                // 復元（成功/失敗）を待ってから判定する（restore はシングルフライトで多重実行されない）。
+                if !auth.isSignedIn, auth.hasPersistedBackendSession {
+                    await auth.restoreBackendSession()
+                }
                 ensureGuestSession()
             }
             // サインアウト後もウォールへ戻さず、新しいゲストで続行（再サインインは設定から）。
