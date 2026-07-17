@@ -153,12 +153,12 @@ private struct StartGateView: View {
                     // 記録タブは起動直後のトップ＝アプリの顔なので、見出しは「Gymnee」を大きく出す。
                     VStack(spacing: Theme.Spacing.xl) {
                         VStack(spacing: Theme.Spacing.md) {
-                            ZStack {
-                                Circle().fill(Theme.lime.opacity(0.16)).frame(width: 96, height: 96)
-                                Image(systemName: "figure.strengthtraining.traditional")
-                                    .font(.system(size: 46, weight: .bold))
-                                    .foregroundStyle(Theme.lime)
-                            }
+                            // ロゴは汎用シンボルではなくアプリアイコン（丸く切り抜き・ユーザー確定）。
+                            Image("BrandMark")
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 96, height: 96)
+                                .clipShape(Circle())
                             Text("Gymnee")
                                 .font(.system(size: 40, weight: .heavy, design: .rounded))
                                 .foregroundStyle(Theme.textPrimary)
