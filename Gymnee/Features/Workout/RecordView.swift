@@ -403,7 +403,13 @@ struct RecordContent: View {
             )
         }
         // 種目編集（器具・計測タイプ変更）は centers の既定値に影響するため、閉じたらキャッシュを捨てる。
-        .sheet(item: $editingExercise, onDismiss: { centersCache.values.removeAll() }) { ex in ExerciseInspectorView(exercise: ex, userId: userId) }
+        // 種目編集（器具・計測タイプ変更）は centers の既定値に、部位・名前変更はタブの既定
+        // シェルフ/解決表に影響するため、閉じたらキャッシュ破棄＋カタログ再構築する
+        // （rebuild は種目数変化でしか走らないため、ここで明示的に呼ぶ）。
+        .sheet(item: $editingExercise, onDismiss: {
+            centersCache.values.removeAll()
+            rebuildCatalog()
+        }) { ex in ExerciseInspectorView(exercise: ex, userId: userId) }
         .sheet(item: $editingSet) { set in
             EditSetSheet(set: set, onCommit: { commitSetEdit(set) }, onDelete: { deleteSet(set) })
         }
