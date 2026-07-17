@@ -22,6 +22,8 @@ struct RecordView: View {
     /// ゲートの「テンプレから始める」で作ったルーティンを初期モードにする（nil＝既定の計画/フリー）。
     @State private var startMode: RecordMode?
     @State private var showTemplatePicker = false
+    /// チェックインフロー（フルスクリーン）。完了は .gymneeDidCheckIn 経由でゲートが開く。
+    @State private var showCheckIn = false
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
@@ -80,6 +82,7 @@ struct RecordView: View {
                         userId: uid,
                         resumables: resumableDrafts(for: uid),
                         onStart: { resumeTarget = nil; startMode = nil; gateOpen = true },
+                        onCheckIn: { showCheckIn = true },
                         onResume: { draft in resumeTarget = draft; startMode = nil; gateOpen = true },
                         onDiscard: { draft in discardDraft(draft) },
                         onTemplates: { showTemplatePicker = true },
@@ -99,6 +102,9 @@ struct RecordView: View {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
         }
+        // ゲートからのチェックイン。cover はゲートの外（ここ）に付ける：完了通知で
+        // ゲートが RecordContent に差し替わっても提示元が消えず、閉じアニメーションが乱れない。
+        .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
         // チェックイン直後はゲートを飛ばして記録画面へ直行（新規記録）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in resumeTarget = nil; gateOpen = true }
         // 計画/予定の「開始」→ 記録タブで当該ワークアウトを再開（カレンダータブから遷移してくる）。
@@ -121,6 +127,8 @@ private struct StartGateView: View {
     /// 自動保存された中断中の下書き（あれば1件ずつカードで再開/破棄導線を出す）。
     var resumables: [Workout] = []
     let onStart: () -> Void
+    /// チェックインフローを開く（ジム到着時の入口。完了後は自動で記録が始まる）。
+    var onCheckIn: () -> Void = {}
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
     /// テンプレ選択シートを開く（テンプレのルーティンで即開始）。
@@ -140,52 +148,109 @@ private struct StartGateView: View {
                             ForEach(resumables) { draft in resumeCard(draft) }
                         }
                     }
-                    // 記録の開始導線（ヘッダー＋ボタン）を画面中央にまとめる。
-                    VStack(spacing: Theme.Spacing.lg) {
+                    Spacer(minLength: 0)
+                    // ブランドヒーロー＋開始導線（タイル＋行カード）を画面中央にまとめる。
+                    // 記録タブは起動直後のトップ＝アプリの顔なので、見出しは「Gymnee」を大きく出す。
+                    VStack(spacing: Theme.Spacing.xl) {
                         VStack(spacing: Theme.Spacing.md) {
-                            Image(systemName: "dumbbell.fill").font(.system(size: 52)).foregroundStyle(Theme.lime)
-                            Text("ワークアウトを記録").font(.title2.bold()).foregroundStyle(Theme.textPrimary)
+                            // ロゴは汎用シンボルではなくアプリアイコン（丸く切り抜き・ユーザー確定）。
+                            Image("BrandMark")
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 96, height: 96)
+                                .clipShape(Circle())
+                            Text("Gymnee")
+                                .font(.system(size: 40, weight: .heavy, design: .rounded))
+                                .foregroundStyle(Theme.textPrimary)
                             Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
                         VStack(spacing: Theme.Spacing.md) {
-                            Button(action: onStart) {
-                                Text("記録を開始する").font(.headline).foregroundStyle(Theme.onLime)
-                                    .frame(maxWidth: .infinity).padding(Theme.Spacing.md)
-                                    .background(Theme.limeFill, in: RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous))
+                            // 入口は横並びツインのタイル：ジム到着時はチェックイン（完了で自動的に
+                            // 記録開始）、それ以外（自宅トレ等）は記録を直接開始。主 CTA のライムは記録側。
+                            HStack(spacing: Theme.Spacing.md) {
+                                gateTile(title: "チェックイン", caption: "ジムに着いたら",
+                                         icon: "door.right.hand.open", primary: false, action: onCheckIn)
+                                gateTile(title: "記録を開始", caption: "今すぐ始める",
+                                         icon: "play.fill", primary: true, action: onStart)
                             }
-                            // 補助導線は1行に収める（CTA 下の縦積みは圧迫感が出るため）。
+                            // 補助導線は全幅の行カード（テキストリンクだと見落とされ押しづらいため）。
                             // テンプレは新規ユーザー（完了記録なし）だけに出す活性化導線。
+                            if showTemplates {
+                                gateRow(title: "テンプレから始める", icon: "square.grid.2x2", action: onTemplates)
+                            }
                             // 履歴リンクは単発クロージャ型：RecordContent が push 経由(カレンダー編集/
                             // ワークアウト詳細)で開かれても pushed view 上の navigationDestination(for:) に
                             // 依存せず確実に遷移する（iOS 26.5 で子リンクが解決されない問題の回避。
                             // List/ForEach 内ではないのでハングもしない）。
-                            HStack(spacing: Theme.Spacing.xl) {
-                                if showTemplates {
-                                    Button(action: onTemplates) {
-                                        Label("テンプレから始める", systemImage: "square.grid.2x2")
-                                            .font(.subheadline.weight(.medium))
-                                            .foregroundStyle(Theme.textSecondary)
-                                    }
-                                }
-                                NavigationLink {
-                                    HistoryView(userId: userId)
-                                } label: {
-                                    Label(showTemplates ? "記録を見る" : "これまでの記録を見る",
-                                          systemImage: "list.bullet.rectangle")
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
+                            NavigationLink {
+                                HistoryView(userId: userId)
+                            } label: {
+                                gateRowLabel(title: "これまでの記録を見る", icon: "list.bullet.rectangle")
                             }
+                            .buttonStyle(PressableButtonStyle())
                         }
                     }
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
-                // 中身が画面より短ければ縦中央、長ければスクロール。
-                .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
+                .padding(.vertical, Theme.Spacing.md)
+                // 中身が画面より短ければ Spacer が中央へ寄せ、長ければスクロール。
+                .frame(maxWidth: .infinity, minHeight: geo.size.height)
             }
             .background(Theme.bg0)
         }
-        .navigationTitle("記録").navigationBarTitleDisplayMode(.inline)
+        // 記録タブは起動直後のトップ＝アプリの顔。ナビバーは隠し、中央のブランドヒーローに任せる。
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// 入口タイル（チェックイン/記録を開始）。大きな面で押しやすく、押下で沈み込む。
+    private func gateTile(title: String, caption: String, icon: String, primary: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(primary ? Theme.onLime : Theme.lime)
+                VStack(spacing: 1) {
+                    Text(title).font(.headline)
+                        .foregroundStyle(primary ? Theme.onLime : Theme.textPrimary)
+                    Text(caption).font(.caption2)
+                        .foregroundStyle(primary ? Theme.onLime.opacity(0.75) : Theme.textTertiary)
+                }
+            }
+            .lineLimit(1).minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Theme.Spacing.lg)
+            .background(primary ? Theme.limeFill : Theme.bg1,
+                        in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay {
+                if !primary {
+                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                        .strokeBorder(Theme.bg3, lineWidth: 1)
+                }
+            }
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
+    /// 補助導線の行カード（アイコン＋タイトル＋シェブロン）。
+    private func gateRowLabel(title: String, icon: String) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 24)
+            Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.textTertiary)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .contentShape(Rectangle())
+    }
+
+    private func gateRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { gateRowLabel(title: title, icon: icon) }
+            .buttonStyle(PressableButtonStyle())
     }
 
     /// 中断中の記録1件を再開/破棄するカード（開始日時＋内容の一部を表示）。
@@ -285,22 +350,35 @@ struct RecordContent: View {
     @State private var centersCache = CentersCache()
     @State private var showSummary = false
     @State private var showModePicker = false
-    @State private var showAddExercise = false
     @State private var editingExercise: Exercise?
     @State private var editingSet: ExerciseSet?
+    /// 編集シートの「このセットを削除」の遅延実行先。シートが完全に閉じてから削除する
+    /// （閉じアニメーション中に @Bindable の削除済みモデルへ body アクセスが走るとクラッシュし得るため）。
+    @State private var pendingDeleteSet: ExerciseSet?
     @State private var keypad: KeypadRequest?
-    /// フリーで「＋種目」から表向きに加えた種目（このタブ表示中だけ保持）。
-    @State private var freeAdded: Set<UUID> = []
-    @State private var jumpTarget: MuscleGroup?
     @State private var showOnboarding = false
     @State private var showCancelConfirm = false
     @State private var showMemo = false
     /// 録画中の暫定PRスパーク（その場の「更新ペース！」表示・非永続。確定は完了時）。
     @State private var prSpark: PRSpark?
-    /// フリーのカード（部位ごと）。種目数×完了履歴の関連走査が重いので毎描画ではなくキャッシュする。
-    @State private var freeGroups: [(MuscleGroup, [Exercise])] = []
-    /// 「よくやる種目」（直近60日の使用回数トップ10）。freeGroups と同時に再計算・キャッシュ。
+    /// フリーの選択中カテゴリタブ（③。よくやる/部位でカード一覧をフィルタ）。
+    @State private var selectedTab: RecordCategoryTab = .group(.chest)
+    /// 初期タブ決定済みフラグ（rebuild のたびに選択を上書きしない）。
+    @State private var tabInitialized = false
+    /// 「よくやる種目」（直近60日の使用回数トップ10）。rebuildCatalog で再計算・キャッシュ。
     @State private var frequentExercises: [Exercise] = []
+    /// 部位ごとの頻度トップ3（未カスタマイズタブの既定シェルフ用）。
+    @State private var groupRankedIds: [MuscleGroup: [UUID]] = [:]
+    /// 同名重複を除いた種目の解決表（id → Exercise）。シェルフ表示・削除済み種目のフィルタに使う。
+    @State private var exercisesById: [UUID: Exercise] = [:]
+    /// 正規化名 → 正準 id（定番プリセット名の解決・重複 id の正準化用）。
+    @State private var idsByName: [String: UUID] = [:]
+    /// デコード済みのカスタムシェルフ（保存は shelvesJSON へ）。
+    @State private var shelves = ExerciseShelves()
+    /// 「その他」ピッカーを開いている対象タブ。
+    @State private var pickingTarget: ShelfPickerTarget?
+
+    @AppStorage("gymnee.recordShelves") private var shelvesJSON = ""
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
@@ -327,6 +405,7 @@ struct RecordContent: View {
         VStack(spacing: 0) {
             modeBar
             logStrip
+            if mode == .free { categoryTabBar }
             cardsArea
         }
         .background(Theme.bg0)
@@ -363,12 +442,36 @@ struct RecordContent: View {
         // 除外対象（編集中ワークアウト）が変わると前回値の計算結果も変わるためキャッシュを捨てる。
         .onChange(of: activeWorkout?.id) { _, _ in centersCache.values.removeAll() }
         .sheet(isPresented: $showModePicker) { modePickerSheet }
-        .sheet(isPresented: $showAddExercise) {
-            AddExerciseView(onCreated: { ex in freeAdded.insert(ex.id) })
+        // 「その他」カード: その部位の種目ピッカー。選んだ/作った種目をタブへ永続追加する。
+        // 新規作成でフォーム上の部位を変えた場合は、その種目の部位タブへ追加して切り替える
+        // （開いていたタブに別部位の種目が居座らないように。一覧からの選択は常に同部位）。
+        .sheet(item: $pickingTarget) { target in
+            ExercisePickerView(
+                exercises: pickerExercises,
+                group: target.group,
+                onSelect: { ex in
+                    let group = ex.muscleGroup
+                    addToShelf(ex, group: group)
+                    if group != target.group { selectedTab = .group(group) }
+                }
+            )
         }
         // 種目編集（器具・計測タイプ変更）は centers の既定値に影響するため、閉じたらキャッシュを捨てる。
-        .sheet(item: $editingExercise, onDismiss: { centersCache.values.removeAll() }) { ex in ExerciseInspectorView(exercise: ex, userId: userId) }
-        .sheet(item: $editingSet) { set in EditSetSheet(set: set) { commitSetEdit(set) } }
+        // 種目編集（器具・計測タイプ変更）は centers の既定値に、部位・名前変更はタブの既定
+        // シェルフ/解決表に影響するため、閉じたらキャッシュ破棄＋カタログ再構築する
+        // （rebuild は種目数変化でしか走らないため、ここで明示的に呼ぶ）。
+        .sheet(item: $editingExercise, onDismiss: {
+            centersCache.values.removeAll()
+            rebuildCatalog()
+        }) { ex in ExerciseInspectorView(exercise: ex, userId: userId) }
+        .sheet(item: $editingSet, onDismiss: {
+            if let set = pendingDeleteSet {
+                pendingDeleteSet = nil
+                deleteSet(set)
+            }
+        }) { set in
+            EditSetSheet(set: set, onCommit: { commitSetEdit(set) }, onDelete: { pendingDeleteSet = set })
+        }
         .sheet(isPresented: $showMemo) {
             if let w = activeWorkout { WorkoutMemoSheet(workout: w) { try? context.save() } }
         }
@@ -380,6 +483,7 @@ struct RecordContent: View {
                 WorkoutSummaryView(
                     workout: w,
                     streak: currentStreak,
+                    weeklyCount: weeklyActiveDays,
                     // 投稿は明示同意（fail-closed）。バックエンド未接続・未サインインでは出さない。
                     postVisibilityLabel: (defaultVisibility == .private ? Visibility.friends : defaultVisibility).label,
                     onPost: (sync.isRemoteEnabled && auth.isPermanentAccount) ? { publishConsented(w) } : nil,
@@ -395,6 +499,7 @@ struct RecordContent: View {
             RecordOnboardingSheet { onboardingShown = true; showOnboarding = false }
         }
         .onAppear {
+            shelves = ExerciseShelves.decode(from: shelvesJSON)
             discardAbandonedDrafts()
             if let resuming, activeWorkout == nil {
                 activeWorkout = resuming
@@ -404,8 +509,8 @@ struct RecordContent: View {
                 if !onboardingShown { showOnboarding = true }
             }
         }
-        // フリーのカード群は種目数が変わった時だけ作り直す（毎描画の関連走査を避ける）。
-        .task(id: allExercises.count) { rebuildFreeGroups() }
+        // フリーのカードカタログは種目数が変わった時だけ作り直す（毎描画の関連走査を避ける）。
+        .task(id: allExercises.count) { rebuildCatalog() }
     }
 
     /// 中身の無い空の下書き(completedAt=nil)だけをローカル掃除する。
@@ -428,7 +533,7 @@ struct RecordContent: View {
         if changed { try? context.save() }
     }
 
-    // MARK: - ① モードバー + ③ カテゴリ
+    // MARK: - ① モードバー
 
     private var modeBar: some View {
         HStack(spacing: Theme.Spacing.sm) {
@@ -443,25 +548,41 @@ struct RecordContent: View {
                 .background(Theme.bg1, in: Capsule())
             }
             Spacer(minLength: 0)
-            if mode == .free, !freeGroups.isEmpty {
-                Menu {
-                    ForEach(freeGroups.map(\.0), id: \.self) { mg in
-                        Button(mg.label) { jumpTarget = mg }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "line.3.horizontal.decrease")
-                        Text("部位").font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(Theme.textSecondary)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Theme.bg1, in: Capsule())
-                }
-            }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
+    }
+
+    // MARK: - ③ カテゴリタブ
+
+    /// カテゴリタブ（フリーのみ・常時表示・横スクロール）。タップで下のカード一覧をフィルタする
+    /// （旧: 部位Menu によるスクロールジャンプ → 居酒屋オーダーUI式のタブフィルタへ変更）。
+    private var categoryTabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+                if !frequentExercises.isEmpty {
+                    tabChip(.frequent, label: "よくやる")
+                }
+                ForEach(MuscleGroup.allCases, id: \.self) { mg in
+                    tabChip(.group(mg), label: mg.label)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
+        }
+    }
+
+    private func tabChip(_ tab: RecordCategoryTab, label: String) -> some View {
+        let selected = selectedTab == tab
+        return Button { selectedTab = tab } label: {
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, 6)
+                .background(selected ? Theme.textPrimary : Theme.bg1, in: Capsule())
+                .foregroundStyle(selected ? Theme.bg0 : Theme.textSecondary)
+        }
+        .buttonStyle(.plain)
     }
 
     private var modeLabel: String {
@@ -474,86 +595,125 @@ struct RecordContent: View {
 
     // MARK: - ② 記録ログ
 
-    /// このセッションの全セット（タップ順＝createdAt 昇順）。
-    private var loggedSets: [ExerciseSet] {
-        (activeWorkout?.exercises.flatMap { $0.sets } ?? []).sorted { $0.createdAt < $1.createdAt }
+    /// 記録ログのグループ（1種目=1行）。行順は orderIndex 昇順＝初回セット記録順で安定させる
+    /// （セット追加で行が飛ばない）。セットは createdAt 昇順＝タップ順。
+    private var logGroups: [(we: WorkoutExercise, sets: [ExerciseSet])] {
+        (activeWorkout?.exercises ?? [])
+            .filter { !$0.sets.isEmpty }
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map { ($0, $0.sets.sorted { $0.createdAt < $1.createdAt }) }
     }
 
-    /// ② 記録ログ。常時表示（空ならプレースホルダ）。List なのでスワイプ削除・行タップ編集が効く。
+    /// セッションの総セット数（自動スクロールのトリガ判定に使う）。
+    private var loggedSetCount: Int {
+        activeWorkout?.exercises.reduce(0) { $0 + $1.sets.count } ?? 0
+    }
+
+    /// 最後に記録されたセット（取り消し対象・lime 強調・自動スクロール先）。
+    private var newestSet: ExerciseSet? {
+        activeWorkout?.exercises.flatMap(\.sets).max { $0.createdAt < $1.createdAt }
+    }
+
+    /// ② 記録ログ。種目でグルーピングし、セットは折返しチップで全量見せる（横スクロールなし）。
+    /// チップタップ＝編集シート（削除もそこから）。ヘッダー右上の「取り消し」＝直前の1セット削除。
+    @ViewBuilder
     private var logStrip: some View {
-        let sets = loggedSets   // flatMap+sort を1描画で1回だけに（空判定・行・高さで使い回す）。
-        return List {
-            if sets.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "list.bullet.rectangle").font(.caption)
-                    Text("記録するとここに溜まります").font(.caption)
-                }
-                .foregroundStyle(Theme.textTertiary)
-                .listRowBackground(Theme.bg1)
-                .listRowSeparator(.hidden)
-            } else {
-                ForEach(sets) { set in
-                    LogRowView(set: set)
-                        .listRowBackground(Theme.bg1)
-                        .contentShape(Rectangle())
-                        .onTapGesture { editingSet = set }
-                        .swipeActions { Button("削除", role: .destructive) { deleteSet(set) } }
-                }
+        let groups = logGroups
+        if groups.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "list.bullet.rectangle").font(.caption)
+                Text("記録するとここに溜まります").font(.caption)
+                Spacer(minLength: 0)
             }
+            .foregroundStyle(Theme.textTertiary)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(height: 52)
+            .background(Theme.bg1)
+        } else {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("記録ログ").font(.caption).foregroundStyle(Theme.textTertiary)
+                    Spacer()
+                    // 誤タップで余計なセットが記録された直後のミスを1タップで戻す。
+                    Button {
+                        if let last = newestSet { deleteSet(last) }
+                    } label: {
+                        Label("取り消し", systemImage: "arrow.uturn.backward")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.top, Theme.Spacing.sm)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                            ForEach(groups, id: \.we.id) { group in
+                                GroupedLogRow(
+                                    exerciseName: group.we.exercise?.name ?? "種目",
+                                    sets: group.sets,
+                                    latestSetId: newestSet?.id,
+                                    onTapSet: { editingSet = $0 }
+                                )
+                                .id(group.we.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.vertical, Theme.Spacing.sm)
+                    }
+                    // 新しいセットが記録されたら、その種目の行へ自動スクロール（削除では動かさない）。
+                    .onChange(of: loggedSetCount) { old, new in
+                        guard new > old, let target = newestSet?.workoutExercise?.id else { return }
+                        withAnimation(.snappy) { proxy.scrollTo(target, anchor: .bottom) }
+                    }
+                    // 下書き再開時：最後に記録した行が見える位置から始める。
+                    .onAppear {
+                        if let target = newestSet?.workoutExercise?.id {
+                            proxy.scrollTo(target, anchor: .bottom)
+                        }
+                    }
+                }
+                .frame(height: 150)
+            }
+            .background(Theme.bg1)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .frame(height: sets.isEmpty ? 52 : 160)
-        .background(Theme.bg1)
     }
 
     // MARK: - ④ カード
 
     @ViewBuilder
     private var cardsArea: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    switch mode {
-                    case .free:
-                        freeCardsBody
-                    case .plan, .routine:
-                        orderedCardsBody
-                    }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                switch mode {
+                case .free:
+                    freeCardsBody
+                case .plan, .routine:
+                    orderedCardsBody
                 }
-                .padding(Theme.Spacing.lg)
             }
-            .onChange(of: jumpTarget) { _, mg in
-                guard let mg else { return }
-                withAnimation(.smooth) { proxy.scrollTo(mg, anchor: .top) }
-                jumpTarget = nil
-            }
+            .padding(Theme.Spacing.lg)
         }
+        // タブ切替でスクロール位置を先頭へ戻す（フィルタなので前タブの位置を引き継がない）。
+        .id(selectedTab)
     }
 
-    /// フリー：よくやる種目（先頭固定）＋部位ごとの全種目。③でジャンプ。
+    /// フリー：選択中タブの種目カード。部位タブは「シェルフ」（既定=頻度トップ3→定番補完。
+    /// ユーザーが追加/削除でカスタマイズ可）＋末尾の「その他」カード。
     @ViewBuilder
     private var freeCardsBody: some View {
-        let grouped = freeGroups
-        if grouped.isEmpty {
-            emptyFreeState
-        } else {
-            // 毎回部位から探さなくて済むよう、直近60日でよく使う種目を最上部に固定する
-            // （3種目未満なら非表示＝新規ユーザーに空枠を見せない。カードの挙動は下と同一）。
-            if !frequentExercises.isEmpty {
-                Label("よくやる種目", systemImage: "clock.arrow.circlepath")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Theme.textSecondary)
-                cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
+        switch selectedTab {
+        case .frequent:
+            cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
+        case .group(let mg):
+            let shelf = shelfExercises(for: mg)
+            if shelf.isEmpty {
+                Text("このタブに種目がありません。「その他」から追加できます。")
+                    .font(.caption).foregroundStyle(Theme.textTertiary)
             }
-            ForEach(grouped, id: \.0) { mg, exercises in
-                Text(mg.label)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Theme.textSecondary)
-                    .id(mg)
-                cardGrid(exercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
-            }
-            addExerciseButton
+            shelfCardGrid(shelf.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) }, group: mg)
         }
     }
 
@@ -568,10 +728,26 @@ struct RecordContent: View {
         }
     }
 
+    private var gridColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: Theme.Spacing.md), GridItem(.flexible(), spacing: Theme.Spacing.md)]
+    }
+
     private func cardGrid(_ specs: [CardSpec]) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.md),
-                            GridItem(.flexible(), spacing: Theme.Spacing.md)],
-                  spacing: Theme.Spacing.md) {
+        LazyVGrid(columns: gridColumns, spacing: Theme.Spacing.md) {
+            cardCells(specs, onRemove: nil)
+        }
+    }
+
+    /// 部位タブのグリッド：シェルフの種目カード＋末尾の「その他」カード。カードは名前部の長押しでタブから外せる。
+    private func shelfCardGrid(_ specs: [CardSpec], group: MuscleGroup) -> some View {
+        LazyVGrid(columns: gridColumns, spacing: Theme.Spacing.md) {
+            cardCells(specs, onRemove: { removeFromShelf($0, group: group) })
+            otherCard(group)
+        }
+    }
+
+    @ViewBuilder
+    private func cardCells(_ specs: [CardSpec], onRemove: ((Exercise) -> Void)?) -> some View {
             ForEach(specs, id: \.exercise.id) { spec in
                 ExerciseCardView(
                     exercise: spec.exercise,
@@ -601,30 +777,67 @@ struct RecordContent: View {
                         keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .customReps, decimal: false, title: title)
                     },
                     onCustomDistance: { keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .distanceValue, decimal: true, title: "距離(km)を入力") },
-                    onOpen: { editingExercise = spec.exercise }
+                    onOpen: { editingExercise = spec.exercise },
+                    onRemove: onRemove.map { remove in { remove(spec.exercise) } }
                 )
             }
-        }
     }
 
-    private var addExerciseButton: some View {
-        Button { showAddExercise = true } label: {
-            Label("種目を追加", systemImage: "plus")
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Theme.Spacing.md)
-                .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+    /// 「その他」カード。タップで全種目ピッカーを開き、選んだ種目をこのタブへ永続追加する。
+    private func otherCard(_ group: MuscleGroup) -> some View {
+        Button { pickingTarget = ShelfPickerTarget(group: group) } label: {
+            VStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "magnifyingglass")
+                    .font(.title3).foregroundStyle(Theme.textSecondary)
+                Text("その他").font(.caption.weight(.bold)).foregroundStyle(Theme.textPrimary)
+                Text("種目を探す・追加").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 120)
+            .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .strokeBorder(Theme.textTertiary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            }
         }
         .buttonStyle(.plain)
-        .tint(Theme.lime)
     }
 
-    private var emptyFreeState: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            EmptyStateView(systemImage: "dumbbell", title: "種目を追加して始めよう",
-                           message: "「種目を追加」から選ぶと、ここにカードが並びます。")
-            addExerciseButton
+    // MARK: - シェルフ（タブごとの表示種目）
+
+    /// タブに表示する種目。カスタマイズ済みならそれ（削除済み種目は読み時に除外）、
+    /// 未カスタマイズなら既定（部位別頻度トップ3→定番プリセット補完）。
+    private func shelfExercises(for group: MuscleGroup) -> [Exercise] {
+        let ids: [UUID]
+        if let stored = shelves.shelf(for: group) {
+            ids = ExerciseShelf.resolve(stored: stored, existing: Set(exercisesById.keys))
+        } else {
+            let standards = ExerciseShelf.standardNames[group, default: []]
+                .compactMap { idsByName[$0.lowercased()] }
+            ids = ExerciseShelf.defaultIds(frequencyRanked: groupRankedIds[group] ?? [], standards: standards)
         }
+        return ids.compactMap { exercisesById[$0] }
+    }
+
+    private func addToShelf(_ exercise: Exercise, group: MuscleGroup) {
+        // 同名別id の重複がある種目は、表示解決に使う正準の id に揃えてから保存する
+        // （非正準の id を保存すると resolve で除外され「追加したのに出ない」になる）。
+        let id = idsByName[exercise.normalizedName] ?? exercise.id
+        var updated = shelves
+        updated.add(id, to: group, current: shelfExercises(for: group).map(\.id))
+        shelves = updated
+        shelvesJSON = updated.encoded()
+    }
+
+    private func removeFromShelf(_ exercise: Exercise, group: MuscleGroup) {
+        var updated = shelves
+        updated.remove(exercise.id, from: group, current: shelfExercises(for: group).map(\.id))
+        shelves = updated
+        shelvesJSON = updated.encoded()
+    }
+
+    /// ピッカーに渡す全種目（同名重複を解決済み・名前順）。
+    private var pickerExercises: [Exercise] {
+        exercisesById.values.sorted { $0.name < $1.name }
     }
 
     // MARK: - ⑤ タイマー
@@ -758,16 +971,14 @@ struct RecordContent: View {
         }
     }
 
-    /// フリーのカード：部位ごとにまとめた配列。仕様書「最近中心＋全種目」。
-    /// セッション中はカード順を固定する：先頭に置く「最近」は完了済み履歴のある種目のみで判定し、
-    /// 記録途中の下書きでは並べ替えない（記録してもカードが動かない／完了後の次回に順序が更新される）。
-    private func rebuildFreeGroups() {
+    /// フリーのカード表示に使う種目カタログの再構築（種目数が変わった時だけ）。
+    /// 同名別id の重複（プリセットが同期で増殖するケース等）は履歴のある方を優先して1つにまとめ、
+    /// 「よくやる」ランキング・部位別頻度・解決表（id/名前）を作る。
+    private func rebuildCatalog() {
         let recent = allExercises.filter { ex in
             ex.workoutExercises.contains { $0.workout?.userId == userId && $0.workout?.completedAt != nil && !$0.sets.isEmpty }
         }
         var seenIds = Set<UUID>()
-        // 同名別id の重複種目（プリセットが同期で増殖するケース等）を1枚にまとめる。
-        // recent（履歴のある方）を先に処理するので、記録済みの種目を優先して残す。
         var seenNames = Set<String>()
         var ordered: [Exercise] = []
         func addIfNew(_ ex: Exercise) {
@@ -776,14 +987,13 @@ struct RecordContent: View {
             seenNames.insert(nameKey)
             ordered.append(ex)
         }
-        // ①最近中心（完了済み履歴のある種目）を先頭に。
+        // 履歴のある種目を先に処理する（重複時に記録済みの id を正準として残す）。
         for ex in recent { addIfNew(ex) }
-        // ②残りの全種目を名前順（allExercises は @Query で name ソート済み）で追加。
         for ex in allExercises { addIfNew(ex) }
-        freeGroups = MuscleGroup.allCases.compactMap { mg in
-            let items = ordered.filter { $0.muscleGroup == mg }
-            return items.isEmpty ? nil : (mg, items)
-        }
+
+        exercisesById = Dictionary(uniqueKeysWithValues: ordered.map { ($0.id, $0) })
+        idsByName = Dictionary(ordered.map { ($0.normalizedName, $0.id) }, uniquingKeysWith: { first, _ in first })
+
         // 「よくやる種目」: dedupe 済みの ordered を対象に、完了ワークアウトの日付を集計してランク。
         let usage: [UUID: [Date]] = Dictionary(uniqueKeysWithValues: ordered.compactMap { ex in
             let dates = ex.workoutExercises.compactMap { we -> Date? in
@@ -793,8 +1003,21 @@ struct RecordContent: View {
             return dates.isEmpty ? nil : (ex.id, dates)
         })
         let rankedIds = FrequentExerciseRanker.rank(usage: usage, asOf: .now)
-        let byId = Dictionary(uniqueKeysWithValues: ordered.map { ($0.id, $0) })
-        frequentExercises = rankedIds.compactMap { byId[$0] }
+        frequentExercises = rankedIds.compactMap { exercisesById[$0] }
+
+        // 部位別の頻度トップ3（未カスタマイズタブの既定シェルフ用）。少数でも返す（minExercises: 0）。
+        groupRankedIds = Dictionary(uniqueKeysWithValues: MuscleGroup.allCases.map { mg in
+            let filtered = usage.filter { exercisesById[$0.key]?.muscleGroup == mg }
+            return (mg, FrequentExerciseRanker.rank(usage: filtered, asOf: .now, limit: 3, minExercises: 0))
+        })
+
+        // 初期タブ：履歴があれば「よくやる」、無ければ胸。よくやるが消えた場合も部位へ退避。
+        if !tabInitialized {
+            selectedTab = frequentExercises.isEmpty ? .group(.chest) : .frequent
+            tabInitialized = true
+        } else if frequentExercises.isEmpty, selectedTab == .frequent {
+            selectedTab = .group(.chest)
+        }
     }
 
     // MARK: - 記録アクション
@@ -1074,7 +1297,6 @@ struct RecordContent: View {
         repCenters = [:]
         durCenters = [:]
         distCenters = [:]
-        freeAdded = []
         // カレンダータブへ切替え、タブのゲート/pushed view を閉じる。
         NotificationCenter.default.post(name: .gymneeShowCalendar, object: nil)
         // タブ起点（チェックイン/計画開始）はゲートへ戻す。カレンダーからの過去編集 push は閉じる。
@@ -1090,7 +1312,6 @@ struct RecordContent: View {
         repCenters = [:]
         durCenters = [:]
         distCenters = [:]
-        freeAdded = []
         modeInitialized = false
         initializeModeIfNeeded()
     }
@@ -1117,13 +1338,37 @@ struct RecordContent: View {
         return String(format: "%d:%02d", secs / 60, secs % 60)
     }
 
-    private var currentStreak: Int {
+    /// 連続記録・週次進捗の元になる活動日（来店＋完了ワークアウト）。
+    /// サマリーは finish() 後に出るため、いま完了したワークアウト自身も含まれる。
+    private var activeDays: [Date] {
         let uid = userId
         let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == uid }))) ?? []
         let completed = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil }))) ?? []
-        let days = visits.map(\.visitedAt) + completed.map { $0.completedAt ?? $0.date }
-        return StreakCalculator.currentStreak(visitDays: days, calendar: .current)
+        return visits.map(\.visitedAt) + completed.map { $0.completedAt ?? $0.date }
     }
+
+    private var currentStreak: Int {
+        StreakCalculator.currentStreak(visitDays: activeDays, calendar: .current)
+    }
+
+    /// 今週のアクティブ日数（サマリーの週次ゴールタイル「3/5」の分子）。
+    private var weeklyActiveDays: Int {
+        StreakCalculator.weeklyVisitDays(visitDays: activeDays)
+    }
+}
+
+// MARK: - カテゴリタブ
+
+/// フリーのカテゴリタブ（③）。よくやる＋部位でカード一覧をフィルタする。
+private enum RecordCategoryTab: Hashable {
+    case frequent
+    case group(MuscleGroup)
+}
+
+/// 「その他」ピッカーを開く対象タブ（sheet(item:) 用）。
+private struct ShelfPickerTarget: Identifiable {
+    let group: MuscleGroup
+    var id: String { group.rawValue }
 }
 
 // MARK: - カード仕様
@@ -1156,6 +1401,8 @@ private struct ExerciseCardView: View {
     let onCustomReps: () -> Void
     let onCustomDistance: () -> Void
     let onOpen: () -> Void
+    /// タブ（シェルフ）からこの種目を外す。フリーの部位タブのみ渡される（nil＝メニュー非表示）。
+    var onRemove: (() -> Void)? = nil
 
     /// 自重のみ（重量軸を出さない）。
     private var bodyweightOnly: Bool {
@@ -1165,29 +1412,43 @@ private struct ExerciseCardView: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
             topRuler
-            // 名前部（ウェイト/回数のルーラー以外）をタップ → 種目インスペクタへ遷移。
-            VStack(spacing: 1) {
-                Text(exercise.name)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                if exercise.measurementType == .weight, exercise.weightMode != .none {
-                    Text(exercise.weightMode.label).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
-                } else if exercise.measurementType == .bodyweight {
-                    Text(exercise.loadMode.loadAxisLabel).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
-                } else if exercise.measurementType == .cardio {
-                    Text("距離 · 時間").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Theme.Spacing.sm)
-            .contentShape(Rectangle())
-            .onTapGesture { onOpen() }
+            nameBlock
             bottomRuler
         }
         .frame(maxWidth: .infinity)
         .padding(Theme.Spacing.md)
         .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+    }
+
+    /// 名前部（ウェイト/回数のルーラー以外）。タップ＝種目インスペクタ / 長押し＝タブから外す。
+    /// contextMenu はカード全体でなく名前部に限定する（ルーラーの長押しキーパッドと競合するため）。
+    @ViewBuilder private var nameBlock: some View {
+        let base = VStack(spacing: 1) {
+            Text(exercise.name)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            if exercise.measurementType == .weight, exercise.weightMode != .none {
+                Text(exercise.weightMode.label).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+            } else if exercise.measurementType == .bodyweight {
+                Text(exercise.loadMode.loadAxisLabel).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+            } else if exercise.measurementType == .cardio {
+                Text("距離 · 時間").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Theme.Spacing.sm)
+        .contentShape(Rectangle())
+        .onTapGesture { onOpen() }
+        if let onRemove {
+            base.contextMenu {
+                Button(role: .destructive, action: onRemove) {
+                    Label("このタブから外す", systemImage: "minus.circle")
+                }
+            }
+        } else {
+            base
+        }
     }
 
     /// 上段ルーラー：ウェイト=重量 / 時間=秒 / 有酸素=距離。自重のみは無し。
@@ -1333,26 +1594,38 @@ private struct SlotRuler: View {
     }
 }
 
-// MARK: - ② ログ行
+// MARK: - ② ログ行（1種目=1行・折返しチップ）
 
-private struct LogRowView: View {
-    let set: ExerciseSet
+private struct GroupedLogRow: View {
+    let exerciseName: String
+    /// createdAt 昇順のセット列。
+    let sets: [ExerciseSet]
+    /// セッション全体の最新セット（完了直後の1件だけ lime で強調）。
+    let latestSetId: UUID?
+    let onTapSet: (ExerciseSet) -> Void
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            Text(set.workoutExercise?.exercise?.name ?? "種目")
-                .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(1)
-            Spacer(minLength: Theme.Spacing.sm)
-            Text(detail).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textSecondary)
-            Text(set.createdAt, format: .dateTime.hour().minute())
-                .font(.caption2).foregroundStyle(Theme.textTertiary)
-            // 行タップで編集できることを示すアフォーダンス（タップ＝編集 / 左スワイプ＝削除）。
-            Image(systemName: "square.and.pencil")
-                .font(.caption).foregroundStyle(Theme.textTertiary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Text(exerciseName)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+            FlowLayout(spacing: 6) {
+                ForEach(sets) { set in
+                    Button { onTapSet(set) } label: {
+                        Text(set.detailText)
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(Theme.textPrimary)
+                            .padding(.horizontal, Theme.Spacing.sm)
+                            .padding(.vertical, 3)
+                            .background(set.id == latestSetId ? Theme.limeSoft : Theme.bg2,
+                                        in: RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
-
-    private var detail: String { self.set.detailText }
 }
 
 // MARK: - キーパッド
@@ -1450,6 +1723,8 @@ private struct SlotKeypadSheet: View {
 private struct EditSetSheet: View {
     @Bindable var set: ExerciseSet
     let onCommit: () -> Void
+    /// このセットを削除する（ログのチップから開いた時のみ渡す）。
+    var onDelete: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var weightText = ""
@@ -1477,6 +1752,14 @@ private struct EditSetSheet: View {
                 } else {
                     LabeledContent("重量(kg)") { TextField("重量", text: $weightText).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
                     LabeledContent("回数") { TextField("回数", text: $repsText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
+                }
+                if let onDelete {
+                    Button(role: .destructive) {
+                        onDelete()
+                        dismiss()
+                    } label: {
+                        Label("このセットを削除", systemImage: "trash")
+                    }
                 }
             }
             .navigationTitle("セットを編集").navigationBarTitleDisplayMode(.inline)
@@ -1514,7 +1797,7 @@ private struct EditSetSheet: View {
                 minutesText = String((set.durationSeconds ?? 0) / 60)
             }
         }
-        .presentationDetents([.height(220)])
+        .presentationDetents([.height(onDelete == nil ? 220 : 280)])
     }
 }
 
@@ -1562,12 +1845,14 @@ private struct RecordOnboardingSheet: View {
     let onDone: () -> Void
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.xl) {
+        VStack(spacing: Theme.Spacing.lg) {
             Spacer(minLength: 0)
             Image(systemName: "hand.tap.fill")
-                .font(.system(size: 44)).foregroundStyle(Theme.lime)
+                .font(.system(size: 40)).foregroundStyle(Theme.lime)
             Text("タップで記録")
                 .font(.title2.bold()).foregroundStyle(Theme.textPrimary)
+            // 実際の種目カードを模した説明図（文字だけより一目で伝わる・ユーザー要望）。
+            mockCard
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 onboardRow("1", "重量をタップして固定し、回数をタップすると1セット記録されます。")
                 onboardRow("2", "重量を変えたい時は別の重量をタップ。範囲外の値は長押しで入力できます。")
@@ -1585,6 +1870,66 @@ private struct RecordOnboardingSheet: View {
         .padding(Theme.Spacing.xl)
         .background(Theme.bg0)
         .interactiveDismissDisabled()
+    }
+
+    /// 種目カードの説明図（静的・タップ不可）。①重量スロット→②回数スロットの操作を番号で対応づける。
+    private var mockCard: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: 6) {
+                stepBadge("1")
+                Text("重量をタップして固定").font(.caption).foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 0)
+            }
+            mockRuler(values: ["57.5", "60", "62.5"], centerStyle: .armed)
+            Text("ベンチプレス")
+                .font(.caption.weight(.bold)).foregroundStyle(Theme.textPrimary)
+            mockRuler(values: ["9", "10", "11"], centerStyle: .action)
+            HStack(spacing: 6) {
+                stepBadge("2")
+                Text("回数をタップ → 1セット記録").font(.caption).foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .strokeBorder(Theme.lime.opacity(0.35), lineWidth: 1)
+        }
+    }
+
+    private enum MockCenterStyle { case armed, action }
+
+    /// SlotRuler の見た目を模した3セル（中央＝選択状態）。
+    private func mockRuler(values: [String], centerStyle: MockCenterStyle) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                let isCenter = index == 1
+                Text(value)
+                    .font(.subheadline.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 34)
+                    .background(
+                        isCenter ? (centerStyle == .armed ? Theme.limeFill : Theme.limeSoft) : Theme.bg2,
+                        in: RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    )
+                    .overlay {
+                        if isCenter, centerStyle == .action {
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm).strokeBorder(Theme.lime.opacity(0.6), lineWidth: 1)
+                        }
+                    }
+                    .foregroundStyle(
+                        isCenter ? (centerStyle == .armed ? Theme.onLime : Theme.lime) : Theme.textSecondary
+                    )
+                    .opacity(isCenter ? 1 : 0.5)
+            }
+        }
+    }
+
+    private func stepBadge(_ num: String) -> some View {
+        Text(num)
+            .font(.caption.bold()).foregroundStyle(Theme.onLime)
+            .frame(width: 20, height: 20).background(Theme.lime, in: Circle())
     }
 
     private func onboardRow(_ num: String, _ text: String) -> some View {

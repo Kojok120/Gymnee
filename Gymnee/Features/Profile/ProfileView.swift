@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// マイページ（§5 Profile）。自分のデータ（写真・身体・分析）と設定への集約導線。
+/// マイページ（§5 Profile）。自分のデータ（写真・身体・実績・まとめ）の集約導線。
+/// 設定は「その他」タブへ切り出した（プロフィール＝自分のデータ、その他＝アプリ機能、の役割分担）。
 /// ソーシャル（フォロー/フィード）は P6 で Social タブ側に実装する。
 struct ProfileView: View {
     let userId: UUID
@@ -153,10 +154,6 @@ struct ProfileView: View {
                     Label("\(Calendar.current.component(.year, from: .now)) のまとめ", systemImage: "sparkles")
                         .foregroundStyle(Theme.lime)
                 }
-            }
-
-            Section {
-                NavigationLink(value: AppRoute.settings) { Label("設定", systemImage: "gearshape") }
             }
         }
         .navigationTitle("マイページ")

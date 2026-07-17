@@ -2,12 +2,15 @@ import SwiftUI
 import SwiftData
 
 /// ワークアウト完了サマリー（達成レイヤー / 監査T1a）。
-/// 「やり切った瞬間」を無音で終わらせず、総ボリューム/セット/時間/PRを祝い、
-/// 共有・分析・閉じるの次アクションへ分岐させる。
+/// 「やり切った瞬間」を無音で終わらせず、連続日数/週次進捗/総量/時間とPR・メニューを祝い、
+/// 投稿・共有・分析・閉じるの次アクションへ分岐させる。
+/// **1画面に収める**：ページ全体はスクロールさせず、メニュー一覧だけがカード内部でスクロールする。
 /// PR を更新した時だけ紙吹雪＋計測タイプ別トロフィーで特別に祝う（普段は静かに完了）。
 struct WorkoutSummaryView: View {
     let workout: Workout
     let streak: Int
+    /// 今週のアクティブ日数（来店＋完了ワークアウト。週次ゴールタイル「3/5」の分子）。
+    let weeklyCount: Int
     /// 投稿ボタンの公開範囲表示（例: "フレンド"）。onPost が nil なら未使用。
     var postVisibilityLabel: String = ""
     /// 「ソーシャルに投稿」の明示同意アクション（fail-closed）。nil＝非表示（ゲスト/ローカルのみ）。
@@ -19,16 +22,13 @@ struct WorkoutSummaryView: View {
     @State private var showShare = false
     @State private var showTimeEdit = false
     @State private var posted = false
+    /// 週次ゴール（カレンダー/設定と同じキー）。達成判定 weeklyCount >= weeklyGoal に使う。
+    @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
 
-    private var workingSets: [ExerciseSet] {
-        workout.exercises.flatMap(\.sets)
-    }
     private var totalVolume: Int {
-        let v = workingSets.reduce(0) { $0 + $1.volume }
+        let v = workout.exercises.flatMap(\.sets).reduce(0) { $0 + $1.volume }
         return v.isFinite ? Int(v) : 0   // 非有限混入時も Int(∞) でトラップしない
     }
-    private var totalSets: Int { workingSets.count }
-    private var exerciseCount: Int { workout.exercises.count }
 
     /// このワークアウトで更新した PR（種目×計測タイプ）。
     /// 完了時に upsertPR が PersonalRecord.workoutId = workout.id をセットするのを利用する。
@@ -58,16 +58,15 @@ struct WorkoutSummaryView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: Theme.Spacing.lg) {
-                    header
-                    if hasPR { prTrophies }
-                    statGrid
-                    todayMenu
-                    actions
-                }
-                .padding(Theme.Spacing.lg)
+            VStack(spacing: Theme.Spacing.md) {
+                header
+                statTiles
+                if hasPR { prStrip }
+                menuCard
+                actions
             }
+            .padding(Theme.Spacing.lg)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.bg0)
             .overlay(alignment: .top) {
                 if hasPR && appeared { ConfettiView().transition(.opacity) }
@@ -88,20 +87,21 @@ struct WorkoutSummaryView: View {
         }
     }
 
+    /// ヘッダー（コンパクト）。連続日数はタイルへ移し、アイコン＋名前＋ねぎらいの3要素に絞る。
     private var header: some View {
         VStack(spacing: Theme.Spacing.sm) {
             ZStack {
                 if hasPR {
                     Circle()
                         .fill(Theme.celebration)
-                        .frame(width: 88, height: 88)
-                        .shadow(color: Theme.limeGlow, radius: 20, y: 6)
+                        .frame(width: 72, height: 72)
+                        .shadow(color: Theme.limeGlow, radius: 16, y: 4)
                     Image(systemName: "trophy.fill")
-                        .font(.system(size: 40, weight: .bold))
+                        .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(Theme.onLime)
                 } else {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 56))
+                        .font(.system(size: 44))
                         .foregroundStyle(Theme.lime)
                 }
             }
@@ -110,18 +110,13 @@ struct WorkoutSummaryView: View {
 
             Text(workout.name).font(.title3.bold()).foregroundStyle(Theme.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
-            if streak > 0 {
-                Label("\(streak)日連続", systemImage: "flame.fill")
-                    .font(.subheadline.bold()).foregroundStyle(Theme.warning)
-            }
             Text(appreciationMessage)
-                .font(.subheadline)
+                .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
-                .padding(.top, 2)
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, Theme.Spacing.md)
     }
 
     /// 労いのひとこと。内容（PR/連続日数）で出し分ける（乱数は使わず決定的）。
@@ -131,96 +126,97 @@ struct WorkoutSummaryView: View {
         return "今日もお疲れさま。この1回が確実に積み重なっていく。"
     }
 
-    /// 今日のメニュー一覧（種目ごとのセット内訳）。フィードカードと同じ表記で並べる。
-    @ViewBuilder private var todayMenu: some View {
-        let items = workout.exercises
-            .filter { !$0.sets.isEmpty }
-            .sorted { $0.orderIndex < $1.orderIndex }
-        if !items.isEmpty {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Label("今日のメニュー", systemImage: "list.bullet.rectangle.fill")
-                    .font(.subheadline.bold()).foregroundStyle(Theme.textSecondary)
-                ForEach(items) { we in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(we.exercise?.name ?? "種目")
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                        Text(we.sets.sorted { $0.setIndex < $1.setIndex }.map(\.detailText).joined(separator: " / "))
-                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Theme.Spacing.md)
-            .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+    /// スタットタイル1行（連続 / 今週 / 総量 / 時間）。今週は週次ゴール達成で lime。
+    private var statTiles: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            tile("連続", "\(streak)日")
+            tile("今週", "\(weeklyCount)/\(weeklyGoal)",
+                 valueColor: weeklyCount >= weeklyGoal ? Theme.lime : Theme.textPrimary)
+            tile("総量", "\(totalVolume.formatted())kg")
+            durationTile
         }
     }
 
-    /// 獲得トロフィーの並び。横スクロールで計測タイプ別バッジが順に立ち上がる。
-    private var prTrophies: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Label("獲得トロフィー", systemImage: "medal.fill")
-                .font(.subheadline.bold()).foregroundStyle(Theme.lime)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                    ForEach(Array(prs.enumerated()), id: \.element.id) { idx, pr in
-                        PRTrophyBadge(type: pr.type, value: pr.value, exerciseName: pr.exerciseName, index: idx)
-                    }
-                }
-                .padding(.horizontal, 2)
-                .padding(.vertical, Theme.Spacing.sm)
-            }
+    private func tile(_ label: String, _ value: String, valueColor: Color = Theme.textPrimary) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.title3.bold().monospacedDigit()).foregroundStyle(valueColor)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(label).font(.caption2).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.md)
-        .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(Theme.lime.opacity(0.4), lineWidth: 1)
-        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
     }
 
-    private var statGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Theme.Spacing.md) {
-            stat("種目", "\(exerciseCount)")
-            stat("セット", "\(totalSets)")
-            stat("総ボリューム", "\(totalVolume) kg")
-            durationStat
-        }
-    }
-
-    /// 所要時間セル。まとめて後入力した場合はライブ経過が実態と合わないため、
+    /// 時間タイル。まとめて後入力した場合はライブ経過が実態と合わないため、
     /// タップで開始時刻・所要時間を手動修正できるようにする（未計測は「—」）。
-    private var durationStat: some View {
+    private var durationTile: some View {
         Button { showTimeEdit = true } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 Text(durationText ?? "—")
-                    .font(.title2.bold().monospacedDigit()).foregroundStyle(Theme.textPrimary)
+                    .font(.title3.bold().monospacedDigit()).foregroundStyle(Theme.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.6)
-                HStack(spacing: 4) {
-                    Text("所要時間").font(.caption).foregroundStyle(.secondary)
-                    Image(systemName: "pencil").font(.caption2).foregroundStyle(Theme.textSecondary)
+                HStack(spacing: 2) {
+                    Text("時間").font(.caption2).foregroundStyle(.secondary)
+                    Image(systemName: "pencil").font(.system(size: 8)).foregroundStyle(Theme.textTertiary)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(Theme.Spacing.md)
-            .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
     }
 
-    private func stat(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 4) {
-            Text(value).font(.title2.bold().monospacedDigit()).foregroundStyle(Theme.textPrimary)
-                .lineLimit(1).minimumScaleFactor(0.6)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+    /// PR バッジ帯（PR時のみ）。1画面レイアウトを守るためカード枠なしの横スクロールに絞る。
+    private var prStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                ForEach(Array(prs.enumerated()), id: \.element.id) { idx, pr in
+                    PRTrophyBadge(type: pr.type, value: pr.value, exerciseName: pr.exerciseName, index: idx)
+                }
+            }
+            .padding(.horizontal, 2)
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    private var menuItems: [WorkoutExercise] {
+        workout.exercises.filter { !$0.sets.isEmpty }.sorted { $0.orderIndex < $1.orderIndex }
+    }
+
+    /// 今日のメニュー。残り高さを使い、溢れる分はカード内部だけスクロールする（画面全体は固定）。
+    /// PR を出した種目にはトロフィーを添える（バッジ帯と合わせた2層目のコンパクト表示）。
+    private var menuCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Label("今日のメニュー", systemImage: "list.bullet.rectangle.fill")
+                .font(.subheadline.bold()).foregroundStyle(Theme.textSecondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    ForEach(menuItems) { we in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text(we.exercise?.name ?? "種目")
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                                if we.sets.contains(where: \.isPR) {
+                                    Image(systemName: "trophy.fill").font(.caption2).foregroundStyle(Theme.lime)
+                                }
+                            }
+                            Text(we.sets.sorted { $0.setIndex < $1.setIndex }.map(\.detailText).joined(separator: " / "))
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
         .padding(Theme.Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 
     private var actions: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: Theme.Spacing.sm) {
             // 投稿は明示同意（fail-closed）。押さなければ非公開のまま（後から投稿メニューで公開可）。
             if let onPost {
                 Button {
@@ -237,25 +233,28 @@ struct WorkoutSummaryView: View {
                 Text(posted ? "フィードに公開されました。" : "公開範囲: \(postVisibilityLabel)。押さなければ非公開のままです。")
                     .font(.caption2).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
-            }
-            // 投稿ボタンが無い（ゲスト/ローカルのみ）時は従来どおり共有カードを主ボタンにする。
-            if onPost == nil {
+                // 副アクションは横並びで1段に収める（1画面レイアウト）。
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button { showShare = true } label: {
+                        Label("共有カード", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+                    }
+                    Button { onAnalytics() } label: {
+                        Label("分析", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(.bordered)
+            } else {
+                // 投稿ボタンが無い（ゲスト/ローカルのみ）時は従来どおり共有カードを主ボタンにする。
                 Button { showShare = true } label: {
                     Label("共有カードを作る", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent).prominentLime().controlSize(.large)
-            } else {
-                Button { showShare = true } label: {
-                    Label("共有カードを作る", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+                Button { onAnalytics() } label: {
+                    Label("分析を見る", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered).controlSize(.large)
+                .buttonStyle(.bordered)
             }
-            Button { onAnalytics() } label: {
-                Label("分析を見る", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered).controlSize(.large)
         }
-        .padding(.top, Theme.Spacing.sm)
     }
 }
 

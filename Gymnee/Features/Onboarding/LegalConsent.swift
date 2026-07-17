@@ -9,10 +9,10 @@ enum LegalLinks {
 
 /// サインイン導線に添える規約同意フッター。
 /// App Store ガイドライン1.2（UGC）は「登録・ログインの前に EULA / 利用規約を提示する」ことを求めるため、
-/// 各サインイン導線（OnboardingView / BackendSignInButtons）にこのフッターを置く。
+/// サインイン導線（BackendSignInButtons）にこのフッターを置く。
 /// 利用規約・プライバシーポリシーはタップで開き、離脱せずアプリ内 SafariView に表示する。
 struct LegalAgreementFooter: View {
-    /// 表示先の背景に応じた配色。onDark は常時ダーク背景（Onboarding のヒーロー）、
+    /// 表示先の背景に応じた配色。onDark は常時ダーク背景、
     /// adaptive はシステム背景（サインイン促しシート）でライト/ダークに追従する。
     enum Appearance {
         case onDark

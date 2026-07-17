@@ -1,16 +1,19 @@
 import SwiftUI
+import SwiftData
 
 enum AppTab: Hashable {
     case calendar, workout, social, analytics, other
 }
 
-/// アプリのルート。未ログインは Onboarding、ログイン済みはタブ骨格を表示する（§5）。
-/// 中央の「チェックイン」タブは選択時にフルスクリーンのチェックインフローを起動する（§6.3）。
+/// アプリのルート。サインインウォールは置かず、未サインインなら**ゲスト（ローカル）で即開始**する（§5）。
+/// いきなりサインイン要求は価値を体験する前の離脱要因になるため、サインインは
+/// ソーシャル/AI計画/設定のバックエンド必須導線（BackendSignInButtons 等）から後付けする。
+/// 起動直後は「記録」タブ（記録開始とチェックインの入口）を表示する。
 struct RootView: View {
     @Environment(AuthService.self) private var auth
     @Environment(AppErrorCenter.self) private var errors
     @Environment(\.modelContext) private var context
-    @State private var selection: AppTab = .calendar
+    @State private var selection: AppTab = .workout
     @AppStorage("gymnee.setupDone") private var setupDone = false
     #if DEBUG
     @State private var debugWorkout: Workout?
@@ -18,22 +21,36 @@ struct RootView: View {
     #endif
 
     var body: some View {
-        Group {
-            if auth.isSignedIn {
-                signedInContent
-            } else {
-                OnboardingView()
+        signedInContent
+            .task {
+                // DEBUG デモのサインイン（ユウト）を先に通し、それ以外はゲストで自動開始。
+                await runDebugHarnessIfNeeded()
+                // 再インストール直後は Keychain にバックエンドセッションが残っていることがある。
+                // 復元前にゲストを発行するとその窓の記録が新ゲスト uid の孤児になるため、
+                // 復元（成功/失敗）を待ってから判定する（restore はシングルフライトで多重実行されない）。
+                if !auth.isSignedIn, auth.hasPersistedBackendSession {
+                    await auth.restoreBackendSession()
+                }
+                ensureGuestSession()
             }
-        }
-        .animation(.default, value: auth.isSignedIn)
-        .task { await runDebugHarnessIfNeeded() }
-        // テキスト入力以外をタップしたらキーボードを閉じる（全画面共通の操作規約）。
-        .onAppear { KeyboardDismissal.installIfNeeded() }
-        .alert("エラー", isPresented: Bindable(errors).isPresented, presenting: errors.message) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { msg in
-            Text(msg)
-        }
+            // サインアウト後もウォールへ戻さず、新しいゲストで続行（再サインインは設定から）。
+            .onChange(of: auth.isSignedIn) { _, signedIn in
+                if !signedIn { ensureGuestSession() }
+            }
+            // テキスト入力以外をタップしたらキーボードを閉じる（全画面共通の操作規約）。
+            .onAppear { KeyboardDismissal.installIfNeeded() }
+            .alert("エラー", isPresented: Bindable(errors).isPresented, presenting: errors.message) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { msg in
+                Text(msg)
+            }
+    }
+
+    /// 未サインインならゲスト（ローカル）セッションを自動開始する。
+    /// 記録は端末に保存され、後からのサインイン時に IdentityAdoptionPolicy が引き継ぐ。
+    private func ensureGuestSession() {
+        guard !auth.isSignedIn else { return }
+        auth.signIn(displayName: "")
     }
 
     @ViewBuilder
@@ -94,9 +111,34 @@ struct RootView: View {
         case "share":
             ShareCardEditorView(content: ShareCardContent(
                 image: nil, gymName: "Gymnee 渋谷", streak: 3,
-                prText: "ベンチ 80kg", exerciseSummary: "胸・三頭 3種目"
+                prText: "PR 2", exerciseSummary: "胸・三頭 3種目",
+                exerciseLines: [
+                    ShareCardExerciseLine(name: "ベンチプレス", detail: "80kg × 8・3セット", isPR: true),
+                    ShareCardExerciseLine(name: "インクラインダンベルプレス", detail: "28kg × 10・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "ケーブルクロスオーバー", detail: "20kg × 12・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "スカルクラッシャー", detail: "30kg × 10・3セット", isPR: true),
+                    ShareCardExerciseLine(name: "プッシュアップ", detail: "自重 × 15・2セット", isPR: false),
+                    ShareCardExerciseLine(name: "プランク", detail: "60秒・2セット", isPR: false),
+                    ShareCardExerciseLine(name: "サイドレイズ", detail: "8kg × 15・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "ラットプルダウン", detail: "65kg × 10・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "シーテッドロー", detail: "55kg × 12・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "レッグプレス", detail: "160kg × 10・3セット", isPR: false),
+                    ShareCardExerciseLine(name: "カーフレイズ", detail: "自重 × 20・2セット", isPR: false),
+                ],
+                stats: [
+                    ShareCardStat(value: "7,470kg", label: "総量"),
+                    ShareCardStat(value: "19", label: "セット"),
+                    ShareCardStat(value: "52分", label: "時間"),
+                ]
             ))
         case "workout", "record": RecordView()
+        case "calendar": CalendarHomeView()
+        case "other": OtherTabView(userId: userId)
+        case "summary":
+            // 完了サマリーの検証用：デモの最新完了ワークアウトを表示（週次はゴール達成状態）。
+            if let w = latestCompletedWorkout(userId: userId) {
+                WorkoutSummaryView(workout: w, streak: 3, weeklyCount: 3, onAnalytics: {}, onClose: {})
+            }
         case "logger":
             if let w = debugWorkout {
                 NavigationStack { RecordContent(userId: userId, resuming: w) }
@@ -105,6 +147,16 @@ struct RootView: View {
             }
         default: mainTabs
         }
+    }
+
+    /// summary ハーネス用：デモの最新完了ワークアウト。
+    private func latestCompletedWorkout(userId: UUID) -> Workout? {
+        var descriptor = FetchDescriptor<Workout>(
+            predicate: #Predicate { $0.userId == userId && $0.completedAt != nil },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return ((try? context.fetch(descriptor)) ?? []).first
     }
     #endif
 
@@ -118,13 +170,13 @@ struct RootView: View {
 
     private var mainTabs: some View {
         TabView(selection: $selection) {
-            CalendarHomeView()
-                .tabItem { Label("カレンダー", systemImage: "calendar") }
-                .tag(AppTab.calendar)
-
             RecordView()
                 .tabItem { Label("記録", systemImage: "dumbbell.fill") }
                 .tag(AppTab.workout)
+
+            CalendarHomeView()
+                .tabItem { Label("カレンダー", systemImage: "calendar") }
+                .tag(AppTab.calendar)
 
             SocialFeedView()
                 .tabItem { Label("ソーシャル", systemImage: "person.2.fill") }
@@ -169,9 +221,10 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
             case "reaction", "friend_checkin", "follow", "invite": selection = .social
-            case "workout": selection = .workout
+            // チェックイン導線は記録タブ（開始ゲート）にあるため、checkin 通知も記録タブへ。
+            case "workout", "checkin": selection = .workout
             case "analytics": selection = .analytics
-            case "recap", "checkin": selection = .calendar
+            case "recap": selection = .calendar
             case "shop": selection = .other
             default: break
             }

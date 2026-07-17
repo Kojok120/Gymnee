@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import Charts
 
-/// 分析ダッシュボード（§6.8）。頻度・部位バランス・リカバリービュー・ヒートマップ・強度進捗・CSV。
+/// 分析ダッシュボード（§6.8）。ヒートマップ・強度進捗・部位バランス・リカバリービュー・CSV。
 struct AnalyticsView: View {
     let userId: UUID
 
@@ -38,7 +38,6 @@ struct AnalyticsView: View {
             VStack(spacing: Theme.Spacing.lg) {
                 historyLink
                 heatmapCard
-                frequencyCard
                 strengthCard
                 balanceCard
                 recoveryCard
@@ -99,46 +98,6 @@ struct AnalyticsView: View {
         return counts
     }
 
-    // MARK: - Frequency
-
-    private var frequencyCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "週次頻度（直近\(periodLabel)）")
-            if weeklyCounts.allSatisfy({ $0.count == 0 }) {
-                Text("記録が増えると表示されます。").font(.caption).foregroundStyle(.secondary)
-            } else {
-                Chart(weeklyCounts, id: \.weekStart) { item in
-                    BarMark(x: .value("週", item.weekStart, unit: .weekOfYear), y: .value("日数", item.count))
-                        .foregroundStyle(Theme.energy)
-                }
-                .chartYScale(domain: 0...7)   // 1週間＝最大7日。
-                .chartYAxis { AxisMarks(values: Array(0...7)) }
-                .frame(height: 160)
-            }
-        }
-        .gymneeCard()
-    }
-
-    private struct WeeklyCount { let weekStart: Date; let count: Int }
-    private var weeklyCounts: [WeeklyCount] {
-        let today = calendar.startOfDay(for: .now)
-        guard let thisWeek = calendar.dateInterval(of: .weekOfYear, for: today)?.start else { return [] }
-        return (0..<periodWeeks).reversed().compactMap { offset in
-            guard let start = calendar.date(byAdding: .weekOfYear, value: -offset, to: thisWeek),
-                  let interval = calendar.dateInterval(of: .weekOfYear, for: start) else { return nil }
-            // 頻度＝その週にトレーニングした「日数」（最大7。1日に複数回でも1日）。
-            // 週判定・日付の重複排除とも completedAt 基準に統一（date 基準だと日跨ぎや後完了でズレる）。
-            let days = Set(
-                workouts.compactMap { workout -> Date? in
-                    guard let completedAt = workout.completedAt,
-                          interval.contains(completedAt) else { return nil }
-                    return calendar.startOfDay(for: completedAt)
-                }
-            )
-            return WeeklyCount(weekStart: start, count: min(days.count, 7))
-        }
-    }
-
     // MARK: - Muscle balance
 
     private var balanceCard: some View {
@@ -192,7 +151,12 @@ struct AnalyticsView: View {
                             .foregroundStyle(by: .value("種目", p.exercise))
                     }
                     .chartYAxisLabel("kg")
+                    // 標準凡例は横一列で長い種目名が「…」に見切れるため、非表示にして
+                    // 折返し可能な自前凡例（strengthLegend）で全名を表示する。
+                    .chartForegroundStyleScale(domain: displayed, range: seriesColors(count: displayed.count))
+                    .chartLegend(.hidden)
                     .frame(height: 200)
+                    strengthLegend(displayed: displayed)
                 }
             }
         }
@@ -230,6 +194,26 @@ struct AnalyticsView: View {
         return "\(shown[0]) 他\(shown.count - 1)種目"
     }
 
+    /// 強度進捗の系列色。表示種目が増えたら循環して割り当てる。
+    private static let strengthPalette: [Color] = [Theme.energy, Theme.info, Theme.series2, Theme.warning, Theme.danger]
+
+    private func seriesColors(count: Int) -> [Color] {
+        (0..<count).map { Self.strengthPalette[$0 % Self.strengthPalette.count] }
+    }
+
+    /// 種目名を省略せず表示する凡例。幅を超えたら折り返す。
+    private func strengthLegend(displayed: [String]) -> some View {
+        let colors = seriesColors(count: displayed.count)
+        return FlowLayout(spacing: Theme.Spacing.sm) {
+            ForEach(Array(displayed.enumerated()), id: \.element) { index, name in
+                HStack(spacing: 4) {
+                    Circle().fill(colors[index]).frame(width: 8, height: 8)
+                    Text(name).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
     private struct StrengthPoint: Identifiable {
         let id = UUID(); let date: Date; let e1RM: Double; let exercise: String
     }
@@ -238,7 +222,7 @@ struct AnalyticsView: View {
     private var byExerciseInPeriod: [String: [WorkoutExercise]] {
         let start = periodStart
         var byExercise: [String: [WorkoutExercise]] = [:]
-        // 期間判定は週次頻度と揃えて完了時刻(completedAt)基準にする（深夜跨ぎの日ズレ防止）。
+        // 期間判定は完了時刻(completedAt)基準にする（深夜跨ぎの日ズレ防止）。
         for w in workouts where (w.completedAt ?? .distantPast) >= start {
             for we in w.exercises {
                 guard let name = we.exercise?.name else { continue }
@@ -267,7 +251,7 @@ struct AnalyticsView: View {
         var points: [StrengthPoint] = []
         for name in displayed {
             for we in by[name] ?? [] {
-                // プロット日付も完了時刻基準（週次頻度と同じ）。byExerciseInPeriod で完了済みのみ。
+                // プロット日付も完了時刻基準。byExerciseInPeriod で完了済みのみ。
                 guard let date = we.workout?.completedAt else { continue }
                 let best = we.sets
                     .filter { $0.weight > 0 && $0.reps > 0 }
