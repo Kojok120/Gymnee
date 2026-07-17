@@ -305,22 +305,32 @@ struct RecordContent: View {
     @State private var centersCache = CentersCache()
     @State private var showSummary = false
     @State private var showModePicker = false
-    @State private var showAddExercise = false
     @State private var editingExercise: Exercise?
     @State private var editingSet: ExerciseSet?
     @State private var keypad: KeypadRequest?
-    /// フリーで「＋種目」から表向きに加えた種目（このタブ表示中だけ保持）。
-    @State private var freeAdded: Set<UUID> = []
-    @State private var jumpTarget: MuscleGroup?
     @State private var showOnboarding = false
     @State private var showCancelConfirm = false
     @State private var showMemo = false
     /// 録画中の暫定PRスパーク（その場の「更新ペース！」表示・非永続。確定は完了時）。
     @State private var prSpark: PRSpark?
-    /// フリーのカード（部位ごと）。種目数×完了履歴の関連走査が重いので毎描画ではなくキャッシュする。
-    @State private var freeGroups: [(MuscleGroup, [Exercise])] = []
-    /// 「よくやる種目」（直近60日の使用回数トップ10）。freeGroups と同時に再計算・キャッシュ。
+    /// フリーの選択中カテゴリタブ（③。よくやる/部位でカード一覧をフィルタ）。
+    @State private var selectedTab: RecordCategoryTab = .group(.chest)
+    /// 初期タブ決定済みフラグ（rebuild のたびに選択を上書きしない）。
+    @State private var tabInitialized = false
+    /// 「よくやる種目」（直近60日の使用回数トップ10）。rebuildCatalog で再計算・キャッシュ。
     @State private var frequentExercises: [Exercise] = []
+    /// 部位ごとの頻度トップ3（未カスタマイズタブの既定シェルフ用）。
+    @State private var groupRankedIds: [MuscleGroup: [UUID]] = [:]
+    /// 同名重複を除いた種目の解決表（id → Exercise）。シェルフ表示・削除済み種目のフィルタに使う。
+    @State private var exercisesById: [UUID: Exercise] = [:]
+    /// 正規化名 → 正準 id（定番プリセット名の解決・重複 id の正準化用）。
+    @State private var idsByName: [String: UUID] = [:]
+    /// デコード済みのカスタムシェルフ（保存は shelvesJSON へ）。
+    @State private var shelves = ExerciseShelves()
+    /// 「その他」ピッカーを開いている対象タブ。
+    @State private var pickingTarget: ShelfPickerTarget?
+
+    @AppStorage("gymnee.recordShelves") private var shelvesJSON = ""
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
@@ -347,6 +357,7 @@ struct RecordContent: View {
         VStack(spacing: 0) {
             modeBar
             logStrip
+            if mode == .free { categoryTabBar }
             cardsArea
         }
         .background(Theme.bg0)
@@ -383,8 +394,13 @@ struct RecordContent: View {
         // 除外対象（編集中ワークアウト）が変わると前回値の計算結果も変わるためキャッシュを捨てる。
         .onChange(of: activeWorkout?.id) { _, _ in centersCache.values.removeAll() }
         .sheet(isPresented: $showModePicker) { modePickerSheet }
-        .sheet(isPresented: $showAddExercise) {
-            AddExerciseView(onCreated: { ex in freeAdded.insert(ex.id) })
+        // 「その他」カード: 全種目ピッカー。選んだ/作った種目を開いているタブへ永続追加する。
+        .sheet(item: $pickingTarget) { target in
+            ExercisePickerView(
+                exercises: pickerExercises,
+                initialFilter: target.group,
+                onSelect: { ex in addToShelf(ex, group: target.group) }
+            )
         }
         // 種目編集（器具・計測タイプ変更）は centers の既定値に影響するため、閉じたらキャッシュを捨てる。
         .sheet(item: $editingExercise, onDismiss: { centersCache.values.removeAll() }) { ex in ExerciseInspectorView(exercise: ex, userId: userId) }
@@ -417,6 +433,7 @@ struct RecordContent: View {
             RecordOnboardingSheet { onboardingShown = true; showOnboarding = false }
         }
         .onAppear {
+            shelves = ExerciseShelves.decode(from: shelvesJSON)
             discardAbandonedDrafts()
             if let resuming, activeWorkout == nil {
                 activeWorkout = resuming
@@ -426,8 +443,8 @@ struct RecordContent: View {
                 if !onboardingShown { showOnboarding = true }
             }
         }
-        // フリーのカード群は種目数が変わった時だけ作り直す（毎描画の関連走査を避ける）。
-        .task(id: allExercises.count) { rebuildFreeGroups() }
+        // フリーのカードカタログは種目数が変わった時だけ作り直す（毎描画の関連走査を避ける）。
+        .task(id: allExercises.count) { rebuildCatalog() }
     }
 
     /// 中身の無い空の下書き(completedAt=nil)だけをローカル掃除する。
@@ -450,7 +467,7 @@ struct RecordContent: View {
         if changed { try? context.save() }
     }
 
-    // MARK: - ① モードバー + ③ カテゴリ
+    // MARK: - ① モードバー
 
     private var modeBar: some View {
         HStack(spacing: Theme.Spacing.sm) {
@@ -465,25 +482,41 @@ struct RecordContent: View {
                 .background(Theme.bg1, in: Capsule())
             }
             Spacer(minLength: 0)
-            if mode == .free, !freeGroups.isEmpty {
-                Menu {
-                    ForEach(freeGroups.map(\.0), id: \.self) { mg in
-                        Button(mg.label) { jumpTarget = mg }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "line.3.horizontal.decrease")
-                        Text("部位").font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(Theme.textSecondary)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Theme.bg1, in: Capsule())
-                }
-            }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.sm)
+    }
+
+    // MARK: - ③ カテゴリタブ
+
+    /// カテゴリタブ（フリーのみ・常時表示・横スクロール）。タップで下のカード一覧をフィルタする
+    /// （旧: 部位Menu によるスクロールジャンプ → 居酒屋オーダーUI式のタブフィルタへ変更）。
+    private var categoryTabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+                if !frequentExercises.isEmpty {
+                    tabChip(.frequent, label: "よくやる")
+                }
+                ForEach(MuscleGroup.allCases, id: \.self) { mg in
+                    tabChip(.group(mg), label: mg.label)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
+        }
+    }
+
+    private func tabChip(_ tab: RecordCategoryTab, label: String) -> some View {
+        let selected = selectedTab == tab
+        return Button { selectedTab = tab } label: {
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, 6)
+                .background(selected ? Theme.textPrimary : Theme.bg1, in: Capsule())
+                .foregroundStyle(selected ? Theme.bg0 : Theme.textSecondary)
+        }
+        .buttonStyle(.plain)
     }
 
     private var modeLabel: String {
@@ -586,49 +619,35 @@ struct RecordContent: View {
 
     @ViewBuilder
     private var cardsArea: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    switch mode {
-                    case .free:
-                        freeCardsBody
-                    case .plan, .routine:
-                        orderedCardsBody
-                    }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                switch mode {
+                case .free:
+                    freeCardsBody
+                case .plan, .routine:
+                    orderedCardsBody
                 }
-                .padding(Theme.Spacing.lg)
             }
-            .onChange(of: jumpTarget) { _, mg in
-                guard let mg else { return }
-                withAnimation(.smooth) { proxy.scrollTo(mg, anchor: .top) }
-                jumpTarget = nil
-            }
+            .padding(Theme.Spacing.lg)
         }
+        // タブ切替でスクロール位置を先頭へ戻す（フィルタなので前タブの位置を引き継がない）。
+        .id(selectedTab)
     }
 
-    /// フリー：よくやる種目（先頭固定）＋部位ごとの全種目。③でジャンプ。
+    /// フリー：選択中タブの種目カード。部位タブは「シェルフ」（既定=頻度トップ3→定番補完。
+    /// ユーザーが追加/削除でカスタマイズ可）＋末尾の「その他」カード。
     @ViewBuilder
     private var freeCardsBody: some View {
-        let grouped = freeGroups
-        if grouped.isEmpty {
-            emptyFreeState
-        } else {
-            // 毎回部位から探さなくて済むよう、直近60日でよく使う種目を最上部に固定する
-            // （3種目未満なら非表示＝新規ユーザーに空枠を見せない。カードの挙動は下と同一）。
-            if !frequentExercises.isEmpty {
-                Label("よくやる種目", systemImage: "clock.arrow.circlepath")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Theme.textSecondary)
-                cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
+        switch selectedTab {
+        case .frequent:
+            cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
+        case .group(let mg):
+            let shelf = shelfExercises(for: mg)
+            if shelf.isEmpty {
+                Text("このタブに種目がありません。「その他」から追加できます。")
+                    .font(.caption).foregroundStyle(Theme.textTertiary)
             }
-            ForEach(grouped, id: \.0) { mg, exercises in
-                Text(mg.label)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Theme.textSecondary)
-                    .id(mg)
-                cardGrid(exercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
-            }
-            addExerciseButton
+            shelfCardGrid(shelf.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) }, group: mg)
         }
     }
 
@@ -643,10 +662,26 @@ struct RecordContent: View {
         }
     }
 
+    private var gridColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: Theme.Spacing.md), GridItem(.flexible(), spacing: Theme.Spacing.md)]
+    }
+
     private func cardGrid(_ specs: [CardSpec]) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.md),
-                            GridItem(.flexible(), spacing: Theme.Spacing.md)],
-                  spacing: Theme.Spacing.md) {
+        LazyVGrid(columns: gridColumns, spacing: Theme.Spacing.md) {
+            cardCells(specs, onRemove: nil)
+        }
+    }
+
+    /// 部位タブのグリッド：シェルフの種目カード＋末尾の「その他」カード。カードは名前部の長押しでタブから外せる。
+    private func shelfCardGrid(_ specs: [CardSpec], group: MuscleGroup) -> some View {
+        LazyVGrid(columns: gridColumns, spacing: Theme.Spacing.md) {
+            cardCells(specs, onRemove: { removeFromShelf($0, group: group) })
+            otherCard(group)
+        }
+    }
+
+    @ViewBuilder
+    private func cardCells(_ specs: [CardSpec], onRemove: ((Exercise) -> Void)?) -> some View {
             ForEach(specs, id: \.exercise.id) { spec in
                 ExerciseCardView(
                     exercise: spec.exercise,
@@ -676,30 +711,67 @@ struct RecordContent: View {
                         keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .customReps, decimal: false, title: title)
                     },
                     onCustomDistance: { keypad = KeypadRequest(exerciseId: spec.exercise.id, kind: .distanceValue, decimal: true, title: "距離(km)を入力") },
-                    onOpen: { editingExercise = spec.exercise }
+                    onOpen: { editingExercise = spec.exercise },
+                    onRemove: onRemove.map { remove in { remove(spec.exercise) } }
                 )
             }
-        }
     }
 
-    private var addExerciseButton: some View {
-        Button { showAddExercise = true } label: {
-            Label("種目を追加", systemImage: "plus")
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Theme.Spacing.md)
-                .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+    /// 「その他」カード。タップで全種目ピッカーを開き、選んだ種目をこのタブへ永続追加する。
+    private func otherCard(_ group: MuscleGroup) -> some View {
+        Button { pickingTarget = ShelfPickerTarget(group: group) } label: {
+            VStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "magnifyingglass")
+                    .font(.title3).foregroundStyle(Theme.textSecondary)
+                Text("その他").font(.caption.weight(.bold)).foregroundStyle(Theme.textPrimary)
+                Text("種目を探す・追加").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 120)
+            .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .strokeBorder(Theme.textTertiary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            }
         }
         .buttonStyle(.plain)
-        .tint(Theme.lime)
     }
 
-    private var emptyFreeState: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            EmptyStateView(systemImage: "dumbbell", title: "種目を追加して始めよう",
-                           message: "「種目を追加」から選ぶと、ここにカードが並びます。")
-            addExerciseButton
+    // MARK: - シェルフ（タブごとの表示種目）
+
+    /// タブに表示する種目。カスタマイズ済みならそれ（削除済み種目は読み時に除外）、
+    /// 未カスタマイズなら既定（部位別頻度トップ3→定番プリセット補完）。
+    private func shelfExercises(for group: MuscleGroup) -> [Exercise] {
+        let ids: [UUID]
+        if let stored = shelves.shelf(for: group) {
+            ids = ExerciseShelf.resolve(stored: stored, existing: Set(exercisesById.keys))
+        } else {
+            let standards = ExerciseShelf.standardNames[group, default: []]
+                .compactMap { idsByName[$0.lowercased()] }
+            ids = ExerciseShelf.defaultIds(frequencyRanked: groupRankedIds[group] ?? [], standards: standards)
         }
+        return ids.compactMap { exercisesById[$0] }
+    }
+
+    private func addToShelf(_ exercise: Exercise, group: MuscleGroup) {
+        // 同名別id の重複がある種目は、表示解決に使う正準の id に揃えてから保存する
+        // （非正準の id を保存すると resolve で除外され「追加したのに出ない」になる）。
+        let id = idsByName[exercise.normalizedName] ?? exercise.id
+        var updated = shelves
+        updated.add(id, to: group, current: shelfExercises(for: group).map(\.id))
+        shelves = updated
+        shelvesJSON = updated.encoded()
+    }
+
+    private func removeFromShelf(_ exercise: Exercise, group: MuscleGroup) {
+        var updated = shelves
+        updated.remove(exercise.id, from: group, current: shelfExercises(for: group).map(\.id))
+        shelves = updated
+        shelvesJSON = updated.encoded()
+    }
+
+    /// ピッカーに渡す全種目（同名重複を解決済み・名前順）。
+    private var pickerExercises: [Exercise] {
+        exercisesById.values.sorted { $0.name < $1.name }
     }
 
     // MARK: - ⑤ タイマー
@@ -833,16 +905,14 @@ struct RecordContent: View {
         }
     }
 
-    /// フリーのカード：部位ごとにまとめた配列。仕様書「最近中心＋全種目」。
-    /// セッション中はカード順を固定する：先頭に置く「最近」は完了済み履歴のある種目のみで判定し、
-    /// 記録途中の下書きでは並べ替えない（記録してもカードが動かない／完了後の次回に順序が更新される）。
-    private func rebuildFreeGroups() {
+    /// フリーのカード表示に使う種目カタログの再構築（種目数が変わった時だけ）。
+    /// 同名別id の重複（プリセットが同期で増殖するケース等）は履歴のある方を優先して1つにまとめ、
+    /// 「よくやる」ランキング・部位別頻度・解決表（id/名前）を作る。
+    private func rebuildCatalog() {
         let recent = allExercises.filter { ex in
             ex.workoutExercises.contains { $0.workout?.userId == userId && $0.workout?.completedAt != nil && !$0.sets.isEmpty }
         }
         var seenIds = Set<UUID>()
-        // 同名別id の重複種目（プリセットが同期で増殖するケース等）を1枚にまとめる。
-        // recent（履歴のある方）を先に処理するので、記録済みの種目を優先して残す。
         var seenNames = Set<String>()
         var ordered: [Exercise] = []
         func addIfNew(_ ex: Exercise) {
@@ -851,14 +921,13 @@ struct RecordContent: View {
             seenNames.insert(nameKey)
             ordered.append(ex)
         }
-        // ①最近中心（完了済み履歴のある種目）を先頭に。
+        // 履歴のある種目を先に処理する（重複時に記録済みの id を正準として残す）。
         for ex in recent { addIfNew(ex) }
-        // ②残りの全種目を名前順（allExercises は @Query で name ソート済み）で追加。
         for ex in allExercises { addIfNew(ex) }
-        freeGroups = MuscleGroup.allCases.compactMap { mg in
-            let items = ordered.filter { $0.muscleGroup == mg }
-            return items.isEmpty ? nil : (mg, items)
-        }
+
+        exercisesById = Dictionary(uniqueKeysWithValues: ordered.map { ($0.id, $0) })
+        idsByName = Dictionary(ordered.map { ($0.normalizedName, $0.id) }, uniquingKeysWith: { first, _ in first })
+
         // 「よくやる種目」: dedupe 済みの ordered を対象に、完了ワークアウトの日付を集計してランク。
         let usage: [UUID: [Date]] = Dictionary(uniqueKeysWithValues: ordered.compactMap { ex in
             let dates = ex.workoutExercises.compactMap { we -> Date? in
@@ -868,8 +937,21 @@ struct RecordContent: View {
             return dates.isEmpty ? nil : (ex.id, dates)
         })
         let rankedIds = FrequentExerciseRanker.rank(usage: usage, asOf: .now)
-        let byId = Dictionary(uniqueKeysWithValues: ordered.map { ($0.id, $0) })
-        frequentExercises = rankedIds.compactMap { byId[$0] }
+        frequentExercises = rankedIds.compactMap { exercisesById[$0] }
+
+        // 部位別の頻度トップ3（未カスタマイズタブの既定シェルフ用）。少数でも返す（minExercises: 0）。
+        groupRankedIds = Dictionary(uniqueKeysWithValues: MuscleGroup.allCases.map { mg in
+            let filtered = usage.filter { exercisesById[$0.key]?.muscleGroup == mg }
+            return (mg, FrequentExerciseRanker.rank(usage: filtered, asOf: .now, limit: 3, minExercises: 0))
+        })
+
+        // 初期タブ：履歴があれば「よくやる」、無ければ胸。よくやるが消えた場合も部位へ退避。
+        if !tabInitialized {
+            selectedTab = frequentExercises.isEmpty ? .group(.chest) : .frequent
+            tabInitialized = true
+        } else if frequentExercises.isEmpty, selectedTab == .frequent {
+            selectedTab = .group(.chest)
+        }
     }
 
     // MARK: - 記録アクション
@@ -1149,7 +1231,6 @@ struct RecordContent: View {
         repCenters = [:]
         durCenters = [:]
         distCenters = [:]
-        freeAdded = []
         // カレンダータブへ切替え、タブのゲート/pushed view を閉じる。
         NotificationCenter.default.post(name: .gymneeShowCalendar, object: nil)
         // タブ起点（チェックイン/計画開始）はゲートへ戻す。カレンダーからの過去編集 push は閉じる。
@@ -1165,7 +1246,6 @@ struct RecordContent: View {
         repCenters = [:]
         durCenters = [:]
         distCenters = [:]
-        freeAdded = []
         modeInitialized = false
         initializeModeIfNeeded()
     }
@@ -1201,6 +1281,20 @@ struct RecordContent: View {
     }
 }
 
+// MARK: - カテゴリタブ
+
+/// フリーのカテゴリタブ（③）。よくやる＋部位でカード一覧をフィルタする。
+private enum RecordCategoryTab: Hashable {
+    case frequent
+    case group(MuscleGroup)
+}
+
+/// 「その他」ピッカーを開く対象タブ（sheet(item:) 用）。
+private struct ShelfPickerTarget: Identifiable {
+    let group: MuscleGroup
+    var id: String { group.rawValue }
+}
+
 // MARK: - カード仕様
 
 private struct CardSpec {
@@ -1231,6 +1325,8 @@ private struct ExerciseCardView: View {
     let onCustomReps: () -> Void
     let onCustomDistance: () -> Void
     let onOpen: () -> Void
+    /// タブ（シェルフ）からこの種目を外す。フリーの部位タブのみ渡される（nil＝メニュー非表示）。
+    var onRemove: (() -> Void)? = nil
 
     /// 自重のみ（重量軸を出さない）。
     private var bodyweightOnly: Bool {
@@ -1240,29 +1336,43 @@ private struct ExerciseCardView: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
             topRuler
-            // 名前部（ウェイト/回数のルーラー以外）をタップ → 種目インスペクタへ遷移。
-            VStack(spacing: 1) {
-                Text(exercise.name)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                if exercise.measurementType == .weight, exercise.weightMode != .none {
-                    Text(exercise.weightMode.label).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
-                } else if exercise.measurementType == .bodyweight {
-                    Text(exercise.loadMode.loadAxisLabel).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
-                } else if exercise.measurementType == .cardio {
-                    Text("距離 · 時間").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Theme.Spacing.sm)
-            .contentShape(Rectangle())
-            .onTapGesture { onOpen() }
+            nameBlock
             bottomRuler
         }
         .frame(maxWidth: .infinity)
         .padding(Theme.Spacing.md)
         .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+    }
+
+    /// 名前部（ウェイト/回数のルーラー以外）。タップ＝種目インスペクタ / 長押し＝タブから外す。
+    /// contextMenu はカード全体でなく名前部に限定する（ルーラーの長押しキーパッドと競合するため）。
+    @ViewBuilder private var nameBlock: some View {
+        let base = VStack(spacing: 1) {
+            Text(exercise.name)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            if exercise.measurementType == .weight, exercise.weightMode != .none {
+                Text(exercise.weightMode.label).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+            } else if exercise.measurementType == .bodyweight {
+                Text(exercise.loadMode.loadAxisLabel).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+            } else if exercise.measurementType == .cardio {
+                Text("距離 · 時間").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Theme.Spacing.sm)
+        .contentShape(Rectangle())
+        .onTapGesture { onOpen() }
+        if let onRemove {
+            base.contextMenu {
+                Button(role: .destructive, action: onRemove) {
+                    Label("このタブから外す", systemImage: "minus.circle")
+                }
+            }
+        } else {
+            base
+        }
     }
 
     /// 上段ルーラー：ウェイト=重量 / 時間=秒 / 有酸素=距離。自重のみは無し。

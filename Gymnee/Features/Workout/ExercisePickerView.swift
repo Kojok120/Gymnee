@@ -1,15 +1,25 @@
 import SwiftUI
-import SwiftData
 
-/// 種目選択（§6.5 種目追加）。検索＋部位フィルタ、カスタム種目作成。
+/// 種目ピッカー（記録画面「その他」カードの遷移先）。検索＋部位フィルタ＋カスタム種目作成。
+/// 選んだ/作った種目は onSelect で呼び出し側（タブのシェルフ）へ渡す。
+/// 旧「種目を選んで追加する」フローの廃止で一時デッドコードだったが、
+/// 2026-07 のタブフィルタ改修（シェルフへの追加導線）で復活した。
 struct ExercisePickerView: View {
+    /// 表示する種目（呼び出し側で同名重複を解決済みの一覧を渡す）。
+    let exercises: [Exercise]
     var onSelect: (Exercise) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Exercise.name) private var exercises: [Exercise]
     @State private var search = ""
     @State private var muscleFilter: MuscleGroup?
     @State private var showAdd = false
+
+    init(exercises: [Exercise], initialFilter: MuscleGroup? = nil, onSelect: @escaping (Exercise) -> Void) {
+        self.exercises = exercises
+        self.onSelect = onSelect
+        // 開いたタブの部位を初期フィルタにする（探す種目は大抵その部位のため）。
+        _muscleFilter = State(initialValue: initialFilter)
+    }
 
     var body: some View {
         NavigationStack {
@@ -44,7 +54,13 @@ struct ExercisePickerView: View {
                     Button { showAdd = true } label: { Image(systemName: "plus") }
                 }
             }
-            .sheet(isPresented: $showAdd) { AddExerciseView() }
+            // 見つからなければその場で作成 → 即選択（開いていたタブへ追加される）。
+            .sheet(isPresented: $showAdd) {
+                AddExerciseView(onCreated: { ex in
+                    onSelect(ex)
+                    dismiss()
+                })
+            }
         }
     }
 
@@ -68,8 +84,8 @@ struct ExercisePickerView: View {
                 .font(.caption.bold())
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, 6)
-                .background(selected ? Theme.energy : Color(uiColor: .tertiarySystemFill), in: Capsule())
-                .foregroundStyle(selected ? .white : .primary)
+                .background(selected ? Theme.textPrimary : Theme.bg2, in: Capsule())
+                .foregroundStyle(selected ? Theme.bg0 : Theme.textSecondary)
         }
     }
 
