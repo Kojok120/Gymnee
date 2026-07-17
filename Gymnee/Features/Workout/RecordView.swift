@@ -394,11 +394,11 @@ struct RecordContent: View {
         // 除外対象（編集中ワークアウト）が変わると前回値の計算結果も変わるためキャッシュを捨てる。
         .onChange(of: activeWorkout?.id) { _, _ in centersCache.values.removeAll() }
         .sheet(isPresented: $showModePicker) { modePickerSheet }
-        // 「その他」カード: 全種目ピッカー。選んだ/作った種目を開いているタブへ永続追加する。
+        // 「その他」カード: その部位の種目ピッカー。選んだ/作った種目を開いているタブへ永続追加する。
         .sheet(item: $pickingTarget) { target in
             ExercisePickerView(
                 exercises: pickerExercises,
-                initialFilter: target.group,
+                group: target.group,
                 onSelect: { ex in addToShelf(ex, group: target.group) }
             )
         }

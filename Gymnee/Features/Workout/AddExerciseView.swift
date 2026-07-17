@@ -18,6 +18,12 @@ struct AddExerciseView: View {
     @State private var measurementType: MeasurementType = .weight
     @State private var weightMode: WeightMode = .both
 
+    /// 部位の初期値を指定して開く（記録タブの「その他」ピッカーから＝開いているタブの部位）。
+    init(initialMuscleGroup: MuscleGroup = .chest, onCreated: ((Exercise) -> Void)? = nil) {
+        self.onCreated = onCreated
+        _muscleGroup = State(initialValue: initialMuscleGroup)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
