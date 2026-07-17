@@ -388,7 +388,9 @@ struct RecordContent: View {
         }
         // 種目編集（器具・計測タイプ変更）は centers の既定値に影響するため、閉じたらキャッシュを捨てる。
         .sheet(item: $editingExercise, onDismiss: { centersCache.values.removeAll() }) { ex in ExerciseInspectorView(exercise: ex, userId: userId) }
-        .sheet(item: $editingSet) { set in EditSetSheet(set: set) { commitSetEdit(set) } }
+        .sheet(item: $editingSet) { set in
+            EditSetSheet(set: set, onCommit: { commitSetEdit(set) }, onDelete: { deleteSet(set) })
+        }
         .sheet(isPresented: $showMemo) {
             if let w = activeWorkout { WorkoutMemoSheet(workout: w) { try? context.save() } }
         }
@@ -494,37 +496,90 @@ struct RecordContent: View {
 
     // MARK: - ② 記録ログ
 
-    /// このセッションの全セット（タップ順＝createdAt 昇順）。
-    private var loggedSets: [ExerciseSet] {
-        (activeWorkout?.exercises.flatMap { $0.sets } ?? []).sorted { $0.createdAt < $1.createdAt }
+    /// 記録ログのグループ（1種目=1行）。行順は orderIndex 昇順＝初回セット記録順で安定させる
+    /// （セット追加で行が飛ばない）。セットは createdAt 昇順＝タップ順。
+    private var logGroups: [(we: WorkoutExercise, sets: [ExerciseSet])] {
+        (activeWorkout?.exercises ?? [])
+            .filter { !$0.sets.isEmpty }
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map { ($0, $0.sets.sorted { $0.createdAt < $1.createdAt }) }
     }
 
-    /// ② 記録ログ。常時表示（空ならプレースホルダ）。List なのでスワイプ削除・行タップ編集が効く。
+    /// セッションの総セット数（自動スクロールのトリガ判定に使う）。
+    private var loggedSetCount: Int {
+        activeWorkout?.exercises.reduce(0) { $0 + $1.sets.count } ?? 0
+    }
+
+    /// 最後に記録されたセット（取り消し対象・lime 強調・自動スクロール先）。
+    private var newestSet: ExerciseSet? {
+        activeWorkout?.exercises.flatMap(\.sets).max { $0.createdAt < $1.createdAt }
+    }
+
+    /// ② 記録ログ。種目でグルーピングし、セットは折返しチップで全量見せる（横スクロールなし）。
+    /// チップタップ＝編集シート（削除もそこから）。ヘッダー右上の「取り消し」＝直前の1セット削除。
+    @ViewBuilder
     private var logStrip: some View {
-        let sets = loggedSets   // flatMap+sort を1描画で1回だけに（空判定・行・高さで使い回す）。
-        return List {
-            if sets.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "list.bullet.rectangle").font(.caption)
-                    Text("記録するとここに溜まります").font(.caption)
-                }
-                .foregroundStyle(Theme.textTertiary)
-                .listRowBackground(Theme.bg1)
-                .listRowSeparator(.hidden)
-            } else {
-                ForEach(sets) { set in
-                    LogRowView(set: set)
-                        .listRowBackground(Theme.bg1)
-                        .contentShape(Rectangle())
-                        .onTapGesture { editingSet = set }
-                        .swipeActions { Button("削除", role: .destructive) { deleteSet(set) } }
-                }
+        let groups = logGroups
+        if groups.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "list.bullet.rectangle").font(.caption)
+                Text("記録するとここに溜まります").font(.caption)
+                Spacer(minLength: 0)
             }
+            .foregroundStyle(Theme.textTertiary)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(height: 52)
+            .background(Theme.bg1)
+        } else {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("記録ログ").font(.caption).foregroundStyle(Theme.textTertiary)
+                    Spacer()
+                    // 誤タップで余計なセットが記録された直後のミスを1タップで戻す。
+                    Button {
+                        if let last = newestSet { deleteSet(last) }
+                    } label: {
+                        Label("取り消し", systemImage: "arrow.uturn.backward")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.top, Theme.Spacing.sm)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                            ForEach(groups, id: \.we.id) { group in
+                                GroupedLogRow(
+                                    exerciseName: group.we.exercise?.name ?? "種目",
+                                    sets: group.sets,
+                                    latestSetId: newestSet?.id,
+                                    onTapSet: { editingSet = $0 }
+                                )
+                                .id(group.we.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.vertical, Theme.Spacing.sm)
+                    }
+                    // 新しいセットが記録されたら、その種目の行へ自動スクロール（削除では動かさない）。
+                    .onChange(of: loggedSetCount) { old, new in
+                        guard new > old, let target = newestSet?.workoutExercise?.id else { return }
+                        withAnimation(.snappy) { proxy.scrollTo(target, anchor: .bottom) }
+                    }
+                    // 下書き再開時：最後に記録した行が見える位置から始める。
+                    .onAppear {
+                        if let target = newestSet?.workoutExercise?.id {
+                            proxy.scrollTo(target, anchor: .bottom)
+                        }
+                    }
+                }
+                .frame(height: 150)
+            }
+            .background(Theme.bg1)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .frame(height: sets.isEmpty ? 52 : 160)
-        .background(Theme.bg1)
     }
 
     // MARK: - ④ カード
@@ -1353,26 +1408,38 @@ private struct SlotRuler: View {
     }
 }
 
-// MARK: - ② ログ行
+// MARK: - ② ログ行（1種目=1行・折返しチップ）
 
-private struct LogRowView: View {
-    let set: ExerciseSet
+private struct GroupedLogRow: View {
+    let exerciseName: String
+    /// createdAt 昇順のセット列。
+    let sets: [ExerciseSet]
+    /// セッション全体の最新セット（完了直後の1件だけ lime で強調）。
+    let latestSetId: UUID?
+    let onTapSet: (ExerciseSet) -> Void
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            Text(set.workoutExercise?.exercise?.name ?? "種目")
-                .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(1)
-            Spacer(minLength: Theme.Spacing.sm)
-            Text(detail).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textSecondary)
-            Text(set.createdAt, format: .dateTime.hour().minute())
-                .font(.caption2).foregroundStyle(Theme.textTertiary)
-            // 行タップで編集できることを示すアフォーダンス（タップ＝編集 / 左スワイプ＝削除）。
-            Image(systemName: "square.and.pencil")
-                .font(.caption).foregroundStyle(Theme.textTertiary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Text(exerciseName)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+            FlowLayout(spacing: 6) {
+                ForEach(sets) { set in
+                    Button { onTapSet(set) } label: {
+                        Text(set.detailText)
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(Theme.textPrimary)
+                            .padding(.horizontal, Theme.Spacing.sm)
+                            .padding(.vertical, 3)
+                            .background(set.id == latestSetId ? Theme.limeSoft : Theme.bg2,
+                                        in: RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
-
-    private var detail: String { self.set.detailText }
 }
 
 // MARK: - キーパッド
@@ -1470,6 +1537,8 @@ private struct SlotKeypadSheet: View {
 private struct EditSetSheet: View {
     @Bindable var set: ExerciseSet
     let onCommit: () -> Void
+    /// このセットを削除する（ログのチップから開いた時のみ渡す）。
+    var onDelete: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var weightText = ""
@@ -1497,6 +1566,14 @@ private struct EditSetSheet: View {
                 } else {
                     LabeledContent("重量(kg)") { TextField("重量", text: $weightText).keyboardType(.decimalPad).multilineTextAlignment(.trailing) }
                     LabeledContent("回数") { TextField("回数", text: $repsText).keyboardType(.numberPad).multilineTextAlignment(.trailing) }
+                }
+                if let onDelete {
+                    Button(role: .destructive) {
+                        onDelete()
+                        dismiss()
+                    } label: {
+                        Label("このセットを削除", systemImage: "trash")
+                    }
                 }
             }
             .navigationTitle("セットを編集").navigationBarTitleDisplayMode(.inline)
@@ -1534,7 +1611,7 @@ private struct EditSetSheet: View {
                 minutesText = String((set.durationSeconds ?? 0) / 60)
             }
         }
-        .presentationDetents([.height(220)])
+        .presentationDetents([.height(onDelete == nil ? 220 : 280)])
     }
 }
 
