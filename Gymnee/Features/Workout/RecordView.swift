@@ -1786,12 +1786,14 @@ private struct RecordOnboardingSheet: View {
     let onDone: () -> Void
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.xl) {
+        VStack(spacing: Theme.Spacing.lg) {
             Spacer(minLength: 0)
             Image(systemName: "hand.tap.fill")
-                .font(.system(size: 44)).foregroundStyle(Theme.lime)
+                .font(.system(size: 40)).foregroundStyle(Theme.lime)
             Text("タップで記録")
                 .font(.title2.bold()).foregroundStyle(Theme.textPrimary)
+            // 実際の種目カードを模した説明図（文字だけより一目で伝わる・ユーザー要望）。
+            mockCard
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 onboardRow("1", "重量をタップして固定し、回数をタップすると1セット記録されます。")
                 onboardRow("2", "重量を変えたい時は別の重量をタップ。範囲外の値は長押しで入力できます。")
@@ -1809,6 +1811,66 @@ private struct RecordOnboardingSheet: View {
         .padding(Theme.Spacing.xl)
         .background(Theme.bg0)
         .interactiveDismissDisabled()
+    }
+
+    /// 種目カードの説明図（静的・タップ不可）。①重量スロット→②回数スロットの操作を番号で対応づける。
+    private var mockCard: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: 6) {
+                stepBadge("1")
+                Text("重量をタップして固定").font(.caption).foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 0)
+            }
+            mockRuler(values: ["57.5", "60", "62.5"], centerStyle: .armed)
+            Text("ベンチプレス")
+                .font(.caption.weight(.bold)).foregroundStyle(Theme.textPrimary)
+            mockRuler(values: ["9", "10", "11"], centerStyle: .action)
+            HStack(spacing: 6) {
+                stepBadge("2")
+                Text("回数をタップ → 1セット記録").font(.caption).foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .strokeBorder(Theme.lime.opacity(0.35), lineWidth: 1)
+        }
+    }
+
+    private enum MockCenterStyle { case armed, action }
+
+    /// SlotRuler の見た目を模した3セル（中央＝選択状態）。
+    private func mockRuler(values: [String], centerStyle: MockCenterStyle) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                let isCenter = index == 1
+                Text(value)
+                    .font(.subheadline.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 34)
+                    .background(
+                        isCenter ? (centerStyle == .armed ? Theme.limeFill : Theme.limeSoft) : Theme.bg2,
+                        in: RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    )
+                    .overlay {
+                        if isCenter, centerStyle == .action {
+                            RoundedRectangle(cornerRadius: Theme.Radius.sm).strokeBorder(Theme.lime.opacity(0.6), lineWidth: 1)
+                        }
+                    }
+                    .foregroundStyle(
+                        isCenter ? (centerStyle == .armed ? Theme.onLime : Theme.lime) : Theme.textSecondary
+                    )
+                    .opacity(isCenter ? 1 : 0.5)
+            }
+        }
+    }
+
+    private func stepBadge(_ num: String) -> some View {
+        Text(num)
+            .font(.caption.bold()).foregroundStyle(Theme.onLime)
+            .frame(width: 20, height: 20).background(Theme.lime, in: Circle())
     }
 
     private func onboardRow(_ num: String, _ text: String) -> some View {
