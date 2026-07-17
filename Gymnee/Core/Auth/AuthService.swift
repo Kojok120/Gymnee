@@ -5,7 +5,8 @@ import AuthenticationServices
 import CryptoKit
 
 /// セッション状態の保持と Profile 行の整合を司る（§6.1）。
-/// View は `session` を観測し、未ログインなら Onboarding、ログイン済みなら本体を表示する。
+/// サインインウォールは無く、未サインインなら RootView がゲスト（ローカル）セッションを
+/// 自動開始する。サインインはバックエンド必須導線（ソーシャル/AI計画/設定）から後付けする。
 ///
 /// Sign in with Apple は Apple 公式の `SignInWithAppleButton` から
 /// `prepareAppleRequest(_:)`（nonce 付与）→ `completeSignInWithApple(_:)` の順で呼ぶ。

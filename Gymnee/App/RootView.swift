@@ -5,7 +5,9 @@ enum AppTab: Hashable {
     case calendar, workout, social, analytics, other
 }
 
-/// アプリのルート。未ログインは Onboarding、ログイン済みはタブ骨格を表示する（§5）。
+/// アプリのルート。サインインウォールは置かず、未サインインなら**ゲスト（ローカル）で即開始**する（§5）。
+/// いきなりサインイン要求は価値を体験する前の離脱要因になるため、サインインは
+/// ソーシャル/AI計画/設定のバックエンド必須導線（BackendSignInButtons 等）から後付けする。
 /// 起動直後は「記録」タブ（記録開始とチェックインの入口）を表示する。
 struct RootView: View {
     @Environment(AuthService.self) private var auth
@@ -19,22 +21,30 @@ struct RootView: View {
     #endif
 
     var body: some View {
-        Group {
-            if auth.isSignedIn {
-                signedInContent
-            } else {
-                OnboardingView()
+        signedInContent
+            .task {
+                // DEBUG デモのサインイン（ユウト）を先に通し、それ以外はゲストで自動開始。
+                await runDebugHarnessIfNeeded()
+                ensureGuestSession()
             }
-        }
-        .animation(.default, value: auth.isSignedIn)
-        .task { await runDebugHarnessIfNeeded() }
-        // テキスト入力以外をタップしたらキーボードを閉じる（全画面共通の操作規約）。
-        .onAppear { KeyboardDismissal.installIfNeeded() }
-        .alert("エラー", isPresented: Bindable(errors).isPresented, presenting: errors.message) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { msg in
-            Text(msg)
-        }
+            // サインアウト後もウォールへ戻さず、新しいゲストで続行（再サインインは設定から）。
+            .onChange(of: auth.isSignedIn) { _, signedIn in
+                if !signedIn { ensureGuestSession() }
+            }
+            // テキスト入力以外をタップしたらキーボードを閉じる（全画面共通の操作規約）。
+            .onAppear { KeyboardDismissal.installIfNeeded() }
+            .alert("エラー", isPresented: Bindable(errors).isPresented, presenting: errors.message) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { msg in
+                Text(msg)
+            }
+    }
+
+    /// 未サインインならゲスト（ローカル）セッションを自動開始する。
+    /// 記録は端末に保存され、後からのサインイン時に IdentityAdoptionPolicy が引き継ぐ。
+    private func ensureGuestSession() {
+        guard !auth.isSignedIn else { return }
+        auth.signIn(displayName: "")
     }
 
     @ViewBuilder
