@@ -252,8 +252,8 @@ private struct SocialContent: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showMyPosts = true } label: {
                     Image(systemName: "person.crop.rectangle.stack")
-                        .notificationBadge(socialUnread)
                 }
+                .notificationBadge(socialUnread)
                 .accessibilityLabel("自分の投稿")
             }
             ToolbarItem(placement: .principal) {
