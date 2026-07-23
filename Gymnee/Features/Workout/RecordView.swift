@@ -405,7 +405,6 @@ struct RecordContent: View {
         VStack(spacing: 0) {
             modeBar
             logStrip
-            if mode == .free { categoryTabBar }
             cardsArea
         }
         .background(Theme.bg0)
@@ -553,33 +552,40 @@ struct RecordContent: View {
         .padding(.vertical, Theme.Spacing.sm)
     }
 
-    // MARK: - ③ カテゴリタブ
+    // MARK: - ③ カテゴリレール
 
-    /// カテゴリタブ（フリーのみ・常時表示・横スクロール）。タップで下のカード一覧をフィルタする
-    /// （旧: 部位Menu によるスクロールジャンプ → 居酒屋オーダーUI式のタブフィルタへ変更）。
-    private var categoryTabBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Theme.Spacing.sm) {
+    /// レールの固定幅。最長ラベル「二頭・三頭」が縮小表示で収まる幅。
+    private static let railWidth: CGFloat = 88
+
+    /// カテゴリレール（フリーのみ・画面左・縦スクロール）。タップで右のカード一覧をフィルタする
+    /// （旧: カード上部の横スクロールタブ → 縦で操作できる左レールへ変更）。
+    private var categoryRail: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: Theme.Spacing.sm) {
                 if !frequentExercises.isEmpty {
-                    tabChip(.frequent, label: "よくやる")
+                    railChip(.frequent, label: "よくやる")
                 }
                 ForEach(MuscleGroup.allCases, id: \.self) { mg in
-                    tabChip(.group(mg), label: mg.label)
+                    railChip(.group(mg), label: mg.label)
                 }
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm)
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, Theme.Spacing.md)
         }
+        .frame(width: Self.railWidth)
+        .background(Theme.bg1)
     }
 
-    private func tabChip(_ tab: RecordCategoryTab, label: String) -> some View {
+    private func railChip(_ tab: RecordCategoryTab, label: String) -> some View {
         let selected = selectedTab == tab
         return Button { selectedTab = tab } label: {
             Text(label)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, 6)
-                .background(selected ? Theme.textPrimary : Theme.bg1, in: Capsule())
+                .font(.caption.weight(.semibold))
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Theme.Spacing.xs)
+                .padding(.vertical, Theme.Spacing.sm)
+                .background(selected ? Theme.textPrimary : .clear, in: Capsule())
                 .foregroundStyle(selected ? Theme.bg0 : Theme.textSecondary)
         }
         .buttonStyle(.plain)
@@ -685,14 +691,27 @@ struct RecordContent: View {
 
     @ViewBuilder
     private var cardsArea: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                switch mode {
-                case .free:
-                    freeCardsBody
-                case .plan, .routine:
+        switch mode {
+        case .free:
+            // フリー：左=カテゴリレール（縦操作）/ 右=選択タブのカード一覧。
+            HStack(alignment: .top, spacing: 0) {
+                categoryRail
+                freeCardsScroll
+            }
+        case .plan, .routine:
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     orderedCardsBody
                 }
+                .padding(Theme.Spacing.lg)
+            }
+        }
+    }
+
+    private var freeCardsScroll: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                freeCardsBody
             }
             .padding(Theme.Spacing.lg)
         }
@@ -706,7 +725,8 @@ struct RecordContent: View {
     private var freeCardsBody: some View {
         switch selectedTab {
         case .frequent:
-            cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
+            cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) },
+                     columns: freeGridColumns)
         case .group(let mg):
             let shelf = shelfExercises(for: mg)
             if shelf.isEmpty {
@@ -724,23 +744,29 @@ struct RecordContent: View {
             EmptyStateView(systemImage: "calendar.badge.exclamationmark", title: "種目がありません",
                            message: mode == .plan ? "今日の計画に種目がありません。" : "このカスタムセットに種目がありません。")
         } else {
-            cardGrid(specs)
+            cardGrid(specs, columns: gridColumns)
         }
     }
 
+    /// 計画/ルーティン（全幅）は2列。
     private var gridColumns: [GridItem] {
         [GridItem(.flexible(), spacing: Theme.Spacing.md), GridItem(.flexible(), spacing: Theme.Spacing.md)]
     }
 
-    private func cardGrid(_ specs: [CardSpec]) -> some View {
-        LazyVGrid(columns: gridColumns, spacing: Theme.Spacing.md) {
+    /// フリーはレール分幅が狭く、2列だとルーラーのセル幅が潰れるため1列。
+    private var freeGridColumns: [GridItem] {
+        [GridItem(.flexible())]
+    }
+
+    private func cardGrid(_ specs: [CardSpec], columns: [GridItem]) -> some View {
+        LazyVGrid(columns: columns, spacing: Theme.Spacing.md) {
             cardCells(specs, onRemove: nil)
         }
     }
 
     /// 部位タブのグリッド：シェルフの種目カード＋末尾の「その他」カード。カードは名前部の長押しでタブから外せる。
     private func shelfCardGrid(_ specs: [CardSpec], group: MuscleGroup) -> some View {
-        LazyVGrid(columns: gridColumns, spacing: Theme.Spacing.md) {
+        LazyVGrid(columns: freeGridColumns, spacing: Theme.Spacing.md) {
             cardCells(specs, onRemove: { removeFromShelf($0, group: group) })
             otherCard(group)
         }

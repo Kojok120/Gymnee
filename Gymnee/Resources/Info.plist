@@ -41,6 +41,11 @@
 	</array>
 	<key>MetaAppID</key>
 	<string>$(META_APP_ID)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>予定に合わせてワークアウト計画を立て、自動で組み替えるために使用します。</string>
 	<key>NSCalendarsUsageDescription</key>

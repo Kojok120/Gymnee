@@ -11,7 +11,7 @@ settings:
     SWIFT_VERSION: "5.0"
     # App Store 承認済みバイナリ(0.1.0)より高い値でないと TestFlight アップロードが 90062 で弾かれる。
     # ストア表示バージョン（1.0 公開済 → 次は 1.0.1）と揃えて運用する。
-    MARKETING_VERSION: "1.1.0"
+    MARKETING_VERSION: "1.2.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: PG5P26J3W2
