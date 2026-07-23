@@ -93,8 +93,9 @@ struct MyPostsView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showInbox = true } label: {
-                    Image(systemName: "bell").notificationBadge(socialUnread)
+                    Image(systemName: "bell")
                 }
+                .notificationBadge(socialUnread)
                 .accessibilityLabel("通知")
             }
         }

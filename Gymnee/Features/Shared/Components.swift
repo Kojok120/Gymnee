@@ -206,30 +206,37 @@ struct GymneeSecondaryButtonStyle: ButtonStyle {
 // MARK: - 通知バッジ（iOS 風の赤い丸 + 数字）
 
 /// 右上に iOS 風の通知バッジを重ねる。`count <= 0` なら何も出さない。99 超は "99+"。
-/// アイコンやボタンに `.notificationBadge(unread)` の形で当てる（タップは下のビューへ素通し）。
+/// ツールバーの Button に `.notificationBadge(unread)` の形で当てる（ToolbarItem 直下に置くこと。
+/// iOS 26 のシステムバッジは ToolbarItem のコンテンツに付けたときだけ効く）。
 private struct NotificationBadge: ViewModifier {
     let count: Int
 
     func body(content: Content) -> some View {
-        // バッジを枠外に offset すると親(ツールバー等)の境界でクリップされるため、
-        // バッジ分の余白を確保してアイコンの右上「枠内」に重ねる（欠けない）。
-        content
-            // 余白はバッジがある時だけ確保（0件のときは元の配置を崩さない）。
-            .padding(.top, count > 0 ? 5 : 0)
-            .padding(.trailing, count > 0 ? 7 : 0)
-            .overlay(alignment: .topTrailing) {
-                if count > 0 {
-                    Text(count > 99 ? "99+" : "\(count)")
-                        .font(.system(size: 10, weight: .bold).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(minWidth: 16, minHeight: 16)
-                        .background(Theme.danger, in: Capsule())
-                        .overlay { Capsule().strokeBorder(Theme.bg1, lineWidth: 1.5) }
-                        .allowsHitTesting(false)
-                        .accessibilityLabel("未読 \(count) 件")
+        if #available(iOS 26.0, *) {
+            // iOS 26 はツールバーボタンの円形（Liquid Glass）背景の外周右上に
+            // システム標準バッジが付く。0 なら自動で非表示。
+            content.badge(count)
+        } else {
+            // iOS 25 以前は円形背景が無く、バッジを枠外に offset すると親(ツールバー等)の
+            // 境界でクリップされるため、余白を確保してアイコンの右上「枠内」に重ねる（欠けない）。
+            content
+                // 余白はバッジがある時だけ確保（0件のときは元の配置を崩さない）。
+                .padding(.top, count > 0 ? 5 : 0)
+                .padding(.trailing, count > 0 ? 7 : 0)
+                .overlay(alignment: .topTrailing) {
+                    if count > 0 {
+                        Text(count > 99 ? "99+" : "\(count)")
+                            .font(.system(size: 10, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .background(Theme.danger, in: Capsule())
+                            .overlay { Capsule().strokeBorder(Theme.bg1, lineWidth: 1.5) }
+                            .allowsHitTesting(false)
+                            .accessibilityLabel("未読 \(count) 件")
+                    }
                 }
-            }
+        }
     }
 }
 
