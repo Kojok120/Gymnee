@@ -1,9 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
+      - 'supabase/**'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -12,6 +16,7 @@ concurrency:
 jobs:
   build-test:
     name: Build & Test (iOS Simulator)
+    if: '!github.event.pull_request.draft'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4

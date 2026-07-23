@@ -26,13 +26,7 @@ name: TestFlight
 # ビルド番号は GitHub の run number を使い毎回インクリメントする。
 
 on:
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.claude/**'
-      - 'supabase/**'
+  # 配信は手動起動(将来 /release スキル)。2026-07 CI整理
   workflow_dispatch:
 
 concurrency:
