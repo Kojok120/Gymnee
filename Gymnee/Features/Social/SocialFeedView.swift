@@ -268,6 +268,7 @@ private struct SocialContent: View {
                 NavigationLink(value: SocialRoute.friends) {
                     Image(systemName: "person.2")
                 }
+                .toolbarCircleBackground()
                 .accessibilityLabel("フレンド")
             }
         }

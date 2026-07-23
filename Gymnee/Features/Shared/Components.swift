@@ -208,6 +208,7 @@ struct GymneeSecondaryButtonStyle: ButtonStyle {
 /// 右上に iOS 風の通知バッジを重ねる。`count <= 0` なら何も出さない。99 超は "99+"。
 /// ツールバーの Button に `.notificationBadge(unread)` の形で当てる（ToolbarItem 直下に置くこと。
 /// iOS 26 のシステムバッジは ToolbarItem のコンテンツに付けたときだけ効く）。
+/// iOS 25 以前も自前の円形背景で iOS 26 と同じ「円の外周右上にバッジ」構図になる。
 private struct NotificationBadge: ViewModifier {
     let count: Int
 
@@ -217,12 +218,15 @@ private struct NotificationBadge: ViewModifier {
             // システム標準バッジが付く。0 なら自動で非表示。
             content.badge(count)
         } else {
-            // iOS 25 以前は円形背景が無く、バッジを枠外に offset すると親(ツールバー等)の
-            // 境界でクリップされるため、余白を確保してアイコンの右上「枠内」に重ねる（欠けない）。
+            // iOS 25 以前は円形背景を自前で描いて同じ構図を再現する。バッジを枠外へ
+            // offset するとツールバー境界でクリップされるため、張り出し分の余白を
+            // 常時確保した枠の bottomLeading に円を置き、バッジは枠内に収める
+            // （0件でも円と枠は不変。バッジ有無でレイアウトが動かない）。
             content
-                // 余白はバッジがある時だけ確保（0件のときは元の配置を崩さない）。
-                .padding(.top, count > 0 ? 5 : 0)
-                .padding(.trailing, count > 0 ? 7 : 0)
+                .frame(width: LegacyToolbarCircle.diameter, height: LegacyToolbarCircle.diameter)
+                .background(.ultraThinMaterial, in: Circle())
+                .padding(.top, LegacyToolbarCircle.badgeOverhang)
+                .padding(.trailing, LegacyToolbarCircle.badgeOverhang)
                 .overlay(alignment: .topTrailing) {
                     if count > 0 {
                         Text(count > 99 ? "99+" : "\(count)")
@@ -240,10 +244,37 @@ private struct NotificationBadge: ViewModifier {
     }
 }
 
+/// iOS 25 以前のツールバーアイコンに iOS 26 の円形（Liquid Glass）背景に相当する円を描く。
+/// iOS 26 はシステムが円形背景を付けるため何もしない。
+private struct LegacyToolbarCircle: ViewModifier {
+    /// 円の直径。ナビバー実質高さ 44pt にバッジ張り出し分を足しても収まるサイズ。
+    static let diameter: CGFloat = 34
+    /// バッジが円の外周からはみ出す分。クリップ回避のため枠として先に確保する。
+    static let badgeOverhang: CGFloat = 4
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+        } else {
+            content
+                .frame(width: Self.diameter, height: Self.diameter)
+                .background(.ultraThinMaterial, in: Circle())
+                // バッジ付きボタン（上に張り出し余白あり）と円の縦位置を揃える。
+                .padding(.top, Self.badgeOverhang)
+        }
+    }
+}
+
 extension View {
     /// 右上に未読数の赤バッジを重ねる（0 以下は非表示）。
     func notificationBadge(_ count: Int) -> some View {
         modifier(NotificationBadge(count: count))
+    }
+
+    /// `notificationBadge` 付きボタンと同じツールバーに並ぶアイコンの見た目を揃える
+    /// （iOS 25 以前のみ円形背景を描く。iOS 26 は何もしない）。
+    func toolbarCircleBackground() -> some View {
+        modifier(LegacyToolbarCircle())
     }
 }
 
