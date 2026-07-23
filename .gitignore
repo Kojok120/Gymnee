@@ -38,3 +38,6 @@ supabase/catalog_from_rakuten.sql
 
 # Supabase CLI ローカル一時ファイル
 supabase/.temp/
+
+# グロース分析ハーネスのスナップショット(集計値のみだがローカル蓄積・履歴は手元に貯める)
+analytics/snapshots/

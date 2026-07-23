@@ -169,3 +169,15 @@ iOS の `.env` 相当は **xcconfig** で扱う。`Config/Secrets.example.xcconf
 - **CI**: `ci.yml` でビルド / テストを実行
 - 署名・プロビジョニング・ASC / APNs 鍵などの秘匿値は CI のシークレットおよび `Config/Secrets.*.xcconfig` で管理し、リポジトリに含めない
 - watchOS は環境により SDK 未導入で未ビルド検証の場合がある（ターゲット構成済み・iOS ビルドからは隔離）
+
+## グロース分析ハーネス
+
+獲得〜継続〜課金〜ソーシャルのファネルを継続的に「分析 → 改善」で回す仕組み。詳細は [`docs/growth-harness.md`](docs/growth-harness.md)、指標定義は [`docs/growth-kpi-tree.md`](docs/growth-kpi-tree.md)。
+
+- 収集: `node scripts/analytics/snapshot.mjs`（本番 Supabase + App Store → `analytics/snapshots/*.json`）。依存ゼロの Node スクリプトで Swift ビルドとは無関係
+  - Supabase は Management API `/database/query` に **SELECT 集計のみ**を投げ（RLS 回避・集計値のみ・個人情報なし）、認証は `SUPABASE_ACCESS_TOKEN`（env or macOS keychain の `supabase login` トークン）を流用
+  - App Store は共有 ASC キーで DL / 更新 / サブスクを best-effort 取得
+- 診断: agent `growth-analyst` / 処方: agent `growth-strategist`
+- 運用: `/growth-report`（収集+診断）→ `/growth-experiment`（起票）→ 実装 → `/growth-measure`（効果測定）。施策は `/campaign-log` で記録
+- 台帳: `analytics/campaigns.md`（施策）/ `analytics/experiments.md`（実験 PDCA）。`analytics/snapshots/` は gitignore 済みでローカル蓄積
+- 現状は手元で週 1 コマンド運用。配信直後で N が 1 桁のため率で断定せず実数で語る
