@@ -2,12 +2,18 @@ import Foundation
 
 /// セット表示の共有フォーマッタ。記録・履歴・ワークアウト詳細・種目詳細で共用する（重複排除）。
 extension ExerciseSet {
-    /// 計測タイプに応じたセット表示文字列。
+    /// 計測タイプに応じたセット表示文字列。角度あり種目は角度を前置する（例 `"30° · 自重 × 20"`）。
     /// - time:      `"45秒"`（durationSeconds）
     /// - bodyweight: 符号付き（−=補助 / 0=自重 / ＋=加重）。`"自重 × 12"` / `"自重+10kg × 12"` / `"補助10kg × 12"`
     /// - weight:    `"60kg × 10"`
     /// weight は整数なら小数を省く（記録カードの丸めに合わせる）。
     var detailText: String {
+        let base = baseDetailText
+        if let angle = angleDegrees { return "\(angle)° · \(base)" }
+        return base
+    }
+
+    private var baseDetailText: String {
         let exercise = workoutExercise?.exercise
         let measurement = exercise?.measurementType ?? .weight
         if measurement == .time, let seconds = durationSeconds {

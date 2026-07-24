@@ -1394,3 +1394,25 @@ drop policy if exists comments_no_anonymous on public.comments;
 create policy comments_no_anonymous on public.comments
     as restrictive for insert to authenticated
     with check (not public.is_anonymous_user());
+
+-- migrations/0032_exercise_angle.sql
+-- セット単位の角度記録（issue #44）。角度は重量と同じ「セットごとの変数」。
+-- 対象種目に has_angle 属性を持たせ、記録画面で角度ルーラー（0〜60°・5°刻み）を常時表示する。
+alter table public.exercises add column if not exists has_angle boolean not null default false;
+alter table public.exercise_sets add column if not exists angle_degrees smallint;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'exercise_sets_angle_degrees_range'
+  ) then
+    alter table public.exercise_sets
+      add constraint exercise_sets_angle_degrees_range
+      check (angle_degrees is null or (angle_degrees >= 0 and angle_degrees <= 60));
+  end if;
+end $$;
+-- プリセットマスタ（created_by IS NULL）の該当種目を has_angle=true に（べき等）。
+update public.exercises
+  set has_angle = true, updated_at = now()
+  where is_custom = false and created_by is null
+    and name in ('シットアップ', 'クランチ', 'レッグレイズ')
+    and has_angle = false;

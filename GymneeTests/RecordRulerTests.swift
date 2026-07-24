@@ -42,6 +42,36 @@ final class RecordRulerTests: XCTestCase {
         XCTAssertTrue(values.contains(2.5))    // 加重側は2.5kg刻み
     }
 
+    // MARK: - 角度ルーラー（0〜60°・5°刻み）
+
+    func testAngleRulerValuesFixedRange() {
+        let values = RecordSlots.angleRulerValues(center: 30)
+        XCTAssertEqual(values.first, 0)
+        XCTAssertEqual(values.last, 60)
+        XCTAssertTrue(values.contains(30))
+        XCTAssertTrue(values.contains(45))
+        XCTAssertFalse(values.contains(65))   // 上限60
+        XCTAssertFalse(values.contains(32))    // 5°刻み
+    }
+
+    func testAngleRulerClampsOutOfRangeCenter() {
+        // 範囲外の center は 0〜60 に丸めて含める（不正値がDBの check を越えない）。
+        XCTAssertEqual(RecordSlots.angleRulerValues(center: 100).last, 60)
+        XCTAssertEqual(RecordSlots.angleRulerValues(center: -10).first, 0)
+    }
+
+    // MARK: - セット表示への角度前置
+
+    func testDetailTextPrependsAngle() {
+        let set = ExerciseSet(setIndex: 0, weight: 60, reps: 10, angleDegrees: 30)
+        XCTAssertEqual(set.detailText, "30° · 60kg × 10")
+    }
+
+    func testDetailTextWithoutAngleUnchanged() {
+        let set = ExerciseSet(setIndex: 0, weight: 60, reps: 10)
+        XCTAssertEqual(set.detailText, "60kg × 10")
+    }
+
     // MARK: - 符号付きPR判定（自重の加重/補助）
 
     func testAssistPRWithSignedWeight() {

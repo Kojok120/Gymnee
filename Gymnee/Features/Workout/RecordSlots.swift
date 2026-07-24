@@ -11,22 +11,25 @@ enum RecordSlots {
         var reps: Int        // reps の中央
         var duration: Int    // time は秒、cardio は分の中央
         var distanceKm: Double = 0  // cardio の距離km の中央
+        var angle: Int = 0   // has_angle 種目の角度°の中央
     }
 
     /// 種目・コンテキストから中心値を算出（履歴 → 既定）。
     static func centers(for exercise: Exercise, userId: UUID, excludingWorkoutId: UUID?) -> Centers {
         let type = exercise.measurementType
         let prev = WorkoutMetrics.previousSets(for: exercise, userId: userId, excludingWorkoutId: excludingWorkoutId)
+        // 角度は計測タイプに依らず has_angle 種目共通。前回値、なければ 0°。
+        let angle = exercise.hasAngle ? (prev.compactMap { $0.angleDegrees }.first { $0 >= 0 } ?? 0) : 0
 
         if type == .time {
             let dur = prev.compactMap { $0.durationSeconds }.first { $0 > 0 } ?? 30
-            return Centers(weight: 0, reps: 0, duration: max(5, dur))
+            return Centers(weight: 0, reps: 0, duration: max(5, dur), angle: angle)
         }
 
         if type == .cardio {
             let dist = prev.compactMap { $0.distanceKm }.first { $0 > 0 } ?? 3
             let mins = prev.compactMap { $0.durationSeconds }.first { $0 > 0 }.map { $0 / 60 } ?? 30
-            return Centers(weight: 0, reps: 0, duration: max(1, mins), distanceKm: max(0.5, dist))
+            return Centers(weight: 0, reps: 0, duration: max(1, mins), distanceKm: max(0.5, dist), angle: angle)
         }
 
         let weight: Double
@@ -37,7 +40,16 @@ enum RecordSlots {
             weight = prev.first(where: { $0.weight > 0 })?.weight ?? defaultWeight(exercise)
         }
         let reps = prev.first(where: { $0.reps > 0 })?.reps ?? 10
-        return Centers(weight: weight, reps: reps, duration: 30)
+        return Centers(weight: weight, reps: reps, duration: 30, angle: angle)
+    }
+
+    /// 角度ルーラーの値列（0〜60°・5°刻みの固定範囲）。center が範囲/グリッド外でも必ず含める。
+    static func angleRulerValues(center: Double) -> [Double] {
+        var set = Set<Double>()
+        var v = 0.0
+        while v <= 60.0 { set.insert(v); v += 5 }
+        if center.isFinite { set.insert(min(max(center.rounded(), 0), 60)) }
+        return set.sorted()
     }
 
     /// 重量刻み。プリセットは種目別レビュー値（ExerciseDefaults）、無ければ器具既定。

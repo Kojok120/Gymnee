@@ -344,6 +344,8 @@ struct RecordContent: View {
     @State private var durCenters: [UUID: Int] = [:]
     /// 有酸素の距離km ルーラー中央値（種目ごと・セッション中保持）。
     @State private var distCenters: [UUID: Double] = [:]
+    /// 角度あり種目の角度°ルーラー中央値（種目ごと・セッション中保持）。
+    @State private var angleCenters: [UUID: Double] = [:]
     /// centers（前回セット履歴の走査）の計算結果キャッシュ。カードごと・軸ごとの Binding get が
     /// 毎描画で履歴を再走査しないようにする。描画中（Binding get 内）に書き込むため、
     /// @State の値型辞書ではなく参照型に持つ（identity 不変＝ビュー更新を誘発しない）。
@@ -781,6 +783,7 @@ struct RecordContent: View {
                     repCenter: Binding(get: { Double(repCenter(for: spec)) }, set: { repCenters[spec.exercise.id] = Int($0) }),
                     durCenter: Binding(get: { Double(durCenter(for: spec)) }, set: { durCenters[spec.exercise.id] = Int($0) }),
                     distanceCenter: Binding(get: { distanceCenter(for: spec) }, set: { distCenters[spec.exercise.id] = $0 }),
+                    angleCenter: Binding(get: { angleCenter(for: spec) }, set: { angleCenters[spec.exercise.id] = $0 }),
                     onLogReps: { reps in logReps(reps, spec: spec) },
                     onLogDuration: { dur in logDuration(dur, spec: spec) },
                     onLogCardio: { dist, mins in logCardio(distanceKm: dist, minutes: mins, spec: spec) },
@@ -961,6 +964,12 @@ struct RecordContent: View {
     private func repCenter(for spec: CardSpec) -> Int { repCenters[spec.exercise.id] ?? centers(for: spec).reps }
     private func durCenter(for spec: CardSpec) -> Int { durCenters[spec.exercise.id] ?? centers(for: spec).duration }
     private func distanceCenter(for spec: CardSpec) -> Double { distCenters[spec.exercise.id] ?? centers(for: spec).distanceKm }
+    private func angleCenter(for spec: CardSpec) -> Double { angleCenters[spec.exercise.id] ?? Double(centers(for: spec).angle) }
+    /// 記録に添える角度（has_angle 種目のみ・0〜60°に丸める）。それ以外は nil。
+    private func angleValue(for spec: CardSpec) -> Int? {
+        guard spec.exercise.hasAngle else { return nil }
+        return safeCount(angleCenter(for: spec), cap: 60)
+    }
 
     /// ルーティン/計画モードの順序付きカード。
     private var orderedCardSpecs: [CardSpec] {
@@ -1086,12 +1095,13 @@ struct RecordContent: View {
         armed[spec.exercise.id] = w   // ルーラー位置を確定（記録後のジャンプ防止）
         // 自重のみは重量軸が無いので weight=0 を記録（過去セットの値を引きずらない）。
         let bodyweightOnly = spec.exercise.measurementType == .bodyweight && spec.exercise.loadMode == .none
-        commitSet(exercise: spec.exercise, weight: bodyweightOnly ? 0 : w, reps: reps, duration: nil)
+        commitSet(exercise: spec.exercise, weight: bodyweightOnly ? 0 : w, reps: reps, duration: nil,
+                  angleDegrees: angleValue(for: spec))
     }
 
     /// time：秒を1セット記録。
     private func logDuration(_ seconds: Int, spec: CardSpec) {
-        commitSet(exercise: spec.exercise, weight: 0, reps: 0, duration: seconds)
+        commitSet(exercise: spec.exercise, weight: 0, reps: 0, duration: seconds, angleDegrees: angleValue(for: spec))
     }
 
     /// cardio：距離km ＋ 時間（分）を1セット記録（時間は秒に換算して保存）。
@@ -1101,14 +1111,16 @@ struct RecordContent: View {
         let mins = max(0, min(minutes, 100_000))
         distCenters[spec.exercise.id] = km   // ルーラー位置を確定（記録後のジャンプ防止）
         durCenters[spec.exercise.id] = mins
-        commitSet(exercise: spec.exercise, weight: 0, reps: 0, duration: mins * 60, distanceKm: km)
+        commitSet(exercise: spec.exercise, weight: 0, reps: 0, duration: mins * 60, distanceKm: km,
+                  angleDegrees: angleValue(for: spec))
     }
 
-    private func commitSet(exercise: Exercise, weight: Double, reps: Int, duration: Int?, distanceKm: Double? = nil) {
+    private func commitSet(exercise: Exercise, weight: Double, reps: Int, duration: Int?, distanceKm: Double? = nil, angleDegrees: Int? = nil) {
         let workout = ensureWorkout()
         let we = workoutExercise(for: exercise, in: workout)
         let set = ExerciseSet(setIndex: we.sets.count, weight: weight, reps: reps,
-                              isCompleted: true, durationSeconds: duration, distanceKm: distanceKm, workoutExercise: we)
+                              isCompleted: true, durationSeconds: duration, distanceKm: distanceKm,
+                              angleDegrees: angleDegrees, workoutExercise: we)
         context.insert(set)
         try? context.save()   // 下書きはローカルのみ。同期は完了時。
         // PR の確定・永続は完了時にまとめて。ここでは履歴ベストとの純粋比較で「更新ペース！」を
@@ -1323,6 +1335,7 @@ struct RecordContent: View {
         repCenters = [:]
         durCenters = [:]
         distCenters = [:]
+        angleCenters = [:]
         // カレンダータブへ切替え、タブのゲート/pushed view を閉じる。
         NotificationCenter.default.post(name: .gymneeShowCalendar, object: nil)
         // タブ起点（チェックイン/計画開始）はゲートへ戻す。カレンダーからの過去編集 push は閉じる。
@@ -1338,6 +1351,7 @@ struct RecordContent: View {
         repCenters = [:]
         durCenters = [:]
         distCenters = [:]
+        angleCenters = [:]
         modeInitialized = false
         initializeModeIfNeeded()
     }
@@ -1420,6 +1434,7 @@ private struct ExerciseCardView: View {
     @Binding var repCenter: Double
     @Binding var durCenter: Double
     @Binding var distanceCenter: Double
+    @Binding var angleCenter: Double
     let onLogReps: (Int) -> Void
     let onLogDuration: (Int) -> Void
     let onLogCardio: (Double, Int) -> Void
@@ -1437,6 +1452,7 @@ private struct ExerciseCardView: View {
 
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
+            if exercise.hasAngle { angleRuler }   // 角度は重量と同じ「種目で決まる軸」＝最上段に常時表示。
             topRuler
             nameBlock
             bottomRuler
@@ -1444,6 +1460,14 @@ private struct ExerciseCardView: View {
         .frame(maxWidth: .infinity)
         .padding(Theme.Spacing.md)
         .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+    }
+
+    /// 角度ルーラー（0〜60°・5°刻み）。中央＝アーム（記録時に添える角度）。範囲が狭いためキーパッドは無し。
+    private var angleRuler: some View {
+        SlotRuler(selection: $angleCenter,
+                  makeValues: { RecordSlots.angleRulerValues(center: $0) },
+                  decimals: false, unit: "°", isAction: false,
+                  onCommit: nil, onLongPress: {})
     }
 
     /// 名前部（ウェイト/回数のルーラー以外）。タップ＝種目インスペクタ / 長押し＝タブから外す。
