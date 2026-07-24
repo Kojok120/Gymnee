@@ -17,6 +17,7 @@ struct AddExerciseView: View {
     @State private var equipment: EquipmentType = .barbell
     @State private var measurementType: MeasurementType = .weight
     @State private var weightMode: WeightMode = .both
+    @State private var hasAngle = false
 
     /// 部位の初期値を指定して開く（記録タブの「その他」ピッカーから＝開いているタブの部位）。
     init(initialMuscleGroup: MuscleGroup = .chest, onCreated: ((Exercise) -> Void)? = nil) {
@@ -42,6 +43,7 @@ struct AddExerciseView: View {
                 equipmentSection
                 typeSection
                 if measurementType == .weight { weightModeSection }
+                angleSection
             }
             .navigationTitle("カスタム種目")
             .navigationBarTitleDisplayMode(.inline)
@@ -95,6 +97,14 @@ struct AddExerciseView: View {
         }
     }
 
+    private var angleSection: some View {
+        Section {
+            Toggle("角度あり", isOn: $hasAngle)
+        } footer: {
+            Text("インクライン/デクライン等、ベンチ角度をセットごとに記録する種目でオンにします。")
+        }
+    }
+
     /// 入力中の名前と一致する既存種目（前後空白・大小無視）。あれば重複作成せず既存を使う。
     private var duplicate: Exercise? {
         let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -118,7 +128,8 @@ struct AddExerciseView: View {
             isCustom: true,
             createdBy: auth.currentUserId,
             weightMode: weightMode,
-            measurementType: measurementType
+            measurementType: measurementType,
+            hasAngle: hasAngle
         )
         context.insert(exercise)
         // 保存に成功した時だけ enqueue / onCreated へ進む（未保存の種目を呼び出し側へ渡さない）。
