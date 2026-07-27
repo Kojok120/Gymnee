@@ -559,24 +559,35 @@ struct RecordContent: View {
 
     /// カテゴリタブ（フリーのみ・常時表示・横スクロール）。タップで下のカード一覧をフィルタする
     /// （旧: 部位Menu によるスクロールジャンプ → 居酒屋オーダーUI式のタブフィルタへ変更）。
+    /// ④は横スワイプでも切り替わるため、選択が外から変わったら該当チップへ自動スクロールして
+    /// 現在地を見失わないようにする。
     private var categoryTabBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Theme.Spacing.sm) {
-                if !frequentExercises.isEmpty {
-                    tabChip(.frequent, label: "よくやる")
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    ForEach(availableTabs, id: \.self) { tab in
+                        tabChip(tab, label: tabLabel(tab)).id(tab)
+                    }
                 }
-                ForEach(MuscleGroup.allCases, id: \.self) { mg in
-                    tabChip(.group(mg), label: mg.label)
-                }
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.sm)
             }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm)
+            .onChange(of: selectedTab) { _, tab in
+                withAnimation(.snappy) { proxy.scrollTo(tab, anchor: .center) }
+            }
+        }
+    }
+
+    private func tabLabel(_ tab: RecordCategoryTab) -> String {
+        switch tab {
+        case .frequent: return "よくやる"
+        case .group(let mg): return mg.label
         }
     }
 
     private func tabChip(_ tab: RecordCategoryTab, label: String) -> some View {
         let selected = selectedTab == tab
-        return Button { selectedTab = tab } label: {
+        return Button { withAnimation(.snappy) { selectedTab = tab } } label: {
             Text(label)
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, Theme.Spacing.md)
@@ -687,26 +698,53 @@ struct RecordContent: View {
 
     @ViewBuilder
     private var cardsArea: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                switch mode {
-                case .free:
-                    freeCardsBody
-                case .plan, .routine:
+        switch mode {
+        case .free:
+            freeCardsPager
+        case .plan, .routine:
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     orderedCardsBody
                 }
+                .padding(Theme.Spacing.lg)
             }
-            .padding(Theme.Spacing.lg)
         }
-        // タブ切替でスクロール位置を先頭へ戻す（フィルタなので前タブの位置を引き継がない）。
-        .id(selectedTab)
     }
 
-    /// フリー：選択中タブの種目カード。部位タブは「シェルフ」（既定=頻度トップ3→定番補完。
+    /// フリー：部位ごとの1ページ＝横スワイプで隣の部位へ移動できるページャ。③タブバーとは
+    /// `selectedTab` で双方向に連動する（タップでもスワイプでも同じ状態を動かす）。
+    /// 注意: カード内の値ルーラー（`SlotRuler`）も横スクロールのため、**ルーラーの上をなぞった
+    /// ときはページ送りされない**（同一軸のネストスクロールは内側が優先される仕様）。
+    /// 種目名・カード間の余白・タブバー付近でのスワイプで移動する想定。
+    private var freeCardsPager: some View {
+        TabView(selection: $selectedTab) {
+            ForEach(availableTabs, id: \.self) { tab in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                        freeCardsBody(for: tab)
+                    }
+                    .padding(Theme.Spacing.lg)
+                }
+                .tag(tab)
+            }
+        }
+        // ページインジケータは③タブバーが担うので出さない。
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+
+    /// ③タブバー／④ページャで共有する表示タブ順（よくやるは履歴がある時のみ）。
+    private var availableTabs: [RecordCategoryTab] {
+        var tabs: [RecordCategoryTab] = []
+        if !frequentExercises.isEmpty { tabs.append(.frequent) }
+        tabs.append(contentsOf: MuscleGroup.allCases.map { .group($0) })
+        return tabs
+    }
+
+    /// フリー：指定タブの種目カード。部位タブは「シェルフ」（既定=頻度トップ3→定番補完。
     /// ユーザーが追加/削除でカスタマイズ可）＋末尾の「その他」カード。
     @ViewBuilder
-    private var freeCardsBody: some View {
-        switch selectedTab {
+    private func freeCardsBody(for tab: RecordCategoryTab) -> some View {
+        switch tab {
         case .frequent:
             cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
         case .group(let mg):
