@@ -103,6 +103,11 @@ struct ExerciseSettingsForm: View {
                     Text("懸垂・ディップス等で「荷重（自重＋kg）」と「補助（自重−kg・バンド/アシストマシン）」を区別します。自重のみは回数だけ記録。自己ベストは 荷重=最大荷重 / 補助=最小補助 / 自重=最大回数。")
                 }
             }
+            Section {
+                Toggle("角度あり", isOn: Binding(get: { exercise.hasAngle }, set: { exercise.hasAngle = $0 }))
+            } footer: {
+                Text("インクライン/デクライン等、ベンチ角度をセットごとに記録する種目でオンにします。")
+            }
             if exercise.isCustom {
                 Section {
                     Button("この種目を削除", role: .destructive) { showDeleteConfirm = true }

@@ -69,6 +69,9 @@ final class Exercise {
     var measurementTypeRaw: String = MeasurementType.weight.rawValue
     /// 自重種目の荷重スタイル（自重のみ/荷重/補助）。bodyweight のときだけ意味を持つ。
     var loadModeRaw: String = LoadMode.none.rawValue
+    /// 角度あり種目（インクライン/デクライン等）。true のとき記録カードに角度ルーラーを常時表示する。
+    /// weightMode / measurementType と同じ「種目で決まる属性」。既定 false（既存データの移行安全）。
+    var hasAngle: Bool = false
     var updatedAt: Date
     var isDirty: Bool
 
@@ -116,6 +119,7 @@ final class Exercise {
         weightMode: WeightMode = .both,
         measurementType: MeasurementType = .weight,
         loadMode: LoadMode = .none,
+        hasAngle: Bool = false,
         updatedAt: Date = .now,
         isDirty: Bool = true
     ) {
@@ -128,6 +132,7 @@ final class Exercise {
         self.weightModeRaw = weightMode.rawValue
         self.measurementTypeRaw = measurementType.rawValue
         self.loadModeRaw = loadMode.rawValue
+        self.hasAngle = hasAngle
         self.updatedAt = updatedAt
         self.isDirty = isDirty
     }
@@ -193,6 +198,8 @@ final class ExerciseSet {
     var durationSeconds: Int? = nil
     /// 有酸素種目の距離km（cardio のみ。それ以外は nil）。
     var distanceKm: Double? = nil
+    /// ベンチ角度など（has_angle 種目のみ。0〜60°。それ以外は nil）。
+    var angleDegrees: Int? = nil
     var createdAt: Date
     var updatedAt: Date
     var isDirty: Bool
@@ -216,6 +223,7 @@ final class ExerciseSet {
         isCompleted: Bool = false,
         durationSeconds: Int? = nil,
         distanceKm: Double? = nil,
+        angleDegrees: Int? = nil,
         workoutExercise: WorkoutExercise? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
@@ -229,6 +237,7 @@ final class ExerciseSet {
         self.isCompleted = isCompleted
         self.durationSeconds = durationSeconds
         self.distanceKm = distanceKm
+        self.angleDegrees = angleDegrees
         self.workoutExercise = workoutExercise
         self.createdAt = createdAt
         self.updatedAt = updatedAt

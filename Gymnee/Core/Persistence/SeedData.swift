@@ -7,7 +7,8 @@ enum SeedData {
     /// プリセット定義の版数。プリセット種目/部位移行の内容を変えたら +1 する
     /// （次回起動時に一度だけ整備処理が走る）。
     /// v3: 懸垂・ディップスを assisted（補助が多数派。符号付き一本軸で加重も記録可）に変更。
-    private static let presetVersion = 3
+    /// v4: シットアップ/クランチ/レッグレイズを hasAngle=true（角度あり）に（issue #44）。
+    private static let presetVersion = 4
     private static let presetVersionKey = "gymnee.seed.presetVersion"
 
     /// プリセット種目の決定的id用 namespace（固定値。変更すると全idが変わるので不変にする）。
@@ -111,6 +112,7 @@ enum SeedData {
                 weightMode: preset.weightMode,
                 measurementType: preset.measurement,
                 loadMode: preset.loadMode,
+                hasAngle: preset.hasAngle,
                 isDirty: false
             )
             context.insert(exercise)
@@ -134,6 +136,7 @@ enum SeedData {
             if ex.measurementTypeRaw != p.measurement.rawValue { ex.measurementType = p.measurement; dirty = true }
             if ex.weightModeRaw != p.weightMode.rawValue { ex.weightMode = p.weightMode; dirty = true }
             if ex.loadModeRaw != p.loadMode.rawValue { ex.loadMode = p.loadMode; dirty = true }
+            if ex.hasAngle != p.hasAngle { ex.hasAngle = p.hasAngle; dirty = true }
             if dirty { ex.updatedAt = .now; ex.isDirty = true; changed = true }
         }
         if changed { try? context.save() }
@@ -204,6 +207,8 @@ enum SeedData {
         let measurement: MeasurementType
         let weightMode: WeightMode
         let loadMode: LoadMode
+        /// 角度あり種目（既定 false）。true の種目は記録カードに角度ルーラーを常時表示する。
+        var hasAngle: Bool = false
     }
 
     /// 主要種目の最小マスタ（プリセット、§6.5）。各種目の設定はドメインレビュー済み。
@@ -248,10 +253,10 @@ enum SeedData {
         .init(name: "ハンマーカール", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "トライセプスプレスダウン", muscle: .arms, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "スカルクラッシャー", muscle: .arms, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
-        // 腹
-        .init(name: "クランチ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
-        .init(name: "シットアップ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
-        .init(name: "レッグレイズ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        // 腹（クランチ/シットアップ/レッグレイズはベンチ角度を変えて記録できる＝角度あり）
+        .init(name: "クランチ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none, hasAngle: true),
+        .init(name: "シットアップ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none, hasAngle: true),
+        .init(name: "レッグレイズ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none, hasAngle: true),
         .init(name: "ケーブルクランチ", muscle: .abs, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "アブローラー", muscle: .abs, equipment: .other, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // 体幹
