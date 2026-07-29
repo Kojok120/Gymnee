@@ -7,7 +7,6 @@ struct SocialFeedView: View {
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
     /// 起動時に表示するタブ（0=フィード, 1=ランキング）。ディープリンク/検証ハーネス用。
-    var initialTab: Int = 0
     /// 起動時にフレンド画面を開く（検証ハーネス -gymneeScreen friends 用）。
     var openFriends: Bool = false
 
@@ -25,7 +24,7 @@ struct SocialFeedView: View {
                 // フォロー・応援・コメント・公開投稿は本人性のあるアカウント限定（RLS 0031 とも整合）。
                 signInPrompt
             } else if let uid = auth.currentUserId {
-                SocialContent(userId: uid, initialTab: initialTab)
+                SocialContent(userId: uid)
                     .onAppear {
                         // 検証ハーネス: 一度だけフレンド画面を自動 push（戻り時の再 push を防ぐ）。
                         if openFriends && !didAutoOpenFriends {
@@ -122,19 +121,16 @@ private struct SocialContent: View {
     /// 通知（自分の投稿への他者反応）を最後に見た時刻。アイコンの未読バッジ算出に使う。
     @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
 
-    @State private var tab = 0
-    @State private var showAddFriend = false
     @State private var reportTarget: ReportUserTarget?
-    @State private var showMyPosts = false
+    @State private var showActivity = false
     /// タップで開く投稿詳細（全投稿共通：リッチ詳細＋リアクションした人＋コメント）。
     @State private var postDetail: FeedEntry?
     /// ダブルタップいいね時のハート演出対象（feed_item id）。
     @State private var burstId: UUID?
     @State private var feedEntries: [FeedEntry] = []
 
-    init(userId: UUID, initialTab: Int = 0) {
+    init(userId: UUID) {
         self.userId = userId
-        _tab = State(initialValue: initialTab)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
         // 自分が follower か followee の両方を取得（相互判定のため）。
@@ -165,13 +161,6 @@ private struct SocialContent: View {
     private var following: [Follow] { follows.filter { $0.followerId == userId && !blockedIds.contains($0.followeeId) } }
     /// 自分をフォローしている人の userId 集合（ブロック相手を除外）。
     private var followerIds: Set<UUID> { Set(follows.filter { $0.followeeId == userId && !blockedIds.contains($0.followerId) }.map(\.followerId)) }
-    /// 相互フォローか（相手も自分をフォローしている）。
-    private func isMutual(_ f: Follow) -> Bool { followerIds.contains(f.followeeId) }
-    /// 自分をフォローしているが自分はまだフォローし返していない人（ブロック相手を除外）。
-    private var pendingFollowBack: [Follow] {
-        let followingIds = Set(following.map(\.followeeId))
-        return follows.filter { $0.followeeId == userId && !followingIds.contains($0.followerId) && !blockedIds.contains($0.followerId) }
-    }
     /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
     /// feed_item.id == 元データ id。削除直後でも実体（pr/workout）から導き、stale な feedItems に依存しない。
     private var myPostIds: Set<UUID> {
@@ -200,21 +189,6 @@ private struct SocialContent: View {
         Moderation.block(blockerId: userId, blockedId: id, displayName: name, context: context, sync: sync)
     }
 
-    private func unfollow(_ f: Follow) {
-        let id = f.id
-        context.delete(f)
-        try? context.save()
-        sync.enqueue(PendingChange(entity: "follows", recordId: id, operation: .delete, updatedAt: .now))
-    }
-
-    private func followBack(_ targetId: UUID) {
-        guard !following.contains(where: { $0.followeeId == targetId }) else { return }
-        let follow = Follow(followerId: userId, followeeId: targetId, followeeDisplayName: displayName(for: targetId))
-        context.insert(follow)
-        try? context.save()
-        sync.enqueue(PendingChange(entity: "follows", recordId: follow.id, operation: .upsert, updatedAt: follow.updatedAt))
-    }
-
     var body: some View {
         Group {
             if agreedGuidelines {
@@ -231,49 +205,36 @@ private struct SocialContent: View {
         }
     }
 
+    /// ランキングは撤去済み（競争より継続を主役にする）。画面はフィード 1 枚で、
+    /// 左上＝通知、右上＝友達追加という Twitter / Instagram と同じ配置に揃える。
     private var mainContent: some View {
-        // 3画面を常時マウントし不透明度だけ切替（switchの差し替えトランジション＝中身が畳まれ展開する動きを排除）。
-        // レイアウトは固定されるため「枠だけ」切り替わる。
-        ZStack {
-            feed
-                .opacity(tab == 0 ? 1 : 0)
-                .allowsHitTesting(tab == 0)
-            RankingView(userId: userId)
-                .opacity(tab == 1 ? 1 : 0)
-                .allowsHitTesting(tab == 1)
-        }
-        .navigationTitle("ソーシャル")
+        feed
+        .navigationTitle("フィード")
         .navigationBarTitleDisplayMode(.inline)
         .task { await refreshFeed() }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button { showMyPosts = true } label: {
-                    Image(systemName: "person.crop.rectangle.stack")
+                // 通知は「自分の投稿」の中に埋もれていたのをツールバー直下へ昇格させる。
+                Button { showActivity = true } label: {
+                    Image(systemName: "bell")
                 }
                 .notificationBadge(socialUnread)
-                .accessibilityLabel("自分の投稿")
-            }
-            ToolbarItem(placement: .principal) {
-                Picker("", selection: $tab) {
-                    Text("フィード").tag(0)
-                    Text("ランキング").tag(1)
-                }.pickerStyle(.segmented)
+                .accessibilityLabel("通知")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 // フレンド画面へは値ベースで push（isPresented 型 destination は UserRef の
                 // 値 push と競合してループするため使わない）。
                 NavigationLink(value: SocialRoute.friends) {
-                    Image(systemName: "person.2")
+                    Image(systemName: "person.badge.plus")
                 }
                 .toolbarCircleBackground()
-                .accessibilityLabel("フレンド")
+                .accessibilityLabel("フレンドを探す")
             }
         }
-        .sheet(isPresented: $showMyPosts) {
-            NavigationStack { MyPostsView(userId: userId, onClose: { showMyPosts = false }) }
+        .sheet(isPresented: $showActivity) {
+            NavigationStack { SocialActivityView(userId: userId, onClose: { showActivity = false }) }
         }
-        .onChange(of: showMyPosts) { _, shown in if !shown { Task { await refreshFeed() } } }
-        .sheet(isPresented: $showAddFriend) { AddFriendView(userId: userId) }
+        .onChange(of: showActivity) { _, shown in if !shown { Task { await refreshFeed() } } }
         .navigationDestination(for: SocialRoute.self) { route in
             switch route {
             case .friends: friendsScreen
@@ -335,9 +296,16 @@ private struct SocialContent: View {
         .background(Theme.groupedBackground)
         .overlay {
             if visibleEntries.isEmpty {
-                EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です",
-                               message: "フレンドを見つけると、活動が時系列で並びます。",
-                               actionTitle: "フレンドを探す", action: { showAddFriend = true })
+                VStack(spacing: Theme.Spacing.md) {
+                    EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です",
+                                   message: "フレンドを見つけると、活動が時系列で並びます。")
+                    // 遷移は値ベースに統一（クロージャ型は pushed view 上で解決されないことがある）。
+                    NavigationLink(value: SocialRoute.friends) {
+                        Label("フレンドを探す", systemImage: "person.badge.plus")
+                            .font(.subheadline.bold())
+                    }
+                    .buttonStyle(.borderedProminent).prominentLime()
+                }
             }
         }
         .task(id: "\(workouts.count)-\(prs.count)-\(feedItems.count)-\(profiles.count)") { rebuildFeedEntries() }
@@ -351,8 +319,8 @@ private struct SocialContent: View {
         }
     }
 
-    /// カード（シングルタップで開く／ダブルタップでいいね）＋いいねバー。
-    /// ワークアウトもチェックインも同じカード仕様（矢印なし）に統一。
+    /// カード（シングルタップでワークアウト詳細＋コメントを開く／ダブルタップでいいね）＋いいねバー。
+    /// ワークアウトも自己ベストも同じカード仕様（矢印なし）に統一。
     private func feedRow(_ entry: FeedEntry, reactions: [PostReaction], commentCount: Int) -> some View {
         // 自分のリアクション（種別問わず1つ）。ダブルタップの二重付与防止にも使う。
         let myReaction = reactions.first { $0.userId == userId }
@@ -430,91 +398,10 @@ private struct SocialContent: View {
 
     // MARK: - Friends
 
-    /// フレンド画面（右上アイコンから push）：フォロー中＋（あれば）あなたをフォロー。
+    /// フレンド画面（検索 / フォロー中 / フォロワー）。
+    /// 以前は検索がシート・フォロー一覧がこの画面と分かれていたが、相手を探す動線が
+    /// 2 箇所に割れるため AddFriendView に集約した。
     private var friendsScreen: some View {
-        // 行ごとの profiles/feedItems 線形走査（O(行数×全件)）を避けるため、索引を一度だけ構築。
-        let avatarById = Dictionary(profiles.map { ($0.id, $0.avatarURL) }, uniquingKeysWith: { a, _ in a })
-        var nameById: [UUID: String] = [:]
-        for p in profiles where nameById[p.id] == nil {
-            if !p.displayName.isEmpty { nameById[p.id] = p.displayName }
-        }
-        var feedNameById: [UUID: String] = [:]
-        for item in feedItems where feedNameById[item.userId] == nil {
-            if let n = item.authorDisplayName, !n.isEmpty { feedNameById[item.userId] = n }
-        }
-        // 表示名の解決（displayName(for:)/旧 followeeName と同じ優先順。行描画用の辞書引き版）。
-        func resolveName(_ id: UUID, cached: String? = nil) -> String {
-            if let n = nameById[id] { return n }
-            if let n = feedNameById[id] { return n }
-            if let cached, !cached.isEmpty { return cached }
-            return "ユーザー"
-        }
-        return List {
-            Section("フォロー中 (\(following.count))") {
-                if following.isEmpty {
-                    Text("まだ誰もフォローしていません。").foregroundStyle(.secondary)
-                } else {
-                    ForEach(following) { f in
-                        let name = resolveName(f.followeeId, cached: f.followeeDisplayName)
-                        NavigationLink(value: UserRef(id: f.followeeId, name: name)) {
-                            HStack {
-                                AvatarView(urlString: avatarById[f.followeeId] ?? nil, size: 32)
-                                Text(name)
-                                Spacer()
-                                if isMutual(f) {
-                                    Label("相互", systemImage: "arrow.left.arrow.right")
-                                        .font(.caption2.bold()).foregroundStyle(Theme.energy)
-                                        .padding(.horizontal, 8).padding(.vertical, 3)
-                                        .background(Theme.energy.opacity(0.15), in: Capsule())
-                                }
-                            }
-                        }
-                        .swipeActions { Button("解除", role: .destructive) { unfollow(f) } }
-                        .contextMenu {
-                            Button("通報", systemImage: "flag") {
-                                reportTarget = ReportUserTarget(id: f.followeeId, displayName: name)
-                            }
-                            Button("ブロック", systemImage: "hand.raised", role: .destructive) {
-                                blockUser(f.followeeId, name: name)
-                            }
-                        }
-                    }
-                }
-                Button { showAddFriend = true } label: {
-                    Label("ユーザーを探す", systemImage: "magnifyingglass")
-                }
-            }
-
-            if !pendingFollowBack.isEmpty {
-                Section("あなたをフォロー") {
-                    ForEach(pendingFollowBack) { f in
-                        let name = resolveName(f.followerId)
-                        HStack {
-                            Image(systemName: "person").foregroundStyle(.secondary)
-                            Text(name)
-                            Spacer()
-                            Button("フォローし返す") { followBack(f.followerId) }
-                                .buttonStyle(.borderedProminent).tint(Theme.energy).controlSize(.small)
-                        }
-                        .swipeActions {
-                            Button("ブロック", role: .destructive) { blockUser(f.followerId, name: name) }
-                        }
-                        .contextMenu {
-                            Button("通報", systemImage: "flag") {
-                                reportTarget = ReportUserTarget(id: f.followerId, displayName: name)
-                            }
-                            Button("ブロック", systemImage: "hand.raised", role: .destructive) {
-                                blockUser(f.followerId, name: name)
-                            }
-                        }
-                    }
-                }
-            }
-
-        }
-        .listStyle(.plain)  // フィード/ランキングと容器スタイルを統一（切替時のインセット差による揺れを解消）
-        .background(Theme.groupedBackground)
-        .navigationTitle("フレンド")
-        .navigationBarTitleDisplayMode(.inline)
+        AddFriendView(userId: userId, showsCloseButton: false)
     }
 }

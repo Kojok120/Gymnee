@@ -343,7 +343,20 @@ final class AuthService {
         }
     }
 
-    /// 写真をバケットへアップロードし、参照("bucket/path")を返す（progress-photos / visit-photos）。
+    /// プリセットアイコン（`preset://...`）をローカル Profile に反映する。
+    /// 画像アップロードを伴わないので同期は呼び出し側の enqueue に委ねる（uploadAvatar と同方針）。
+    func updateAvatarURL(_ urlString: String?) {
+        guard let context, let uid = currentUserId else { return }
+        let descriptor = FetchDescriptor<Profile>(predicate: #Predicate { $0.id == uid })
+        guard let profile = (try? context.fetch(descriptor))?.first else { return }
+        guard profile.avatarURL != urlString else { return }
+        profile.avatarURL = urlString
+        profile.updatedAt = .now
+        profile.isDirty = true
+        try? context.save()
+    }
+
+    /// 写真をバケットへアップロードし、参照("bucket/path")を返す（progress-photos / workout-photos）。
     func uploadPhoto(bucket: String, filename: String, jpeg: Data) async -> String? {
         guard let supabase, isBackendAuthenticated, let uid = currentUserId else { return nil }
         let path = "\(uid.uuidString.lowercased())/\(filename)"
