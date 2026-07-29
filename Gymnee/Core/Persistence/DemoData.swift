@@ -43,7 +43,8 @@ enum DemoData {
         let squat = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "スクワット" })))?.first
         let lat = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "ラットプルダウン" })))?.first
         // (日数前, トップ重量) を過去→現在で漸増。
-        let benchHistory: [(Int, Double)] = [(23, 70), (16, 72.5), (9, 77.5), (2, 80)]
+        // 直近は「今日」にする（人体図の疲労度・連続記録など“直後の状態”を検証できるように）。
+        let benchHistory: [(Int, Double)] = [(23, 70), (16, 72.5), (9, 77.5), (0, 80)]
         for (off, topWeight) in benchHistory {
             guard let date = cal.date(byAdding: .day, value: -off, to: today) else { continue }
             let workout = Workout(userId: userId, date: date, name: "胸・三頭", completedAt: date, isDirty: false)
@@ -54,10 +55,10 @@ enum DemoData {
                 let weights = [topWeight - 20, topWeight - 10, topWeight]
                 let reps = [10, 8, 6]
                 for i in 0..<3 {
-                    context.insert(ExerciseSet(setIndex: i, weight: weights[i], reps: reps[i], isPR: i == 2 && off == 2, isCompleted: true, workoutExercise: we, isDirty: false))
+                    context.insert(ExerciseSet(setIndex: i, weight: weights[i], reps: reps[i], isPR: i == 2 && off == 0, isCompleted: true, workoutExercise: we, isDirty: false))
                 }
             }
-            if let squat, off == 2 {
+            if let squat, off == 0 {
                 let we = WorkoutExercise(orderIndex: 1, workout: workout, exercise: squat, isDirty: false)
                 context.insert(we)
                 for i in 0..<3 {

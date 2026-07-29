@@ -1,451 +1,161 @@
 import SwiftUI
 import SwiftData
-import Charts
 
-/// 分析ダッシュボード（§6.8）。ヒートマップ・強度進捗・部位バランス・リカバリービュー・CSV。
+/// 分析タブ。**人体図 1 枚**に絞る。
+///
+/// 以前はヒートマップ / 強度進捗 / 部位バランス / リカバリー / PRタイムライン / CSV の 6 カードが
+/// 縦積みで、情報は多いのに「で、自分はいまどうなのか」が一目で分からなかった。
+/// いま見たいのは「どこが疲れていて、次はどこをやるか」なので、正面・背面の人体図に集約し、
+/// 数値の深掘りは部位タップの先へ送る。CSV は設定へ、PR は種目詳細へ移設した。
 struct AnalyticsView: View {
     let userId: UUID
 
-    @Environment(\.modelContext) private var context
     @Query private var workouts: [Workout]
-    @Query private var prs: [PersonalRecord]
-    @State private var csvURL: URL?
-    /// 強度進捗グラフに表示する種目（空＝頻度上位5の既定）。シートで増減できる。
-    @State private var pinnedExercises: Set<String> = []
-    /// 表示種目を選ぶシートの表示。
-    @State private var showExercisePicker = false
+    @Query private var metrics: [BodyMetric]
 
-    private let calendar = Calendar.current
-    /// 分析の集計期間は直近3ヶ月（12週）に固定（期間切替は廃止）。
-    private let periodWeeks = 12
-    private let periodLabel = "3ヶ月"
-
-    private enum Route: Hashable { case history, exercise(Exercise) }
+    /// タップで開く部位詳細。
+    @State private var selectedMuscle: MuscleGroup?
+    @State private var showBodyMetrics = false
+    @State private var showAddMetric = false
 
     init(userId: UUID) {
         self.userId = userId
-        // ダッシュボード表示は直近3ヶ月だが、リカバリーの最終トレ日など遡及用に約1年分を確保する
-        // （多年履歴の全ロードは避ける）。
-        let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -53, to: Date()) ?? .distantPast
-        _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.date >= cutoff }, sort: \Workout.date)
-        _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId && $0.achievedAt >= cutoff }, sort: \PersonalRecord.achievedAt, order: .reverse)
+        // 疲労度は直近の記録だけで決まる（最長の推奨回復時間 72h）。3ヶ月あれば十分。
+        let cutoff = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? .distantPast
+        _workouts = Query(
+            filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil && $0.date >= cutoff },
+            sort: \Workout.date, order: .reverse
+        )
+        _metrics = Query(filter: #Predicate<BodyMetric> { $0.userId == userId }, sort: \BodyMetric.date, order: .reverse)
     }
+
+    // MARK: - 導出
+
+    /// 完了ワークアウト → 部位ごとのセッション（MuscleFatigue の入力）。
+    /// 日付は `completedAt` に一本化する（旧実装は画面ごとに `date` / `completedAt` がズレていた）。
+    private var sessionEntries: [MuscleFatigue.SessionEntry] {
+        var result: [MuscleFatigue.SessionEntry] = []
+        for w in workouts {
+            guard let done = w.completedAt else { continue }
+            // 同一ワークアウト内の同じ部位はセット数を合算する。
+            var setsByMuscle: [MuscleGroup: Int] = [:]
+            for we in w.exercises {
+                guard let muscle = we.exercise?.muscleGroup, !we.sets.isEmpty else { continue }
+                setsByMuscle[muscle, default: 0] += we.sets.count
+            }
+            for (muscle, count) in setsByMuscle {
+                result.append(MuscleFatigue.SessionEntry(muscle: muscle, completedAt: done, setCount: count))
+            }
+        }
+        return result
+    }
+
+    private var statuses: [MuscleFatigue.Status] { MuscleFatigue.statuses(entries: sessionEntries) }
+
+    private var fatigueByMuscle: [MuscleGroup: Double] {
+        Dictionary(statuses.map { ($0.muscle, $0.fatigue) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    private func status(for muscle: MuscleGroup) -> MuscleFatigue.Status {
+        statuses.first { $0.muscle == muscle }
+            ?? MuscleFatigue.Status(muscle: muscle, lastTrained: nil, lastSetCount: 0, fatigue: 0)
+    }
+
+    private var latestWeight: Double? { metrics.first(where: { $0.weight != nil })?.weight }
+    private var latestBodyFat: Double? { metrics.first(where: { $0.bodyFat != nil })?.bodyFat }
+
+    // MARK: - 画面
 
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
-                historyLink
-                heatmapCard
-                strengthCard
-                balanceCard
-                recoveryCard
-                prTimelineCard
-                exportCard
+                bodyCard
+                bodyMetricsRow
             }
             .padding(Theme.Spacing.lg)
         }
-        .background(Theme.groupedBackground)
+        .background(Theme.bg0)
+        .navigationTitle("分析")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: Route.self) { route in
-            switch route {
-            case .history: HistoryView(userId: userId)
-            case .exercise(let ex): ExerciseDetailView(exercise: ex, userId: userId)
+        .sheet(item: $selectedMuscle) { muscle in
+            MuscleDetailSheet(muscle: muscle, userId: userId, status: status(for: muscle))
+        }
+        .sheet(isPresented: $showBodyMetrics) {
+            NavigationStack {
+                BodyMetricsView(userId: userId)
+                    .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showBodyMetrics = false } } }
             }
+        }
+        .sheet(isPresented: $showAddMetric) { AddBodyMetricView(userId: userId) }
+    }
+
+    /// 正面・背面を並べて表示（背面にしかない背中・臀部・ハムも正しい位置で塗れる）。
+    private var bodyCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                ForEach(BodyMapPaths.Face.allCases) { face in
+                    VStack(spacing: Theme.Spacing.xs) {
+                        BodyMapView(
+                            face: face,
+                            fatigueByMuscle: fatigueByMuscle,
+                            selected: selectedMuscle,
+                            onSelect: { selectedMuscle = $0 }
+                        )
+                        Text(face.label).font(.caption2).foregroundStyle(Theme.textTertiary)
+                    }
+                }
+            }
+            BodyMapLegend()
+            Text(hintText)
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .gymneeCard()
+    }
+
+    /// 図の下の一言。色を見せて終わりにせず「次にどこをやるか」まで踏み込む。
+    private var hintText: String {
+        guard !sessionEntries.isEmpty else {
+            return "記録をつけると、鍛えた部位が疲労度で色分けされます。部位をタップすると重量の推移が見られます。"
+        }
+        let ready = MuscleFatigue.recommendedNext(from: statuses)
+        guard let first = ready.first else {
+            return "全体的に疲労が残っています。今日はしっかり休むのも選択肢です。"
+        }
+        return "回復済み：\(ready.prefix(3).map(\.label).joined(separator: "・"))。次は\(first.label)が狙い目です。"
+    }
+
+    /// 体重・体脂肪率。未記録なら入力画面、記録済みなら推移画面へ（初回のつまずきを作らない）。
+    private var bodyMetricsRow: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            metricTile(label: "体重", value: latestWeight.map { "\(SetFormatting.weightString($0)) kg" },
+                       systemImage: "scalemass")
+            metricTile(label: "体脂肪率", value: latestBodyFat.map { String(format: "%.1f %%", $0) },
+                       systemImage: "percent")
         }
     }
 
-    /// 集計の手前に置く「記録を一覧で見る」導線（日付/種目ごとの履歴へ）。
-    private var historyLink: some View {
-        NavigationLink(value: Route.history) {
-            HStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "list.bullet.rectangle")
-                    .font(.title2).foregroundStyle(Theme.lime)
-                    .frame(width: 52, height: 52)
-                    .background(Theme.lime.opacity(0.15), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("記録を一覧で見る").font(.headline).foregroundStyle(Theme.textPrimary)
-                    Text("日付・種目ごとの履歴").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.subheadline).foregroundStyle(.secondary)
+    private func metricTile(label: String, value: String?, systemImage: String) -> some View {
+        Button {
+            if value == nil { showAddMetric = true } else { showBodyMetrics = true }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(label, systemImage: systemImage)
+                    .font(.caption).foregroundStyle(Theme.textTertiary)
+                Text(value ?? "記録する")
+                    .font(value == nil ? .subheadline.weight(.semibold) : .numS)
+                    .foregroundStyle(value == nil ? Theme.lime : Theme.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .gymneeCard()
+            .padding(Theme.Spacing.md)
+            .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         }
         .buttonStyle(.plain)
-    }
-
-    private var periodStart: Date {
-        calendar.date(byAdding: .weekOfYear, value: -periodWeeks, to: .now) ?? .distantPast
-    }
-
-    // MARK: - Heatmap
-
-    /// 来店ヒートマップは直近3ヶ月（12週）の貢献グラフ（幅いっぱい）に固定する。
-    private var heatmapCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "記録ヒートマップ（直近\(periodLabel)）")
-            HeatmapView(counts: workoutCounts, weeks: periodWeeks, contribution: true)
-        }
-        .gymneeCard()
-    }
-
-    private var workoutCounts: [Date: Int] {
-        var counts: [Date: Int] = [:]
-        for w in workouts where w.completedAt != nil {
-            counts[calendar.startOfDay(for: w.completedAt ?? w.date), default: 0] += 1
-        }
-        return counts
-    }
-
-    // MARK: - Muscle balance
-
-    private var balanceCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "部位バランス（直近\(periodLabel)・セット数）")
-            if balanceData.allSatisfy({ $0.value == 0 }) {
-                Text("ワークアウトを記録すると表示されます。").font(.caption).foregroundStyle(.secondary)
-            } else {
-                RadarChartView(data: balanceData.map { ($0.label, $0.normalized, "\(Int($0.value))") })
-                    .frame(height: 240)
-            }
-        }
-        .gymneeCard()
-    }
-
-    private struct Balance { let label: String; let value: Double; let normalized: Double }
-    private var balanceData: [Balance] {
-        let entries = recentVolumeEntries(weeks: periodWeeks)
-        let counts = VolumeCalculator.setCountByMuscle(entries)
-        let muscles = RecoveryAnalyzer.trackedMuscles
-        let maxCount = max(muscles.map { Double(counts[$0] ?? 0) }.max() ?? 1, 1)
-        return muscles.map { mg in
-            let v = Double(counts[mg] ?? 0)
-            return Balance(label: mg.label, value: v, normalized: v / maxCount)
-        }
-    }
-
-    // MARK: - Strength progress
-
-    private var strengthCard: some View {
-        // 期間内の種目索引（全ワークアウト走査）は重い導出のため、1回の body 評価で
-        // 1 度だけ計算して各パーツへ配る（計算プロパティの多重再計算を避ける）。
-        let byExercise = byExerciseInPeriod
-        let avail = weightedExercisesByFreq(in: byExercise)
-        let displayed = displayedExercises(in: avail)
-        let points = strengthPoints(by: byExercise, displayed: displayed)
-        return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "強度進捗（推定1RM）")
-            if avail.isEmpty {
-                Text("ワークアウトを重ねると主要種目の推移が出ます。").font(.caption).foregroundStyle(.secondary)
-            } else {
-                exerciseSelector(avail: avail, displayed: displayed)
-                if points.isEmpty {
-                    Text("表示する種目を選んでください。").font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Chart(points) { p in
-                        LineMark(x: .value("日付", p.date), y: .value("推定1RM", p.e1RM))
-                            .foregroundStyle(by: .value("種目", p.exercise))
-                            .interpolationMethod(.catmullRom)
-                        PointMark(x: .value("日付", p.date), y: .value("推定1RM", p.e1RM))
-                            .foregroundStyle(by: .value("種目", p.exercise))
-                    }
-                    .chartYAxisLabel("kg")
-                    // 標準凡例は横一列で長い種目名が「…」に見切れるため、非表示にして
-                    // 折返し可能な自前凡例（strengthLegend）で全名を表示する。
-                    .chartForegroundStyleScale(domain: displayed, range: seriesColors(count: displayed.count))
-                    .chartLegend(.hidden)
-                    .frame(height: 200)
-                    strengthLegend(displayed: displayed)
-                }
-            }
-        }
-        .gymneeCard()
-    }
-
-    /// 表示種目の選択導線。横スクロールのチップをやめ、検索付きシートで選ぶ。
-    private func exerciseSelector(avail: [String], displayed: [String]) -> some View {
-        Button { showExercisePicker = true } label: {
-            HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "slider.horizontal.3").foregroundStyle(Theme.energy)
-                Text(exerciseSelectionSummary(displayed: displayed))
-                    .font(.subheadline).foregroundStyle(Theme.textPrimary).lineLimit(1)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, Theme.Spacing.md).padding(.vertical, 10)
-            .background(Theme.bg3, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .sheet(isPresented: $showExercisePicker) {
-            StrengthExercisePicker(
-                all: avail,
-                defaultTop: Array(avail.prefix(5)),
-                pinned: $pinnedExercises
-            )
-        }
-    }
-
-    /// 選択サマリ（未選択＝上位Nの既定 / 選択あり＝先頭種目＋件数）。
-    private func exerciseSelectionSummary(displayed shown: [String]) -> String {
-        if pinnedExercises.isEmpty { return "主要種目（上位\(shown.count)）" }
-        if shown.isEmpty { return "種目を選択" }
-        if shown.count == 1 { return shown[0] }
-        return "\(shown[0]) 他\(shown.count - 1)種目"
-    }
-
-    /// 強度進捗の系列色。表示種目が増えたら循環して割り当てる。
-    private static let strengthPalette: [Color] = [Theme.energy, Theme.info, Theme.series2, Theme.warning, Theme.danger]
-
-    private func seriesColors(count: Int) -> [Color] {
-        (0..<count).map { Self.strengthPalette[$0 % Self.strengthPalette.count] }
-    }
-
-    /// 種目名を省略せず表示する凡例。幅を超えたら折り返す。
-    private func strengthLegend(displayed: [String]) -> some View {
-        let colors = seriesColors(count: displayed.count)
-        return FlowLayout(spacing: Theme.Spacing.sm) {
-            ForEach(Array(displayed.enumerated()), id: \.element) { index, name in
-                HStack(spacing: 4) {
-                    Circle().fill(colors[index]).frame(width: 8, height: 8)
-                    Text(name).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private struct StrengthPoint: Identifiable {
-        let id = UUID(); let date: Date; let e1RM: Double; let exercise: String
-    }
-
-    /// 期間内の (種目 -> [WorkoutExercise])（完了ワークアウトのみ）。
-    private var byExerciseInPeriod: [String: [WorkoutExercise]] {
-        let start = periodStart
-        var byExercise: [String: [WorkoutExercise]] = [:]
-        // 期間判定は完了時刻(completedAt)基準にする（深夜跨ぎの日ズレ防止）。
-        for w in workouts where (w.completedAt ?? .distantPast) >= start {
-            for we in w.exercises {
-                guard let name = we.exercise?.name else { continue }
-                byExercise[name, default: []].append(we)
-            }
-        }
-        return byExercise
-    }
-
-    /// 推定1RMが出せる種目（加重セットあり）を頻度の高い順に。グラフ・選択チップの母集合。
-    private func weightedExercisesByFreq(in byExercise: [String: [WorkoutExercise]]) -> [String] {
-        byExercise
-            .filter { $0.value.contains { we in we.sets.contains { $0.weight > 0 && $0.reps > 0 } } }
-            .sorted { a, b in a.value.count != b.value.count ? a.value.count > b.value.count : a.key < b.key }
-            .map(\.key)
-    }
-
-    /// グラフに表示する種目：選択があればそれ（母集合内のみ）、無ければ頻度上位5。
-    private func displayedExercises(in avail: [String]) -> [String] {
-        if pinnedExercises.isEmpty { return Array(avail.prefix(5)) }
-        return avail.filter { pinnedExercises.contains($0) }
-    }
-
-    /// 表示種目の推定1RM推移（日ごとの最大推定1RM）。
-    private func strengthPoints(by: [String: [WorkoutExercise]], displayed: [String]) -> [StrengthPoint] {
-        var points: [StrengthPoint] = []
-        for name in displayed {
-            for we in by[name] ?? [] {
-                // プロット日付も完了時刻基準。byExerciseInPeriod で完了済みのみ。
-                guard let date = we.workout?.completedAt else { continue }
-                let best = we.sets
-                    .filter { $0.weight > 0 && $0.reps > 0 }
-                    .map { OneRepMax.estimate(weight: $0.weight, reps: $0.reps) }
-                    .max()
-                if let best { points.append(StrengthPoint(date: date, e1RM: best, exercise: name)) }
-            }
-        }
-        return points.sorted { $0.date < $1.date }
-    }
-
-    // MARK: - PR timeline
-
-    private var prTimelineCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "自己ベストの記録")
-            let recent = prs.filter { $0.achievedAt >= periodStart }
-            if recent.isEmpty {
-                Text("この期間の自己ベスト更新はありません。").font(.caption).foregroundStyle(.secondary)
-            } else {
-                ForEach(recent.prefix(12)) { pr in
-                    // 種目が残っていれば行タップで種目詳細（推移・目安・履歴）へ。
-                    if let ex = pr.exercise {
-                        NavigationLink(value: Route.exercise(ex)) {
-                            prRow(pr, chevron: true)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        prRow(pr, chevron: false)
-                    }
-                }
-            }
-        }
-        .gymneeCard()
-    }
-
-    private func prValue(_ pr: PersonalRecord) -> String {
-        pr.type.formatted(pr.value)
-    }
-
-    private func prRow(_ pr: PersonalRecord, chevron: Bool) -> some View {
-        HStack {
-            Image(systemName: "trophy.fill").foregroundStyle(.yellow)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(pr.exercise?.name ?? "種目") · \(pr.type.label)").font(.subheadline)
-                Text(pr.achievedAt, format: .dateTime.year().month().day())
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(prValue(pr)).font(.subheadline.bold())
-            if chevron {
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    // MARK: - Recovery
-
-    private var recoveryCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "リカバリー")
-            let statuses = recoveryStatuses
-            let next = RecoveryAnalyzer.recommendedNext(from: statuses).prefix(3)
-            if !next.isEmpty {
-                Text("次の候補: " + next.map(\.label).joined(separator: "・"))
-                    .font(.subheadline.bold())
-                    .foregroundStyle(Theme.energy)
-            }
-            ForEach(statuses) { status in
-                HStack {
-                    Text(status.muscle.label)
-                        .frame(minWidth: 48, alignment: .leading)
-                        .lineLimit(1).minimumScaleFactor(0.7).fixedSize(horizontal: true, vertical: false)
-                    ProgressView(value: status.recoveryProgress)
-                        .tint(status.isRecovered ? Theme.energy : .orange)
-                    Text(status.isRecovered ? "回復" : "回復中")
-                        .font(.caption2)
-                        .foregroundStyle(status.isRecovered ? Theme.energy : .orange)
-                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                }
-                .font(.caption)
-            }
-            // 分析→行動の循環を閉じる：回復済みの部位を踏まえて記録を開始。
-            Button {
-                NotificationCenter.default.post(name: .gymneeOpenDestination, object: nil, userInfo: ["type": "workout"])
-            } label: {
-                Label("記録を開始", systemImage: "plus.circle.fill").font(.subheadline.bold())
-            }
-            .buttonStyle(.borderedProminent).prominentLime().controlSize(.small)
-            .padding(.top, Theme.Spacing.xs)
-        }
-        .gymneeCard()
-    }
-
-    private var recoveryStatuses: [RecoveryAnalyzer.MuscleStatus] {
-        var lastTrained: [MuscleGroup: Date] = [:]
-        for w in workouts where w.completedAt != nil {
-            for we in w.exercises {
-                guard let mg = we.exercise?.muscleGroup else { continue }
-                if !we.sets.isEmpty {
-                    if let existing = lastTrained[mg] { lastTrained[mg] = max(existing, w.date) }
-                    else { lastTrained[mg] = w.date }
-                }
-            }
-        }
-        return RecoveryAnalyzer.statuses(lastTrained: lastTrained)
-    }
-
-    // MARK: - Export
-
-    private var exportCard: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "データエクスポート")
-            Text("全記録を CSV で書き出せます（データ所有権）。")
-                .font(.caption).foregroundStyle(.secondary)
-            Button {
-                csvURL = CSVExporter.writeTempFile(CSVExporter.workoutsCSV(userId: userId, context: context), name: "gymnee_workouts")
-            } label: { Label("ワークアウトを書き出す", systemImage: "square.and.arrow.up").font(.caption) }
-                .buttonStyle(.bordered)
-            if let csvURL {
-                ShareLink(item: csvURL) { Label("共有: \(csvURL.lastPathComponent)", systemImage: "doc") .font(.caption) }
-            }
-        }
-        .gymneeCard()
-    }
-
-    // MARK: - Shared volume entries
-
-    private func recentVolumeEntries(weeks: Int) -> [VolumeCalculator.VolumeEntry] {
-        let cutoff = calendar.date(byAdding: .weekOfYear, value: -weeks, to: .now) ?? .distantPast
-        var entries: [VolumeCalculator.VolumeEntry] = []
-        for w in workouts where w.completedAt != nil && w.date >= cutoff {
-            for we in w.exercises {
-                guard let mg = we.exercise?.muscleGroup else { continue }
-                for set in we.sets {
-                    entries.append(.init(muscleGroup: mg, weight: set.weight, reps: set.reps, date: w.date))
-                }
-            }
-        }
-        return entries
     }
 }
 
-/// 強度進捗グラフに表示する種目を選ぶシート（検索＋チェックの縦リスト）。
-/// 横スクロールのチップだと目的の種目を探しづらいため、検索付きの一覧で増減する。
-private struct StrengthExercisePicker: View {
-    /// 推定1RMを出せる種目（頻度順）。
-    let all: [String]
-    /// 未選択時の既定（頻度上位N）。
-    let defaultTop: [String]
-    @Binding var pinned: Set<String>
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var search = ""
-
-    /// 実際に表示中の種目（未選択なら既定の上位N）。
-    private var shown: Set<String> { pinned.isEmpty ? Set(defaultTop) : pinned }
-    private var filtered: [String] {
-        search.isEmpty ? all : all.filter { $0.localizedCaseInsensitiveContains(search) }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if all.isEmpty {
-                    Text("推定1RMを出せる種目がまだありません。")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    ForEach(filtered, id: \.self) { name in
-                        Button { toggle(name) } label: {
-                            HStack {
-                                Text(name).foregroundStyle(Theme.textPrimary)
-                                Spacer()
-                                if shown.contains(name) {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(Theme.energy).fontWeight(.semibold)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .searchable(text: $search, prompt: "種目を検索")
-            .navigationTitle("表示する種目")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完了") { dismiss() } } }
-        }
-        .presentationDetents([.medium, .large])
-    }
-
-    /// 初回操作で既定(上位N)を取り込んでから増減する。空にすると既定へ戻る（チップ時と同じ挙動）。
-    private func toggle(_ name: String) {
-        if pinned.isEmpty { pinned = Set(defaultTop) }
-        if pinned.contains(name) { pinned.remove(name) } else { pinned.insert(name) }
-    }
+/// `sheet(item:)` に渡すため（`MuscleGroup` 自体は Identifiable ではない）。
+extension MuscleGroup: @retroactive Identifiable {
+    public var id: String { rawValue }
 }
