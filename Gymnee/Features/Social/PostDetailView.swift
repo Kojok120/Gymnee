@@ -2,9 +2,9 @@ import SwiftUI
 import SwiftData
 
 /// 投稿（feed_item）の詳細画面（Twitter 風）。フィード／自分の投稿のカードをタップして開く。
-/// 全投稿種別（ワークアウト／PR／来店）・自分/他人の投稿の双方で同じ詳細を開ける（`FeedEntry` だけで完結）。
+/// 全投稿種別（ワークアウト／PR）・自分/他人の投稿の双方で同じ詳細を開ける（`FeedEntry` だけで完結）。
 /// 構成: ①種別ごとのリッチ詳細 → ②リアクションした人 → ③コメント一覧＋入力。
-/// 自分の投稿はローカル実体（Workout/PR/Visit）から深い詳細を描き、他人の投稿は feed_item の範囲で描く。
+/// 自分の投稿はローカル実体（Workout/PR）から深い詳細を描き、他人の投稿は feed_item の範囲で描く。
 struct PostDetailView: View {
     let entry: FeedEntry
     let currentUserId: UUID
@@ -20,14 +20,12 @@ struct PostDetailView: View {
     @Query private var profiles: [Profile]
     // 自分の投稿のときだけ実体が引ける（他人の投稿はローカルに無い＝nil）。
     @Query private var ownWorkouts: [Workout]
-    @Query private var ownVisits: [Visit]
     @Query private var ownPRs: [PersonalRecord]
 
     @State private var draft = ""
     /// 編集中の自分のコメント（非nilならコンポーザーは編集モード）。
     @State private var editingComment: Comment?
     @State private var reportTarget: CommentReportTarget?
-    @State private var editVisit: Visit?
     @FocusState private var composerFocused: Bool
 
     init(entry: FeedEntry, currentUserId: UUID, currentUserName: String? = nil, onClose: @escaping () -> Void) {
@@ -40,7 +38,6 @@ struct PostDetailView: View {
         _comments = Query(filter: #Predicate<Comment> { $0.feedItemId == id }, sort: \Comment.createdAt, order: .forward)
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == currentUserId })
         _ownWorkouts = Query(filter: #Predicate<Workout> { $0.id == id })
-        _ownVisits = Query(filter: #Predicate<Visit> { $0.id == id })
         _ownPRs = Query(filter: #Predicate<PersonalRecord> { $0.id == id })
     }
 
@@ -87,9 +84,6 @@ struct PostDetailView: View {
                 ReportSheet(reporterId: currentUserId, reportedUserId: t.userId,
                             reportedDisplayName: t.name, contextType: "comment", contextId: t.id)
             }
-            .sheet(item: $editVisit) { visit in
-                CheckInEditView(visit: visit, currentVisibility: entry.visibility)
-            }
             .task(id: reactions.count + comments.count) { await ensureProfiles() }
         }
     }
@@ -122,8 +116,6 @@ struct PostDetailView: View {
             else if let lines = entry.workoutLines, !lines.isEmpty { othersWorkoutMenu(lines) }  // 他人: feed の内訳
         case .pr:
             prDetail
-        case .visit:
-            if let v = ownVisits.first { visitDetail(v) }                           // 他人の写真はカード（FeedCardView）に表示
         }
     }
 
@@ -206,33 +198,6 @@ struct PostDetailView: View {
             }
             Label(entry.date.formatted(.dateTime.year().month().day()), systemImage: "calendar")
                 .font(.caption).foregroundStyle(.secondary)
-        }
-        .padding(Theme.Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-    }
-
-    /// 来店: ジム・日時・合トレ相手・メモ ＋ 編集導線（自分の投稿）。
-    private func visitDetail(_ v: Visit) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            sectionHeader("ジム活", systemImage: "building.2.fill")
-            Label(v.gym?.name ?? "ジム", systemImage: "building.2.fill")
-                .font(.subheadline).foregroundStyle(Theme.textPrimary)
-            Label(v.visitedAt.formatted(.dateTime.year().month().day().hour().minute()), systemImage: "clock")
-                .font(.caption).foregroundStyle(.secondary)
-            if !v.partners.isEmpty {
-                Label(v.partners.compactMap { $0.partnerDisplayName }.joined(separator: "・"), systemImage: "person.2.fill")
-                    .font(.caption).foregroundStyle(Theme.energy)
-            }
-            if let note = v.note, !note.isEmpty {
-                Text(note).font(.subheadline).foregroundStyle(Theme.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Button { editVisit = v } label: {
-                Label("ジム活を編集", systemImage: "square.and.pencil")
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.lime)
-            }
-            .padding(.top, 2)
         }
         .padding(Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)

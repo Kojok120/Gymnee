@@ -3,7 +3,7 @@ import Foundation
 import SwiftData
 
 /// DEBUG 専用のデモデータ投入＆検証ハーネス。製品ビルドには含まれない。
-/// 起動引数 `-gymneeDemo` で来店/ワークアウトを投入し、`-gymneeScreen <name>` で特定画面を起動する。
+/// 起動引数 `-gymneeDemo` でワークアウトを投入し、`-gymneeScreen <name>` で特定画面を起動する。
 enum DebugSupport {
     static var demoRequested: Bool {
         ProcessInfo.processInfo.arguments.contains("-gymneeDemo")
@@ -25,38 +25,14 @@ enum DebugSupport {
 }
 
 enum DemoData {
-    /// デモ来店・ワークアウトを冪等に投入する。
+    /// デモワークアウトを冪等に投入する。
     @MainActor
     static func seedIfNeeded(_ context: ModelContext, userId: UUID) {
-        let existing = (try? context.fetchCount(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == userId }))) ?? 0
+        let existing = (try? context.fetchCount(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId }))) ?? 0
         guard existing == 0 else { return }
 
         let cal = Calendar.current
         let today = cal.startOfDay(for: .now)
-
-        // デモ用ジム（座標付き＝近隣補完が効く）。
-        let gymA = Gym(name: "Gymnee 渋谷", chain: "Anytime Fitness", lat: 35.6595, lng: 139.7005, source: .user, createdBy: userId, isFavorite: true, isDirty: false)
-        let gymB = Gym(name: "Gymnee 出張先・大阪", chain: "Gold's Gym", lat: 34.7025, lng: 135.4959, source: .user, createdBy: userId, isDirty: false)
-        context.insert(gymA)
-        context.insert(gymB)
-
-        // 直近の来店パターン（連続記録が出るよう today/-1/-2 を含める）。
-        let offsets = [0, 1, 2, 4, 6, 7, 9, 11, 14, 18, 21]
-        for (idx, off) in offsets.enumerated() {
-            guard let date = cal.date(byAdding: .day, value: -off, to: today) else { continue }
-            let visit = Visit(
-                userId: userId,
-                visitedAt: cal.date(byAdding: .hour, value: 19, to: date) ?? date,
-                gym: (off % 5 == 0) ? gymB : gymA,
-                note: idx == 0 ? "胸の日。ベンチ更新！" : nil,
-                isDirty: false
-            )
-            context.insert(visit)
-            // 合トレのデモ（直近の来店に相手をタグ付け）。
-            if idx == 1 {
-                context.insert(VisitPartner(partnerUserId: UUID(), partnerDisplayName: "ゆうき", visit: visit))
-            }
-        }
 
         // フォローのデモ。
         context.insert(Follow(followerId: userId, followeeId: UUID(), followeeDisplayName: "ゆうき", isDirty: false))

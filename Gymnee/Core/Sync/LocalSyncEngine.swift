@@ -27,7 +27,7 @@ final class LocalSyncEngine: SyncEngine {
     /// 同期対象テーブル（pull の対象。push は outbox の entity を使う）。
     @ObservationIgnored
     private let syncedTables = [
-        "profiles", "gyms", "gym_equipment", "visits", "visit_partners",
+        "profiles",
         "workouts", "exercises", "workout_exercises", "exercise_sets",
         "routines", "routine_exercises", "personal_records",
         "body_metrics", "progress_photos", "follows", "blocks", "reports", "feed_items", "post_reactions",
@@ -37,9 +37,8 @@ final class LocalSyncEngine: SyncEngine {
     /// 他端末での DELETE（いいね取消／コメント削除）を伝播するため、差分 pull とは別に
     /// id だけをフル取得してサーバー id と差分照合（ローカルの余剰行を削除）するテーブル。
     /// set 的で小さく、tombstone を持たない。
-    /// gyms は誤登録ジムの削除を他端末へ伝えるために対象（プリセットの扱いは store 側で除外）。
     /// blocks はブロック解除（Block 削除）を他端末へ伝えるために対象（解除しても相手が隠れ続けるのを防ぐ）。
-    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments", "feed_items", "gyms", "blocks"]
+    @ObservationIgnored private let reconcileTables: Set<String> = ["post_reactions", "comments", "feed_items", "blocks"]
     /// 削除照合の id 取得上限。取得がこの件数に達したら（＝ページ打ち切りの恐れ）当回は照合しない。
     @ObservationIgnored private let reconcileSafetyCap = 1000
     /// 削除照合（reconcile）の実行間隔。毎 pull で対象テーブルの id 全取得＋ローカル全件走査を
@@ -116,7 +115,7 @@ final class LocalSyncEngine: SyncEngine {
     }
 
     /// データ変更後に少し待ってから自動「送信」する（連続入力をまとめる debounce）。
-    /// pull（19テーブルの取得）は走らせず push だけ＝軽量。これが無いとチェックイン直後の変更が送られない。
+    /// pull（全テーブルの取得）は走らせず push だけ＝軽量。これが無いと記録直後の変更が送られない。
     func scheduleAutoSync(after seconds: Double = 1.5) {
         guard isRemoteEnabled else { return }
         autoSyncTask?.cancel()
@@ -155,7 +154,8 @@ final class LocalSyncEngine: SyncEngine {
         // LocalDataMigrator 付け替え＋syncNow(force:) でまとめて流れる。
         guard await remote.isAuthenticated else { return }
 
-        // FK 親依存（visits→gyms 等）を補完。未enqueue/詰まりの親も先に送れ、既存の詰まりを自己修復する。
+        // FK 親依存（exercise_sets→workout_exercises→workouts）を補完。
+        // 未enqueue/詰まりの親も先に送れ、既存の詰まりを自己修復する。
         var snapshot = outbox
         var present = Set(outbox.map { PendingKey($0) })
         for change in outbox {
@@ -167,8 +167,8 @@ final class LocalSyncEngine: SyncEngine {
         var succeeded: [UUID] = []  // PendingChange.id
         var lastErr: String?
 
-        // FK 依存順（親→子）で処理する。Dictionary の反復順は不定で、visits が gyms より先に
-        // 送られると FK 違反(23503)になるため、syncedTables の依存順を明示的に使う。
+        // FK 依存順（親→子）で処理する。Dictionary の反復順は不定で、exercise_sets が workouts より
+        // 先に送られると FK 違反(23503)になるため、syncedTables の依存順を明示的に使う。
         let byEntity = Dictionary(grouping: snapshot, by: { $0.entity })
         let orderedTables = syncedTables + byEntity.keys.filter { !syncedTables.contains($0) }
         for table in orderedTables {

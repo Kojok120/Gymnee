@@ -12,7 +12,6 @@ enum LocalDataMigrator {
         var pending: [PendingChange] = []  // 変更を集めて最後に一括 enqueue（ディスク書込1回）。
 
         // 所有者(user_id)を持つルート。
-        reassignOwned(Visit.self, entity: "visits", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(Workout.self, entity: "workouts", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(Routine.self, entity: "routines", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(PersonalRecord.self, entity: "personal_records", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
@@ -29,17 +28,14 @@ enum LocalDataMigrator {
         reassignOwned(Block.self, entity: "blocks", context: context, into: &pending) { $0.blockerId == old } set: { $0.blockerId = new }
         reassignOwned(Report.self, entity: "reports", context: context, into: &pending) { $0.reporterId == old } set: { $0.reporterId = new }
         // マスタはユーザー作成分(created_by)のみ。
-        reassignOwned(Gym.self, entity: "gyms", context: context, into: &pending) { $0.createdBy == old } set: { $0.createdBy = new }
         reassignOwned(Exercise.self, entity: "exercises", context: context, into: &pending) { $0.createdBy == old } set: { $0.createdBy = new }
 
         // 子テーブルは所有者列を持たない（親の user_id で RLS 判定）。親を new へ付け替えた行だけを
         // 再送出する。**全件を送ると、同端末に残る別アカウント所有の親を持つ子行まで new のトークンで
         // push して RLS(42501) で永久滞留する**ため、親所有者が new の子行だけに限定する。
-        reenqueueOwned(VisitPartner.self, entity: "visit_partners", context: context, into: &pending) { $0.visit?.userId == new }
         reenqueueOwned(WorkoutExercise.self, entity: "workout_exercises", context: context, into: &pending) { $0.workout?.userId == new }
         reenqueueOwned(ExerciseSet.self, entity: "exercise_sets", context: context, into: &pending) { $0.workoutExercise?.workout?.userId == new }
         reenqueueOwned(RoutineExercise.self, entity: "routine_exercises", context: context, into: &pending) { $0.routine?.userId == new }
-        reenqueueOwned(GymEquipment.self, entity: "gym_equipment", context: context, into: &pending) { $0.gym?.createdBy == new }
 
         // 計画（PlannedWorkout）は端末ローカル専用（同期対象外）だが、各画面が userId で絞って表示するため
         // 付け替えないとサインイン後に旧計画が見えなくなる（孤児化）。送出は不要。
@@ -102,7 +98,6 @@ protocol SyncIdentifiable {
 }
 
 // 各モデルの conformance（id / updatedAt / isDirty を持つ前提。モデル定義は変更しない）。
-extension Visit: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Workout: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Routine: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension PersonalRecord: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
@@ -113,10 +108,7 @@ extension Subscription: SyncIdentifiable { var syncId: UUID { id }; func markDir
 extension FeedItem: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Comment: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Follow: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
-extension Gym: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension Exercise: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
-extension VisitPartner: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension WorkoutExercise: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension ExerciseSet: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension RoutineExercise: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
-extension GymEquipment: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }

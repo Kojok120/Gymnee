@@ -8,7 +8,7 @@ enum AppTab: Hashable {
 /// アプリのルート。サインインウォールは置かず、未サインインなら**ゲスト（ローカル）で即開始**する（§5）。
 /// いきなりサインイン要求は価値を体験する前の離脱要因になるため、サインインは
 /// ソーシャル/AI計画/設定のバックエンド必須導線（BackendSignInButtons 等）から後付けする。
-/// 起動直後は「記録」タブ（記録開始とチェックインの入口）を表示する。
+/// 起動直後は「記録」タブ（記録開始の入口）を表示する。
 struct RootView: View {
     @Environment(AuthService.self) private var auth
     @Environment(AppErrorCenter.self) private var errors
@@ -91,8 +91,6 @@ struct RootView: View {
     @ViewBuilder
     private func debugScreen(_ name: String, userId: UUID) -> some View {
         switch name {
-        case "addgym": AddGymView(userId: userId)
-        case "checkin": CheckInView()
         case "profile": NavigationStack { ProfileView(userId: userId).gymneeNavigationDestinations(userId: userId) }
         case "settings": NavigationStack { SettingsView() }
         case "social": SocialFeedView()
@@ -110,7 +108,7 @@ struct RootView: View {
         case "photos": NavigationStack { ProgressPhotosView(userId: userId) }
         case "share":
             ShareCardEditorView(content: ShareCardContent(
-                image: nil, gymName: "Gymnee 渋谷", streak: 3,
+                image: nil, streak: 3,
                 prText: "PR 2", exerciseSummary: "胸・三頭 3種目",
                 exerciseLines: [
                     ShareCardExerciseLine(name: "ベンチプレス", detail: "80kg × 8・3セット", isPR: true),
@@ -201,10 +199,6 @@ struct RootView: View {
                 selection = .social
             }
         }
-        // チェックイン完了後は記録タブへ（今日の計画の「開始」導線を見せる）。
-        .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in
-            selection = .workout
-        }
         // 完了サマリー「分析を見る」から分析タブへ。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowAnalytics)) { _ in
             selection = .analytics
@@ -220,9 +214,8 @@ struct RootView: View {
         // 通知タップのルーティング（type に応じて該当タブへ）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
-            case "reaction", "friend_checkin", "follow", "invite": selection = .social
-            // チェックイン導線は記録タブ（開始ゲート）にあるため、checkin 通知も記録タブへ。
-            case "workout", "checkin": selection = .workout
+            case "reaction", "follow", "invite": selection = .social
+            case "workout": selection = .workout
             case "analytics": selection = .analytics
             case "recap": selection = .calendar
             case "shop": selection = .other
@@ -254,7 +247,7 @@ struct RootView: View {
 
 /// UIWindow にキャンセルしないタップ認識を1度だけ仕込み、テキスト入力ビュー以外への
 /// タップで `endEditing` する。SwiftUI 標準ではタップでキーボードが閉じず、フォーム入力後に
-/// 閉じる手段が無い（報告: チェックインのメモ/合トレ相手 ほか全テキスト入力）。
+/// 閉じる手段が無い（報告: 投稿コメント ほか全テキスト入力）。
 @MainActor
 enum KeyboardDismissal {
     private static var installed = false

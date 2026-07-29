@@ -56,7 +56,6 @@ struct ShareCardStat: Identifiable {
 struct ShareCardContent {
     var image: UIImage?
     var date: Date = .now
-    var gymName: String?
     var streak: Int?
     var prText: String?
     var exerciseSummary: String?
@@ -65,7 +64,6 @@ struct ShareCardContent {
     /// 下部のスタット行（総量・セット数・時間）。空なら exerciseSummary を表示する。
     var stats: [ShareCardStat] = []
 
-    var showGym = true
     var showStreak = true
     var showPR = true
     var showExercises = true

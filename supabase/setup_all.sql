@@ -1416,3 +1416,85 @@ update public.exercises
   where is_custom = false and created_by is null
     and name in ('シットアップ', 'クランチ', 'レッグレイズ')
     and has_angle = false;
+
+-- ============================================================
+-- migrations/0033_workout_post.sql
+-- ============================================================
+-- 0033: チェックイン廃止に伴い、投稿の写真とコメントを workouts に持たせる
+-- 旧: チェックイン(visits)が写真を持ち、ワークアウトは数値だけだった。
+-- 新: 記録が唯一の活動単位なので、投稿に添える写真(photo_url)とコメント(caption)を workouts に置く。
+-- photo_url は "workout-photos/<uid>/<file>" 形式のストレージ参照（0034 でバケットを作る）。
+-- caption は公開コメント（note は自分用メモで別列）。comments と同じ 500 文字上限に揃える。
+alter table public.workouts add column if not exists photo_url text;
+alter table public.workouts add column if not exists caption text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'workouts_caption_length'
+  ) then
+    alter table public.workouts
+      add constraint workouts_caption_length
+      check (caption is null or char_length(caption) <= 500);
+  end if;
+end $$;
+
+-- ============================================================
+-- migrations/0034_workout_photos_bucket.sql
+-- ============================================================
+-- 0034: ワークアウト投稿写真のバケット（visit-photos の後継）
+-- パス規約は既存と同じ "<auth.uid()>/<filename>"。
+-- 読取は 0025（visit-photos）と同じ「本人 or その写真を参照する可視な feed_item 経由」。
+-- フォルダ単位ではなくオブジェクト単位で厳密一致させ、同フォルダの未共有/孤児写真を
+-- 列挙・取得されないようにする。photoRef は "workout-photos/<uid>/<file>" = bucket_id || '/' || name。
+-- 書込/更新/削除は本人のみ。
+
+insert into storage.buckets (id, name, public)
+values ('workout-photos', 'workout-photos', false)
+on conflict (id) do nothing;
+
+-- 再適用できるよう既存ポリシーを落としてから作る（setup_all.sql の再実行対策）。
+drop policy if exists "workout photo read own or via feed" on storage.objects;
+drop policy if exists "workout photo own write" on storage.objects;
+drop policy if exists "workout photo own update" on storage.objects;
+drop policy if exists "workout photo own delete" on storage.objects;
+
+create policy "workout photo read own or via feed" on storage.objects for select to authenticated
+    using (
+        bucket_id = 'workout-photos'
+        and (
+            (storage.foldername(name))[1] = auth.uid()::text
+            or exists (
+                select 1 from public.feed_items f
+                where f.user_id::text = (storage.foldername(name))[1]
+                  and f.type = 'workout'
+                  and (f.stats_json::jsonb ->> 'photoRef') = bucket_id || '/' || name
+                  and (
+                      f.visibility = 'public'
+                      or (f.visibility = 'friends' and public.is_following(f.user_id))
+                  )
+            )
+        )
+    );
+create policy "workout photo own write" on storage.objects for insert to authenticated
+    with check (bucket_id = 'workout-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "workout photo own update" on storage.objects for update to authenticated
+    using (bucket_id = 'workout-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "workout photo own delete" on storage.objects for delete to authenticated
+    using (bucket_id = 'workout-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ============================================================
+-- migrations/0035_drop_checkin_push.sql
+-- ============================================================
+-- 0035: チェックイン廃止に伴い、フレンドのチェックイン通知を止める
+-- クライアントから visits への書き込みは無くなるためトリガは発火しないが、
+-- 旧バージョンのアプリが残っている端末からの insert で通知が飛ぶのを防ぐため明示的に落とす。
+--
+-- 注意: visits / visit_partners / gyms / gym_equipment の各テーブルと visit-photos バケットは
+-- **drop しない**。クライアントが参照しなくなればユーザー影響はゼロで、drop は不可逆なため。
+-- 実データの削除はリリース後に問題がないと確認できてから別途行う。
+drop trigger if exists trg_notify_friend_checkin on public.visits;
+drop function if exists public.notify_friend_checkin();
+
+-- profiles.notify_friend_checkin は送信元が無くなったので参照されない。
+-- 列自体は既存行の互換のため残す（既定 true のまま無害）。

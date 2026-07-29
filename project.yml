@@ -98,11 +98,9 @@ targets:
           - instagram-stories
         # Meta for Developers のアプリID（ストーリーズ共有 API の必須パラメータ。未設定なら導線非表示）。
         MetaAppID: "$(META_APP_ID)"
-        NSCameraUsageDescription: "ジムでの写真チェックインと進捗写真の撮影に使用します。"
-        NSPhotoLibraryUsageDescription: "進捗写真やチェックイン写真の選択・保存に使用します。"
+        NSCameraUsageDescription: "ワークアウト記録に添える写真と進捗写真の撮影に使用します。"
+        NSPhotoLibraryUsageDescription: "ワークアウト記録に添える写真や進捗写真の選択・保存に使用します。"
         NSPhotoLibraryAddUsageDescription: "生成した共有カードを写真ライブラリに保存するために使用します。"
-        NSLocationWhenInUseUsageDescription: "現在地から近くのジムを自動で候補表示するために使用します。"
-        NSLocationAlwaysAndWhenInUseUsageDescription: "登録したジムへの接近時に自動チェックインを提案するために使用します。"
         NSHealthShareUsageDescription: "体重・体組成・睡眠・心拍変動を読み込み、記録への反映とワークアウト計画の強度調整に使用します。"
         NSHealthUpdateUsageDescription: "ワークアウト記録をヘルスケアへ書き戻すために使用します。"
         NSMotionUsageDescription: "アクティビティの記録に使用します。"

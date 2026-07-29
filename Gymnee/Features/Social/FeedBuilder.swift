@@ -18,6 +18,12 @@ struct FeedItemStats: Codable {
     var muscles: [String]   // MuscleGroup.rawValue
     /// 種目別のセット内訳（他人の投稿でも「メニュー」を再現するため。任意・後方互換）。
     var exerciseLines: [ExerciseLine]? = nil
+    /// 投稿に添えた公開コメント（任意・後方互換）。
+    var caption: String? = nil
+    /// 投稿写真のストレージ参照（"workout-photos/<uid>/<file>"）。他人の投稿でも表示するため。
+    var photoRef: String? = nil
+    /// 投稿時点の「今月の活動日数」（カードのチップ。再計算は他人側では不可能なので焼き込む）。
+    var monthlyDay: Int? = nil
 
     /// 1 種目分のセット内訳。
     struct ExerciseLine: Codable, Equatable {
@@ -69,21 +75,6 @@ struct FeedItemPRStats: Codable {
     }
 }
 
-/// feed_items.stats_json に載せる来店投稿のメタ（写真ストレージ参照）。
-/// 他人の投稿でも来店写真を表示するため、本人の visit.photoURL（"bucket/path"）を載せる。
-struct FeedItemVisitStats: Codable {
-    var photoRef: String?
-
-    func encodedJSON() -> String? {
-        guard let data = try? JSONEncoder().encode(self) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-    static func decode(_ json: String?) -> FeedItemVisitStats? {
-        guard let json, let data = json.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(FeedItemVisitStats.self, from: data)
-    }
-}
-
 /// ソーシャル行描画用の名前/アバター索引。行ごとの profiles/comments 線形走査（O(行数×全件)）を
 /// 避けるため、body 評価ごとに 1 回だけ構築して行ビルダーへ配る（PostDetailView / SocialActivityView）。
 struct SocialNameIndex {
@@ -112,10 +103,10 @@ struct SocialNameIndex {
     func avatarURL(_ id: UUID) -> String? { profileById[id]?.avatarURL }
 }
 
-/// フィードに表示する統合エントリ（§6.11）。来店/PR/ワークアウトを 1 つの時系列に束ねる。
+/// フィードに表示する統合エントリ（§6.11）。PR/ワークアウトを 1 つの時系列に束ねる。
 /// ローカルでは値型で都度生成（サーバ側フィードは FeedItem モデルで将来差し替え）。
 struct FeedEntry: Identifiable {
-    enum Kind { case visit, pr, workout }
+    enum Kind { case pr, workout }
 
     let id: UUID
     let date: Date
@@ -141,8 +132,12 @@ struct FeedEntry: Identifiable {
     var prKind: PRType? = nil
     /// 他人のワークアウト投稿の種目別セット内訳（feed の statsJSON から復元。自分の投稿はローカル実体から描く）。
     var workoutLines: [FeedItemStats.ExerciseLine]? = nil
-    /// 他人の来店投稿の写真ストレージ参照（"bucket/path"）。SyncedPhoto で取得して表示する。
+    /// 他人の投稿の写真ストレージ参照（"bucket/path"）。SyncedPhoto で取得して表示する。
     var photoRef: String? = nil
+    /// 投稿に添えた公開コメント。
+    var caption: String? = nil
+    /// 「今月○日目」チップ。nil なら非表示。
+    var monthlyDay: Int? = nil
 
     /// 他ユーザーの投稿か（メニュー・写真取得経路などの分岐用）。
     /// 自分の投稿にも authorName を入れるため「名前の有無」からは導出せず明示フラグで持つ。
@@ -156,7 +151,6 @@ struct FeedEntry: Identifiable {
     /// feed_item の種別（公開範囲変更で FeedPublisher に渡す）。
     var feedItemType: FeedItemType {
         switch kind {
-        case .visit: return .visit
         case .pr: return .pr
         case .workout: return .workout
         }
@@ -164,7 +158,6 @@ struct FeedEntry: Identifiable {
 
     var icon: String {
         switch kind {
-        case .visit: return "camera.fill"
         case .pr: return "trophy.fill"
         case .workout: return "dumbbell.fill"
         }
@@ -172,17 +165,17 @@ struct FeedEntry: Identifiable {
 }
 
 enum FeedBuilder {
-    /// 来店・PR・完了ワークアウトを統合し、新しい順に並べる。
+    /// PR・完了ワークアウトを統合し、新しい順に並べる。
     /// 公開範囲は自分の feed_items 由来（`publishedVisibilityById`）。feed_item が無い記録は
     /// 未公開＝`.private` 表示（自分だけに見える。フォロワーには出ない）。
     /// ownerName/ownerAvatarURL を渡すと自分の投稿カードにも名前・アバターを表示できる。
     static func build(
-        visits: [Visit],
         personalRecords: [PersonalRecord],
         workouts: [Workout],
         publishedVisibilityById: [UUID: Visibility],
         ownerName: String? = nil,
-        ownerAvatarURL: String? = nil
+        ownerAvatarURL: String? = nil,
+        calendar: Calendar = .current
     ) -> [FeedEntry] {
         var entries: [FeedEntry] = []
         func vis(_ id: UUID) -> Visibility { publishedVisibilityById[id] ?? .private }
@@ -190,22 +183,8 @@ enum FeedBuilder {
         // ワークアウトごとの PR 件数を先に索引化（workout×PR の全走査を避ける。FeedPublisher と同じ手法）。
         var prCountByWorkout: [UUID: Int] = [:]
         for pr in personalRecords { if let wid = pr.workoutId { prCountByWorkout[wid, default: 0] += 1 } }
-
-        for v in visits {
-            entries.append(FeedEntry(
-                id: v.id,
-                date: v.visitedAt,
-                kind: .visit,
-                title: v.gym?.name ?? "ジム活",
-                subtitle: v.note,
-                photoFilename: v.localPhotoFilename,
-                visibility: vis(v.id),
-                partners: v.partners.compactMap(\.partnerDisplayName),
-                authorName: ownerName,
-                authorAvatarURL: ownerAvatarURL,
-                isPublished: published(v.id)
-            ))
-        }
+        // 「今月○日目」は各ワークアウトの日付時点で数える（過去の投稿を遡って見ても値が変わらない）。
+        let activeDays = workouts.filter { $0.completedAt != nil }.map { $0.completedAt ?? $0.date }
 
         // 自己ベスト投稿は「最大重量」のみ。推定1RM/最大レップ/最長時間などその他のトロフィーは
         // 単独投稿にせず、ワークアウト記録（各セットのトロフィー表示）に内包する。
@@ -255,7 +234,7 @@ enum FeedBuilder {
                 kind: .workout,
                 title: w.name,
                 subtitle: nil,
-                photoFilename: nil,
+                photoFilename: w.localPhotoFilename,
                 visibility: vis(w.id),
                 partners: [],
                 authorName: ownerName,
@@ -263,6 +242,10 @@ enum FeedBuilder {
                 stats: stats,
                 muscles: muscles,
                 prCount: prCount,
+                caption: w.caption,
+                monthlyDay: StreakCalculator.monthlyActiveDays(
+                    activeDays: activeDays, in: w.completedAt ?? w.date, calendar: calendar
+                ),
                 isPublished: published(w.id)
             ))
         }
@@ -279,16 +262,16 @@ enum FeedBuilder {
     ) -> [FeedEntry] {
         feedItems.compactMap { item -> FeedEntry? in
             guard item.userId != userId else { return nil }
+            // 旧チェックイン投稿（type='visit'）は取り込み時に捨てているが、
+            // 取りこぼしがあっても描けないので念のためここでも弾く。
+            guard item.typeRaw != FeedItemType.legacyVisitRawValue else { return nil }
             let kind: FeedEntry.Kind
             switch item.type {
-            case .visit: kind = .visit
             case .pr: kind = .pr
             case .workout: kind = .workout
             }
             let profile = profilesById[item.userId]
             let stats = FeedItemStats.decode(item.statsJSON)
-            // 来店投稿は statsJSON に写真参照を載せている（ワークアウトの statsJSON とは別形式）。
-            let visitPhotoRef = kind == .visit ? FeedItemVisitStats.decode(item.statsJSON)?.photoRef : nil
             return FeedEntry(
                 id: item.id,
                 date: item.createdAt,
@@ -305,7 +288,9 @@ enum FeedBuilder {
                 muscles: stats?.muscleGroups ?? [],
                 prCount: stats?.prCount ?? 0,
                 workoutLines: stats?.exerciseLines,
-                photoRef: visitPhotoRef,
+                photoRef: stats?.photoRef,
+                caption: stats?.caption,
+                monthlyDay: stats?.monthlyDay,
                 isFromOther: true
             )
         }

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-/// セッション（§4.2）。来店に紐付くが、ジム外記録も許容（visit は nullable）。
+/// セッション（§4.2）。記録がジム活動の唯一の単位（チェックインは廃止済み）。
 @Model
 final class Workout {
     @Attribute(.unique) var id: UUID
@@ -10,6 +10,7 @@ final class Workout {
     var name: String
     /// テンプレ参照（§4.2 routine_id nullable）。軽量参照のため UUID で保持。
     var routineId: UUID?
+    /// 自分用のメモ（非公開）。公開コメントは caption を使う。
     var note: String?
     /// 予定→実績（§6.2）。未来日に計画したワークアウトかどうか、消化済みか。
     var isPlanned: Bool
@@ -17,10 +18,14 @@ final class Workout {
     /// 総合時間（秒）。完了時にライブ経過から確定、またはユーザーが手動で登録/修正する。
     /// nil は未計測（過去日の後追い記録など）。表示は WorkoutDuration で導出する。
     var durationSeconds: Int? = nil
+    /// 投稿に添える写真のローカルファイル名（Documents 配下 / PhotoStore が採番）。
+    var localPhotoFilename: String? = nil
+    /// 同じ写真のリモート参照（"workout-photos/<uid>/<file>"）。アップロード完了後に入る。
+    var photoURL: String? = nil
+    /// 投稿に添える公開コメント。note（自分用メモ）とは別物。
+    var caption: String? = nil
     var updatedAt: Date
     var isDirty: Bool
-
-    var visit: Visit?
 
     @Relationship(deleteRule: .cascade, inverse: \WorkoutExercise.workout)
     var exercises: [WorkoutExercise] = []
@@ -35,7 +40,9 @@ final class Workout {
         isPlanned: Bool = false,
         completedAt: Date? = nil,
         durationSeconds: Int? = nil,
-        visit: Visit? = nil,
+        localPhotoFilename: String? = nil,
+        photoURL: String? = nil,
+        caption: String? = nil,
         updatedAt: Date = .now,
         isDirty: Bool = true
     ) {
@@ -48,7 +55,9 @@ final class Workout {
         self.isPlanned = isPlanned
         self.completedAt = completedAt
         self.durationSeconds = durationSeconds
-        self.visit = visit
+        self.localPhotoFilename = localPhotoFilename
+        self.photoURL = photoURL
+        self.caption = caption
         self.updatedAt = updatedAt
         self.isDirty = isDirty
     }

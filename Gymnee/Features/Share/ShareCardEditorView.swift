@@ -30,7 +30,6 @@ struct ShareCardEditorView: View {
             }
             .onAppear(perform: rerender)
             .onChange(of: theme) { _, _ in rerender() }
-            .onChange(of: content.showGym) { _, _ in rerender() }
             .onChange(of: content.showStreak) { _, _ in rerender() }
             .onChange(of: content.showPR) { _, _ in rerender() }
             .onChange(of: content.showExercises) { _, _ in rerender() }
@@ -53,7 +52,6 @@ struct ShareCardEditorView: View {
     private var itemToggles: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             SectionHeader(title: "表示項目")
-            if content.gymName != nil { Toggle("ジム名", isOn: $content.showGym) }
             if content.streak != nil { Toggle("連続日数", isOn: $content.showStreak) }
             if content.prText != nil { Toggle("PR", isOn: $content.showPR) }
             if content.exerciseSummary != nil || !content.exerciseLines.isEmpty {
@@ -148,9 +146,8 @@ extension ShareCardContent {
         }
 
         return ShareCardContent(
-            image: nil,
+            image: PhotoStore.load(workout.localPhotoFilename),
             date: workout.completedAt ?? workout.date,
-            gymName: nil,
             streak: streak,
             prText: prCount > 0 ? "PR \(prCount)" : nil,
             exerciseSummary: "\(workout.name)・\(workout.exercises.count)種目・\(totalVolume)kg",
@@ -159,16 +156,4 @@ extension ShareCardContent {
         )
     }
 
-    /// 来店からカード内容を構築する。
-    @MainActor
-    static func from(visit: Visit, streak: Int?, prText: String?) -> ShareCardContent {
-        ShareCardContent(
-            image: PhotoStore.load(visit.localPhotoFilename),
-            date: visit.visitedAt,
-            gymName: visit.gym?.name,
-            streak: streak,
-            prText: prText,
-            exerciseSummary: visit.workouts.first.map { "\($0.exercises.count)種目を記録" }
-        )
-    }
 }

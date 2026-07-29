@@ -10,7 +10,6 @@ final class AppEnvironment {
     let container: ModelContainer
     let auth: AuthService
     let sync: LocalSyncEngine
-    let location: LocationService
     let health: HealthKitService
     let notifications: NotificationService
     let errors: AppErrorCenter
@@ -23,7 +22,6 @@ final class AppEnvironment {
         self.container = resolved
         self.sync = LocalSyncEngine()
         self.auth = AuthService()
-        self.location = LocationService()
         self.health = HealthKitService()
         self.notifications = NotificationService()
         self.errors = AppErrorCenter()
@@ -33,7 +31,7 @@ final class AppEnvironment {
         self.googleCalendar.restore()
         self.auth.bootstrap(context: resolved.mainContext)
         self.notifications.configure()
-        // Apple Watch との WCSession を起動（手首からのチェックイン受信・スナップショット配布）。
+        // Apple Watch との WCSession を起動（スナップショット配布）。
         WatchConnector.shared.activate()
         configureRemoteSyncIfAvailable()
     }

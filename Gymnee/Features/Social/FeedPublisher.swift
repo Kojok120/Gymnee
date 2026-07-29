@@ -6,7 +6,7 @@ import SwiftData
 /// 公開モデル（fail-closed / docs/identity-environment-design.md「公開面の設計」）:
 /// - **feed_item が存在する＝公開済み。`visibility` がその公開範囲。**
 /// - 新規作成はユーザーの明示操作だけ: 完了サマリーの「ソーシャルに投稿」（`publishWorkout`）、
-///   チェックイン（`publishVisit`）、投稿メニューの公開範囲変更（`setVisibility`）。
+///   投稿メニューの公開範囲変更（`setVisibility`）。
 /// - 定期同期（`syncPublishedPosts`）は**既存 feed_item の内容追従と、元データが消えた feed_item の
 ///   削除のみ**。未公開の記録から feed_item を勝手に作らない。これにより「マークを持たない端末
 ///   （2 台目・再インストール・pull 済み履歴）で過去記録が既定公開範囲で一括発行される」経路
@@ -32,22 +32,11 @@ enum FeedPublisher {
         guard isPermanentAccount, workout.completedAt != nil else { return }
         var pending: [PendingChange] = []
         upsert(refId: workout.id, userId: workout.userId, authorName: authorName, type: .workout,
-               content: workoutContent(workout), visibility: visibility, context: context, pending: &pending)
+               content: workoutContent(workout, context: context), visibility: visibility, context: context, pending: &pending)
         for pr in workoutMaxWeightPRs(workout) {
             upsert(refId: pr.id, userId: pr.userId, authorName: authorName, type: .pr,
                    content: prContent(pr, context: context), visibility: visibility, context: context, pending: &pending)
         }
-        commit(pending, context: context, sync: sync)
-    }
-
-    /// 来店を指定 visibility で公開する（チェックイン）。
-    @MainActor
-    static func publishVisit(_ visit: Visit, authorName: String?, visibility: Visibility,
-                             isPermanentAccount: Bool, context: ModelContext, sync: LocalSyncEngine) {
-        guard isPermanentAccount else { return }
-        var pending: [PendingChange] = []
-        upsert(refId: visit.id, userId: visit.userId, authorName: authorName, type: .visit,
-               content: visitContent(visit), visibility: visibility, context: context, pending: &pending)
         commit(pending, context: context, sync: sync)
     }
 
@@ -150,13 +139,10 @@ enum FeedPublisher {
     private static func content(forRefId refId: UUID, type: FeedItemType, userId: UUID, context: ModelContext) -> PostContent? {
         let rid = refId
         switch type {
-        case .visit:
-            guard let v = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == rid && $0.userId == userId })))?.first else { return nil }
-            return visitContent(v)
         case .workout:
             guard let w = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == rid && $0.userId == userId })))?.first,
                   w.completedAt != nil else { return nil }
-            return workoutContent(w)
+            return workoutContent(w, context: context)
         case .pr:
             guard let pr = (try? context.fetch(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.id == rid && $0.userId == userId })))?.first else { return nil }
             return prContent(pr, context: context)
@@ -164,13 +150,7 @@ enum FeedPublisher {
     }
 
     @MainActor
-    private static func visitContent(_ v: Visit) -> PostContent {
-        let stats = v.photoURL.flatMap { FeedItemVisitStats(photoRef: $0).encodedJSON() }
-        return PostContent(summary: v.gym?.name ?? "ジム活", date: v.visitedAt, statsJSON: stats)
-    }
-
-    @MainActor
-    private static func workoutContent(_ w: Workout) -> PostContent {
+    private static func workoutContent(_ w: Workout, context: ModelContext) -> PostContent {
         let allSets = w.exercises.flatMap(\.sets)
         let vol = allSets.reduce(0.0) { $0 + $1.volume }
         let totalVolume = vol.isFinite ? Int(vol) : 0
@@ -188,8 +168,23 @@ enum FeedPublisher {
                 )
             }
         let stats = FeedItemStats(exercises: visibleExercises.count, sets: allSets.count, volume: totalVolume,
-                                  minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines)
+                                  minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines,
+                                  caption: w.caption, photoRef: w.photoURL,
+                                  monthlyDay: monthlyDay(for: w, context: context))
         return PostContent(summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
+    }
+
+    /// 投稿時点の「今月の活動日数」。他人の端末では再計算できないので feed に焼き込む。
+    @MainActor
+    private static func monthlyDay(for w: Workout, context: ModelContext) -> Int {
+        let uid = w.userId
+        let completed = (try? context.fetch(
+            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
+        )) ?? []
+        return StreakCalculator.monthlyActiveDays(
+            activeDays: completed.map { $0.completedAt ?? $0.date },
+            in: w.completedAt ?? w.date
+        )
     }
 
     /// PR 投稿の summary は「初回記録＝新しい種目に挑戦／更新＝自己ベスト更新」。初回判定は完了

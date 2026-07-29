@@ -8,8 +8,6 @@ final class Follow {
     var followerId: UUID
     var followeeId: UUID
     var followeeDisplayName: String?
-    /// このフレンド(followee)のチェックイン通知を受け取るか。フォロワー側の設定。
-    var notify: Bool
     var createdAt: Date
     var updatedAt: Date
     var isDirty: Bool
@@ -19,7 +17,6 @@ final class Follow {
         followerId: UUID,
         followeeId: UUID,
         followeeDisplayName: String? = nil,
-        notify: Bool = true,
         createdAt: Date = .now,
         updatedAt: Date = .now,
         isDirty: Bool = true
@@ -28,7 +25,6 @@ final class Follow {
         self.followerId = followerId
         self.followeeId = followeeId
         self.followeeDisplayName = followeeDisplayName
-        self.notify = notify
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.isDirty = isDirty
@@ -125,7 +121,7 @@ final class FeedItem {
     var isDirty: Bool
 
     var type: FeedItemType {
-        get { FeedItemType(rawValue: typeRaw) ?? .visit }
+        get { FeedItemType(rawValue: typeRaw) ?? .workout }
         set { typeRaw = newValue.rawValue }
     }
 

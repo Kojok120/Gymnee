@@ -22,9 +22,9 @@ struct WorkoutDetailView: View {
                     }
                 }
             }
-            if let visit = workout.visit {
-                Section("ジム活") {
-                    Label(visit.gym?.name ?? "ジム", systemImage: "building.2.fill")
+            if let caption = workout.caption, !caption.isEmpty {
+                Section("コメント") {
+                    Text(caption).font(.subheadline).foregroundStyle(Theme.textPrimary)
                 }
             }
             ForEach(visibleExercises.sorted { $0.orderIndex < $1.orderIndex }) { we in

@@ -1,14 +1,15 @@
 import Foundation
 
 /// 連続記録・週次頻度ゴールの算出（§6.2）。純粋ロジックでユニットテスト対象。
+/// 「活動日」＝完了したワークアウトがある日（チェックイン廃止後の唯一の活動単位）。
 enum StreakCalculator {
 
-    /// 現在の連続来店日数。直近の来店が「今日」または「昨日」でなければ 0（連続が途切れたとみなす）。
+    /// 現在の連続活動日数。直近の活動が「今日」または「昨日」でなければ 0（連続が途切れたとみなす）。
     /// - Parameters:
-    ///   - visitDays: 来店があった日（時刻は無視、startOfDay 前提でなくてよい）。
+    ///   - activeDays: 記録があった日（時刻は無視、startOfDay 前提でなくてよい）。
     ///   - asOf: 基準日（通常は今日）。
-    static func currentStreak(visitDays: [Date], asOf reference: Date = .now, calendar: Calendar = .current) -> Int {
-        let days = Set(visitDays.map { calendar.startOfDay(for: $0) })
+    static func currentStreak(activeDays: [Date], asOf reference: Date = .now, calendar: Calendar = .current) -> Int {
+        let days = Set(activeDays.map { calendar.startOfDay(for: $0) })
         guard !days.isEmpty else { return 0 }
 
         let today = calendar.startOfDay(for: reference)
@@ -30,9 +31,9 @@ enum StreakCalculator {
         return count
     }
 
-    /// 過去最長の連続来店日数。
-    static func longestStreak(visitDays: [Date], calendar: Calendar = .current) -> Int {
-        let sorted = Set(visitDays.map { calendar.startOfDay(for: $0) }).sorted()
+    /// 過去最長の連続活動日数。
+    static func longestStreak(activeDays: [Date], calendar: Calendar = .current) -> Int {
+        let sorted = Set(activeDays.map { calendar.startOfDay(for: $0) }).sorted()
         guard !sorted.isEmpty else { return 0 }
 
         var longest = 1
@@ -49,21 +50,33 @@ enum StreakCalculator {
         return longest
     }
 
-    /// 指定週（reference を含む週）の来店「日数」（同日複数来店は 1 と数える）。
-    static func weeklyVisitDays(visitDays: [Date], in reference: Date = .now, calendar: Calendar = .current) -> Int {
+    /// 指定週（reference を含む週）の活動「日数」（同日複数記録は 1 と数える）。
+    static func weeklyActiveDays(activeDays: [Date], in reference: Date = .now, calendar: Calendar = .current) -> Int {
         guard let week = calendar.dateInterval(of: .weekOfYear, for: reference) else { return 0 }
         let distinct = Set(
-            visitDays
+            activeDays
                 .filter { week.contains($0) }
                 .map { calendar.startOfDay(for: $0) }
         )
         return distinct.count
     }
 
+    /// 指定月（reference を含む月）の活動「日数」（同日複数記録は 1 と数える）。
+    /// 投稿カードの「今月○日目」チップに使う。
+    static func monthlyActiveDays(activeDays: [Date], in reference: Date = .now, calendar: Calendar = .current) -> Int {
+        guard let month = calendar.dateInterval(of: .month, for: reference) else { return 0 }
+        let distinct = Set(
+            activeDays
+                .filter { month.contains($0) }
+                .map { calendar.startOfDay(for: $0) }
+        )
+        return distinct.count
+    }
+
     /// 週次ゴールに対する達成率（0.0〜1.0）。goal <= 0 のときは 0。
-    static func weeklyAchievementRate(visitDays: [Date], goal: Int, in reference: Date = .now, calendar: Calendar = .current) -> Double {
+    static func weeklyAchievementRate(activeDays: [Date], goal: Int, in reference: Date = .now, calendar: Calendar = .current) -> Double {
         guard goal > 0 else { return 0 }
-        let count = weeklyVisitDays(visitDays: visitDays, in: reference, calendar: calendar)
+        let count = weeklyActiveDays(activeDays: activeDays, in: reference, calendar: calendar)
         return min(Double(count) / Double(goal), 1.0)
     }
 
@@ -79,16 +92,16 @@ enum StreakCalculator {
         var freezesUsed: Int
         /// 今週は目標達成済みか。
         var metThisWeek: Bool
-        /// 今週の来店「日数」。
-        var visitsThisWeek: Int
+        /// 今週の活動「日数」。
+        var activeDaysThisWeek: Int
         /// 適用した週次ゴール。
         var goal: Int
     }
 
-    /// 週開始 → その週の distinct 来店日数を引く辞書を作る。
-    private static func visitsPerWeek(_ visitDays: [Date], _ calendar: Calendar) -> [Date: Int] {
+    /// 週開始 → その週の distinct 活動日数を引く辞書を作る。
+    private static func daysPerWeek(_ activeDays: [Date], _ calendar: Calendar) -> [Date: Int] {
         var sets: [Date: Set<Date>] = [:]
-        for d in visitDays {
+        for d in activeDays {
             guard let ws = calendar.dateInterval(of: .weekOfYear, for: d)?.start else { continue }
             sets[ws, default: []].insert(calendar.startOfDay(for: d))
         }
@@ -100,29 +113,29 @@ enum StreakCalculator {
     /// その月のトークンを使い切った未達週で途切れる。空白の過去へ無駄に消費しないよう、
     /// 達成週の最古週より前には遡らない。
     static func currentWeeklyStreak(
-        visitDays: [Date],
+        activeDays: [Date],
         weeklyGoal goal: Int,
         asOf reference: Date = .now,
         calendar: Calendar = .current,
         freezesPerMonth: Int = 1
     ) -> WeeklyStreak {
         guard goal > 0, let thisWeekStart = calendar.dateInterval(of: .weekOfYear, for: reference)?.start else {
-            return WeeklyStreak(weeks: 0, freezesUsed: 0, metThisWeek: false, visitsThisWeek: 0, goal: max(goal, 0))
+            return WeeklyStreak(weeks: 0, freezesUsed: 0, metThisWeek: false, activeDaysThisWeek: 0, goal: max(goal, 0))
         }
-        let perWeek = visitsPerWeek(visitDays, calendar)
+        let perWeek = daysPerWeek(activeDays, calendar)
         func met(_ ws: Date) -> Bool { (perWeek[ws] ?? 0) >= goal }
         // 達成週の最古週。これより前は遡らない（フリーズの空消費を防ぐ）。
         let earliestMet = perWeek.filter { $0.value >= goal }.keys.min()
 
-        let visitsThisWeek = perWeek[thisWeekStart] ?? 0
-        let metThisWeek = visitsThisWeek >= goal
+        let daysThisWeek = perWeek[thisWeekStart] ?? 0
+        let metThisWeek = daysThisWeek >= goal
 
         var weeks = metThisWeek ? 1 : 0
         var freezesUsed = 0
         var freezeUsedByMonth: [Int: Int] = [:]   // key=year*12+month → その月のフリーズ消費数
         // 今週が達成済みでも未達でも、評価は先週から過去方向へ（今週未達は進行中として罰さない）。
         guard var cursor = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart) else {
-            return WeeklyStreak(weeks: weeks, freezesUsed: 0, metThisWeek: metThisWeek, visitsThisWeek: visitsThisWeek, goal: goal)
+            return WeeklyStreak(weeks: weeks, freezesUsed: 0, metThisWeek: metThisWeek, activeDaysThisWeek: daysThisWeek, goal: goal)
         }
         while let earliestMet, cursor >= earliestMet {
             if met(cursor) {
@@ -139,13 +152,13 @@ enum StreakCalculator {
             guard let prev = calendar.date(byAdding: .weekOfYear, value: -1, to: cursor) else { break }
             cursor = prev
         }
-        return WeeklyStreak(weeks: weeks, freezesUsed: freezesUsed, metThisWeek: metThisWeek, visitsThisWeek: visitsThisWeek, goal: goal)
+        return WeeklyStreak(weeks: weeks, freezesUsed: freezesUsed, metThisWeek: metThisWeek, activeDaysThisWeek: daysThisWeek, goal: goal)
     }
 
     /// 過去最長の週次ストリーク（目標達成週の最長連続。フリーズは数えない）。
-    static func longestWeeklyStreak(visitDays: [Date], weeklyGoal goal: Int, calendar: Calendar = .current) -> Int {
+    static func longestWeeklyStreak(activeDays: [Date], weeklyGoal goal: Int, calendar: Calendar = .current) -> Int {
         guard goal > 0 else { return 0 }
-        let perWeek = visitsPerWeek(visitDays, calendar)
+        let perWeek = daysPerWeek(activeDays, calendar)
         let metWeeks = perWeek.filter { $0.value >= goal }.keys.sorted()
         guard !metWeeks.isEmpty else { return 0 }
         var longest = 1, run = 1

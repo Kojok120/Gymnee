@@ -39,7 +39,7 @@ final class BodyMetric {
     }
 }
 
-/// 体型写真（§4.3）。来店写真と別枠・既定 private・月次比較（§6.7）。
+/// 体型写真（§4.3）。投稿写真と別枠・既定 private・月次比較（§6.7）。
 @Model
 final class ProgressPhoto {
     @Attribute(.unique) var id: UUID

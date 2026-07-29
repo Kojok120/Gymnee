@@ -33,29 +33,6 @@ enum CSVExporter {
         return rows.joined(separator: "\n")
     }
 
-    /// 来店記録を CSV に変換する。
-    static func visitsCSV(userId: UUID, context: ModelContext) -> String {
-        var rows = ["date,gym,chain,note,lat,lng"]
-        let descriptor = FetchDescriptor<Visit>(
-            predicate: #Predicate { $0.userId == userId },
-            sortBy: [SortDescriptor(\.visitedAt)]
-        )
-        let visits = (try? context.fetch(descriptor)) ?? []
-        let df = ISO8601DateFormatter()
-        for v in visits {
-            let cols = [
-                df.string(from: v.visitedAt),
-                escape(v.gym?.name ?? ""),
-                escape(v.gym?.chain ?? ""),
-                escape(v.note ?? ""),
-                v.lat.map { "\($0)" } ?? "",
-                v.lng.map { "\($0)" } ?? "",
-            ]
-            rows.append(cols.joined(separator: ","))
-        }
-        return rows.joined(separator: "\n")
-    }
-
     /// CSV を一時ファイルに書き出し URL を返す（ShareLink/エクスポート用）。
     static func writeTempFile(_ csv: String, name: String) -> URL? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).csv")

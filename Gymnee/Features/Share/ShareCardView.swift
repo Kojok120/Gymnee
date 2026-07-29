@@ -87,11 +87,6 @@ struct ShareCardView: View {
             }
             Spacer()
             VStack(alignment: .leading, spacing: side * 0.025) {
-                if content.showGym, let gym = content.gymName {
-                    Label(gym, systemImage: "location.fill")
-                        .font(.system(size: side * 0.05, weight: .bold))
-                        .foregroundStyle(theme.textColor)
-                }
                 if !content.stats.isEmpty {
                     statRow
                 } else if content.showExercises, let ex = content.exerciseSummary {
