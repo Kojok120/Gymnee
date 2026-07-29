@@ -17,6 +17,8 @@ struct SettingsView: View {
     @State private var showEmailSignIn = false
     @State private var showProfileEdit = false
     @State private var browserURL: IdentifiableURL?
+    /// CSV 書き出し結果（分析画面から移設）。
+    @State private var csvURL: URL?
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
@@ -183,6 +185,21 @@ struct SettingsView: View {
                 }
                 .tint(.primary)
                 .disabled(!health.isAvailable)
+
+                // CSV エクスポートは分析画面から移設（分析は人体図 1 枚に絞ったため）。
+                Button {
+                    guard let uid = auth.currentUserId else { return }
+                    csvURL = CSVExporter.writeTempFile(
+                        CSVExporter.workoutsCSV(userId: uid, context: context), name: "gymnee_workouts")
+                } label: {
+                    Label("記録を CSV で書き出す", systemImage: "square.and.arrow.up")
+                }
+                .tint(.primary)
+                if let csvURL {
+                    ShareLink(item: csvURL) {
+                        Label("共有: \(csvURL.lastPathComponent)", systemImage: "doc")
+                    }
+                }
             }
 
             Section {
