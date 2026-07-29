@@ -118,7 +118,7 @@ struct MyPostsView: View {
 
     /// タップで全投稿共通の詳細（リッチ詳細＋リアクションした人＋コメント）を開く。
     private func card(_ entry: FeedEntry) -> some View {
-        Button { postDetail = entry } label: { FeedCardView(entry: entry) }
+        Button { postDetail = entry } label: { PostCardView(entry: entry) }
             .buttonStyle(.plain)
     }
 

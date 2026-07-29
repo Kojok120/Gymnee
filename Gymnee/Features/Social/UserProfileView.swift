@@ -111,7 +111,7 @@ struct UserProfileView: View {
             let reactionsByItem = Dictionary(grouping: allReactions, by: \.feedItemId)
             ForEach(entries) { entry in
                 VStack(alignment: .leading, spacing: 4) {
-                    FeedCardView(entry: entry)
+                    PostCardView(entry: entry)
                     ReactionBar(feedItemId: entry.id, userId: currentUserId, reactions: reactionsByItem[entry.id] ?? [])
                 }
             }

@@ -99,11 +99,11 @@ struct PostDetailView: View {
     @ViewBuilder private var authorCard: some View {
         if let authorId = entry.authorId, authorId != currentUserId {
             NavigationLink(value: UserRef(id: authorId, name: authorDisplayName)) {
-                FeedCardView(entry: entry)
+                PostCardView(entry: entry)
             }
             .buttonStyle(.plain)
         } else {
-            FeedCardView(entry: entry)
+            PostCardView(entry: entry)
         }
     }
 
