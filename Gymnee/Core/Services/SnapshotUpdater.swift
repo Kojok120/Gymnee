@@ -3,15 +3,15 @@ import SwiftData
 import WidgetKit
 
 /// SwiftData から共有スナップショットを再計算し、App Group へ保存して Widget を再読込する（§6.10）。
-/// カレンダータブ表示のたびに呼ばれるため、取得は必要最小限（来店は日付列のみ・ワークアウトは各1件）に
+/// カレンダータブ表示のたびに呼ばれるため、取得は必要最小限（活動日は日付列のみ・詳細は各1件）に
 /// 絞り、内容が前回と同じなら保存・Widget リロード・Watch 送信をスキップする。
 @MainActor
 enum SnapshotUpdater {
     static func update(userId: UUID, context: ModelContext) {
-        // ストリーク計算に必要なのは来店日付だけ。リレーションや他列の実体化を避ける。
-        var visitFetch = FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == userId })
-        visitFetch.propertiesToFetch = [\.visitedAt]
-        let visitDays = ((try? context.fetch(visitFetch)) ?? []).map(\.visitedAt)
+        // ストリーク計算に必要なのは完了ワークアウトの日付だけ。リレーションや他列の実体化を避ける。
+        var activeFetch = FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId && $0.completedAt != nil })
+        activeFetch.propertiesToFetch = [\.date]
+        let activeDays = ((try? context.fetch(activeFetch)) ?? []).map(\.date)
         let goal = UserDefaults.standard.object(forKey: "gymnee.weeklyGoal") as? Int ?? 3
 
         // 直近の完了ワークアウト（1件だけ取得）。
@@ -32,8 +32,8 @@ enum SnapshotUpdater {
         let nextPlanned = (try? context.fetch(nextFetch))?.first
 
         var snapshot = GymneeSnapshot(
-            streak: StreakCalculator.currentStreak(visitDays: visitDays),
-            weeklyCount: StreakCalculator.weeklyVisitDays(visitDays: visitDays),
+            streak: StreakCalculator.currentStreak(activeDays: activeDays),
+            weeklyCount: StreakCalculator.weeklyActiveDays(activeDays: activeDays),
             weeklyGoal: goal,
             lastWorkoutName: lastWorkout?.name,
             lastWorkoutDate: lastWorkout?.date,

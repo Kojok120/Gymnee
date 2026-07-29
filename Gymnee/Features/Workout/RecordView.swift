@@ -15,15 +15,13 @@ struct RecordView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
-    /// タブから入った時は「記録を開始する」ゲートを挟む。チェックイン経由は飛ばす。
+    /// タブから入った時は「記録を開始する」ゲートを挟む。
     @State private var gateOpen = false
     /// 計画/予定の「開始」から渡された、記録タブで再開するワークアウト（nil＝新規ライブ記録）。
     @State private var resumeTarget: Workout?
     /// ゲートの「テンプレから始める」で作ったルーティンを初期モードにする（nil＝既定の計画/フリー）。
     @State private var startMode: RecordMode?
     @State private var showTemplatePicker = false
-    /// チェックインフロー（フルスクリーン）。完了は .gymneeDidCheckIn 経由でゲートが開く。
-    @State private var showCheckIn = false
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
@@ -82,7 +80,6 @@ struct RecordView: View {
                         userId: uid,
                         resumables: resumableDrafts(for: uid),
                         onStart: { resumeTarget = nil; startMode = nil; gateOpen = true },
-                        onCheckIn: { showCheckIn = true },
                         onResume: { draft in resumeTarget = draft; startMode = nil; gateOpen = true },
                         onDiscard: { draft in discardDraft(draft) },
                         onTemplates: { showTemplatePicker = true },
@@ -102,11 +99,6 @@ struct RecordView: View {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
         }
-        // ゲートからのチェックイン。cover はゲートの外（ここ）に付ける：完了通知で
-        // ゲートが RecordContent に差し替わっても提示元が消えず、閉じアニメーションが乱れない。
-        .fullScreenCover(isPresented: $showCheckIn) { CheckInView() }
-        // チェックイン直後はゲートを飛ばして記録画面へ直行（新規記録）。
-        .onReceive(NotificationCenter.default.publisher(for: .gymneeDidCheckIn)) { _ in resumeTarget = nil; gateOpen = true }
         // 計画/予定の「開始」→ 記録タブで当該ワークアウトを再開（カレンダータブから遷移してくる）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { note in
             guard let idStr = note.userInfo?["workoutId"] as? String, let id = UUID(uuidString: idStr),
@@ -127,8 +119,6 @@ private struct StartGateView: View {
     /// 自動保存された中断中の下書き（あれば1件ずつカードで再開/破棄導線を出す）。
     var resumables: [Workout] = []
     let onStart: () -> Void
-    /// チェックインフローを開く（ジム到着時の入口。完了後は自動で記録が始まる）。
-    var onCheckIn: () -> Void = {}
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
     /// テンプレ選択シートを開く（テンプレのルーティンで即開始）。
@@ -165,14 +155,9 @@ private struct StartGateView: View {
                             Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
                         VStack(spacing: Theme.Spacing.md) {
-                            // 入口は横並びツインのタイル：ジム到着時はチェックイン（完了で自動的に
-                            // 記録開始）、それ以外（自宅トレ等）は記録を直接開始。主 CTA のライムは記録側。
-                            HStack(spacing: Theme.Spacing.md) {
-                                gateTile(title: "チェックイン", caption: "ジムに着いたら",
-                                         icon: "door.right.hand.open", primary: false, action: onCheckIn)
-                                gateTile(title: "記録を開始", caption: "今すぐ始める",
-                                         icon: "play.fill", primary: true, action: onStart)
-                            }
+                            // 入口は「記録を開始」の単一 CTA（チェックイン廃止後は記録が唯一の活動単位）。
+                            gateTile(title: "記録を開始", caption: "今すぐ始める",
+                                     icon: "play.fill", primary: true, action: onStart)
                             // 補助導線は全幅の行カード（テキストリンクだと見落とされ押しづらいため）。
                             // テンプレは新規ユーザー（完了記録なし）だけに出す活性化導線。
                             if showTemplates {
@@ -1390,22 +1375,26 @@ struct RecordContent: View {
         return String(format: "%d:%02d", secs / 60, secs % 60)
     }
 
-    /// 連続記録・週次進捗の元になる活動日（来店＋完了ワークアウト）。
+    /// 連続記録・週次進捗の元になる活動日（完了ワークアウトの日）。
     /// サマリーは finish() 後に出るため、いま完了したワークアウト自身も含まれる。
     private var activeDays: [Date] {
         let uid = userId
-        let visits = (try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.userId == uid }))) ?? []
         let completed = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil }))) ?? []
-        return visits.map(\.visitedAt) + completed.map { $0.completedAt ?? $0.date }
+        return completed.map { $0.completedAt ?? $0.date }
     }
 
     private var currentStreak: Int {
-        StreakCalculator.currentStreak(visitDays: activeDays, calendar: .current)
+        StreakCalculator.currentStreak(activeDays: activeDays, calendar: .current)
     }
 
     /// 今週のアクティブ日数（サマリーの週次ゴールタイル「3/5」の分子）。
     private var weeklyActiveDays: Int {
-        StreakCalculator.weeklyVisitDays(visitDays: activeDays)
+        StreakCalculator.weeklyActiveDays(activeDays: activeDays)
+    }
+
+    /// 今月のアクティブ日数（投稿カードの「今月○日目」チップ）。
+    private var monthlyActiveDays: Int {
+        StreakCalculator.monthlyActiveDays(activeDays: activeDays)
     }
 }
 

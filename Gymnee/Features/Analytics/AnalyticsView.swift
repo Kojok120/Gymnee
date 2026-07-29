@@ -8,7 +8,6 @@ struct AnalyticsView: View {
 
     @Environment(\.modelContext) private var context
     @Query private var workouts: [Workout]
-    @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @State private var csvURL: URL?
     /// 強度進捗グラフに表示する種目（空＝頻度上位5の既定）。シートで増減できる。
@@ -29,7 +28,6 @@ struct AnalyticsView: View {
         // （多年履歴の全ロードは避ける）。
         let cutoff = Calendar.current.date(byAdding: .weekOfYear, value: -53, to: Date()) ?? .distantPast
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.date >= cutoff }, sort: \Workout.date)
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId && $0.visitedAt >= cutoff }, sort: \Visit.visitedAt)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId && $0.achievedAt >= cutoff }, sort: \PersonalRecord.achievedAt, order: .reverse)
     }
 
@@ -86,15 +84,17 @@ struct AnalyticsView: View {
     /// 来店ヒートマップは直近3ヶ月（12週）の貢献グラフ（幅いっぱい）に固定する。
     private var heatmapCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "ジム活ヒートマップ（直近\(periodLabel)）")
-            HeatmapView(counts: visitCounts, weeks: periodWeeks, contribution: true)
+            SectionHeader(title: "記録ヒートマップ（直近\(periodLabel)）")
+            HeatmapView(counts: workoutCounts, weeks: periodWeeks, contribution: true)
         }
         .gymneeCard()
     }
 
-    private var visitCounts: [Date: Int] {
+    private var workoutCounts: [Date: Int] {
         var counts: [Date: Int] = [:]
-        for v in visits { counts[calendar.startOfDay(for: v.visitedAt), default: 0] += 1 }
+        for w in workouts where w.completedAt != nil {
+            counts[calendar.startOfDay(for: w.completedAt ?? w.date), default: 0] += 1
+        }
         return counts
     }
 
@@ -368,16 +368,10 @@ struct AnalyticsView: View {
             SectionHeader(title: "データエクスポート")
             Text("全記録を CSV で書き出せます（データ所有権）。")
                 .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button {
-                    csvURL = CSVExporter.writeTempFile(CSVExporter.workoutsCSV(userId: userId, context: context), name: "gymnee_workouts")
-                } label: { Label("ワークアウト", systemImage: "square.and.arrow.up").font(.caption) }
-                    .buttonStyle(.bordered)
-                Button {
-                    csvURL = CSVExporter.writeTempFile(CSVExporter.visitsCSV(userId: userId, context: context), name: "gymnee_visits")
-                } label: { Label("ジム活", systemImage: "square.and.arrow.up").font(.caption) }
-                    .buttonStyle(.bordered)
-            }
+            Button {
+                csvURL = CSVExporter.writeTempFile(CSVExporter.workoutsCSV(userId: userId, context: context), name: "gymnee_workouts")
+            } label: { Label("ワークアウトを書き出す", systemImage: "square.and.arrow.up").font(.caption) }
+                .buttonStyle(.bordered)
             if let csvURL {
                 ShareLink(item: csvURL) { Label("共有: \(csvURL.lastPathComponent)", systemImage: "doc") .font(.caption) }
             }

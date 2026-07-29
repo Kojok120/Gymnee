@@ -85,17 +85,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         schedule(id: id, title: "今週のまとめ📊", body: "今週のトレーニングを振り返ってみよう。", trigger: trigger, userInfo: ["type": "recap"])
     }
 
-    /// 連続記録の途切れ予告。今日の 20:00 に「まだチェックインしていない」場合の催促を予約。
-    func scheduleStreakReminder(streak: Int, hasCheckedInToday: Bool) {
+    /// 連続記録の途切れ予告。今日の 20:00 に「まだ記録していない」場合の催促を予約。
+    func scheduleStreakReminder(streak: Int, hasRecordedToday: Bool) {
         let id = "gymnee.streakRisk"
         center.removePendingNotificationRequests(withIdentifiers: [id])
         guard prefEnabled(PrefKey.streak) else { return }
-        guard streak > 0, !hasCheckedInToday else { return }
+        guard streak > 0, !hasRecordedToday else { return }
         var comps = Calendar.current.dateComponents([.year, .month, .day], from: .now)
         comps.hour = 20; comps.minute = 0
         guard let fireDate = Calendar.current.date(from: comps), fireDate > .now else { return }
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-        schedule(id: id, title: "連続\(streak)日が途切れそう🔥", body: "今日もチェックインして記録を伸ばそう！", trigger: trigger, userInfo: ["type": "checkin"])
+        schedule(id: id, title: "連続\(streak)日が途切れそう🔥", body: "今日も記録して連続を伸ばそう！", trigger: trigger, userInfo: ["type": "workout"])
     }
 
     /// 予定ワークアウトのリマインド（当日朝 8:00）。

@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// 日別詳細（§5 Day Detail）。その日の計画・来店・ワークアウト一覧。
+/// 日別詳細（§5 Day Detail）。その日の計画・ワークアウト一覧。
 struct DayDetailView: View {
     let userId: UUID
     let date: Date
@@ -12,11 +12,9 @@ struct DayDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(GoogleCalendarService.self) private var googleCalendar
-    @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
     @Query private var planned: [PlannedWorkout]
     @Query private var routines: [Routine]
-    @State private var showAddVisit = false
     @State private var showAddPlan = false
     // 計画追加の下書き選択（保存するまで永続化しない）。
     @State private var planDraftTitle: String?
@@ -28,7 +26,7 @@ struct DayDetailView: View {
     private var isPast: Bool {
         calendar.startOfDay(for: date) < calendar.startOfDay(for: .now)
     }
-    /// 未来日（来店/ワークアウト追加の可否に使う。過去・今日で追加可）。
+    /// 未来日（ワークアウト追加の可否に使う。過去・今日で追加可）。
     private var isFuture: Bool {
         calendar.startOfDay(for: date) > calendar.startOfDay(for: .now)
     }
@@ -39,10 +37,6 @@ struct DayDetailView: View {
         self.onEditWorkout = onEditWorkout
         let start = Calendar.current.startOfDay(for: date)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
-        _visits = Query(
-            filter: #Predicate<Visit> { $0.userId == userId && $0.visitedAt >= start && $0.visitedAt < end },
-            sort: \Visit.visitedAt, order: .reverse
-        )
         _workouts = Query(
             // 完了したワークアウトのみ（進行中の下書きは記録扱いしない）。
             filter: #Predicate<Workout> { $0.userId == userId && $0.date >= start && $0.date < end && $0.completedAt != nil },
@@ -89,25 +83,6 @@ struct DayDetailView: View {
                 }
             }
 
-            Section("ジム活") {
-                if visits.isEmpty {
-                    Text("ジム活の記録なし").foregroundStyle(.secondary)
-                } else {
-                    ForEach(visits) { visit in
-                        VisitRow(visit: visit)
-                            .swipeActions {
-                                Button("削除", role: .destructive) { delete(visit) }
-                            }
-                    }
-                }
-                // 来店の追加は「未来日」では不可（過去・今日のみ）。
-                if !isFuture {
-                    Button { showAddVisit = true } label: {
-                        Label("この日にジム活を追加", systemImage: "plus.circle")
-                    }
-                }
-            }
-
             Section("ワークアウト") {
                 if workouts.isEmpty {
                     Text("ワークアウト記録なし").foregroundStyle(.secondary)
@@ -133,12 +108,6 @@ struct DayDetailView: View {
         }
         .navigationTitle(titleText)
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showAddVisit) {
-            GymPickerView(userId: userId) { gym in
-                addVisit(gym: gym)
-                showAddVisit = false
-            }
-        }
         .sheet(isPresented: $showAddPlan) { addPlanSheet }
     }
 
@@ -186,17 +155,6 @@ struct DayDetailView: View {
                 if isSelected { Image(systemName: "checkmark").foregroundStyle(Theme.lime) }
             }
         }
-    }
-
-    /// その日に来店を追加（ジムを選択して作成）。過去/未来の後追い記録に。
-    private func addVisit(gym: Gym) {
-        let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
-        let visit = Visit(userId: userId, visitedAt: noon, gym: gym)
-        context.insert(visit)
-        try? context.save()
-        // FK 担保のため参照先ジムも送出してから来店を送る。
-        sync.enqueue(PendingChange(entity: "gyms", recordId: gym.id, operation: .upsert, updatedAt: .now))
-        sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
     }
 
     /// その日（過去でも未来でも）にワークアウトを新規作成してロガーを開く。記録の後追い入力・先取り計画に。
@@ -261,17 +219,9 @@ struct DayDetailView: View {
         return f.string(from: date)
     }
 
-    private func delete(_ visit: Visit) {
-        let visitId = visit.id
-        PhotoStore.delete(visit.localPhotoFilename)
-        context.delete(visit)
-        try? context.save()
-        sync.enqueue(PendingChange(entity: "visits", recordId: visitId, operation: .delete, updatedAt: .now))
-        FeedPublisher.deleteFeedItem(forRefId: visitId, context: context, sync: sync)
-    }
-
     private func deleteWorkout(_ workout: Workout) {
         let id = workout.id
+        PhotoStore.delete(workout.localPhotoFilename)
         context.delete(workout) // 配下の workout_exercises / exercise_sets は cascade で削除
         try? context.save()
         sync.enqueue(PendingChange(entity: "workouts", recordId: id, operation: .delete, updatedAt: .now))

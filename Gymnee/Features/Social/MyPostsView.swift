@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// 自分の投稿一覧（§6.11）。チェックイン・ワークアウト・自己ベストを時系列で表示し、
-/// スワイプで削除できる。削除はフィード表示の元データ（visit / workout / personal_record）を消す。
+/// スワイプで削除できる。削除はフィード表示の元データ（workout / personal_record）を消す。
 struct MyPostsView: View {
     let userId: UUID
     /// シートを閉じる。NavigationStack 内の \.dismiss はシートを閉じないため明示的に渡す。
@@ -11,7 +11,6 @@ struct MyPostsView: View {
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AuthService.self) private var auth
-    @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @Query private var allReactions: [PostReaction]
@@ -28,7 +27,6 @@ struct MyPostsView: View {
     init(userId: UUID, onClose: @escaping () -> Void) {
         self.userId = userId
         self.onClose = onClose
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
@@ -37,10 +35,9 @@ struct MyPostsView: View {
 
     private var blockedIds: Set<UUID> { Set(blocks.map(\.blockedId)) }
     /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
-    /// feed_item.id == 元データ id。削除直後でも実体（visit/pr/workout）から導き、stale な feedItems に依存しない。
+    /// feed_item.id == 元データ id。削除直後でも実体（pr/workout）から導き、stale な feedItems に依存しない。
     private var myPostIds: Set<UUID> {
-        Set(visits.map(\.id))
-            .union(prs.map(\.id))
+        Set(prs.map(\.id))
             .union(workouts.filter { $0.completedAt != nil }.map(\.id))
     }
     /// 自分の投稿に付いた他者反応の未読数（ベルの赤バッジ）。
@@ -53,7 +50,6 @@ struct MyPostsView: View {
     private var entries: [FeedEntry] {
         let publishedVisibility = Dictionary(feedItems.map { ($0.id, $0.visibility) }, uniquingKeysWith: { a, _ in a })
         return FeedBuilder.build(
-            visits: visits,
             personalRecords: prs,
             workouts: workouts,
             publishedVisibilityById: publishedVisibility,
@@ -145,13 +141,6 @@ struct MyPostsView: View {
 
     private func delete(_ entry: FeedEntry) {
         switch entry.kind {
-        case .visit:
-            guard let v = visits.first(where: { $0.id == entry.id }) else { return }
-            PhotoStore.delete(v.localPhotoFilename)
-            context.delete(v)
-            try? context.save()
-            sync.enqueue(PendingChange(entity: "visits", recordId: entry.id, operation: .delete, updatedAt: .now))
-            FeedPublisher.deleteFeedItem(forRefId: entry.id, context: context, sync: sync)
         case .pr:
             guard let pr = prs.first(where: { $0.id == entry.id }) else { return }
             context.delete(pr)
@@ -161,6 +150,7 @@ struct MyPostsView: View {
             FeedPublisher.deleteFeedItem(forRefId: entry.id, context: context, sync: sync)
         case .workout:
             guard let w = workouts.first(where: { $0.id == entry.id }) else { return }
+            PhotoStore.delete(w.localPhotoFilename)
             context.delete(w)
             try? context.save()
             sync.enqueue(PendingChange(entity: "workouts", recordId: entry.id, operation: .delete, updatedAt: .now))

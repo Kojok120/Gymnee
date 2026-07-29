@@ -7,10 +7,6 @@ enum GymneeSchemaV1: VersionedSchema {
     static var models: [any PersistentModel.Type] {
         [
             Profile.self,
-            Gym.self,
-            GymEquipment.self,
-            Visit.self,
-            VisitPartner.self,
             Workout.self,
             Exercise.self,
             WorkoutExercise.self,

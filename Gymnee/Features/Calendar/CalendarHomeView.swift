@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// カレンダーホーム（§6.2）。月/週表示・来店マーカー・連続記録・週次ゴール。
+/// カレンダーホーム（§6.2）。月/週表示・記録マーカー・連続記録・週次ゴール。
 struct CalendarHomeView: View {
     @Environment(AuthService.self) private var auth
 
@@ -20,12 +20,8 @@ private struct CalendarHomeContent: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context
-    @Environment(LocationService.self) private var location
-    @Environment(LocalSyncEngine.self) private var sync
     @Environment(NotificationService.self) private var notifications
-    @Query private var visits: [Visit]
     @Query private var workouts: [Workout]
-    @Query private var gyms: [Gym]
     @Query private var planned: [PlannedWorkout]
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
@@ -47,10 +43,8 @@ private struct CalendarHomeContent: View {
 
     init(userId: UUID) {
         self.userId = userId
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date)
         _planned = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone }, sort: \PlannedWorkout.date)
-        _gyms = Query(sort: \Gym.name)
     }
 
     var body: some View {
@@ -66,7 +60,7 @@ private struct CalendarHomeContent: View {
         }
         .background(Theme.bg0)
         // 大見出し「Gymnee」は削除（縦スペース節約・スクロールなしでカレンダーまで見せる）。
-        // ツールバー導線も無し：チェックインは記録タブ、プロフィールは「その他」タブへ移設した。
+        // ツールバー導線も無し：記録は記録タブ、プロフィールは「その他」タブへ移設した。
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showPlanner) {
             NavigationStack {
@@ -102,24 +96,12 @@ private struct CalendarHomeContent: View {
         .navigationDestination(item: $editingWorkout) { workout in
             RecordContent(userId: userId, resuming: workout)
         }
-        // Watch 保留チェックインの取り込みは「一度だけ」。visits.count トリガに乗せると
-        // 挿入→count変化→再実行→再挿入 の無限ループになる（特に App Group 破損時）。
-        .task { consumeWatchCheckIns() }
-        // Watch から WCSession 経由でチェックインが届いたら、前面表示中でも即取り込む（重複ガード済み）。
-        .onReceive(NotificationCenter.default.publisher(for: .gymneeWatchCheckInReceived)) { _ in
-            consumeWatchCheckIns()
-        }
-        .task(id: visits.count) { syncPlatform() }
+        .task(id: activeWorkoutCount) { syncPlatform() }
     }
 
-    /// Widget スナップショット更新＋ジオフェンス監視開始＋通知予約（§6.10）。挿入は行わない。
+    /// Widget スナップショット更新＋通知予約（§6.10）。
     private func syncPlatform() {
         SnapshotUpdater.update(userId: userId, context: context)
-        let regions = gyms.compactMap { gym -> (id: UUID, name: String, lat: Double, lng: Double)? in
-            guard let lat = gym.lat, let lng = gym.lng else { return nil }
-            return (gym.id, gym.name, lat, lng)
-        }
-        location.startMonitoring(gymRegions: regions)
         scheduleReminders()
     }
 
@@ -136,33 +118,12 @@ private struct CalendarHomeContent: View {
         }
         let today = calendar.startOfDay(for: .now)
         let activeToday = activeDays.contains { calendar.isDateInToday($0) }
-        notifications.scheduleStreakReminder(streak: currentStreak, hasCheckedInToday: activeToday)
+        notifications.scheduleStreakReminder(streak: currentStreak, hasRecordedToday: activeToday)
         notifications.scheduleWeeklyRecap()
         let planned = workouts
             .filter { $0.isPlanned && $0.completedAt == nil && $0.date >= today }
             .map { (id: $0.id, name: $0.name, date: $0.date) }
         notifications.schedulePlannedWorkouts(planned)
-    }
-
-    /// Watch（App Group キュー）からのクイックチェックインを来店として取り込む。
-    private func consumeWatchCheckIns() {
-        let pending = SharedStore.consumePendingCheckIns()
-        guard !pending.isEmpty else { return }
-        let gym = gyms.first(where: { $0.isFavorite }) ?? gyms.first
-        var insertedVisits: [Visit] = []
-        for date in pending {
-            // 既に同時刻の来店があれば重複挿入しない（App Group 破損でキューが消えない場合の保険）。
-            if visits.contains(where: { abs($0.visitedAt.timeIntervalSince(date)) < 1 }) { continue }
-            let visit = Visit(userId: userId, visitedAt: date, gym: gym)
-            context.insert(visit)
-            insertedVisits.append(visit)
-        }
-        if !insertedVisits.isEmpty {
-            try? context.save()
-            for visit in insertedVisits {
-                sync.enqueue(PendingChange(entity: "visits", recordId: visit.id, operation: .upsert, updatedAt: visit.updatedAt))
-            }
-        }
     }
 
     // MARK: - Hero (streak ring + week goal + plain language)
@@ -271,13 +232,12 @@ private struct CalendarHomeContent: View {
 
     private var grid: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
-        // Set は 42 セルで使い回す（セル毎の再生成＝O(visits)×42 を回避）。
-        let vDays = visitDays
+        // Set は 42 セルで使い回す（セル毎の再生成＝O(workouts)×42 を回避）。
         let wDays = workoutDays
         let pDays = plannedDays
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(Array(displayedDays.enumerated()), id: \.offset) { _, day in
-                dayCell(day, visitDays: vDays, workoutDays: wDays, plannedDays: pDays)
+                dayCell(day, workoutDays: wDays, plannedDays: pDays)
             }
         }
     }
@@ -285,9 +245,8 @@ private struct CalendarHomeContent: View {
     /// 計画(未消化)のある日。グリッドにマーカーを出す。
     private var plannedDays: Set<Date> { Set(planned.map { calendar.startOfDay(for: $0.date) }) }
 
-    private func dayCell(_ date: Date, visitDays: Set<Date>, workoutDays: Set<Date>, plannedDays: Set<Date>) -> some View {
+    private func dayCell(_ date: Date, workoutDays: Set<Date>, plannedDays: Set<Date>) -> some View {
         let start = calendar.startOfDay(for: date)
-        let hasVisit = visitDays.contains(start)
         let hasWorkout = workoutDays.contains(start)
         let hasPlan = plannedDays.contains(start)
         let isToday = calendar.isDateInToday(date)
@@ -304,17 +263,16 @@ private struct CalendarHomeContent: View {
                     .background {
                         if isToday {
                             Circle().fill(Theme.limeFill)
-                        } else if hasVisit {
+                        } else if hasWorkout {
                             Circle().fill(Theme.limeSoft)
                         } else if hasPlan {
-                            // 計画日は青の枠線で示す（来店=lime の実績と明確に区別）。
+                            // 計画日は青の枠線で示す（記録済み=lime の実績と明確に区別）。
                             Circle().strokeBorder(Theme.info.opacity(0.7), lineWidth: 1.5)
                         }
                     }
                 HStack(spacing: 3) {
-                    Circle().fill(hasVisit && !isToday ? Theme.lime : .clear).frame(width: 5, height: 5)
-                    Circle().fill(hasWorkout ? Theme.warning : .clear).frame(width: 5, height: 5)
-                    // 計画は青ポチ（来店の緑と混同しないように）。
+                    Circle().fill(hasWorkout && !isToday ? Theme.lime : .clear).frame(width: 5, height: 5)
+                    // 計画は青ポチ（記録済みの lime と混同しないように）。
                     Circle().fill(hasPlan ? Theme.info : .clear).frame(width: 5, height: 5)
                 }
                 .frame(height: 5)
@@ -329,8 +287,7 @@ private struct CalendarHomeContent: View {
 
     private var legend: some View {
         HStack(spacing: Theme.Spacing.lg) {
-            legendItem(color: Theme.lime, label: "ジム活")
-            legendItem(color: Theme.warning, label: "ワークアウト")
+            legendItem(color: Theme.lime, label: "記録")
             legendItem(color: Theme.info, label: "計画")
             Spacer()
         }
@@ -417,25 +374,26 @@ private struct CalendarHomeContent: View {
 
     // MARK: - Derived data
 
-    private var visitDays: Set<Date> {
-        Set(visits.map { calendar.startOfDay(for: $0.visitedAt) })
-    }
+    /// 完了したワークアウトのある日（進行中の下書きは記録扱いしない）。カレンダーのマーカー用。
     private var workoutDays: Set<Date> {
-        // 完了したワークアウトのみマーカー表示（進行中の下書きは記録扱いしない）。
         Set(workouts.filter { $0.completedAt != nil }.map { calendar.startOfDay(for: $0.date) })
     }
-    /// 連続記録・週次達成の対象日。来店だけでなく完了ワークアウトも算入（記録派も報われるように）。
+    /// 連続記録・週次達成の対象日＝完了ワークアウトの日（チェックイン廃止後の唯一の活動単位）。
     private var activeDays: [Date] {
-        visits.map(\.visitedAt) + workouts.filter { $0.completedAt != nil }.map { $0.completedAt ?? $0.date }
+        workouts.filter { $0.completedAt != nil }.map { $0.completedAt ?? $0.date }
+    }
+    /// syncPlatform の再実行トリガ。完了件数が変わったときだけスナップショットを更新する。
+    private var activeWorkoutCount: Int {
+        workouts.reduce(0) { $1.completedAt != nil ? $0 + 1 : $0 }
     }
     private var currentStreak: Int {
-        StreakCalculator.currentStreak(visitDays: activeDays, calendar: calendar)
+        StreakCalculator.currentStreak(activeDays: activeDays, calendar: calendar)
     }
     private var longestStreak: Int {
-        StreakCalculator.longestStreak(visitDays: activeDays, calendar: calendar)
+        StreakCalculator.longestStreak(activeDays: activeDays, calendar: calendar)
     }
     private var weekCount: Int {
-        StreakCalculator.weeklyVisitDays(visitDays: activeDays, calendar: calendar)
+        StreakCalculator.weeklyActiveDays(activeDays: activeDays, calendar: calendar)
     }
     private var goalProgress: Double {
         guard weeklyGoal > 0 else { return 0 }

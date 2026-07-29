@@ -4,7 +4,7 @@ import Foundation
 /// しきい値は「継続そのもの」を称える設計（週次ストリークは休息を尊重する既存思想に合わせ、日次は使わない）。
 enum AchievementCalculator {
     enum Kind: String, CaseIterable {
-        case volume, workouts, prs, visits, weeklyStreak
+        case volume, workouts, prs, weeklyStreak
     }
 
     /// 種別ごとの実績状況（達成済みラベル列＋次の目標と進捗）。
@@ -26,7 +26,6 @@ enum AchievementCalculator {
     static let volumeTiersKg: [Double] = [10_000, 50_000, 100_000, 500_000, 1_000_000]
     static let workoutTiers = [10, 50, 100, 300, 500]
     static let prTiers = [10, 30, 100, 300]
-    static let visitTiers = [10, 50, 100, 300, 500]
     static let weeklyStreakTiers = [4, 12, 26, 52]
 
     /// 現在値から全種別の実績状況を組み立てる。
@@ -34,7 +33,6 @@ enum AchievementCalculator {
         totalVolumeKg: Double,
         workoutCount: Int,
         prCount: Int,
-        visitCount: Int,
         longestWeeklyStreakWeeks: Int
     ) -> [Status] {
         [
@@ -45,8 +43,6 @@ enum AchievementCalculator {
                   value: Double(workoutCount), tiers: workoutTiers.map(Double.init), label: { "\(Int($0))回" }),
             build(kind: .prs, title: "自己ベスト", systemImage: "trophy.fill",
                   value: Double(prCount), tiers: prTiers.map(Double.init), label: { "\(Int($0))" }),
-            build(kind: .visits, title: "ジム活", systemImage: "mappin.and.ellipse",
-                  value: Double(visitCount), tiers: visitTiers.map(Double.init), label: { "\(Int($0))回" }),
             build(kind: .weeklyStreak, title: "連続週", systemImage: "flame.fill",
                   value: Double(longestWeeklyStreakWeeks), tiers: weeklyStreakTiers.map(Double.init), label: { "\(Int($0))週" }),
         ]

@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// 週間XPランキング＋ストリーク（§6.11 ゲーミフィケーション）。
-/// XP は今週の feed_items から算出（ワークアウト30 / 自己ベスト20 / チェックイン10）。
+/// XP は今週の feed_items から算出（ワークアウト30 / 自己ベスト20）。
 /// ランキングは「自分＋フォロー中（見えている投稿の人）」のリーグ。
 struct RankingView: View {
     let userId: UUID
@@ -11,12 +11,12 @@ struct RankingView: View {
     @Query private var feedItems: [FeedItem]
     @Query private var profiles: [Profile]
     @Query private var follows: [Follow]
-    @Query private var myVisits: [Visit]
+    @Query private var myCompletedWorkouts: [Workout]
 
     init(userId: UUID) {
         self.userId = userId
         _follows = Query(filter: #Predicate<Follow> { $0.followerId == userId })
-        _myVisits = Query(filter: #Predicate<Visit> { $0.userId == userId })
+        _myCompletedWorkouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil })
     }
 
     /// 空文字を nil 扱いにする（プロフィール表示名が "" の時に「ユーザー」へ正しくフォールバックさせる）。
@@ -29,7 +29,6 @@ struct RankingView: View {
         switch type {
         case .workout: return 30
         case .pr: return 20
-        case .visit: return 10
         }
     }
 
@@ -40,7 +39,9 @@ struct RankingView: View {
         return cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
     }
 
-    private var myStreak: Int { StreakCalculator.currentStreak(visitDays: myVisits.map(\.visitedAt)) }
+    private var myStreak: Int {
+        StreakCalculator.currentStreak(activeDays: myCompletedWorkouts.map { $0.completedAt ?? $0.date })
+    }
 
     private struct Rank: Identifiable {
         let id: UUID

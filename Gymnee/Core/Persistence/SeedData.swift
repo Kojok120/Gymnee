@@ -20,7 +20,6 @@ enum SeedData {
     /// プリセット投入が済んでいなければ投入する。複数回呼んでも安全（冪等）。
     @MainActor
     static func seedIfNeeded(_ context: ModelContext) {
-        seedGyms(context)
         // 部位移行・種目の dedupe/reconcile は毎起動で Exercise を複数回フルフェッチして
         // 起動クリティカルパスを塞ぐため、プリセット定義が変わった時だけ実行する。
         if UserDefaults.standard.integer(forKey: presetVersionKey) != presetVersion {
@@ -47,43 +46,6 @@ enum SeedData {
         }
         try? context.save()
     }
-
-    // MARK: - Gyms
-
-    @MainActor
-    private static func seedGyms(_ context: ModelContext) {
-        let existing = (try? context.fetchCount(
-            FetchDescriptor<Gym>(predicate: #Predicate { $0.sourceRaw == "preset" })
-        )) ?? 0
-        guard existing == 0 else { return }
-
-        for preset in presetGyms {
-            let gym = Gym(
-                name: preset.name,
-                chain: preset.chain,
-                source: .preset,
-                isDirty: false
-            )
-            context.insert(gym)
-        }
-    }
-
-    private struct PresetGym { let name: String; let chain: String }
-
-    /// 主要チェーンの最小セット（自己登録と併用、§6.4）。
-    private static let presetGyms: [PresetGym] = [
-        .init(name: "エニタイムフィットネス", chain: "Anytime Fitness"),
-        .init(name: "ゴールドジム", chain: "Gold's Gym"),
-        .init(name: "コナミスポーツクラブ", chain: "Konami Sports"),
-        .init(name: "ティップネス", chain: "Tipness"),
-        .init(name: "ルネサンス", chain: "Renaissance"),
-        .init(name: "セントラルスポーツ", chain: "Central Sports"),
-        .init(name: "chocoZAP", chain: "chocoZAP"),
-        .init(name: "FASTGYM24", chain: "FASTGYM24"),
-        .init(name: "JOYFIT", chain: "JOYFIT"),
-        .init(name: "FIT PLACE24", chain: "FitPlace"),
-        .init(name: "エクスパンドジム", chain: "Expand"),
-    ]
 
     // MARK: - Exercises
 

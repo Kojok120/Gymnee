@@ -17,7 +17,6 @@ struct SocialActivityView: View {
     @Query private var allComments: [Comment]
     @Query private var blocks: [Block]
     @Query private var profiles: [Profile]
-    @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @Query private var feedItems: [FeedItem]
@@ -32,7 +31,6 @@ struct SocialActivityView: View {
         self.userId = userId
         self.onClose = onClose
         _blocks = Query(filter: #Predicate<Block> { $0.blockerId == userId })
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
         _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId == userId })
@@ -40,10 +38,9 @@ struct SocialActivityView: View {
 
     private var blockedIds: Set<UUID> { Set(blocks.map(\.blockedId)) }
     /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
-    /// feed_item.id == 元データ id なので、削除直後でも実体（visit/pr/workout）から導く（stale な feedItems に依存しない）。
+    /// feed_item.id == 元データ id なので、削除直後でも実体（pr/workout）から導く（stale な feedItems に依存しない）。
     private var myPostIds: Set<UUID> {
-        Set(visits.map(\.id))
-            .union(prs.map(\.id))
+        Set(prs.map(\.id))
             .union(workouts.filter { $0.completedAt != nil }.map(\.id))
     }
 
@@ -57,7 +54,7 @@ struct SocialActivityView: View {
     /// 自分の投稿の FeedEntry（詳細遷移用）。FeedItem.id == FeedEntry.id なので postId で引ける。
     private var entriesById: [UUID: FeedEntry] {
         let publishedVisibility = Dictionary(feedItems.map { ($0.id, $0.visibility) }, uniquingKeysWith: { a, _ in a })
-        let entries = FeedBuilder.build(visits: visits, personalRecords: prs, workouts: workouts,
+        let entries = FeedBuilder.build(personalRecords: prs, workouts: workouts,
                                         publishedVisibilityById: publishedVisibility,
                                         ownerName: auth.session?.displayName)
         return Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })

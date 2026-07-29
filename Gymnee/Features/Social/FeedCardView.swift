@@ -2,12 +2,12 @@ import SwiftUI
 
 /// フィード 1 件のカード表示（§6.11 / ⑦）。
 /// 記録そのものをコンテンツ化する：自分のワークアウトは主要スタッツ（種目/セット/ボリューム/時間）と
-/// 鍛えた部位・PR を自動ハイライト。来店は写真付き。PR 投稿は計測タイプ別トロフィー。
+/// 鍛えた部位・PR を自動ハイライト。写真とコメントを添えられる。PR 投稿は計測タイプ別トロフィー。
 /// 体重/体組成などセンシティブな身体データはフィードには一切露出しない（feed_item の種別に含めない）。
 struct FeedCardView: View {
     let entry: FeedEntry
 
-    /// 自分の来店写真。初回スクロール時の同期ディスクI/O＋フル解像度デコードが
+    /// 自分の投稿写真。初回スクロール時の同期ディスクI/O＋フル解像度デコードが
     /// メインスレッドを塞がないよう非同期に読み込む（2回目以降は NSCache 命中で即時）。
     @State private var ownPhoto: UIImage?
     @State private var ownPhotoMissing = false
@@ -37,15 +37,15 @@ struct FeedCardView: View {
                     ownPhotoMissing = (image == nil)
                 }
             } else if let ref = entry.photoRef, !ref.isEmpty {
-                // 他人の来店写真：ストレージ参照から取得（権限が無ければプレースホルダのまま）。
+                // 他人の投稿写真：ストレージ参照から取得（権限が無ければプレースホルダのまま）。
                 SyncedPhoto(filename: nil, ref: ref) { Color.clear }
                     .scaledToFill()
                     .frame(maxWidth: .infinity).frame(height: 200)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
             }
-            if let subtitle = entry.subtitle, !subtitle.isEmpty, entry.kind == .visit {
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            if let caption = entry.caption, !caption.isEmpty {
+                Text(caption).font(.subheadline).foregroundStyle(Theme.textPrimary)
             }
             if !entry.partners.isEmpty {
                 Label(entry.partners.joined(separator: "・"), systemImage: "person.2.fill")

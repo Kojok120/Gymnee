@@ -108,7 +108,6 @@ private struct SocialContent: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AuthService.self) private var auth
 
-    @Query private var visits: [Visit]
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @Query private var follows: [Follow]
@@ -136,7 +135,6 @@ private struct SocialContent: View {
     init(userId: UUID, initialTab: Int = 0) {
         self.userId = userId
         _tab = State(initialValue: initialTab)
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId }, sort: \Visit.visitedAt, order: .reverse)
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
         // 自分が follower か followee の両方を取得（相互判定のため）。
@@ -175,10 +173,9 @@ private struct SocialContent: View {
         return follows.filter { $0.followeeId == userId && !followingIds.contains($0.followerId) && !blockedIds.contains($0.followerId) }
     }
     /// 反応/コメントが参照する自分の投稿（feed_item）の id 集合。
-    /// feed_item.id == 元データ id。削除直後でも実体（visit/pr/workout）から導き、stale な feedItems に依存しない。
+    /// feed_item.id == 元データ id。削除直後でも実体（pr/workout）から導き、stale な feedItems に依存しない。
     private var myPostIds: Set<UUID> {
-        Set(visits.map(\.id))
-            .union(prs.map(\.id))
+        Set(prs.map(\.id))
             .union(workouts.filter { $0.completedAt != nil }.map(\.id))
     }
     /// 自分の投稿に付いた他者反応の未読数（アイコンの赤バッジ）。
@@ -300,7 +297,7 @@ private struct SocialContent: View {
             feedItems.lazy.filter { $0.userId == userId }.map { ($0.id, $0.visibility) },
             uniquingKeysWith: { a, _ in a })
         let ownEntries = FeedBuilder.build(
-            visits: visits, personalRecords: prs, workouts: workouts,
+            personalRecords: prs, workouts: workouts,
             publishedVisibilityById: publishedVisibility,
             ownerName: ownProfile?.displayName ?? auth.session?.displayName,
             ownerAvatarURL: ownProfile?.avatarURL
@@ -343,7 +340,7 @@ private struct SocialContent: View {
                                actionTitle: "フレンドを探す", action: { showAddFriend = true })
             }
         }
-        .task(id: "\(visits.count)-\(workouts.count)-\(prs.count)-\(feedItems.count)-\(profiles.count)") { rebuildFeedEntries() }
+        .task(id: "\(workouts.count)-\(prs.count)-\(feedItems.count)-\(profiles.count)") { rebuildFeedEntries() }
         // カードのタップは全投稿で統一の詳細（リッチ詳細＋リアクションした人＋コメント）を開く。
         // 閉じたら編集/コメント/リアクションを反映するためフィードを作り直す。
         .onChange(of: postDetail?.id) { _, v in if v == nil { Task { await refreshFeed() } } }

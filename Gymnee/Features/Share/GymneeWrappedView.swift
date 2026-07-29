@@ -60,7 +60,6 @@ struct WrappedStats: Equatable {
     var totalSets: Int
     var totalVolume: Int        // kg
     var prCount: Int
-    var visitCount: Int
     var activeWeeks: Int        // トレした週数
     var topExerciseName: String?
     var topExerciseCount: Int
@@ -68,12 +67,11 @@ struct WrappedStats: Equatable {
 
     /// 総挙上量を身近な比喩に（普通車 ≒ 1.5t 換算）。「車◯台分を持ち上げた」。
     var carEquivalent: Double { Double(totalVolume) / 1500.0 }
-    var hasData: Bool { workoutCount > 0 || visitCount > 0 }
+    var hasData: Bool { workoutCount > 0 }
 
     static func compute(
         workouts: [Workout],
         personalRecords: [PersonalRecord],
-        visits: [Visit],
         period: WrappedPeriod,
         calendar: Calendar = .current
     ) -> WrappedStats {
@@ -89,7 +87,6 @@ struct WrappedStats: Equatable {
         let vol = sets.reduce(0.0) { $0 + $1.volume }
         let totalVolume = vol.isFinite ? Int(vol) : 0
         let prCount = personalRecords.filter { inPeriod($0.achievedAt) }.count
-        let periodVisits = visits.filter { inPeriod($0.visitedAt) }
 
         // 最多種目（期間内で記録した回数）。
         var exCount: [String: Int] = [:]
@@ -104,10 +101,9 @@ struct WrappedStats: Equatable {
         let topEx = exCount.max { $0.value < $1.value }
         let topMuscle = muscleCount.max { $0.value < $1.value }?.key
 
-        // トレした週数（ワークアウト完了日＋来店日）。
+        // トレした週数（ワークアウト完了日）。
         var weeks = Set<Date>()
         for w in periodWorkouts { if let k = (w.completedAt).flatMap(weekKey) { weeks.insert(k) } }
-        for v in periodVisits { if let k = weekKey(v.visitedAt) { weeks.insert(k) } }
 
         return WrappedStats(
             period: period,
@@ -115,7 +111,6 @@ struct WrappedStats: Equatable {
             totalSets: sets.count,
             totalVolume: totalVolume,
             prCount: prCount,
-            visitCount: periodVisits.count,
             activeWeeks: weeks.count,
             topExerciseName: topEx?.key,
             topExerciseCount: topEx?.value ?? 0,
@@ -136,7 +131,6 @@ struct GymneeWrappedView: View {
     @Environment(\.modelContext) private var context
     @Query private var workouts: [Workout]
     @Query private var prs: [PersonalRecord]
-    @Query private var visits: [Visit]
 
     @State private var rendered: UIImage?
     @State private var saveMessage: String?
@@ -149,11 +143,10 @@ struct GymneeWrappedView: View {
         self.onClose = onClose
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId })
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId })
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId })
     }
 
     private var stats: WrappedStats {
-        WrappedStats.compute(workouts: workouts, personalRecords: prs, visits: visits, period: period)
+        WrappedStats.compute(workouts: workouts, personalRecords: prs, period: period)
     }
 
     var body: some View {

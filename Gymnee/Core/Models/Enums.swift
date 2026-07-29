@@ -1,11 +1,5 @@
 import Foundation
 
-/// ジムの出所。`preset` = アプリ同梱、`user` = ユーザー自己登録。
-enum GymSource: String, Codable, CaseIterable, Sendable {
-    case preset
-    case user
-}
-
 /// PR の種別（§4.2 / §6.5）。計測タイプごとに意味のある指標へ絞る。
 /// - ウェイト種目: maxWeight ＋ est1RM の 2 本。
 /// - 自重種目: maxReps。
@@ -66,10 +60,14 @@ enum Visibility: String, Codable, CaseIterable, Sendable {
 }
 
 /// フィード生成元の種別（§4.4）。
+/// サーバーには旧チェックイン（type='visit'）の行が残っているが、クライアントは
+/// 取り込み時点で捨てる（SwiftDataSyncStore.applyFeedItem）ため case を持たない。
 enum FeedItemType: String, Codable, CaseIterable, Sendable {
-    case visit
     case pr
     case workout
+
+    /// 廃止済みのチェックイン投稿。取り込みスキップの判定にのみ使う。
+    static let legacyVisitRawValue = "visit"
 }
 
 /// サブスク階層（§4.5、採用可否は §9-5 で要決定）。

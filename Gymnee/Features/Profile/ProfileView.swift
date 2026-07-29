@@ -17,11 +17,17 @@ struct ProfileView: View {
     @State private var wrappedPeriod: WrappedPeriod?
     /// 実績（静かな実績システム）。全ワークアウト走査を伴うため body で毎回計算せず task で導出。
     @State private var achievements: [AchievementCalculator.Status] = []
-    @Query private var visits: [Visit]
+    /// 連続週の算出に使う完了ワークアウト（活動日の唯一の元）。
+    @Query private var completedWorkouts: [Workout]
 
     init(userId: UUID) {
         self.userId = userId
-        _visits = Query(filter: #Predicate<Visit> { $0.userId == userId })
+        _completedWorkouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil })
+    }
+
+    /// 活動日＝完了ワークアウトの日（チェックイン廃止後の唯一の活動単位）。
+    private var activeDays: [Date] {
+        completedWorkouts.map { $0.completedAt ?? $0.date }
     }
 
     /// 完了ワークアウト数。件数表示のためだけに全モデルを実体化しないよう fetchCount で数える。
@@ -33,7 +39,7 @@ struct ProfileView: View {
 
     /// 週次ストリーク（筋トレは休息が正義のため日次でなく「週N回×連続週」を主指標に）。
     private var weeklyStreak: StreakCalculator.WeeklyStreak {
-        StreakCalculator.currentWeeklyStreak(visitDays: visits.map(\.visitedAt), weeklyGoal: weeklyGoal)
+        StreakCalculator.currentWeeklyStreak(activeDays: activeDays, weeklyGoal: weeklyGoal)
     }
 
     /// 実績を集計する（総挙上量のみ全ワークアウト実体化が必要。プロフィール表示時に一度だけ）。
@@ -50,8 +56,7 @@ struct ProfileView: View {
             totalVolumeKg: volume,
             workoutCount: completed.count,
             prCount: prCount,
-            visitCount: visits.count,
-            longestWeeklyStreakWeeks: StreakCalculator.longestWeeklyStreak(visitDays: visits.map(\.visitedAt), weeklyGoal: weeklyGoal)
+            longestWeeklyStreakWeeks: StreakCalculator.longestWeeklyStreak(activeDays: activeDays, weeklyGoal: weeklyGoal)
         )
     }
 
@@ -91,7 +96,7 @@ struct ProfileView: View {
     @ViewBuilder private var weeklyStreakCaption: some View {
         let s = weeklyStreak
         HStack(spacing: Theme.Spacing.sm) {
-            Label("週\(weeklyGoal)回 · 今週 \(s.visitsThisWeek)/\(weeklyGoal)",
+            Label("週\(weeklyGoal)回 · 今週 \(s.activeDaysThisWeek)/\(weeklyGoal)",
                   systemImage: s.metThisWeek ? "checkmark.seal.fill" : "target")
                 .foregroundStyle(s.metThisWeek ? Theme.lime : Theme.textSecondary)
             if s.freezesUsed > 0 {
@@ -122,8 +127,7 @@ struct ProfileView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { showProfileEdit = true }
                     HStack(spacing: Theme.Spacing.md) {
-                        StatPill(value: "\(visits.count)", label: "ジム活", tint: Theme.lime, systemImage: "mappin.and.ellipse")
-                        StatPill(value: "\(workoutCount)", label: "ワークアウト数", tint: Theme.info, systemImage: "dumbbell.fill")
+                        StatPill(value: "\(workoutCount)", label: "ワークアウト数", tint: Theme.lime, systemImage: "dumbbell.fill")
                         StatPill(value: "\(weeklyStreak.weeks)", label: "連続週", tint: Theme.warning, systemImage: "flame.fill")
                     }
                     weeklyStreakCaption

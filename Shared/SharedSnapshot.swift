@@ -45,24 +45,6 @@ enum SharedStore {
         return snapshot
     }
 
-    // MARK: - Watch → Phone クイックチェックイン要求（§6.10）
-    // 端末間は WatchConnector(WCSession) が運ぶ。本キューは「同一端末内の受け渡し＋アプリ未起動時の取りこぼし防止」用。
-    private static let pendingKey = "gymnee.pendingWatchCheckIns"
-
-    /// Watch から「クイックチェックイン」を要求（タイムスタンプを積む）。
-    static func addPendingCheckIn(at date: Date = .init()) {
-        var dates = (defaults.array(forKey: pendingKey) as? [Double]) ?? []
-        dates.append(date.timeIntervalSince1970)
-        defaults.set(dates, forKey: pendingKey)
-    }
-
-    /// 本体側でキューを取り出してクリアする。
-    static func consumePendingCheckIns() -> [Date] {
-        let dates = (defaults.array(forKey: pendingKey) as? [Double]) ?? []
-        defaults.removeObject(forKey: pendingKey)
-        return dates.map { Date(timeIntervalSince1970: $0) }
-    }
-
     // MARK: - 認証ユーザーID（App Intent / Siri / 拡張は別プロセスで standard を読めないため App Group にも保持）
     private static let userIdKey = "gymnee.auth.userId"
 

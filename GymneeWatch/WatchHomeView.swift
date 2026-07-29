@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// Watch ホーム（§6.10）。連続日数・最終ワークアウト表示とクイックチェックイン。
+/// Watch ホーム（§6.10）。連続日数・今週の達成・最終ワークアウトを手首で確認する。
 struct WatchHomeView: View {
     @State private var snapshot = GymneeSnapshot.empty
-    @State private var checkedIn = false
 
     private let watchGreen = Color(red: 0.45, green: 0.85, blue: 0.25)
 
@@ -22,16 +21,9 @@ struct WatchHomeView: View {
                     Text("最終: \(last)").font(.caption2).foregroundStyle(.secondary)
                 }
 
-                Button {
-                    // App Group は端末間で同期しないため、本体へは WCSession 経由で送る。
-                    WatchConnector.shared.sendCheckIn()
-                    checkedIn = true
-                } label: {
-                    Label(checkedIn ? "リクエスト済み" : "クイックチェックイン", systemImage: checkedIn ? "checkmark" : "door.right.hand.open")
-                        .frame(maxWidth: .infinity)
+                if let next = snapshot.nextPlannedName {
+                    Text("次の予定: \(next)").font(.caption2).foregroundStyle(.secondary)
                 }
-                .tint(watchGreen)
-                .disabled(checkedIn)
 
                 Label("心拍 -- bpm", systemImage: "heart.fill")
                     .font(.caption2).foregroundStyle(.pink)

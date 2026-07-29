@@ -29,7 +29,7 @@ struct SettingsView: View {
     @AppStorage(NotificationService.PrefKey.streak) private var notifStreak = true
     @AppStorage(NotificationService.PrefKey.planned) private var notifPlanned = true
     @AppStorage(NotificationService.PrefKey.weeklyRecap) private var notifWeeklyRecap = true
-    // プッシュ通知（いいね/フレンドのチェックイン）は profiles 列が真実の情報源。
+    // プッシュ通知（いいね/コメント）は profiles 列が真実の情報源。
     @Query private var profiles: [Profile]
 
     var body: some View {
@@ -70,7 +70,7 @@ struct SettingsView: View {
             } header: {
                 Text("ソーシャル")
             } footer: {
-                Text("チェックインやワークアウトを共有するときの初期の公開範囲。投稿ごとに個別変更もできます。ブロックした相手はいつでも解除できます。")
+                Text("ワークアウトを共有するときの初期の公開範囲。投稿ごとに個別変更もできます。ブロックした相手はいつでも解除できます。")
             }
 
             Section {
@@ -110,8 +110,6 @@ struct SettingsView: View {
                     Toggle("いいね", isOn: pushBinding(\.notifyLikes))
                         .disabled(myProfile == nil)
                     Toggle("コメント", isOn: pushBinding(\.notifyComments))
-                        .disabled(myProfile == nil)
-                    Toggle("フレンドのチェックイン", isOn: pushBinding(\.notifyFriendCheckin))
                         .disabled(myProfile == nil)
                     Toggle("連続記録の途切れ予告", isOn: $notifStreak)
                         .onChange(of: notifStreak) { _, on in if !on { notifications.cancelStreakReminder() } }
@@ -300,10 +298,6 @@ struct SettingsView: View {
     /// ローカルデータの全削除（§7 データ削除）。
     private func deleteAllData() {
         try? context.delete(model: Profile.self)
-        try? context.delete(model: Gym.self)
-        try? context.delete(model: GymEquipment.self)
-        try? context.delete(model: Visit.self)
-        try? context.delete(model: VisitPartner.self)
         try? context.delete(model: Workout.self)
         try? context.delete(model: Exercise.self)
         try? context.delete(model: WorkoutExercise.self)

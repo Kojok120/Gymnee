@@ -47,10 +47,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         let id = change.recordId
         switch change.entity {
         case "profiles":          return fetchProfile(id).map(encodeProfile)
-        case "gyms":              return fetchGym(id).map(encodeGym)
-        case "gym_equipment":     return fetchGymEquipment(id).map(encodeGymEquipment)
-        case "visits":            return fetchVisit(id).map(encodeVisit)
-        case "visit_partners":    return fetchVisitPartner(id).map(encodeVisitPartner)
         case "workouts":          return fetchWorkout(id).map(encodeWorkout)
         // プリセット（is_custom=false）はサーバー側マスタ（created_by IS NULL・0030）が正で push しない。
         // 他ユーザー所有だった旧マスタ行への upsert は RLS(42501) で outbox が永久滞留するため、
@@ -77,15 +73,11 @@ final class SwiftDataSyncStore: SyncBackingStore {
     }
 
     /// FK/RLS 親依存。子を送る前に親を先に送る（親不在だと FK 23503、親未所有だと RLS 42501 で失敗）。
-    /// - visits → 参照先ジム（preset も created_by 既定 auth.uid() で通る）。
     /// - exercise_sets → 親 workout_exercise と workout（RLS は workout.user_id=auth.uid() を要求）。
     /// - workout_exercises → 親 workout。
     func dependencies(for change: PendingChange) -> [PendingChange] {
         guard change.operation == .upsert else { return [] }
         switch change.entity {
-        case "visits":
-            guard let gym = fetchVisit(change.recordId)?.gym else { return [] }
-            return [dep("gyms", gym.id, gym.updatedAt)]
         case "exercise_sets":
             guard let we = fetchExerciseSet(change.recordId)?.workoutExercise else { return [] }
             var deps = [dep("workout_exercises", we.id, we.updatedAt)]
@@ -128,10 +120,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         for row in rows {
             switch table {
             case "profiles":          applyProfile(row)
-            case "gyms":              applyGym(row)
-            case "gym_equipment":     applyGymEquipment(row)
-            case "visits":            applyVisit(row)
-            case "visit_partners":    applyVisitPartner(row)
             case "workouts":          applyWorkout(row)
             case "exercises":         applyExercise(row)
             case "workout_exercises": applyWorkoutExercise(row)
@@ -165,7 +153,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     /// 他端末での DELETE（いいね取消／コメント削除／投稿削除）をローカルへ伝播する。
     /// サーバー全件 id（serverIds）を正として、未送出でない（isDirty=false の）ローカル行のうち
     /// サーバーに存在しないものを削除する。未送出（自分が作成しまだ push していない）行は守る。
-    /// feed_items: 投稿者が来店/ワークアウトを削除すると feed_item もサーバーから消えるため、
+    /// feed_items: 投稿者がワークアウト/PR を削除すると feed_item もサーバーから消えるため、
     /// 可視でなくなった/削除された投稿をフォロワー端末のフィードからも取り除く。
     func reconcile(table: String, serverIds: Set<UUID>) {
         var changed = false
@@ -182,13 +170,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
             let locals = (try? context.fetch(FetchDescriptor<FeedItem>())) ?? []
             let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
             for f in locals where orphans.contains(f.id) { context.delete(f); changed = true }
-        case "gyms":
-            // 他端末で削除した誤登録ジムを掃除する（残すとジオフェンス通知が出続ける）。
-            // プリセットはサーバに行が無い（ローカル seed のみ・端末ごとに別id）ため対象外＝
-            // ユーザー作成分だけを照合する。削除時は設備が cascade、来店の参照は nullify される。
-            let locals = (try? context.fetch(FetchDescriptor<Gym>(predicate: #Predicate { $0.sourceRaw == "user" }))) ?? []
-            let orphans = Set(SyncReconciler.orphanIds(local: locals.map { ($0.id, $0.isDirty) }, serverIds: serverIds))
-            for g in locals where orphans.contains(g.id) { context.delete(g); changed = true }
         case "blocks":
             // 他端末でのブロック解除（Block 削除）を伝播。isDirty な未push分は orphanIds が保護する。
             let locals = (try? context.fetch(FetchDescriptor<Block>())) ?? []
@@ -236,8 +217,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - profiles
     private func encodeProfile(_ m: Profile) -> [String: Any] {
         ["id": lower(m.id), "display_name": m.displayName, "avatar_url": opt(m.avatarURL),
-         "bio": opt(m.bio), "notify_likes": m.notifyLikes, "notify_friend_checkin": m.notifyFriendCheckin,
-         "notify_comments": m.notifyComments,
+         "bio": opt(m.bio), "notify_likes": m.notifyLikes, "notify_comments": m.notifyComments,
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyProfile(_ row: [String: Any]) {
@@ -249,101 +229,19 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.avatarURL = str(row["avatar_url"])
         m.bio = str(row["bio"])
         m.notifyLikes = bool(row["notify_likes"]) ?? m.notifyLikes
-        m.notifyFriendCheckin = bool(row["notify_friend_checkin"]) ?? m.notifyFriendCheckin
         m.notifyComments = bool(row["notify_comments"]) ?? m.notifyComments
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
     }
 
-    // MARK: - gyms
-    private func encodeGym(_ m: Gym) -> [String: Any] {
-        var row: [String: Any] = [
-            "id": lower(m.id), "name": m.name, "chain": opt(m.chain), "address": opt(m.address),
-            "lat": opt(m.lat), "lng": opt(m.lng), "source": m.sourceRaw, "is_favorite": m.isFavorite,
-            "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt),
-        ]
-        if let by = m.createdBy { row["created_by"] = lower(by) } // nil は DB 既定 auth.uid() に委ねる
-        return row
-    }
-    private func applyGym(_ row: [String: Any]) {
-        guard let id = uuid(row["id"]) else { return }
-        let existing = fetchGym(id)
-        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
-        let m = existing ?? insert(Gym(id: id, name: str(row["name"]) ?? "ジム"))
-        m.name = str(row["name"]) ?? m.name
-        m.chain = str(row["chain"]); m.address = str(row["address"])
-        m.lat = dbl(row["lat"]); m.lng = dbl(row["lng"])
-        m.sourceRaw = str(row["source"]) ?? m.sourceRaw
-        m.createdBy = uuid(row["created_by"])
-        m.isFavorite = bool(row["is_favorite"]) ?? m.isFavorite
-        m.createdAt = date(row["created_at"]) ?? m.createdAt
-        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
-        m.isDirty = false
-    }
-
-    // MARK: - gym_equipment
-    private func encodeGymEquipment(_ m: GymEquipment) -> [String: Any] {
-        ["id": lower(m.id), "gym_id": opt(m.gym?.id.uuidString.lowercased()),
-         "label": m.label, "note": opt(m.note), "updated_at": iso(m.updatedAt)]
-        // created_by は DB 既定 auth.uid()。
-    }
-    private func applyGymEquipment(_ row: [String: Any]) {
-        guard let id = uuid(row["id"]) else { return }
-        let existing = fetchGymEquipment(id)
-        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
-        let m = existing ?? insert(GymEquipment(id: id, label: str(row["label"]) ?? ""))
-        m.label = str(row["label"]) ?? m.label
-        m.note = str(row["note"])
-        m.gym = uuid(row["gym_id"]).flatMap(fetchGym)
-        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
-        m.isDirty = false
-    }
-
-    // MARK: - visits
-    private func encodeVisit(_ m: Visit) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "gym_id": opt(m.gym?.id.uuidString.lowercased()),
-         "visited_at": iso(m.visitedAt), "photo_url": opt(m.photoURL),
-         "lat": opt(m.lat), "lng": opt(m.lng), "note": opt(m.note), "updated_at": iso(m.updatedAt)]
-    }
-    private func applyVisit(_ row: [String: Any]) {
-        guard let id = uuid(row["id"]) else { return }
-        let existing = fetchVisit(id)
-        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
-        let m = existing ?? insert(Visit(id: id, userId: uuid(row["user_id"]) ?? UUID()))
-        m.userId = uuid(row["user_id"]) ?? m.userId
-        m.gym = uuid(row["gym_id"]).flatMap(fetchGym)
-        m.visitedAt = date(row["visited_at"]) ?? m.visitedAt
-        m.photoURL = str(row["photo_url"])
-        m.lat = dbl(row["lat"]); m.lng = dbl(row["lng"]); m.note = str(row["note"])
-        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
-        m.isDirty = false
-    }
-
-    // MARK: - visit_partners
-    private func encodeVisitPartner(_ m: VisitPartner) -> [String: Any] {
-        ["id": lower(m.id), "visit_id": opt(m.visit?.id.uuidString.lowercased()),
-         "partner_user_id": lower(m.partnerUserId), "partner_display_name": opt(m.partnerDisplayName),
-         "updated_at": iso(m.updatedAt)]
-    }
-    private func applyVisitPartner(_ row: [String: Any]) {
-        guard let id = uuid(row["id"]) else { return }
-        let existing = fetchVisitPartner(id)
-        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
-        let m = existing ?? insert(VisitPartner(id: id, partnerUserId: uuid(row["partner_user_id"]) ?? UUID()))
-        m.partnerUserId = uuid(row["partner_user_id"]) ?? m.partnerUserId
-        m.partnerDisplayName = str(row["partner_display_name"])
-        m.visit = uuid(row["visit_id"]).flatMap(fetchVisit)
-        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
-        m.isDirty = false
-    }
-
     // MARK: - workouts
     private func encodeWorkout(_ m: Workout) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "visit_id": opt(m.visit?.id.uuidString.lowercased()),
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)),
          "date": iso(m.date), "name": m.name, "routine_id": opt(m.routineId?.uuidString.lowercased()),
          "note": opt(m.note), "is_planned": m.isPlanned, "completed_at": opt(m.completedAt.map(iso)),
-         "duration_seconds": opt(m.durationSeconds), "updated_at": iso(m.updatedAt)]
+         "duration_seconds": opt(m.durationSeconds), "photo_url": opt(m.photoURL), "caption": opt(m.caption),
+         "updated_at": iso(m.updatedAt)]
     }
     private func applyWorkout(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
@@ -351,7 +249,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
         let m = existing ?? insert(Workout(id: id, userId: uuid(row["user_id"]) ?? UUID()))
         m.userId = uuid(row["user_id"]) ?? m.userId
-        m.visit = uuid(row["visit_id"]).flatMap(fetchVisit)
         m.date = date(row["date"]) ?? m.date
         m.name = str(row["name"]) ?? m.name
         m.routineId = uuid(row["routine_id"])
@@ -359,6 +256,8 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.isPlanned = bool(row["is_planned"]) ?? m.isPlanned
         m.completedAt = date(row["completed_at"])
         m.durationSeconds = int(row["duration_seconds"])
+        m.photoURL = str(row["photo_url"])
+        m.caption = str(row["caption"])
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
     }
@@ -550,7 +449,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - follows
     private func encodeFollow(_ m: Follow) -> [String: Any] {
         ["id": lower(m.id), "follower_id": lower(m.followerId), "followee_id": lower(m.followeeId),
-         "followee_display_name": opt(m.followeeDisplayName), "notify": m.notify,
+         "followee_display_name": opt(m.followeeDisplayName),
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyFollow(_ row: [String: Any]) {
@@ -561,7 +460,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.followerId = uuid(row["follower_id"]) ?? m.followerId
         m.followeeId = uuid(row["followee_id"]) ?? m.followeeId
         m.followeeDisplayName = str(row["followee_display_name"])
-        m.notify = bool(row["notify"]) ?? true
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
@@ -616,9 +514,15 @@ final class SwiftDataSyncStore: SyncBackingStore {
     }
     private func applyFeedItem(_ row: [String: Any]) {
         guard let id = uuid(row["id"]) else { return }
+        // 旧チェックイン投稿（type='visit'）はサーバーに残っているが参照先の実体を持たないので取り込まない。
+        // 既にローカルにある分もここで掃除して、フィード・通知から消す。
+        if str(row["type"]) == FeedItemType.legacyVisitRawValue {
+            if let existing = fetchFeedItem(id) { context.delete(existing) }
+            return
+        }
         let existing = fetchFeedItem(id)
         if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
-        let m = existing ?? insert(FeedItem(id: id, userId: uuid(row["user_id"]) ?? UUID(), type: .visit, refId: uuid(row["ref_id"]) ?? UUID()))
+        let m = existing ?? insert(FeedItem(id: id, userId: uuid(row["user_id"]) ?? UUID(), type: .workout, refId: uuid(row["ref_id"]) ?? UUID()))
         m.userId = uuid(row["user_id"]) ?? m.userId
         m.authorDisplayName = str(row["author_display_name"])
         m.typeRaw = str(row["type"]) ?? m.typeRaw
@@ -770,10 +674,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func prefetchChunk(table: String, ids: [UUID]) {
         switch table {
         case "profiles":          seed(try? context.fetch(FetchDescriptor<Profile>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
-        case "gyms":              seed(try? context.fetch(FetchDescriptor<Gym>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
-        case "gym_equipment":     seed(try? context.fetch(FetchDescriptor<GymEquipment>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
-        case "visits":            seed(try? context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
-        case "visit_partners":    seed(try? context.fetch(FetchDescriptor<VisitPartner>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "workouts":          seed(try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "exercises":         seed(try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "workout_exercises": seed(try? context.fetch(FetchDescriptor<WorkoutExercise>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
@@ -812,10 +712,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - 取得ヘルパ（id で 1 件。apply 中は fetchMemo 経由）
     @discardableResult private func insert<T: PersistentModel>(_ model: T) -> T { context.insert(model); return model }
     private func fetchProfile(_ id: UUID) -> Profile? { memoized("profiles", id) { first(FetchDescriptor<Profile>(predicate: #Predicate { $0.id == id })) } }
-    private func fetchGym(_ id: UUID) -> Gym? { memoized("gyms", id) { first(FetchDescriptor<Gym>(predicate: #Predicate { $0.id == id })) } }
-    private func fetchGymEquipment(_ id: UUID) -> GymEquipment? { memoized("gym_equipment", id) { first(FetchDescriptor<GymEquipment>(predicate: #Predicate { $0.id == id })) } }
-    private func fetchVisit(_ id: UUID) -> Visit? { memoized("visits", id) { first(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == id })) } }
-    private func fetchVisitPartner(_ id: UUID) -> VisitPartner? { memoized("visit_partners", id) { first(FetchDescriptor<VisitPartner>(predicate: #Predicate { $0.id == id })) } }
     private func fetchWorkout(_ id: UUID) -> Workout? { memoized("workouts", id) { first(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id })) } }
     private func fetchExercise(_ id: UUID) -> Exercise? { memoized("exercises", id) { first(FetchDescriptor<Exercise>(predicate: #Predicate { $0.id == id })) } }
     private func fetchWorkoutExercise(_ id: UUID) -> WorkoutExercise? { memoized("workout_exercises", id) { first(FetchDescriptor<WorkoutExercise>(predicate: #Predicate { $0.id == id })) } }
