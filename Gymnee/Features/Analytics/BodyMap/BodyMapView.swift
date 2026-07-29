@@ -15,51 +15,38 @@ struct BodyMapView: View {
     var body: some View {
         GeometryReader { geo in
             let rect = CGRect(origin: .zero, size: geo.size)
+            // 領域の組み立て（パス解析＋座標変換）は毎フレームやると重いので 1 回にまとめる。
+            let regions = BodyMapPaths.regions(for: face, in: rect)
             ZStack {
-                // 土台のシルエット。
-                BodyMapPaths.silhouette(face)(rect)
-                    .fill(Theme.bg2)
-                BodyMapPaths.silhouette(face)(rect)
-                    .stroke(Theme.bg3, lineWidth: 1)
-
-                ForEach(BodyMapPaths.regions(for: face)) { region in
-                    let p = region.path(rect)
-                    p.fill(fill(for: region.muscle))
-                    p.stroke(stroke(for: region.muscle), lineWidth: region.muscle == selected ? 2 : 0.8)
+                ForEach(regions) { region in
+                    ForEach(Array(region.paths.enumerated()), id: \.offset) { _, path in
+                        path.fill(fill(for: region.muscle))
+                        path.stroke(stroke(for: region.muscle), lineWidth: region.muscle == selected ? 1.6 : 0.6)
+                    }
                 }
             }
             .contentShape(Rectangle())
             // 図形どおりの当たり判定。矩形近似だと隣の部位に漏れるため Path.contains を使う。
             .onTapGesture { location in
-                guard let muscle = muscle(at: location, in: rect) else { return }
+                guard let muscle = BodyMapPaths.muscle(at: location, face: face, in: rect) else { return }
                 onSelect(muscle)
             }
         }
-        .aspectRatio(0.52, contentMode: .fit)
+        .aspectRatio(BodyMapPaths.aspectRatio, contentMode: .fit)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(face.label)の人体図")
     }
 
-    /// タップ位置に載っている部位。手前に描いたものを優先して逆順に判定する。
-    private func muscle(at point: CGPoint, in rect: CGRect) -> MuscleGroup? {
-        for region in BodyMapPaths.regions(for: face).reversed() {
-            guard let muscle = region.muscle else { continue }
-            if region.path(rect).contains(point) { return muscle }
-        }
-        return nil
-    }
-
     private func fill(for muscle: MuscleGroup?) -> Color {
-        guard let muscle else { return Theme.textTertiary.opacity(0.22) }   // 装飾（頭・首）
-        let fatigue = fatigueByMuscle[muscle] ?? 0
-        return Self.color(for: fatigue)
+        guard let muscle else { return Theme.textTertiary.opacity(0.18) }   // 装飾（頭・首・手足）
+        return Self.color(for: fatigueByMuscle[muscle] ?? 0)
     }
 
-    /// 筋群の境界線。塗りが薄い（＝回復済み）ときでも解剖の形が読めるよう常に描く。
+    /// 筋の境界線。塗りが薄い（＝回復済み）ときでも解剖の形が読めるよう常に描く。
     private func stroke(for muscle: MuscleGroup?) -> Color {
-        guard let muscle else { return .clear }
+        guard let muscle else { return Theme.textTertiary.opacity(0.25) }
         if muscle == selected { return Theme.textPrimary }
-        return Theme.textTertiary.opacity(0.5)
+        return Theme.textTertiary.opacity(0.45)
     }
 
     /// 疲労度 → 色。

@@ -3,19 +3,20 @@ import SwiftUI
 @testable import Gymnee
 
 /// 人体図のパス資産のテスト。
-/// タップ判定は `Path.contains(_:)` に依存するので、**部位が重なって誤爆しないこと**が要件。
+/// 図形は MuscleMap（MIT）から取り込んだ解剖パスなので、**形そのもの**ではなく
+/// 「Gymnee 側の配り方」＝座標変換・部位マッピング・タップ判定を検証する。
 final class BodyMapPathsTests: XCTestCase {
 
-    /// 実際の描画に近いサイズ（縦長 0.52 のアスペクト比）。
-    private let rect = CGRect(x: 0, y: 0, width: 208, height: 400)
+    /// 実際の描画に近いサイズ（元データの縦横比に合わせる）。
+    private var rect: CGRect {
+        let h: CGFloat = 400
+        return CGRect(x: 0, y: 0, width: h * BodyMapPaths.aspectRatio, height: h)
+    }
 
-    private func hitMuscle(_ face: BodyMapPaths.Face, at normalized: CGPoint) -> MuscleGroup? {
-        let point = CGPoint(x: rect.minX + normalized.x * rect.width, y: rect.minY + normalized.y * rect.height)
-        for region in BodyMapPaths.regions(for: face).reversed() {
-            guard let muscle = region.muscle else { continue }
-            if region.path(rect).contains(point) { return muscle }
-        }
-        return nil
+    private func hit(_ face: BodyMapPaths.Face, _ nx: CGFloat, _ ny: CGFloat) -> MuscleGroup? {
+        let r = rect
+        return BodyMapPaths.muscle(at: CGPoint(x: r.minX + nx * r.width, y: r.minY + ny * r.height),
+                                   face: face, in: r)
     }
 
     // MARK: - 資産の健全性
@@ -23,9 +24,7 @@ final class BodyMapPathsTests: XCTestCase {
     func testEveryTrackedMuscleIsDrawnSomewhere() {
         // 疲労度を出す8部位すべてに、正面か背面のどこかで塗る場所があること。
         // これが崩れると「鍛えたのに人体図が光らない」部位が出る。
-        let drawn = Set(
-            (BodyMapPaths.front + BodyMapPaths.back).compactMap(\.muscle)
-        )
+        let drawn = Set((BodyMapArtwork.front + BodyMapArtwork.back).compactMap(\.muscle))
         for muscle in RecoveryAnalyzer.trackedMuscles {
             XCTAssertTrue(drawn.contains(muscle), "\(muscle.rawValue) が人体図に描かれていない")
         }
@@ -33,89 +32,153 @@ final class BodyMapPathsTests: XCTestCase {
 
     func testRegionIdsAreUniquePerFace() {
         for face in BodyMapPaths.Face.allCases {
-            let ids = BodyMapPaths.regions(for: face).map(\.id)
+            let ids = BodyMapPaths.regions(for: face, in: rect).map(\.id)
             XCTAssertEqual(Set(ids).count, ids.count, "\(face.rawValue) に重複 id がある（ForEach がアサーション落ちする）")
         }
     }
 
-    func testAllRegionsProduceNonEmptyPaths() {
+    func testEveryRegionHasAtLeastOneNonEmptyPath() {
+        // パース失敗（コマンド未対応・データ破損）を検知する。
         for face in BodyMapPaths.Face.allCases {
-            for region in BodyMapPaths.regions(for: face) {
-                XCTAssertFalse(region.path(rect).isEmpty, "\(region.id) のパスが空")
+            for region in BodyMapPaths.regions(for: face, in: rect) {
+                XCTAssertFalse(region.paths.isEmpty, "\(region.id) にパスが無い")
+                XCTAssertTrue(region.paths.allSatisfy { !$0.isEmpty }, "\(region.id) に空のパスがある")
             }
         }
     }
 
     func testRegionsStayInsideBounds() {
-        // はみ出すと隣のカードに描画が漏れる。少しの余白を許容して検査する。
-        let tolerance: CGFloat = 1
-        let bounds = rect.insetBy(dx: -tolerance, dy: -tolerance)
+        // はみ出すと隣のカードに描画が漏れる。丸め誤差ぶんだけ許容する。
+        let r = rect
+        let bounds = r.insetBy(dx: -1.5, dy: -1.5)
         for face in BodyMapPaths.Face.allCases {
-            for region in BodyMapPaths.regions(for: face) {
-                let b = region.path(rect).boundingRect
-                XCTAssertTrue(bounds.contains(b), "\(region.id) が枠外にはみ出している: \(b)")
+            for region in BodyMapPaths.regions(for: face, in: r) {
+                for path in region.paths {
+                    XCTAssertTrue(bounds.contains(path.boundingRect),
+                                  "\(region.id) が枠外にはみ出している: \(path.boundingRect)")
+                }
             }
         }
     }
 
-    func testLeftAndRightAreSymmetric() {
-        // 左右ペアは x 反転で同じ形（面積が一致する）。
+    func testArtworkFillsMostOfTheFrame() {
+        // 座標変換の取り違え（オフセット・スケール）を検知する。
+        // 人体は枠の高さのほとんどを使い、幅も半分以上を占めるはず。
+        let r = rect
         for face in BodyMapPaths.Face.allCases {
-            let byId = Dictionary(uniqueKeysWithValues: BodyMapPaths.regions(for: face).map { ($0.id, $0) })
-            for region in BodyMapPaths.regions(for: face) where region.id.hasSuffix(".l") {
-                let mirrorId = region.id.replacingOccurrences(of: ".l", with: ".r")
-                guard let mirror = byId[mirrorId] else {
-                    XCTFail("\(region.id) に対応する \(mirrorId) が無い"); continue
-                }
-                let a = region.path(rect).boundingRect
-                let b = mirror.path(rect).boundingRect
-                XCTAssertEqual(a.width, b.width, accuracy: 0.5)
-                XCTAssertEqual(a.height, b.height, accuracy: 0.5)
-                // 中心が rect の中央に対して線対称。
-                XCTAssertEqual(a.midX + b.midX, rect.width, accuracy: 1.0)
-                XCTAssertEqual(a.midY, b.midY, accuracy: 0.5)
-            }
+            let boxes = BodyMapPaths.regions(for: face, in: r).flatMap { $0.paths.map(\.boundingRect) }
+            let union = boxes.dropFirst().reduce(boxes[0]) { $0.union($1) }
+            XCTAssertGreaterThan(union.height, r.height * 0.9, "\(face.rawValue) の人体が縦に小さすぎる")
+            XCTAssertGreaterThan(union.width, r.width * 0.5, "\(face.rawValue) の人体が横に小さすぎる")
+            // 左右に極端に寄っていない（中央に配置されている）。
+            XCTAssertEqual(union.midX, r.midX, accuracy: r.width * 0.06, "\(face.rawValue) の人体が中央から外れている")
         }
+    }
+
+    func testScalingIsProportional() {
+        // 枠を変えても縦横比が保たれる（人体が歪まない）。
+        let small = CGRect(x: 0, y: 0, width: 100 * BodyMapPaths.aspectRatio, height: 100)
+        let large = CGRect(x: 0, y: 0, width: 400 * BodyMapPaths.aspectRatio, height: 400)
+        func unionBox(_ r: CGRect) -> CGRect {
+            let boxes = BodyMapPaths.regions(for: .front, in: r).flatMap { $0.paths.map(\.boundingRect) }
+            return boxes.dropFirst().reduce(boxes[0]) { $0.union($1) }
+        }
+        let a = unionBox(small), b = unionBox(large)
+        XCTAssertEqual(a.width / a.height, b.width / b.height, accuracy: 0.02)
+    }
+
+    // MARK: - 部位マッピング
+
+    func testDecorationsAreNotTappable() {
+        // 頭・首・手足は装飾扱い（muscle=nil）で選択対象にしない。
+        let decorations = ["head", "hair", "neck", "hands", "feet", "ankles", "knees"]
+        for region in BodyMapArtwork.front + BodyMapArtwork.back where decorations.contains(region.id) {
+            XCTAssertNil(region.muscle, "\(region.id) は装飾のはずが部位に割り当てられている")
+        }
+    }
+
+    func testOverlappingSubGroupsAreExcluded() {
+        // 親と重なるサブグループを取り込むと二重描画＆タップの取り合いになる。
+        let excluded = ["upperChest", "lowerChest", "upperAbs", "lowerAbs",
+                        "innerQuad", "outerQuad", "frontDeltoid", "hipFlexors"]
+        let ids = Set((BodyMapArtwork.front + BodyMapArtwork.back).map(\.id))
+        for id in excluded {
+            XCTAssertFalse(ids.contains(id), "\(id) は取り込まない約束（親と重なる）")
+        }
+    }
+
+    func testFrontAndBackMapToExpectedMuscles() {
+        func muscle(_ regions: [BodyMapArtwork.Region], _ id: String) -> MuscleGroup? {
+            regions.first { $0.id == id }?.muscle
+        }
+        XCTAssertEqual(muscle(BodyMapArtwork.front, "chest"), .chest)
+        XCTAssertEqual(muscle(BodyMapArtwork.front, "abs"), .abs)
+        XCTAssertEqual(muscle(BodyMapArtwork.front, "obliques"), .core)
+        XCTAssertEqual(muscle(BodyMapArtwork.front, "deltoids"), .shoulders)
+        XCTAssertEqual(muscle(BodyMapArtwork.front, "biceps"), .arms)
+        XCTAssertEqual(muscle(BodyMapArtwork.front, "quadriceps"), .legs)
+        XCTAssertEqual(muscle(BodyMapArtwork.back, "gluteal"), .glutes)
+        XCTAssertEqual(muscle(BodyMapArtwork.back, "hamstring"), .legs)
+        XCTAssertEqual(muscle(BodyMapArtwork.back, "upperBack"), .back)
+        XCTAssertEqual(muscle(BodyMapArtwork.back, "lowerBack"), .core)
     }
 
     // MARK: - タップ判定
 
-    func testFrontHitsExpectedMuscles() {
-        // 各ブロックの内部に確実に入る点でヒットすること。
-        XCTAssertEqual(hitMuscle(.front, at: CGPoint(x: 0.45, y: 0.245)), .chest)
-        XCTAssertEqual(hitMuscle(.front, at: CGPoint(x: 0.455, y: 0.36)), .abs)
-        XCTAssertEqual(hitMuscle(.front, at: CGPoint(x: 0.345, y: 0.235)), .shoulders)
-        XCTAssertEqual(hitMuscle(.front, at: CGPoint(x: 0.318, y: 0.330)), .arms)
-        XCTAssertEqual(hitMuscle(.front, at: CGPoint(x: 0.45, y: 0.56)), .legs)
+    func testTapOnBodyResolvesToSomeMuscle() {
+        // 体の上を格子状に走査して、十分な数の点が部位に当たること
+        // （座標変換が壊れると全部 nil になる）。
+        // 正中線（胸骨・背骨）は左右の筋の“隙間”なので、中心線だけを見ると当たらない点に注意。
+        for face in BodyMapPaths.Face.allCases {
+            var hits = 0, total = 0
+            for nx in stride(from: 0.34, through: 0.66, by: 0.04) {
+                for ny in stride(from: 0.28, through: 0.80, by: 0.04) {
+                    total += 1
+                    if hit(face, nx, ny) != nil { hits += 1 }
+                }
+            }
+            // 走査窓には正中線・脚の間・体の輪郭外の余白が含まれるため 100% にはならない。
+            // 座標変換が壊れると 0 になるので、そこを検知できれば十分。
+            XCTAssertGreaterThan(Double(hits) / Double(total), 0.3,
+                                 "\(face.rawValue) で体のタップがほとんど当たらない（\(hits)/\(total)）")
+        }
     }
 
-    func testBackHitsExpectedMuscles() {
-        XCTAssertEqual(hitMuscle(.back, at: CGPoint(x: 0.455, y: 0.22)), .back)
-        XCTAssertEqual(hitMuscle(.back, at: CGPoint(x: 0.455, y: 0.32)), .back)
-        XCTAssertEqual(hitMuscle(.back, at: CGPoint(x: 0.45, y: 0.50)), .glutes)
-        XCTAssertEqual(hitMuscle(.back, at: CGPoint(x: 0.45, y: 0.61)), .legs)
-        XCTAssertEqual(hitMuscle(.back, at: CGPoint(x: 0.318, y: 0.330)), .arms)
+    func testMajorMusclesAreReachableByTap() {
+        // 主要部位が「どこかしらのタップで必ず選べる」こと。
+        // 描かれていても全部が別の領域に覆われていると選べない、という状態を防ぐ。
+        var reachable = Set<MuscleGroup>()
+        for face in BodyMapPaths.Face.allCases {
+            for nx in stride(from: 0.20, through: 0.80, by: 0.02) {
+                for ny in stride(from: 0.10, through: 0.95, by: 0.02) {
+                    if let m = hit(face, nx, ny) { reachable.insert(m) }
+                }
+            }
+        }
+        for muscle in RecoveryAnalyzer.trackedMuscles {
+            XCTAssertTrue(reachable.contains(muscle), "\(muscle.rawValue) がタップで選べない")
+        }
     }
 
     func testTapOutsideBodyHitsNothing() {
-        // 余白をタップしても部位が選ばれない（誤爆でシートが開かない）。
-        XCTAssertNil(hitMuscle(.front, at: CGPoint(x: 0.03, y: 0.03)))
-        XCTAssertNil(hitMuscle(.front, at: CGPoint(x: 0.97, y: 0.97)))
-        XCTAssertNil(hitMuscle(.back, at: CGPoint(x: 0.5, y: 0.98)))
+        // 四隅の余白をタップしても部位が選ばれない（誤爆でシートが開かない）。
+        for face in BodyMapPaths.Face.allCases {
+            XCTAssertNil(hit(face, 0.02, 0.02))
+            XCTAssertNil(hit(face, 0.98, 0.02))
+            XCTAssertNil(hit(face, 0.02, 0.98))
+            XCTAssertNil(hit(face, 0.98, 0.98))
+        }
     }
 
-    func testHeadAndNeckAreNotTappable() {
-        // 装飾（muscle=nil）は選択対象にしない。
-        XCTAssertNil(hitMuscle(.front, at: CGPoint(x: 0.5, y: 0.078)))
-        XCTAssertNil(hitMuscle(.front, at: CGPoint(x: 0.5, y: 0.163)))
-    }
-
-    func testMirroredTapsResolveToSameMuscle() {
-        // 左右どちらを押しても同じ部位が返る。
-        for y in [0.245, 0.33, 0.56] {
-            let left = hitMuscle(.front, at: CGPoint(x: 0.45, y: y))
-            let right = hitMuscle(.front, at: CGPoint(x: 0.55, y: y))
-            XCTAssertEqual(left, right, "y=\(y) で左右の判定が食い違う")
+    func testTapIsStableAcrossFrameSizes() {
+        // 枠サイズが変わっても、同じ相対位置は同じ部位に解決される。
+        func hitIn(_ h: CGFloat, _ nx: CGFloat, _ ny: CGFloat) -> MuscleGroup? {
+            let r = CGRect(x: 0, y: 0, width: h * BodyMapPaths.aspectRatio, height: h)
+            return BodyMapPaths.muscle(at: CGPoint(x: r.minX + nx * r.width, y: r.minY + ny * r.height),
+                                       face: .front, in: r)
+        }
+        for (nx, ny) in [(0.5, 0.33), (0.5, 0.42), (0.5, 0.60)] {
+            XCTAssertEqual(hitIn(240, nx, ny), hitIn(600, nx, ny), "(\(nx),\(ny)) がサイズで変わる")
         }
     }
 }
