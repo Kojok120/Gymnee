@@ -1,42 +1,7 @@
 import SwiftUI
 import PhotosUI
 
-/// アバター画像を丸く表示。端末ローカルのキャッシュ（自分用＝即時）→ サーバー公開URL → シンボル の順。
-/// 自分の画像は PhotoStore に保存しファイル名を @AppStorage("gymnee.avatarFilename")、
-/// 公開URLを @AppStorage("gymnee.avatarURL") に持つ。他人は urlString のみ。
-struct AvatarView: View {
-    var filename: String = ""
-    var urlString: String? = nil
-    var size: CGFloat = 60
-
-    var body: some View {
-        Group {
-            if !filename.isEmpty, let image = PhotoStore.load(filename) {
-                Image(uiImage: image).resizable().scaledToFill()
-            } else if let urlString, !urlString.isEmpty, let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        symbol
-                    }
-                }
-            } else {
-                symbol
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
-    }
-
-    private var symbol: some View {
-        Image(systemName: "person.crop.circle.fill")
-            .resizable().scaledToFit()
-            .foregroundStyle(Theme.lime)
-    }
-}
-
-/// プロフィール編集（§5）。表示名とアイコン画像を変更する。
+/// プロフィール編集（§5）。表示名とアイコン（プリセット / 写真）を変更する。
 struct ProfileEditView: View {
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
@@ -48,6 +13,9 @@ struct ProfileEditView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var pickedImage: UIImage?
     @State private var isSaving = false
+    /// 選択中のプリセット（写真を選んだ時点で nil に戻す）。
+    @State private var selectedPreset: String?
+    @State private var showPhotoPicker = false
 
     var body: some View {
         NavigationStack {
@@ -55,23 +23,23 @@ struct ProfileEditView: View {
                 Section {
                     HStack {
                         Spacer()
-                        VStack(spacing: Theme.Spacing.md) {
-                            avatarPreview
-                            PhotosPicker(selection: $photoItem, matching: .images) {
-                                Label("アイコン画像を変更", systemImage: "photo")
-                            }
-                            if !avatarFilename.isEmpty || !avatarURLString.isEmpty || pickedImage != nil {
-                                Button("画像を削除", role: .destructive) {
-                                    pickedImage = nil
-                                    avatarFilename = ""
-                                    avatarURLString = ""
-                                }
-                                .font(.caption)
-                            }
-                        }
+                        avatarPreview
                         Spacer()
                     }
                     .listRowBackground(Color.clear)
+                }
+                Section("アイコン") {
+                    AvatarPickerRow(presetURLString: $selectedPreset, onPickPhoto: { showPhotoPicker = true })
+                        .listRowBackground(Color.clear)
+                    if !avatarFilename.isEmpty || !avatarURLString.isEmpty || pickedImage != nil || selectedPreset != nil {
+                        Button("アイコンを消す", role: .destructive) {
+                            pickedImage = nil
+                            selectedPreset = nil
+                            avatarFilename = ""
+                            avatarURLString = ""
+                        }
+                        .font(.caption)
+                    }
                 }
                 Section("表示名") {
                     TextField("表示名", text: $name)
@@ -91,7 +59,11 @@ struct ProfileEditView: View {
                     }
                 }
             }
-            .onAppear { if name.isEmpty { name = auth.session?.displayName ?? "" } }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+            .onAppear {
+                if name.isEmpty { name = auth.session?.displayName ?? "" }
+                if AvatarPreset.isPreset(avatarURLString) { selectedPreset = avatarURLString }
+            }
             .onChange(of: photoItem) { _, item in
                 Task {
                     guard let data = try? await item?.loadTransferable(type: Data.self) else { return }
@@ -100,6 +72,7 @@ struct ProfileEditView: View {
                         PhotoStore.downsample(data: data, maxPixel: 1024)
                     }.value
                     pickedImage = image
+                    selectedPreset = nil   // 写真を選んだらプリセットの選択は解除する
                 }
             }
         }
@@ -107,7 +80,9 @@ struct ProfileEditView: View {
 
     @ViewBuilder
     private var avatarPreview: some View {
-        if let pickedImage {
+        if let selectedPreset {
+            AvatarView(urlString: selectedPreset, size: 96)
+        } else if let pickedImage {
             Image(uiImage: pickedImage)
                 .resizable().scaledToFill()
                 .frame(width: 96, height: 96)
@@ -121,7 +96,12 @@ struct ProfileEditView: View {
         isSaving = true
         Task {
             auth.updateDisplayName(name)
-            if let pickedImage {
+            if let selectedPreset {
+                // プリセットは擬似 URL を avatar_url に入れるだけ（アップロード不要・サーバー変更不要）。
+                avatarURLString = selectedPreset
+                avatarFilename = ""
+                auth.updateAvatarURL(selectedPreset)
+            } else if let pickedImage {
                 // ローカルキャッシュ（即時表示用）
                 if let filename = PhotoStore.save(pickedImage) { avatarFilename = filename }
                 // サーバーへアップロード（他人にも表示されるよう avatar_url を更新）

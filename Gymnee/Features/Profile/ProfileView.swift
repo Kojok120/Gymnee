@@ -13,6 +13,7 @@ struct ProfileView: View {
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @State private var showProfileEdit = false
+    @State private var showMyPosts = false
     /// 表示中のまとめ期間（nil＝非表示）。先月リキャップと年間 Wrapped で共用。
     @State private var wrappedPeriod: WrappedPeriod?
     /// 実績（静かな実績システム）。全ワークアウト走査を伴うため body で毎回計算せず task で導出。
@@ -146,6 +147,11 @@ struct ProfileView: View {
             }
 
             Section("マイデータ") {
+                // 自分の投稿（削除・公開範囲の変更）はソーシャルのツールバーから移設。
+                // ソーシャル画面は「フィード / 通知 / 友達追加」の3点に絞り、自分の管理はここに集約する。
+                Button { showMyPosts = true } label: {
+                    Label("自分の投稿", systemImage: "person.crop.rectangle.stack")
+                }
                 NavigationLink(value: AppRoute.photos) { Label("進捗写真", systemImage: "photo.stack") }
                 NavigationLink(value: AppRoute.body) { Label("身体メトリクス", systemImage: "ruler") }
                 // 分析は専用タブに集約したためここからは外す。
@@ -164,6 +170,9 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { computeAchievements() }
         .sheet(isPresented: $showProfileEdit) { ProfileEditView() }
+        .sheet(isPresented: $showMyPosts) {
+            NavigationStack { MyPostsView(userId: userId, onClose: { showMyPosts = false }) }
+        }
         .sheet(item: $wrappedPeriod) { period in
             GymneeWrappedView(userId: userId, period: period, onClose: { wrappedPeriod = nil })
         }
