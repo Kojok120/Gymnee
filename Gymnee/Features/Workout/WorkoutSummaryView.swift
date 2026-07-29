@@ -11,15 +11,13 @@ struct WorkoutSummaryView: View {
     let streak: Int
     /// 今週のアクティブ日数（来店＋完了ワークアウト。週次ゴールタイル「3/5」の分子）。
     let weeklyCount: Int
-    /// 投稿ボタンの公開範囲表示（例: "フレンド"）。onPost が nil なら未使用。
-    var postVisibilityLabel: String = ""
-    /// 「ソーシャルに投稿」の明示同意アクション（fail-closed）。nil＝非表示（ゲスト/ローカルのみ）。
-    var onPost: (() -> Void)? = nil
+    /// 投稿コンポーザのプレビューに渡すフィード項目（呼び出し側が FeedBuilder で組む）。
+    let postEntry: FeedEntry
     var onAnalytics: () -> Void
     var onClose: () -> Void
 
     @State private var appeared = false
-    @State private var showShare = false
+    @State private var showComposer = false
     @State private var showTimeEdit = false
     @State private var posted = false
     /// 週次ゴール（カレンダー/設定と同じキー）。達成判定 weeklyCount >= weeklyGoal に使う。
@@ -78,8 +76,8 @@ struct WorkoutSummaryView: View {
             }
             .onAppear { withAnimation(.smooth) { appeared = true } }
             .sensoryFeedback(hasPR ? .success : .impact(weight: .light), trigger: appeared)
-            .sheet(isPresented: $showShare) {
-                ShareCardEditorView(content: .from(workout: workout, streak: streak > 0 ? streak : nil))
+            .sheet(isPresented: $showComposer) {
+                PostComposerView(workout: workout, baseEntry: postEntry, onPosted: { posted = true })
             }
             .sheet(isPresented: $showTimeEdit) {
                 WorkoutTimeEditSheet(workout: workout)
@@ -215,45 +213,26 @@ struct WorkoutSummaryView: View {
         .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 
+    /// 次アクション。投稿は「押すまで非公開」（fail-closed）のまま、コンポーザで
+    /// コメント・写真・公開範囲を確認してから公開する 2 段構成。
     private var actions: some View {
         VStack(spacing: Theme.Spacing.sm) {
-            // 投稿は明示同意（fail-closed）。押さなければ非公開のまま（後から投稿メニューで公開可）。
-            if let onPost {
-                Button {
-                    onPost()
-                    withAnimation(.smooth) { posted = true }
-                } label: {
-                    Label(posted ? "投稿しました" : "ソーシャルに投稿",
-                          systemImage: posted ? "checkmark.circle.fill" : "paperplane.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent).prominentLime().controlSize(.large)
-                .disabled(posted)
-                .sensoryFeedback(.success, trigger: posted)
-                Text(posted ? "フィードに公開されました。" : "公開範囲: \(postVisibilityLabel)。押さなければ非公開のままです。")
-                    .font(.caption2).foregroundStyle(.secondary)
+            Button {
+                showComposer = true
+            } label: {
+                Label(posted ? "投稿しました" : "ソーシャルに投稿",
+                      systemImage: posted ? "checkmark.circle.fill" : "paperplane.fill")
                     .frame(maxWidth: .infinity)
-                // 副アクションは横並びで1段に収める（1画面レイアウト）。
-                HStack(spacing: Theme.Spacing.sm) {
-                    Button { showShare = true } label: {
-                        Label("共有カード", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
-                    }
-                    Button { onAnalytics() } label: {
-                        Label("分析", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
-                    }
-                }
-                .buttonStyle(.bordered)
-            } else {
-                // 投稿ボタンが無い（ゲスト/ローカルのみ）時は従来どおり共有カードを主ボタンにする。
-                Button { showShare = true } label: {
-                    Label("共有カードを作る", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent).prominentLime().controlSize(.large)
-                Button { onAnalytics() } label: {
-                    Label("分析を見る", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
             }
+            .buttonStyle(.borderedProminent).prominentLime().controlSize(.large)
+            .sensoryFeedback(.success, trigger: posted)
+            Text(posted ? "フィードに公開されました。" : "コメントや写真を添えてから投稿できます。")
+                .font(.caption2).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+            Button { onAnalytics() } label: {
+                Label("分析を見る", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
     }
 }

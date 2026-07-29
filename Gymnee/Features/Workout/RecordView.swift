@@ -369,6 +369,8 @@ struct RecordContent: View {
 
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
+    /// 投稿プレビューのヘッダーに出す自分のアバター（ProfileEditView が書き込む値）。
+    @AppStorage("gymnee.avatarURL") private var ownAvatarURL = ""
     // 破損値は安全側（friends）へ。公開面の fail-closed 方針に合わせ public フォールバックにしない。
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
 
@@ -471,9 +473,8 @@ struct RecordContent: View {
                     workout: w,
                     streak: currentStreak,
                     weeklyCount: weeklyActiveDays,
-                    // 投稿は明示同意（fail-closed）。バックエンド未接続・未サインインでは出さない。
-                    postVisibilityLabel: (defaultVisibility == .private ? Visibility.friends : defaultVisibility).label,
-                    onPost: (sync.isRemoteEnabled && auth.isPermanentAccount) ? { publishConsented(w) } : nil,
+                    // 投稿は明示同意（fail-closed）。コンポーザで内容を確認してから公開する。
+                    postEntry: summaryPostEntry(w),
                     onAnalytics: {
                         showSummary = false
                         NotificationCenter.default.post(name: .gymneeShowAnalytics, object: nil)
@@ -1296,13 +1297,23 @@ struct RecordContent: View {
 
     /// サマリーの「ソーシャルに投稿」: このワークアウトと当日の最大重量 PR を公開範囲付きで発行する。
     /// 公開範囲はユーザー既定（既定が「非公開」の場合は投稿の意図が成立しないためフレンドに昇格）。
-    private func publishConsented(_ workout: Workout) {
+    /// 完了サマリー →投稿コンポーザのプレビューに渡すフィード項目。
+    /// フィード一覧と同じ `FeedBuilder.workoutEntry` で組み、プレビューと実際の投稿を一致させる。
+    private func summaryPostEntry(_ workout: Workout) -> FeedEntry {
+        let wid = workout.id
+        let prCount = (try? context.fetchCount(
+            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.workoutId == wid })
+        )) ?? 0
         let vis: Visibility = defaultVisibility == .private ? .friends : defaultVisibility
-        FeedPublisher.publishWorkout(
-            workout, authorName: auth.session?.displayName, visibility: vis,
-            isPermanentAccount: auth.isPermanentAccount, context: context, sync: sync
+        return FeedBuilder.workoutEntry(
+            workout,
+            prCount: prCount,
+            activeDays: activeDays,
+            visibility: vis,
+            isPublished: false,
+            ownerName: auth.session?.displayName,
+            ownerAvatarURL: ownAvatarURL.isEmpty ? nil : ownAvatarURL
         )
-        Task { await sync.syncNow(force: true) }
     }
 
     /// サマリーを閉じた後：待機状態へ戻す。

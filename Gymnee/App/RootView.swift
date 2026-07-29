@@ -106,36 +106,26 @@ struct RootView: View {
         case "history": NavigationStack { HistoryView(userId: userId) }
         case "body": NavigationStack { BodyMetricsView(userId: userId) }
         case "photos": NavigationStack { ProgressPhotosView(userId: userId) }
+        case "composer":
+            // 投稿コンポーザ（プレビュー）の検証用：デモの最新完了ワークアウト。
+            if let w = latestCompletedWorkout(userId: userId) {
+                PostComposerView(workout: w, baseEntry: debugPostEntry(w, userId: userId))
+            }
         case "share":
-            ShareCardEditorView(content: ShareCardContent(
-                image: nil, streak: 3,
-                prText: "PR 2", exerciseSummary: "胸・三頭 3種目",
-                exerciseLines: [
-                    ShareCardExerciseLine(name: "ベンチプレス", detail: "80kg × 8・3セット", isPR: true),
-                    ShareCardExerciseLine(name: "インクラインダンベルプレス", detail: "28kg × 10・3セット", isPR: false),
-                    ShareCardExerciseLine(name: "ケーブルクロスオーバー", detail: "20kg × 12・3セット", isPR: false),
-                    ShareCardExerciseLine(name: "スカルクラッシャー", detail: "30kg × 10・3セット", isPR: true),
-                    ShareCardExerciseLine(name: "プッシュアップ", detail: "自重 × 15・2セット", isPR: false),
-                    ShareCardExerciseLine(name: "プランク", detail: "60秒・2セット", isPR: false),
-                    ShareCardExerciseLine(name: "サイドレイズ", detail: "8kg × 15・3セット", isPR: false),
-                    ShareCardExerciseLine(name: "ラットプルダウン", detail: "65kg × 10・3セット", isPR: false),
-                    ShareCardExerciseLine(name: "シーテッドロー", detail: "55kg × 12・3セット", isPR: false),
-                    ShareCardExerciseLine(name: "レッグプレス", detail: "160kg × 10・3セット", isPR: false),
-                    ShareCardExerciseLine(name: "カーフレイズ", detail: "自重 × 20・2セット", isPR: false),
-                ],
-                stats: [
-                    ShareCardStat(value: "7,470kg", label: "総量"),
-                    ShareCardStat(value: "19", label: "セット"),
-                    ShareCardStat(value: "52分", label: "時間"),
-                ]
-            ))
+            // 共有画像（PostCardView(.share)＝種目ごとの全セット展開）の検証用。
+            if let w = latestCompletedWorkout(userId: userId) {
+                SharePreviewSheet(entry: debugPostEntry(w, userId: userId),
+                                  photo: PhotoStore.load(w.localPhotoFilename))
+            }
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()
         case "other": OtherTabView(userId: userId)
         case "summary":
             // 完了サマリーの検証用：デモの最新完了ワークアウトを表示（週次はゴール達成状態）。
             if let w = latestCompletedWorkout(userId: userId) {
-                WorkoutSummaryView(workout: w, streak: 3, weeklyCount: 3, onAnalytics: {}, onClose: {})
+                WorkoutSummaryView(workout: w, streak: 3, weeklyCount: 3,
+                                   postEntry: debugPostEntry(w, userId: userId),
+                                   onAnalytics: {}, onClose: {})
             }
         case "logger":
             if let w = debugWorkout {
@@ -145,6 +135,23 @@ struct RootView: View {
             }
         default: mainTabs
         }
+    }
+
+    /// composer ハーネス用：最新完了ワークアウトのフィード項目。
+    private func debugPostEntry(_ w: Workout, userId: UUID) -> FeedEntry {
+        let completed = (try? context.fetch(
+            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId && $0.completedAt != nil })
+        )) ?? []
+        let wid = w.id
+        let prCount = (try? context.fetchCount(
+            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.workoutId == wid })
+        )) ?? 0
+        return FeedBuilder.workoutEntry(
+            w, prCount: prCount,
+            activeDays: completed.map { $0.completedAt ?? $0.date },
+            visibility: .friends, isPublished: false,
+            ownerName: "ユウト"
+        )
     }
 
     /// summary ハーネス用：デモの最新完了ワークアウト。

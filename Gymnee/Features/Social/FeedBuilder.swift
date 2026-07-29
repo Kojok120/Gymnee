@@ -114,7 +114,8 @@ struct FeedEntry: Identifiable {
     let title: String
     let subtitle: String?
     let photoFilename: String?
-    let visibility: Visibility
+    /// 公開範囲。投稿コンポーザではセグメントの選択に追従してプレビューを描き替えるため var。
+    var visibility: Visibility
     let partners: [String]
     /// 他人の投稿のとき著者の userId（プロフィール遷移用。自分の投稿は nil）。
     var authorId: UUID? = nil
@@ -208,49 +209,83 @@ enum FeedBuilder {
         }
 
         for w in workouts where w.completedAt != nil {
-            let sets = w.exercises.flatMap(\.sets)
-            let totalSets = sets.count
-            let vol = sets.reduce(0.0) { $0 + $1.volume }
-            let totalVolume = vol.isFinite ? Int(vol) : 0
-            let prCount = prCountByWorkout[w.id] ?? 0
-            // 鍛えた部位（重複除去・元の並び維持）。
-            var seenMuscle = Set<MuscleGroup>()
-            let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }
-
-            // 「種目」件数は詳細(メニュー)と一致させる（セットの無い空種目は数えない）。
-            let exerciseCount = w.exercises.filter { !$0.sets.isEmpty }.count
-            var stats: [FeedStat] = [
-                FeedStat(label: "種目", value: "\(exerciseCount)"),
-                FeedStat(label: "セット", value: "\(totalSets)"),
-            ]
-            if totalVolume > 0 { stats.append(FeedStat(label: "ボリューム", value: "\(totalVolume) kg")) }
-            if let mins = WorkoutDuration.minutes(date: w.date, completedAt: w.completedAt, durationSeconds: w.durationSeconds) {
-                stats.append(FeedStat(label: "時間", value: "\(mins)分"))
-            }
-
-            entries.append(FeedEntry(
-                id: w.id,
-                date: w.date,
-                kind: .workout,
-                title: w.name,
-                subtitle: nil,
-                photoFilename: w.localPhotoFilename,
+            entries.append(workoutEntry(
+                w,
+                prCount: prCountByWorkout[w.id] ?? 0,
+                activeDays: activeDays,
                 visibility: vis(w.id),
-                partners: [],
-                authorName: ownerName,
-                authorAvatarURL: ownerAvatarURL,
-                stats: stats,
-                muscles: muscles,
-                prCount: prCount,
-                caption: w.caption,
-                monthlyDay: StreakCalculator.monthlyActiveDays(
-                    activeDays: activeDays, in: w.completedAt ?? w.date, calendar: calendar
-                ),
-                isPublished: published(w.id)
+                isPublished: published(w.id),
+                ownerName: ownerName,
+                ownerAvatarURL: ownerAvatarURL,
+                calendar: calendar
             ))
         }
 
         return entries.sorted { $0.date > $1.date }
+    }
+
+    /// 完了ワークアウト 1 件をフィード項目にする。
+    /// フィード一覧と投稿コンポーザのプレビューで**同じ関数**を使い、
+    /// 「プレビューと実際の投稿が食い違う」余地を作らない。
+    static func workoutEntry(
+        _ w: Workout,
+        prCount: Int,
+        activeDays: [Date],
+        visibility: Visibility,
+        isPublished: Bool,
+        ownerName: String? = nil,
+        ownerAvatarURL: String? = nil,
+        calendar: Calendar = .current
+    ) -> FeedEntry {
+        let sets = w.exercises.flatMap(\.sets)
+        let vol = sets.reduce(0.0) { $0 + $1.volume }
+        let totalVolume = vol.isFinite ? Int(vol) : 0
+        // 鍛えた部位（重複除去・元の並び維持）。
+        var seenMuscle = Set<MuscleGroup>()
+        let muscles = w.exercises.compactMap { $0.exercise?.muscleGroup }.filter { seenMuscle.insert($0).inserted }
+
+        // 「種目」件数は詳細(メニュー)と一致させる（セットの無い空種目は数えない）。
+        let visibleExercises = w.exercises.filter { !$0.sets.isEmpty }
+        // カードのチップは「時間」「今月○日目」を主役にするため、時間を先頭に置く。
+        var stats: [FeedStat] = []
+        if let mins = WorkoutDuration.minutes(date: w.date, completedAt: w.completedAt, durationSeconds: w.durationSeconds) {
+            stats.append(FeedStat(label: "時間", value: "\(mins)分"))
+        }
+        stats.append(FeedStat(label: "セット", value: "\(sets.count)"))
+        if totalVolume > 0 { stats.append(FeedStat(label: "ボリューム", value: "\(totalVolume) kg")) }
+
+        // 共有画像は「種目名＋全セット」を並べる（ベスト重量×合計セット数の要約は不正確なので使わない）。
+        let lines = visibleExercises
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map { we in
+                FeedItemStats.ExerciseLine(
+                    name: we.exercise?.name ?? "種目",
+                    sets: we.sets.sorted { $0.setIndex < $1.setIndex }
+                        .map { FeedItemStats.SetLine(text: $0.detailText, isPR: $0.isPR) }
+                )
+            }
+
+        return FeedEntry(
+            id: w.id,
+            date: w.date,
+            kind: .workout,
+            title: w.name,
+            subtitle: nil,
+            photoFilename: w.localPhotoFilename,
+            visibility: visibility,
+            partners: [],
+            authorName: ownerName,
+            authorAvatarURL: ownerAvatarURL,
+            stats: stats,
+            muscles: muscles,
+            prCount: prCount,
+            workoutLines: lines,
+            caption: w.caption,
+            monthlyDay: StreakCalculator.monthlyActiveDays(
+                activeDays: activeDays, in: w.completedAt ?? w.date, calendar: calendar
+            ),
+            isPublished: isPublished
+        )
     }
 
     /// フォロー中の他ユーザーの投稿（サーバーから取り込んだ feed_items）をフィード項目へ変換する。

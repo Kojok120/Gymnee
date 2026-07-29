@@ -357,7 +357,7 @@ private struct SocialContent: View {
         // 自分のリアクション（種別問わず1つ）。ダブルタップの二重付与防止にも使う。
         let myReaction = reactions.first { $0.userId == userId }
         return VStack(alignment: .leading, spacing: 4) {
-            FeedCardView(entry: entry)
+            PostCardView(entry: entry)
                 .contentShape(Rectangle())
                 // ダブルタップいいねは公開済み投稿のみ（未公開＝feed_item 不在の記録に応援を付けると
                 // 親不在の post_reaction が FK 違反で滞留・孤児化するため）。
