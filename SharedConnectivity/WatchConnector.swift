@@ -4,8 +4,6 @@ import WatchConnectivity
 #endif
 
 extension Notification.Name {
-    /// 完了サマリー等から分析タブへ切替えるための要求。
-    static let gymneeShowAnalytics = Notification.Name("gymnee.showAnalytics")
     /// 記録のキャンセル等からカレンダータブへ切替えるための要求。
     static let gymneeShowCalendar = Notification.Name("gymnee.showCalendar")
     /// 計画/予定の「開始」から、記録タブで当該ワークアウトを開く要求（userInfo: workoutId）。

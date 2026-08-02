@@ -475,10 +475,6 @@ struct RecordContent: View {
                     weeklyCount: weeklyActiveDays,
                     // 投稿は明示同意（fail-closed）。コンポーザで内容を確認してから公開する。
                     postEntry: summaryPostEntry(w),
-                    onAnalytics: {
-                        showSummary = false
-                        NotificationCenter.default.post(name: .gymneeShowAnalytics, object: nil)
-                    },
                     onClose: { showSummary = false }
                 )
             }

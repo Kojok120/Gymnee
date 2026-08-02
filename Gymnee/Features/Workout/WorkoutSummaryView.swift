@@ -13,7 +13,6 @@ struct WorkoutSummaryView: View {
     let weeklyCount: Int
     /// 投稿コンポーザのプレビューに渡すフィード項目（呼び出し側が FeedBuilder で組む）。
     let postEntry: FeedEntry
-    var onAnalytics: () -> Void
     var onClose: () -> Void
 
     @State private var appeared = false
@@ -229,10 +228,6 @@ struct WorkoutSummaryView: View {
             Text(posted ? "フィードに公開されました。" : "コメントや写真を添えてから投稿できます。")
                 .font(.caption2).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
-            Button { onAnalytics() } label: {
-                Label("分析を見る", systemImage: "chart.bar.xaxis").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
         }
     }
 }
