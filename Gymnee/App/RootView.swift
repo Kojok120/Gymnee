@@ -128,7 +128,7 @@ struct RootView: View {
             if let w = latestCompletedWorkout(userId: userId) {
                 WorkoutSummaryView(workout: w, streak: 3, weeklyCount: 3,
                                    postEntry: debugPostEntry(w, userId: userId),
-                                   onAnalytics: {}, onClose: {})
+                                   onClose: {})
             }
         case "logger":
             if let w = debugWorkout {
@@ -230,10 +230,6 @@ struct RootView: View {
             if UserDefaults.standard.string(forKey: InviteLink.pendingDefaultsKey) != nil {
                 selection = .social
             }
-        }
-        // 完了サマリー「分析を見る」から分析タブへ。
-        .onReceive(NotificationCenter.default.publisher(for: .gymneeShowAnalytics)) { _ in
-            selection = .analytics
         }
         // 記録のキャンセルからカレンダータブへ。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCalendar)) { _ in

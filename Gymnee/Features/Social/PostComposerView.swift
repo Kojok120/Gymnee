@@ -5,7 +5,8 @@ import PhotosUI
 /// 投稿前ポップアップ（完了サマリー →「ソーシャルに投稿」で開く）。
 ///
 /// ねらいは **「こんな感じで共有されるよ」が一目でわかること**。上半分は飾りのプレビューではなく
-/// フィードに出るカードそのもの（`PostCardView(style: .feed)`）で、下で編集した内容が即座に反映される。
+/// フィードに出るカードそのもの（`PostCardView(style: .feed)`）で、下で編集した内容が即座に反映される
+/// （コメントだけは除く。すぐ下の入力欄と二重になるため）。
 /// 投稿先は「アプリ内ソーシャル」と「その他SNS」の 2 つ。押すまでは非公開のまま（fail-closed）。
 struct PostComposerView: View {
     let workout: Workout
@@ -31,11 +32,20 @@ struct PostComposerView: View {
     @State private var showSharePreview = false
     @FocusState private var captionFocused: Bool
 
-    /// 編集中の内容を反映したプレビュー用エントリ。カードは常にこれを描く。
+    /// 編集中の内容を反映したエントリ（共有画像の土台）。
     private var previewEntry: FeedEntry {
         var e = baseEntry
         e.caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         e.visibility = visibility
+        return e
+    }
+
+    /// 画面上のプレビューカード用。**コメントはカードに載せない**。
+    /// すぐ下の入力欄に同じ文が出ているので、カードにも出すと 1 画面に二重に並ぶだけで、
+    /// カード自体の見え方（スタット・PR・写真）の確認を邪魔する。
+    private var previewCardEntry: FeedEntry {
+        var e = previewEntry
+        e.caption = nil
         return e
     }
 
@@ -83,7 +93,7 @@ struct PostComposerView: View {
     private var preview: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             OverlineLabel(text: "こう表示されます")
-            PostCardView(entry: previewEntry, preloadedPhoto: photo)
+            PostCardView(entry: previewCardEntry, preloadedPhoto: photo)
         }
     }
 
