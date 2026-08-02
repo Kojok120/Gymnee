@@ -103,6 +103,9 @@ struct RootView: View {
                 NavigationStack { RoutinesView(userId: userId) }
             }
         case "analytics": NavigationStack { AnalyticsView(userId: userId) }
+        case "muscle":
+            // 人体図の部位タップ先（種目のベスト一覧）の検証用。デモで最も記録が多い部位を開く。
+            debugMuscleSheet(userId: userId)
         case "history": NavigationStack { HistoryView(userId: userId) }
         case "body": NavigationStack { BodyMetricsView(userId: userId) }
         case "photos": NavigationStack { ProgressPhotosView(userId: userId) }
@@ -151,6 +154,28 @@ struct RootView: View {
             activeDays: completed.map { $0.completedAt ?? $0.date },
             visibility: .friends, isPublished: false,
             ownerName: "ユウト"
+        )
+    }
+
+    /// muscle ハーネス用：デモで最も記録が多い部位の詳細シート。
+    @ViewBuilder
+    private func debugMuscleSheet(userId: UUID) -> some View {
+        let workouts = (try? context.fetch(
+            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId && $0.completedAt != nil })
+        )) ?? []
+        let entries = MuscleLoadInputs.sessionEntries(from: workouts)
+        let fatigue = MuscleFatigue.statuses(entries: entries)
+        let weekly = WeeklyMuscleLoad.statuses(entries: entries)
+        // 直近に鍛えた部位＝デモで確実に記録がある部位を開く。
+        let target = fatigue.compactMap { s in s.lastTrained.map { (s.muscle, $0) } }
+            .max { $0.1 < $1.1 }?.0 ?? .chest
+        MuscleDetailSheet(
+            muscle: target,
+            userId: userId,
+            status: fatigue.first { $0.muscle == target }
+                ?? MuscleFatigue.Status(muscle: target, lastTrained: nil, lastSetCount: 0, fatigue: 0),
+            weekly: weekly.first { $0.muscle == target }
+                ?? WeeklyMuscleLoad.Status(muscle: target, sets: 0, targetSets: WeeklyMuscleLoad.targetSets(for: target))
         )
     }
 

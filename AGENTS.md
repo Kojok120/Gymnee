@@ -148,7 +148,7 @@ DEBUG 限定の検証ハーネス（製品ビルドには含まれない）:
 ```bash
 xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 # Debug ビルドの bundle id は .dev サフィックス付き（com.gymnee.app は Release）
-# name: gym / checkin / workout / logger / profile / social / shop / analytics / body / share
+# name: gym / checkin / workout / logger / profile / social / shop / analytics / muscle / body / share
 ```
 
 ## 環境変数 / シークレット

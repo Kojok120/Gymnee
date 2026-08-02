@@ -27,11 +27,15 @@ enum MuscleFatigue {
         var id: String { muscle.rawValue }
 
         /// 表示の3段階。凡例と色分けの境目を 1 箇所に集約する。
-        var level: Level {
-            if fatigue < 0.15 { return .recovered }
-            if fatigue < 0.55 { return .recovering }
-            return .fatigued
-        }
+        var level: Level { MuscleFatigue.level(for: fatigue) }
+    }
+
+    /// 疲労度 → 表示の3段階。人体図の縁取りなど `Status` を持たない側からも使う。
+    static func level(for fatigue: Double) -> Level {
+        guard fatigue.isFinite else { return .recovered }
+        if fatigue < 0.15 { return .recovered }
+        if fatigue < 0.55 { return .recovering }
+        return .fatigued
     }
 
     enum Level: String, CaseIterable, Sendable {
