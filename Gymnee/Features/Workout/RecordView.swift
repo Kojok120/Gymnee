@@ -345,6 +345,8 @@ struct RecordContent: View {
     @State private var keypad: KeypadRequest?
     @State private var showOnboarding = false
     @State private var showCancelConfirm = false
+    /// 「完了」の確認。誤タップでセッションが閉じるのを防ぐ。
+    @State private var showFinishConfirm = false
     @State private var showMemo = false
     /// 録画中の暫定PRスパーク（その場の「更新ペース！」表示・非永続。確定は完了時）。
     @State private var prSpark: PRSpark?
@@ -415,7 +417,8 @@ struct RecordContent: View {
             ToolbarItem(placement: .topBarTrailing) {
                 // 完了の場所を最初から見せる（メモを開くまで現れない＝在処が分かりづらい問題の解消）。
                 // 記録(セット)が1件も無いうちは無効。セットを記録すると有効になる。
-                Button("完了") { finish() }.bold()
+                // 完了はセッションを閉じる操作なので、押しただけでは確定させず一段確認を挟む。
+                Button("完了") { showFinishConfirm = true }.bold()
                     .disabled(!hasRecordedSets)
             }
         }
@@ -424,6 +427,12 @@ struct RecordContent: View {
             Button("続ける", role: .cancel) {}
         } message: {
             Text("記録した内容は保存されません。")
+        }
+        .alert("このワークアウトを完了しますか？", isPresented: $showFinishConfirm) {
+            Button("完了する") { finish() }
+            Button("まだ続ける", role: .cancel) {}
+        } message: {
+            Text(finishConfirmMessage)
         }
         .safeAreaInset(edge: .bottom) { timerBar }
         // フォアグラウンド復帰時にレスト残りを実時計から即時同期（バックグラウンド中の凍結表示を解消）。
@@ -467,7 +476,10 @@ struct RecordContent: View {
         .sheet(item: $keypad) { req in
             SlotKeypadSheet(request: req) { value in handleKeypad(req, value: value) }
         }
-        .sheet(isPresented: $showSummary, onDismiss: { endSession() }) {
+        // 完了サマリーはシートではなく全画面で出す。セッションの終着点であって
+        // 「記録画面の上に重なった一時的なカード」ではないため（背後に記録画面が見えていると
+        // まだ続けられそうに読める）。閉じると endSession でゲートに戻る。
+        .fullScreenCover(isPresented: $showSummary, onDismiss: { endSession() }) {
             if let w = activeWorkout {
                 WorkoutSummaryView(
                     workout: w,
@@ -1186,6 +1198,13 @@ struct RecordContent: View {
     private var hasMemo: Bool { !(activeWorkout?.note ?? "").isEmpty }
     /// 記録済みセットが1件以上あるか（完了ボタンの有効/無効判定）。
     private var hasRecordedSets: Bool { !(activeWorkout?.exercises.flatMap { $0.sets } ?? []).isEmpty }
+
+    /// 完了確認の本文。「本当に？」だけ聞かれても判断できないので、確定する中身を数字で見せる。
+    private var finishConfirmMessage: String {
+        let exercises = activeWorkout?.exercises.filter { !$0.sets.isEmpty } ?? []
+        let sets = exercises.reduce(0) { $0 + $1.sets.count }
+        return "\(exercises.count)種目・\(sets)セットを記録しました。完了すると内容が確定し、記録が保存されます。"
+    }
 
     /// メモを開く。未開始ならセッションを作ってからメモ編集（メモのある下書きは破棄されない）。
     private func openMemo() {
