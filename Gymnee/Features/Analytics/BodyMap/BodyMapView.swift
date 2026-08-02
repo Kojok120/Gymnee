@@ -22,22 +22,39 @@ struct BodyMapView: View {
             // 領域の組み立て（パス解析＋座標変換）は毎フレームやると重いので 1 回にまとめる。
             let regions = BodyMapPaths.regions(for: face, in: rect)
             ZStack {
+                // 描画順は元データのまま（順番を変えると解剖の重なりが崩れる）。
                 ForEach(regions) { region in
-                    ForEach(Array(region.paths.enumerated()), id: \.offset) { _, path in
-                        path.fill(fill(for: region.muscle))
-                        path.stroke(stroke(for: region.muscle), lineWidth: lineWidth(for: region.muscle))
+                    if let muscle = region.muscle {
+                        // 部位は Button にする。押し込み・ハプティクスが付くうえ、
+                        // ScrollView 内でのスクロール中は押下が自動でキャンセルされる
+                        // （自前の DragGesture で押下を取るとスクロールを奪ってしまう）。
+                        // ラベル自体が塗られた図形なので、当たり判定は図形どおりに決まる
+                        // （透明ビュー＋contentShape に頼らない）。
+                        Button { onSelect(muscle) } label: {
+                            RegionShape(paths: region.paths).fill(fill(for: muscle))
+                        }
+                        .buttonStyle(RegionButtonStyle(
+                            paths: region.paths,
+                            stroke: stroke(for: muscle),
+                            lineWidth: lineWidth(for: muscle),
+                            canvasSize: geo.size
+                        ))
+                        .accessibilityLabel(muscle.label)
+                    } else {
+                        // 装飾（頭・首・手足）。塗るだけでタップしない。
+                        // 膝・首など部位に重なる装飾が手前に来るので、当たり判定は必ず抜く
+                        // （抜かないと重なった部分が押せない死角になる）。
+                        ForEach(Array(region.paths.enumerated()), id: \.offset) { _, path in
+                            path.fill(fill(for: nil))
+                            path.stroke(stroke(for: nil), lineWidth: 0.6)
+                        }
+                        .allowsHitTesting(false)
                     }
                 }
             }
-            .contentShape(Rectangle())
-            // 図形どおりの当たり判定。矩形近似だと隣の部位に漏れるため Path.contains を使う。
-            .onTapGesture { location in
-                guard let muscle = BodyMapPaths.muscle(at: location, face: face, in: rect) else { return }
-                onSelect(muscle)
-            }
         }
         .aspectRatio(BodyMapPaths.aspectRatio, contentMode: .fit)
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(face.label)の人体図")
     }
 
@@ -82,6 +99,52 @@ struct BodyMapView: View {
             return neutral.mix(with: Theme.warning, by: f / 0.5)
         }
         return Theme.warning.mix(with: Theme.danger, by: (f - 0.5) / 0.5)
+    }
+}
+
+/// 部位 1 つぶんの描画とタップ。押している間だけ縮んで明るくし、押下でハプティクスを返す。
+///
+/// 「押せる」ことを見た目で伝えるのが目的なので、押下の表現は縮み **と** 明度の両方でやる。
+/// 腕・体幹のような細い領域は縮みだけだとほとんど動いて見えないため。
+private struct RegionButtonStyle: ButtonStyle {
+    let paths: [Path]
+    let stroke: Color
+    let lineWidth: CGFloat
+    /// 縮みの中心をその部位に置くための基準サイズ（人体図全体のサイズ）。
+    let canvasSize: CGSize
+
+    func makeBody(configuration: Configuration) -> some View {
+        ZStack {
+            configuration.label   // 部位の塗り。当たり判定もこの図形で決まる。
+            RegionShape(paths: paths).stroke(stroke, lineWidth: lineWidth)
+            RegionShape(paths: paths).fill(Theme.textPrimary.opacity(configuration.isPressed ? 0.16 : 0))
+        }
+        .scaleEffect(configuration.isPressed ? 0.97 : 1, anchor: anchor)
+        .animation(.snappy, value: configuration.isPressed)
+        // 指を置いた瞬間だけ返す（離した時にも鳴ると二度打ちに感じる）。
+        .sensoryFeedback(trigger: configuration.isPressed) { _, pressed in
+            pressed ? .impact(weight: .light) : nil
+        }
+    }
+
+    /// 部位の中心。ここを軸に縮めないと、人体図全体が動いたように見える。
+    private var anchor: UnitPoint {
+        let box = paths.reduce(CGRect.null) { $0.union($1.boundingRect) }
+        guard !box.isNull, box.midX.isFinite, box.midY.isFinite,
+              canvasSize.width > 0, canvasSize.height > 0 else { return .center }
+        return UnitPoint(x: box.midX / canvasSize.width, y: box.midY / canvasSize.height)
+    }
+}
+
+/// 1 部位ぶんの複数パスをまとめた当たり判定シェイプ。
+/// パスは人体図の座標系そのままなので `rect` は使わない。
+private struct RegionShape: Shape {
+    let paths: [Path]
+
+    func path(in rect: CGRect) -> Path {
+        var combined = Path()
+        for sub in paths { combined.addPath(sub) }
+        return combined
     }
 }
 

@@ -54,6 +54,10 @@ enum BodyMapPaths {
     }
 
     /// タップ位置に載っている部位。手前に描いたものを優先して逆順に判定する。
+    ///
+    /// 実行時の当たり判定は `BodyMapView` が部位ごとの `contentShape` で行う（押し込み・
+    /// ハプティクスのために部位を Button にしたため）。同じパス・同じ「手前優先」なので、
+    /// ここは資産のマッピングを検証するための参照実装として残している。
     static func muscle(at point: CGPoint, face: Face, in rect: CGRect) -> MuscleGroup? {
         for region in regions(for: face, in: rect).reversed() {
             guard let muscle = region.muscle else { continue }

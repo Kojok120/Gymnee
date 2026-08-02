@@ -19,6 +19,10 @@ struct AnalyticsView: View {
     @State private var showAddMetric = false
     /// 表示中の面。タブを離れるたび正面に戻らないよう保存する。
     @AppStorage("gymnee.analytics.bodyFace") private var face: BodyMapPaths.Face = .front
+    /// 部位タップを一度でもしたか（初回ヒントの出し分け）。
+    @AppStorage("gymnee.analytics.bodyTapHinted") private var bodyTapHinted = false
+    /// 未タップでも数秒で引っ込める（出しっぱなしは邪魔になる）。
+    @State private var tapHintVisible = true
 
     init(userId: UUID) {
         self.userId = userId
@@ -104,7 +108,11 @@ struct AnalyticsView: View {
                     loadByMuscle: loadByMuscle,
                     fatigueByMuscle: fatigueByMuscle,
                     selected: selectedMuscle,
-                    onSelect: { selectedMuscle = $0 }
+                    onSelect: { muscle in
+                        selectedMuscle = muscle
+                        // 一度タップできたらヒントの役目は終わり。
+                        if !bodyTapHinted { withAnimation(.snappy) { bodyTapHinted = true } }
+                    }
                 )
                 // 面ごとに別ビューとして扱い、切り替えをクロスフェードさせる。
                 // 3D フリップは両面を同時に描く必要があり（パス構築が倍）、
@@ -116,6 +124,7 @@ struct AnalyticsView: View {
                 .frame(maxWidth: .infinity)
                 // 図の外側に重ねる。BodyMapView 内のタップ判定には触らない。
                 .overlay(alignment: .topTrailing) { flipButton }
+                .overlay { if showTapHint { tapHint } }
                 // 「裏返す」動作として左右スワイプでも切り替える（ボタンの発見性を補う）。
                 // `gesture` だと ScrollView のスクロールを奪って図の上で縦に流せなくなるため
                 // `simultaneousGesture` にし、縦優位のドラッグ（＝スクロール）では反転しない。
@@ -140,6 +149,31 @@ struct AnalyticsView: View {
     /// 人体図の高さの上限。全幅まで伸ばすと凡例・ヒント・体重タイルが画面外に出るため、
     /// スクロールがほとんど発生しない範囲での最大値に置く。
     private static let bodyHeight: CGFloat = 470
+
+    private var showTapHint: Bool { !bodyTapHinted && tapHintVisible }
+
+    /// 初回だけ出す「部位を押せる」ヒント。
+    /// 図の上に重ねるが `allowsHitTesting(false)` なので、ヒントごしにそのままタップできる。
+    private var tapHint: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "hand.tap.fill")
+                .font(.system(size: 24, weight: .medium))
+                .symbolEffect(.pulse)
+            Text("部位をタップ").font(.caption.weight(.semibold))
+        }
+        // カード面に埋もれないよう地と文字を反転させる（bg2 だと白いカードの上でほぼ消える）。
+        .foregroundStyle(Theme.bg1)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.md)
+        .background(Theme.textPrimary.opacity(0.88), in: Capsule())
+        .allowsHitTesting(false)
+        .transition(.opacity)
+        .task {
+            // 気づかれないまま出し続けない。タップされたら AppStorage 側で消える。
+            try? await Task.sleep(for: .seconds(6))
+            withAnimation(.snappy) { tapHintVisible = false }
+        }
+    }
 
     /// 正面 / 背面の反転ボタン。正面と背面は ON/OFF ではないのでトグルにはしない。
     private var flipButton: some View {
