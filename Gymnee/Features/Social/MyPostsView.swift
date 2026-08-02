@@ -140,21 +140,6 @@ struct MyPostsView: View {
     }
 
     private func delete(_ entry: FeedEntry) {
-        switch entry.kind {
-        case .pr:
-            guard let pr = prs.first(where: { $0.id == entry.id }) else { return }
-            context.delete(pr)
-            try? context.save()
-            sync.enqueue(PendingChange(entity: "personal_records", recordId: entry.id, operation: .delete, updatedAt: .now))
-            // PR の元データが消えたので、公開済みなら対応 feed_item も削除して同期整合させる。
-            FeedPublisher.deleteFeedItem(forRefId: entry.id, context: context, sync: sync)
-        case .workout:
-            guard let w = workouts.first(where: { $0.id == entry.id }) else { return }
-            PhotoStore.delete(w.localPhotoFilename)
-            context.delete(w)
-            try? context.save()
-            sync.enqueue(PendingChange(entity: "workouts", recordId: entry.id, operation: .delete, updatedAt: .now))
-            FeedPublisher.deleteFeedItem(forRefId: entry.id, context: context, sync: sync)
-        }
+        FeedEntryDeleter.delete(entry, workouts: workouts, prs: prs, context: context, sync: sync)
     }
 }

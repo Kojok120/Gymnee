@@ -122,6 +122,8 @@ private struct SocialContent: View {
     @AppStorage(SocialActivityBuilder.lastSeenDefaultsKey) private var lastSeenActivityAt = 0.0
 
     @State private var reportTarget: ReportUserTarget?
+    /// 削除の確認待ち（記録ごと消える不可逆操作なので、長押しから直接は実行しない）。
+    @State private var deleteTarget: FeedEntry?
     @State private var showActivity = false
     /// タップで開く投稿詳細（全投稿共通：リッチ詳細＋リアクションした人＋コメント）。
     @State private var postDetail: FeedEntry?
@@ -317,6 +319,21 @@ private struct SocialContent: View {
                            currentUserName: auth.session?.displayName,
                            onClose: { postDetail = nil })
         }
+        .confirmationDialog("この記録を削除しますか？", isPresented: deleteConfirmBinding, titleVisibility: .visible) {
+            Button("削除", role: .destructive) {
+                guard let entry = deleteTarget else { return }
+                FeedEntryDeleter.delete(entry, workouts: workouts, prs: prs, context: context, sync: sync)
+                deleteTarget = nil
+                Task { await refreshFeed() }
+            }
+            Button("キャンセル", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("投稿だけでなく記録そのものが消えます。カレンダーや分析からも無くなり、元に戻せません。投稿を取り下げるだけなら「公開範囲」を非公開にしてください。")
+        }
+    }
+
+    private var deleteConfirmBinding: Binding<Bool> {
+        Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
     }
 
     /// カード（シングルタップでワークアウト詳細＋コメントを開く／ダブルタップでいいね）＋いいねバー。
@@ -385,6 +402,8 @@ private struct SocialContent: View {
                     }
                 }
             }
+            // 「非公開」は投稿を取り下げるだけ。記録ごと消したいときはこちら。
+            Button("削除", systemImage: "trash", role: .destructive) { deleteTarget = entry }
         } else if let authorId = entry.authorId {
             Button("通報", systemImage: "flag") {
                 reportTarget = ReportUserTarget(id: authorId, displayName: displayName(for: authorId),
