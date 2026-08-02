@@ -5,7 +5,7 @@ import SwiftData
 ///
 /// 以前はヒートマップ / 強度進捗 / 部位バランス / リカバリー / PRタイムライン / CSV の 6 カードが
 /// 縦積みで、情報は多いのに「で、自分はいまどうなのか」が一目で分からなかった。
-/// いま見たいのは「どこが疲れていて、次はどこをやるか」なので、正面・背面の人体図に集約し、
+/// いま見たいのは「どこが疲れていて、次はどこをやるか」なので、人体図 1 枚（正面 / 背面は反転）に集約し、
 /// 数値の深掘りは部位タップの先へ送る。CSV は設定へ、PR は種目詳細へ移設した。
 struct AnalyticsView: View {
     let userId: UUID
@@ -17,6 +17,8 @@ struct AnalyticsView: View {
     @State private var selectedMuscle: MuscleGroup?
     @State private var showBodyMetrics = false
     @State private var showAddMetric = false
+    /// 表示中の面。タブを離れるたび正面に戻らないよう保存する。
+    @AppStorage("gymnee.analytics.bodyFace") private var face: BodyMapPaths.Face = .front
 
     init(userId: UUID) {
         self.userId = userId
@@ -89,21 +91,42 @@ struct AnalyticsView: View {
         .sheet(isPresented: $showAddMetric) { AddBodyMetricView(userId: userId) }
     }
 
-    /// 正面・背面を並べて表示（背面にしかない背中・臀部・ハムも正しい位置で塗れる）。
+    /// 人体図は **1 体だけ**表示し、正面 / 背面は反転で切り替える。
+    ///
+    /// 2 体並べると 1 体あたりの幅がカードの半分になり、腕・体幹のような細い部位が
+    /// タップしづらく色も読み取りにくかった。浮いた横幅をそのまま図の拡大に充てる。
+    /// 背面にしかない部位（背中・臀部・ハム）は反転して見る。
     private var bodyCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            HStack(alignment: .top, spacing: Theme.Spacing.md) {
-                ForEach(BodyMapPaths.Face.allCases) { face in
-                    VStack(spacing: Theme.Spacing.xs) {
-                        BodyMapView(
-                            face: face,
-                            fatigueByMuscle: fatigueByMuscle,
-                            selected: selectedMuscle,
-                            onSelect: { selectedMuscle = $0 }
-                        )
-                        Text(face.label).font(.caption2).foregroundStyle(Theme.textTertiary)
-                    }
-                }
+            VStack(spacing: Theme.Spacing.xs) {
+                BodyMapView(
+                    face: face,
+                    fatigueByMuscle: fatigueByMuscle,
+                    selected: selectedMuscle,
+                    onSelect: { selectedMuscle = $0 }
+                )
+                // 面ごとに別ビューとして扱い、切り替えをクロスフェードさせる。
+                // 3D フリップは両面を同時に描く必要があり（パス構築が倍）、
+                // 回転中のタップ座標の扱いも読みにくいので採らない。
+                .transition(.opacity)
+                .id(face)
+                // 画面が小さい端末（SE 等）で図がカードを占有しないよう、表示領域に対する上限も掛ける。
+                .containerRelativeFrame(.vertical) { height, _ in min(Self.bodyHeight, height * 0.68) }
+                .frame(maxWidth: .infinity)
+                // 図の外側に重ねる。BodyMapView 内のタップ判定には触らない。
+                .overlay(alignment: .topTrailing) { flipButton }
+                // 「裏返す」動作として左右スワイプでも切り替える（ボタンの発見性を補う）。
+                // `gesture` だと ScrollView のスクロールを奪って図の上で縦に流せなくなるため
+                // `simultaneousGesture` にし、縦優位のドラッグ（＝スクロール）では反転しない。
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24)
+                        .onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            flip()
+                        }
+                )
+                // 現在どちらを見ているかはアイコンだけでは読めないので、面のラベルを残す。
+                Text(face.label).font(.caption2).foregroundStyle(Theme.textTertiary)
             }
             BodyMapLegend()
             Text(hintText)
@@ -111,6 +134,31 @@ struct AnalyticsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .gymneeCard()
+    }
+
+    /// 人体図の高さの上限。全幅まで伸ばすと凡例・ヒント・体重タイルが画面外に出るため、
+    /// スクロールがほとんど発生しない範囲での最大値に置く。
+    private static let bodyHeight: CGFloat = 470
+
+    /// 正面 / 背面の反転ボタン。正面と背面は ON/OFF ではないのでトグルにはしない。
+    private var flipButton: some View {
+        Button(action: flip) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 36, height: 36)
+                .background(Theme.bg2, in: Circle())
+                // カード面（bg1）との差が小さいので、縁で押せることを示す。
+                .overlay(Circle().stroke(Theme.textTertiary.opacity(0.35), lineWidth: 0.8))
+                .frame(width: 44, height: 44)   // タップ領域は 44pt 確保する
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(face == .front ? "背面を表示" : "正面を表示")
+    }
+
+    private func flip() {
+        withAnimation(.snappy) { face = face == .front ? .back : .front }
     }
 
     /// 図の下の一言。色を見せて終わりにせず「次にどこをやるか」まで踏み込む。
