@@ -33,34 +33,32 @@ struct AnalyticsView: View {
 
     // MARK: - 導出
 
-    /// 完了ワークアウト → 部位ごとのセッション（MuscleFatigue の入力）。
-    /// 日付は `completedAt` に一本化する（旧実装は画面ごとに `date` / `completedAt` がズレていた）。
+    /// 完了ワークアウト → 部位ごとのセッション（疲労度・今週の量の共通入力）。
     private var sessionEntries: [MuscleFatigue.SessionEntry] {
-        var result: [MuscleFatigue.SessionEntry] = []
-        for w in workouts {
-            guard let done = w.completedAt else { continue }
-            // 同一ワークアウト内の同じ部位はセット数を合算する。
-            var setsByMuscle: [MuscleGroup: Int] = [:]
-            for we in w.exercises {
-                guard let muscle = we.exercise?.muscleGroup, !we.sets.isEmpty else { continue }
-                setsByMuscle[muscle, default: 0] += we.sets.count
-            }
-            for (muscle, count) in setsByMuscle {
-                result.append(MuscleFatigue.SessionEntry(muscle: muscle, completedAt: done, setCount: count))
-            }
-        }
-        return result
+        MuscleLoadInputs.sessionEntries(from: workouts)
     }
 
     private var statuses: [MuscleFatigue.Status] { MuscleFatigue.statuses(entries: sessionEntries) }
+
+    /// 今週の部位別セット数（人体図の塗り）。
+    private var weeklyStatuses: [WeeklyMuscleLoad.Status] { WeeklyMuscleLoad.statuses(entries: sessionEntries) }
 
     private var fatigueByMuscle: [MuscleGroup: Double] {
         Dictionary(statuses.map { ($0.muscle, $0.fatigue) }, uniquingKeysWith: { a, _ in a })
     }
 
+    private var loadByMuscle: [MuscleGroup: Double] {
+        Dictionary(weeklyStatuses.map { ($0.muscle, $0.progress) }, uniquingKeysWith: { a, _ in a })
+    }
+
     private func status(for muscle: MuscleGroup) -> MuscleFatigue.Status {
         statuses.first { $0.muscle == muscle }
             ?? MuscleFatigue.Status(muscle: muscle, lastTrained: nil, lastSetCount: 0, fatigue: 0)
+    }
+
+    private func weeklyStatus(for muscle: MuscleGroup) -> WeeklyMuscleLoad.Status {
+        weeklyStatuses.first { $0.muscle == muscle }
+            ?? WeeklyMuscleLoad.Status(muscle: muscle, sets: 0, targetSets: WeeklyMuscleLoad.targetSets(for: muscle))
     }
 
     private var latestWeight: Double? { metrics.first(where: { $0.weight != nil })?.weight }
@@ -80,7 +78,8 @@ struct AnalyticsView: View {
         .navigationTitle("分析")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedMuscle) { muscle in
-            MuscleDetailSheet(muscle: muscle, userId: userId, status: status(for: muscle))
+            MuscleDetailSheet(muscle: muscle, userId: userId,
+                              status: status(for: muscle), weekly: weeklyStatus(for: muscle))
         }
         .sheet(isPresented: $showBodyMetrics) {
             NavigationStack {
@@ -98,9 +97,11 @@ struct AnalyticsView: View {
     /// 背面にしかない部位（背中・臀部・ハム）は反転して見る。
     private var bodyCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            weekHeader
             VStack(spacing: Theme.Spacing.xs) {
                 BodyMapView(
                     face: face,
+                    loadByMuscle: loadByMuscle,
                     fatigueByMuscle: fatigueByMuscle,
                     selected: selectedMuscle,
                     onSelect: { selectedMuscle = $0 }
@@ -161,16 +162,41 @@ struct AnalyticsView: View {
         withAnimation(.snappy) { face = face == .front ? .back : .front }
     }
 
-    /// 図の下の一言。色を見せて終わりにせず「次にどこをやるか」まで踏み込む。
+    /// カードの見出し。今週の積み上げを数字でも出して、図が「何のメーターか」を明示する。
+    private var weekHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+            Text("今週の積み上げ")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+            Spacer(minLength: 0)
+            Text("\(WeeklyMuscleLoad.totalSets(weeklyStatuses))")
+                .font(.numS).foregroundStyle(weeklyTotal > 0 ? Theme.lime : Theme.textTertiary)
+            Text("セット").font(.caption).foregroundStyle(Theme.textTertiary)
+        }
+    }
+
+    private var weeklyTotal: Int { WeeklyMuscleLoad.totalSets(weeklyStatuses) }
+
+    /// 図の下の一言。塗り＝今週の量なので「今週まだ空いている部位」を最優先で埋めに行かせる。
+    /// そのうえで疲労を見て、いま実際に狙える部位を名指しする。
     private var hintText: String {
-        guard !sessionEntries.isEmpty else {
-            return "記録をつけると、鍛えた部位が疲労度で色分けされます。部位をタップすると重量の推移が見られます。"
+        guard weeklyTotal > 0 else {
+            return "記録をつけると、鍛えた部位が今週の量ぶんだけ色づきます。部位をタップすると種目ごとの記録が見られます。"
         }
+        let untouched = WeeklyMuscleLoad.untouched(weeklyStatuses)
         let ready = MuscleFatigue.recommendedNext(from: statuses)
-        guard let first = ready.first else {
-            return "全体的に疲労が残っています。今日はしっかり休むのも選択肢です。"
+        // 今週まだ手つかず、かつ回復済み＝いちばん埋めやすい部位。
+        if let target = ready.first(where: { untouched.contains($0) }) {
+            // 名指しする部位を必ず一覧の先頭に置く（一覧に無い部位を「次は」と言うと読み手が混乱する）。
+            let ordered = [target] + untouched.filter { $0 != target }
+            return "今週まだ：\(ordered.prefix(3).map(\.label).joined(separator: "・"))。次は\(target.label)が狙い目です。"
         }
-        return "回復済み：\(ready.prefix(3).map(\.label).joined(separator: "・"))。次は\(first.label)が狙い目です。"
+        if !untouched.isEmpty {
+            return "今週まだ：\(untouched.prefix(3).map(\.label).joined(separator: "・"))。ただ今は疲労が残っているので、回復を待つのも手です。"
+        }
+        guard let first = ready.first else {
+            return "今週は全部位に触れています。しっかり休むのも選択肢です。"
+        }
+        return "今週は全部位に触れています。積み増すなら\(first.label)が狙い目です。"
     }
 
     /// 体重・体脂肪率。未記録なら入力画面、記録済みなら推移画面へ（初回のつまずきを作らない）。
