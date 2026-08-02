@@ -29,9 +29,10 @@ struct MuscleDetailSheet: View {
     private struct Row: Identifiable {
         let id: UUID
         let exercise: Exercise
-        /// ベストの種別（種目の計測タイプで変わる）。値が無ければ nil。
-        let bestType: PRType?
-        let bestValue: Double
+        /// ベストの表示値（例「40 kg × 8」）。記録から出せなければ nil。
+        let bestText: String?
+        /// ベストの見出し（例「最大重量」）。
+        let bestLabel: String?
         let lastPerformed: Date?
         let sessionCount: Int
     }
@@ -45,9 +46,9 @@ struct MuscleDetailSheet: View {
             }
             guard !sessions.isEmpty else { return nil }
             let last = sessions.compactMap { $0.workout?.completedAt }.max()
-            let bests = WorkoutMetrics.bests(for: ex, userId: userId, excludingSetId: nil)
-            let (type, value) = Self.headline(for: ex, bests: bests)
-            return Row(id: ex.id, exercise: ex, bestType: type, bestValue: value,
+            let best = Self.headline(for: ex, sets: sessions.flatMap(\.sets),
+                                     bests: WorkoutMetrics.bests(for: ex, userId: userId, excludingSetId: nil))
+            return Row(id: ex.id, exercise: ex, bestText: best?.text, bestLabel: best?.label,
                        lastPerformed: last, sessionCount: sessions.count)
         }
         .sorted { lhs, rhs in
@@ -56,24 +57,35 @@ struct MuscleDetailSheet: View {
     }
 
     /// 種目の計測タイプごとに「代表となるベスト」を選ぶ。
-    /// ウェイトは推定1RM（重量↑もレップ↑も拾える）、自重は荷重モードで軸が変わる。
-    private static func headline(for exercise: Exercise, bests: PRDetector.Bests) -> (PRType?, Double) {
+    ///
+    /// ウェイトは **実際に挙げた最大重量**（と、その時のレップ数）を出す。
+    /// 推定1RM は式から逆算した理論値なので、一度も挙げたことのない重量が「ベスト」として並び、
+    /// 自分の記録として読めない。推定1RM の推移は種目詳細に出るので、ここは実測に寄せる。
+    private static func headline(for exercise: Exercise, sets: [ExerciseSet],
+                                 bests: PRDetector.Bests) -> (text: String, label: String)? {
         switch exercise.measurementType {
         case .weight:
-            return bests.est1RM > 0 ? (.est1RM, bests.est1RM) : (nil, 0)
+            // 同じ重量なら回数が多いセットを代表にする。
+            let working = sets.filter { $0.weight > 0 && $0.reps > 0 }
+            guard let top = working.max(by: { ($0.weight, $0.reps) < ($1.weight, $1.reps) }) else { return nil }
+            return ("\(SetFormatting.weightString(top.weight)) kg × \(top.reps)", PRType.maxWeight.label)
         case .bodyweight:
             switch exercise.loadMode {
             case .weighted:
-                return bests.maxWeight > 0 ? (.maxWeight, bests.maxWeight) : (nil, 0)
+                guard bests.maxWeight > 0 else { return nil }
+                return (PRType.maxWeight.formatted(bests.maxWeight), PRType.maxWeight.label)
             case .assisted:
-                return bests.minAssist < .greatestFiniteMagnitude ? (.minAssist, bests.minAssist) : (nil, 0)
+                guard bests.minAssist < .greatestFiniteMagnitude else { return nil }
+                return (PRType.minAssist.formatted(bests.minAssist), PRType.minAssist.label)
             case .none:
-                return bests.maxReps > 0 ? (.maxReps, bests.maxReps) : (nil, 0)
+                guard bests.maxReps > 0 else { return nil }
+                return (PRType.maxReps.formatted(bests.maxReps), PRType.maxReps.label)
             }
         case .time:
-            return bests.maxDuration > 0 ? (.maxDuration, bests.maxDuration) : (nil, 0)
+            guard bests.maxDuration > 0 else { return nil }
+            return (PRType.maxDuration.formatted(bests.maxDuration), PRType.maxDuration.label)
         case .cardio:
-            return (nil, 0)
+            return nil
         }
     }
 
@@ -167,11 +179,11 @@ struct MuscleDetailSheet: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                if let type = row.bestType {
-                    Text(type.formatted(row.bestValue))
+                if let text = row.bestText, let label = row.bestLabel {
+                    Text(text)
                         .font(.numS).foregroundStyle(Theme.textPrimary)
                         .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
-                    Text(type.label).font(.caption2).foregroundStyle(Theme.textTertiary)
+                    Text(label).font(.caption2).foregroundStyle(Theme.textTertiary)
                 } else {
                     Text("—").font(.numS).foregroundStyle(Theme.textTertiary)
                 }
