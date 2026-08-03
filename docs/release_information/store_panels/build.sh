@@ -5,8 +5,8 @@
 #   使い方: bash docs/release_information/store_panels/build.sh
 #
 # 出力:
-#   docs/release_information/screenshots/         6.9インチ 1320×2868 × 8枚
-#   docs/release_information/screenshots_6.5inch/ 6.5インチ 1284×2778 × 8枚（6.9マスターの縮小＋中央クロップ）
+#   docs/release_information/screenshots/         6.9インチ 1320×2868 × 7枚
+#   docs/release_information/screenshots_6.5inch/ 6.5インチ 1284×2778 × 7枚（6.9マスターの縮小＋中央クロップ）
 #
 # 注意: screens/10-ai-plan-raw.png（TestFlight 表示入り）は存在しても使用禁止。
 set -euo pipefail
@@ -18,7 +18,7 @@ MAGICK="/opt/homebrew/bin/magick"
 TMP="$(mktemp -d)"
 
 # パネル順とファイル名（App Store の表示順 = ファイル名順を想定）
-NAMES=(01-record 02-ai-plan 03-home-calendar 04-analytics 05-checkin 06-social 07-achievements 08-share)
+NAMES=(01-record 02-ai-plan 03-home-calendar 04-analytics 05-social 06-achievements 07-share)
 
 # レンダラーは Playwright 同梱の Chromium（初回のみ `npx -y playwright install chromium`）。
 # Chrome.app のバイナリ直接起動は、本体 Chrome が起動中だと競合してハングするため使わない。
@@ -39,7 +39,7 @@ render pano 2640 "$TMP/pano.png"
 "$MAGICK" "$TMP/pano.png" -crop 1320x2868+1320+0 +repage "$OUT69/${NAMES[1]}.png"
 
 # 3〜8枚目: 個別レンダー
-for i in 3 4 5 6 7 8; do
+for i in 3 4 5 6 7; do
   hash=$(printf "%02d" "$i")
   name="${NAMES[$((i-1))]}"
   echo "render #$hash -> $name"
@@ -62,4 +62,4 @@ for name in "${NAMES[@]}"; do
   [ "$s65" = "1284x2778" ] || { echo "NG 6.5: $name = $s65"; fail=1; }
 done
 rm -rf "$TMP"
-[ "$fail" -eq 0 ] && echo "OK: 8 panels x 2 sizes generated" || exit 1
+[ "$fail" -eq 0 ] && echo "OK: 7 panels x 2 sizes generated" || exit 1
