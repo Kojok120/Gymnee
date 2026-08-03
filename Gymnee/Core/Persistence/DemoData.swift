@@ -74,6 +74,25 @@ enum DemoData {
             }
         }
 
+        // 直近の連続記録（連続日数リング・カレンダーの埋まり・今週の積み上げを実データで検証するため、
+        // 今日から遡って途切れない日を作る）。ベンチ履歴が飛び飛びなだけでは連続 1 日にしかならない。
+        let recentStreak: [(Int, String, String, Double, Int)] = [
+            (1, "脚", "スクワット", 100, 8),
+            (2, "背中", "ラットプルダウン", 55, 12),
+        ]
+        for (off, name, exerciseName, weight, reps) in recentStreak {
+            guard let date = cal.date(byAdding: .day, value: -off, to: today),
+                  let ex = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == exerciseName })))?.first
+            else { continue }
+            let workout = Workout(userId: userId, date: date, name: name, completedAt: date, isDirty: false)
+            context.insert(workout)
+            let we = WorkoutExercise(orderIndex: 0, workout: workout, exercise: ex, isDirty: false)
+            context.insert(we)
+            for i in 0..<3 {
+                context.insert(ExerciseSet(setIndex: i, weight: weight, reps: reps, isCompleted: true, workoutExercise: we, isDirty: false))
+            }
+        }
+
         // 身体メトリクス（体重推移チャート＋サイズ）のデモ。
         let bodyHistory: [(Int, Double, Double)] = [(120, 75.0, 18.0), (90, 74.2, 17.2), (60, 73.5, 16.5), (30, 73.0, 16.0), (1, 72.5, 15.0)]
         for (off, w, bf) in bodyHistory {
