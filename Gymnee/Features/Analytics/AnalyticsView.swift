@@ -72,11 +72,8 @@ struct AnalyticsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: Theme.Spacing.lg) {
-                bodyCard
-                bodyMetricsRow
-            }
-            .padding(Theme.Spacing.lg)
+            bodyCard
+                .padding(Theme.Spacing.lg)
         }
         .background(Theme.bg0)
         .navigationTitle("分析")
@@ -119,11 +116,25 @@ struct AnalyticsView: View {
                 // 回転中のタップ座標の扱いも読みにくいので採らない。
                 .transition(.opacity)
                 .id(face)
-                // 画面が小さい端末（SE 等）で図がカードを占有しないよう、表示領域に対する上限も掛ける。
-                .containerRelativeFrame(.vertical) { height, _ in min(Self.bodyHeight, height * 0.68) }
+                // 図以外（見出し・面ラベル・凡例・ヒント・余白）が使う分を引いた残りを図に充てる。
+                // 割合で抑えると小型端末でだけ溢れるので、固定の実測値を引く形にする。
+                .containerRelativeFrame(.vertical) { height, _ in
+                    min(Self.bodyHeight, max(Self.bodyHeightFloor, height - Self.bodyCardChrome))
+                }
                 .frame(maxWidth: .infinity)
                 // 図の外側に重ねる。BodyMapView 内のタップ判定には触らない。
                 .overlay(alignment: .topTrailing) { flipButton }
+                // 体重・体脂肪率は図の左右下に逃がす。図の枠はアスペクト比（0.568）で決まる一方、
+                // 脚の高さでは実際のシルエットが枠の 1/3 ほどまで細くなり、左右に必ず余白が残る。
+                // カードの外へ別行で置くと 1 画面に収まらず、体重を見るだけでスクロールが要っていた。
+                .overlay(alignment: .bottomLeading) {
+                    metricTile(label: "体重", value: latestWeight.map { "\(SetFormatting.weightString($0)) kg" },
+                               systemImage: "scalemass")
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    metricTile(label: "体脂肪率", value: latestBodyFat.map { String(format: "%.1f %%", $0) },
+                               systemImage: "percent")
+                }
                 .overlay { if showTapHint { tapHint } }
                 // 「裏返す」動作として左右スワイプでも切り替える（ボタンの発見性を補う）。
                 // `gesture` だと ScrollView のスクロールを奪って図の上で縦に流せなくなるため
@@ -146,9 +157,16 @@ struct AnalyticsView: View {
         .gymneeCard()
     }
 
-    /// 人体図の高さの上限。全幅まで伸ばすと凡例・ヒント・体重タイルが画面外に出るため、
-    /// スクロールがほとんど発生しない範囲での最大値に置く。
-    private static let bodyHeight: CGFloat = 470
+    /// 人体図の高さの上限。これ以上伸ばしても図の横幅はアスペクト比でカード幅に頭打ちになり、
+    /// 上下に余白が増えるだけなので大型端末ではここで止める。
+    private static let bodyHeight: CGFloat = 680
+
+    /// 図が潰れて部位を押せなくなる下限。ここを割るならスクロールさせる。
+    private static let bodyHeightFloor: CGFloat = 380
+
+    /// 図の上下でカードが使う高さ（外余白 32 ＋ カード余白 32 ＋ 見出し・面ラベル・凡例・ヒント・行間）。
+    /// 体重・体脂肪率は図の上に重ねたのでここには含まれない。
+    private static let bodyCardChrome: CGFloat = 175
 
     private var showTapHint: Bool { !bodyTapHinted && tapHintVisible }
 
@@ -233,31 +251,34 @@ struct AnalyticsView: View {
         return "今週は全部位に触れています。積み増すなら\(first.label)が狙い目です。"
     }
 
-    /// 体重・体脂肪率。未記録なら入力画面、記録済みなら推移画面へ（初回のつまずきを作らない）。
-    private var bodyMetricsRow: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            metricTile(label: "体重", value: latestWeight.map { "\(SetFormatting.weightString($0)) kg" },
-                       systemImage: "scalemass")
-            metricTile(label: "体脂肪率", value: latestBodyFat.map { String(format: "%.1f %%", $0) },
-                       systemImage: "percent")
-        }
-    }
+    /// 図の脚に被らないタイル幅。脚のシルエットは図の枠幅の 3 割ほどなので左右に 120pt 前後ずつ空くが、
+    /// いちばん余白が狭い SE（片側 122pt）でも足首との間が詰まって見えない値で止める。
+    private static let metricTileWidth: CGFloat = 106
 
+    /// 体重・体脂肪率。未記録なら入力画面、記録済みなら推移画面へ（初回のつまずきを作らない）。
+    /// カード面（bg1）の上に重ねるので、地は一段持ち上げた bg2 にしないと沈んで見えなくなる。
     private func metricTile(label: String, value: String?, systemImage: String) -> some View {
         Button {
             if value == nil { showAddMetric = true } else { showBodyMetrics = true }
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Label(label, systemImage: systemImage)
-                    .font(.caption).foregroundStyle(Theme.textTertiary)
+                    .font(.caption2).foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
                 Text(value ?? "記録する")
-                    .font(value == nil ? .subheadline.weight(.semibold) : .numS)
+                    .font(value == nil ? .footnote.weight(.semibold) : .numS)
                     .foregroundStyle(value == nil ? Theme.lime : Theme.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.6)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Theme.Spacing.md)
-            .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, Theme.Spacing.sm)
+            .frame(width: Self.metricTileWidth, alignment: .leading)
+            .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
+            // カード面との明度差が小さいので、縁で「押せる面」であることを示す（反転ボタンと同じ手）。
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
+                    .stroke(Theme.textTertiary.opacity(0.25), lineWidth: 0.8)
+            )
         }
         .buttonStyle(.plain)
     }
