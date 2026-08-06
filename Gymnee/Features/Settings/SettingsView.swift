@@ -319,8 +319,6 @@ struct SettingsView: View {
         try? context.delete(model: Exercise.self)
         try? context.delete(model: WorkoutExercise.self)
         try? context.delete(model: ExerciseSet.self)
-        try? context.delete(model: Routine.self)
-        try? context.delete(model: RoutineExercise.self)
         try? context.delete(model: PersonalRecord.self)
         try? context.delete(model: BodyMetric.self)
         try? context.delete(model: ProgressPhoto.self)

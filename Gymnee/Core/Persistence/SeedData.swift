@@ -126,8 +126,8 @@ enum SeedData {
                 let bMatch = spec.map { b.measurementType == $0.measure } ?? false
                 if aMatch != bMatch { return aMatch }
                 // ② 参照（記録・ルーティン）が多い方を残してデータ損失を避ける。
-                let aRefs = a.workoutExercises.count + a.routineExercises.count
-                let bRefs = b.workoutExercises.count + b.routineExercises.count
+                let aRefs = a.workoutExercises.count
+                let bRefs = b.workoutExercises.count
                 if aRefs != bRefs { return aRefs > bRefs }
                 // ③ 新しい方。
                 return a.updatedAt > b.updatedAt
@@ -148,11 +148,6 @@ enum SeedData {
                     we.exercise = keeper
                     we.updatedAt = .now
                     we.isDirty = true
-                }
-                for re in Array(loser.routineExercises) {
-                    re.exercise = keeper
-                    re.updatedAt = .now
-                    re.isDirty = true
                 }
                 context.delete(loser)
                 changed = true

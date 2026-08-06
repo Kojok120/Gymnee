@@ -13,7 +13,6 @@ enum LocalDataMigrator {
 
         // 所有者(user_id)を持つルート。
         reassignOwned(Workout.self, entity: "workouts", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
-        reassignOwned(Routine.self, entity: "routines", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(PersonalRecord.self, entity: "personal_records", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(BodyMetric.self, entity: "body_metrics", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
         reassignOwned(ProgressPhoto.self, entity: "progress_photos", context: context, into: &pending) { $0.userId == old } set: { $0.userId = new }
@@ -35,7 +34,6 @@ enum LocalDataMigrator {
         // push して RLS(42501) で永久滞留する**ため、親所有者が new の子行だけに限定する。
         reenqueueOwned(WorkoutExercise.self, entity: "workout_exercises", context: context, into: &pending) { $0.workout?.userId == new }
         reenqueueOwned(ExerciseSet.self, entity: "exercise_sets", context: context, into: &pending) { $0.workoutExercise?.workout?.userId == new }
-        reenqueueOwned(RoutineExercise.self, entity: "routine_exercises", context: context, into: &pending) { $0.routine?.userId == new }
 
         // 計画（PlannedWorkout）は端末ローカル専用（同期対象外）だが、各画面が userId で絞って表示するため
         // 付け替えないとサインイン後に旧計画が見えなくなる（孤児化）。送出は不要。
@@ -99,7 +97,6 @@ protocol SyncIdentifiable {
 
 // 各モデルの conformance（id / updatedAt / isDirty を持つ前提。モデル定義は変更しない）。
 extension Workout: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
-extension Routine: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension PersonalRecord: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension BodyMetric: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension ProgressPhoto: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
@@ -111,4 +108,3 @@ extension Follow: SyncIdentifiable { var syncId: UUID { id }; func markDirty() {
 extension Exercise: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension WorkoutExercise: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
 extension ExerciseSet: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }
-extension RoutineExercise: SyncIdentifiable { var syncId: UUID { id }; func markDirty() { updatedAt = .now; isDirty = true } }

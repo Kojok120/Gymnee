@@ -19,40 +19,15 @@ struct RecordView: View {
     @State private var gateOpen = false
     /// 計画/予定の「開始」から渡された、記録タブで再開するワークアウト（nil＝新規ライブ記録）。
     @State private var resumeTarget: Workout?
-    /// ゲートの「テンプレから始める」で作ったルーティンを初期モードにする（nil＝既定の計画/フリー）。
-    @State private var startMode: RecordMode?
-    @State private var showTemplatePicker = false
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
-    /// 完了ワークアウト（テンプレ導線の表示判定）。body 内の fetchCount を避け @Query で反応的に観測する。
-    @Query(filter: #Predicate<Workout> { $0.completedAt != nil })
-    private var completedWorkouts: [Workout]
 
     /// 中身（セット or メモ）のある自動保存下書きをすべて返す（新しい順）。各々をゲートにカード表示する。
     private func resumableDrafts(for uid: UUID) -> [Workout] {
         openDrafts.filter { w in
             w.userId == uid && (w.exercises.contains { !$0.sets.isEmpty } || !(w.note ?? "").isEmpty)
         }
-    }
-
-    /// テンプレからルーティンを作成・保存し、それを初期モードにして記録を開始する
-    /// （初回アクティベーション導線。保存＋同期は RoutineEditorView の完了時と同じ形）。
-    private func startWithTemplate(_ template: RoutineTemplates.Template, userId: UUID) {
-        let routine = RoutineTemplates.create(template, userId: userId, context: context)
-        routine.isDirty = true
-        try? context.save()
-        var pending = [PendingChange(entity: "routines", recordId: routine.id, operation: .upsert, updatedAt: routine.updatedAt)]
-        for re in routine.routineExercises {
-            if let ex = re.exercise {
-                pending.append(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
-            }
-            pending.append(PendingChange(entity: "routine_exercises", recordId: re.id, operation: .upsert, updatedAt: re.updatedAt))
-        }
-        sync.enqueueBatch(pending)
-        resumeTarget = nil
-        startMode = .routine(routine.id)
-        gateOpen = true
     }
 
     /// 下書きを破棄する。計画から開始していた下書きは、リンクした PlannedWorkout を未消化へ戻してから削除する
@@ -73,27 +48,16 @@ struct RecordView: View {
         NavigationStack {
             if let uid = auth.currentUserId {
                 if gateOpen {
-                    RecordContent(userId: uid, resuming: resumeTarget, initialMode: startMode,
-                                  onEnd: { gateOpen = false; resumeTarget = nil; startMode = nil })
+                    RecordContent(userId: uid, resuming: resumeTarget,
+                                  onEnd: { gateOpen = false; resumeTarget = nil })
                 } else {
                     StartGateView(
                         userId: uid,
                         resumables: resumableDrafts(for: uid),
-                        onStart: { resumeTarget = nil; startMode = nil; gateOpen = true },
-                        onResume: { draft in resumeTarget = draft; startMode = nil; gateOpen = true },
-                        onDiscard: { draft in discardDraft(draft) },
-                        onTemplates: { showTemplatePicker = true },
-                        showTemplates: !completedWorkouts.contains { $0.userId == uid }
+                        onStart: { resumeTarget = nil; gateOpen = true },
+                        onResume: { draft in resumeTarget = draft; gateOpen = true },
+                        onDiscard: { draft in discardDraft(draft) }
                     )
-                    .sheet(isPresented: $showTemplatePicker) {
-                        RoutineTemplatePicker(
-                            onSelect: { t in
-                                showTemplatePicker = false
-                                startWithTemplate(t, userId: uid)
-                            },
-                            onCancel: { showTemplatePicker = false }
-                        )
-                    }
                 }
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
@@ -121,10 +85,6 @@ private struct StartGateView: View {
     let onStart: () -> Void
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
-    /// テンプレ選択シートを開く（テンプレのルーティンで即開始）。
-    var onTemplates: () -> Void = {}
-    /// テンプレ導線の表示（新規ユーザー＝完了記録なしのみ true）。
-    var showTemplates: Bool = true
 
 
     var body: some View {
@@ -159,10 +119,6 @@ private struct StartGateView: View {
                             gateTile(title: "記録を開始", caption: "今すぐ始める",
                                      icon: "play.fill", primary: true, action: onStart)
                             // 補助導線は全幅の行カード（テキストリンクだと見落とされ押しづらいため）。
-                            // テンプレは新規ユーザー（完了記録なし）だけに出す活性化導線。
-                            if showTemplates {
-                                gateRow(title: "テンプレから始める", icon: "square.grid.2x2", action: onTemplates)
-                            }
                             // 履歴リンクは単発クロージャ型：RecordContent が push 経由(カレンダー編集/
                             // ワークアウト詳細)で開かれても pushed view 上の navigationDestination(for:) に
                             // 依存せず確実に遷移する（iOS 26.5 で子リンクが解決されない問題の回避。
@@ -286,23 +242,12 @@ enum DraftSummary {
     }
 }
 
-// MARK: - モード
-
-/// ①プルダウンのモード。フリー / 今日の計画 / ルーティン。
-enum RecordMode: Hashable {
-    case free
-    case plan
-    case routine(UUID)
-}
-
 // MARK: - 本体
 
 struct RecordContent: View {
     let userId: UUID
     /// 既存ワークアウトを開いて続き/編集する場合に指定（計画開始・過去編集）。nil は新規ライブ記録。
     var resuming: Workout?
-    /// 開始時のモード指定（ゲートの「テンプレから始める」用）。nil＝既定（今日計画あれば計画、無ければフリー）。
-    var initialMode: RecordMode?
     /// 完了時にタブのゲートへ戻すコールバック（タブ起点のみ）。nil＝従来の待機リセット。
     var onEnd: (() -> Void)?
 
@@ -313,13 +258,10 @@ struct RecordContent: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AppErrorCenter.self) private var errors
 
-    @Query private var routines: [Routine]
     @Query private var todayPlanned: [PlannedWorkout]
     @Query(sort: \Exercise.name) private var allExercises: [Exercise]
 
     @State private var restTimer = RestTimer()
-    @State private var mode: RecordMode = .free
-    @State private var modeInitialized = false
     @State private var activeWorkout: Workout?
     @State private var activePlanId: UUID?
     /// カードごとの weight ルーラー中央値（＝アーム値。記録に使う）。
@@ -336,7 +278,6 @@ struct RecordContent: View {
     /// @State の値型辞書ではなく参照型に持つ（identity 不変＝ビュー更新を誘発しない）。
     @State private var centersCache = CentersCache()
     @State private var showSummary = false
-    @State private var showModePicker = false
     @State private var editingExercise: Exercise?
     @State private var editingSet: ExerciseSet?
     /// 編集シートの「このセットを削除」の遅延実行先。シートが完全に閉じてから削除する
@@ -350,7 +291,7 @@ struct RecordContent: View {
     @State private var showMemo = false
     /// 録画中の暫定PRスパーク（その場の「更新ペース！」表示・非永続。確定は完了時）。
     @State private var prSpark: PRSpark?
-    /// フリーの選択中カテゴリタブ（③。よくやる/部位でカード一覧をフィルタ）。
+    /// 選択中カテゴリタブ（③。今日の計画/よくやる/部位でカード一覧を切り替える）。
     @State private var selectedTab: RecordCategoryTab = .group(.chest)
     /// 初期タブ決定済みフラグ（rebuild のたびに選択を上書きしない）。
     @State private var tabInitialized = false
@@ -376,12 +317,10 @@ struct RecordContent: View {
     // 破損値は安全側（friends）へ。公開面の fail-closed 方針に合わせ public フォールバックにしない。
     private var defaultVisibility: Visibility { Visibility(rawValue: defaultVisibilityRaw) ?? .friends }
 
-    init(userId: UUID, resuming: Workout? = nil, initialMode: RecordMode? = nil, onEnd: (() -> Void)? = nil) {
+    init(userId: UUID, resuming: Workout? = nil, onEnd: (() -> Void)? = nil) {
         self.userId = userId
         self.resuming = resuming
-        self.initialMode = initialMode
         self.onEnd = onEnd
-        _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
         let dayStart = Calendar.current.startOfDay(for: Date())
         let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
         _todayPlanned = Query(
@@ -394,9 +333,8 @@ struct RecordContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            modeBar
             logStrip
-            if mode == .free { categoryTabBar }
+            categoryTabBar
             cardsArea
         }
         .background(Theme.bg0)
@@ -439,7 +377,6 @@ struct RecordContent: View {
         .onChange(of: scenePhase) { _, phase in if phase == .active { restTimer.refresh() } }
         // 除外対象（編集中ワークアウト）が変わると前回値の計算結果も変わるためキャッシュを捨てる。
         .onChange(of: activeWorkout?.id) { _, _ in centersCache.values.removeAll() }
-        .sheet(isPresented: $showModePicker) { modePickerSheet }
         // 「その他」カード: その部位の種目ピッカー。選んだ/作った種目をタブへ永続追加する。
         // 新規作成でフォーム上の部位を変えた場合は、その種目の部位タブへ追加して切り替える
         // （開いていたタブに別部位の種目が居座らないように。一覧からの選択は常に同部位）。
@@ -499,9 +436,7 @@ struct RecordContent: View {
             discardAbandonedDrafts()
             if let resuming, activeWorkout == nil {
                 activeWorkout = resuming
-                modeInitialized = true
             } else {
-                initializeModeIfNeeded()
                 if !onboardingShown { showOnboarding = true }
             }
         }
@@ -529,29 +464,9 @@ struct RecordContent: View {
         if changed { try? context.save() }
     }
 
-    // MARK: - ① モードバー
-
-    private var modeBar: some View {
-        HStack(spacing: Theme.Spacing.sm) {
-            Button { showModePicker = true } label: {
-                HStack(spacing: 6) {
-                    Text(modeLabel).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Image(systemName: "chevron.up.chevron.down").font(.caption2)
-                }
-                .foregroundStyle(Theme.textPrimary)
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, Theme.Spacing.sm)
-                .background(Theme.bg1, in: Capsule())
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.sm)
-    }
-
     // MARK: - ③ カテゴリタブ
 
-    /// カテゴリタブ（フリーのみ・常時表示・横スクロール）。タップで下のカード一覧をフィルタする
+    /// カテゴリタブ（常時表示・横スクロール）。タップで下のカード一覧をフィルタする
     /// （旧: 部位Menu によるスクロールジャンプ → 居酒屋オーダーUI式のタブフィルタへ変更）。
     /// ④は横スワイプでも切り替わるため、選択が外から変わったら該当チップへ自動スクロールして
     /// 現在地を見失わないようにする。
@@ -574,6 +489,7 @@ struct RecordContent: View {
 
     private func tabLabel(_ tab: RecordCategoryTab) -> String {
         switch tab {
+        case .plan: return "今日の計画"
         case .frequent: return "よくやる"
         case .group(let mg): return mg.label
         }
@@ -590,14 +506,6 @@ struct RecordContent: View {
                 .foregroundStyle(selected ? Theme.bg0 : Theme.textSecondary)
         }
         .buttonStyle(.plain)
-    }
-
-    private var modeLabel: String {
-        switch mode {
-        case .free: return "フリー"
-        case .plan: return todayPlan.map { "本日の計画: \($0.title)" } ?? "本日の計画"
-        case .routine(let id): return routines.first { $0.id == id }?.name ?? "カスタムセット"
-        }
     }
 
     // MARK: - ② 記録ログ
@@ -690,32 +598,17 @@ struct RecordContent: View {
 
     // MARK: - ④ カード
 
-    @ViewBuilder
-    private var cardsArea: some View {
-        switch mode {
-        case .free:
-            freeCardsPager
-        case .plan, .routine:
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                    orderedCardsBody
-                }
-                .padding(Theme.Spacing.lg)
-            }
-        }
-    }
-
-    /// フリー：部位ごとの1ページ＝横スワイプで隣の部位へ移動できるページャ。③タブバーとは
+    /// 部位ごとの1ページ＝横スワイプで隣の部位へ移動できるページャ。③タブバーとは
     /// `selectedTab` で双方向に連動する（タップでもスワイプでも同じ状態を動かす）。
     /// 注意: カード内の値ルーラー（`SlotRuler`）も横スクロールのため、**ルーラーの上をなぞった
     /// ときはページ送りされない**（同一軸のネストスクロールは内側が優先される仕様）。
     /// 種目名・カード間の余白・タブバー付近でのスワイプで移動する想定。
-    private var freeCardsPager: some View {
+    private var cardsArea: some View {
         TabView(selection: $selectedTab) {
             ForEach(availableTabs, id: \.self) { tab in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                        freeCardsBody(for: tab)
+                        cardsBody(for: tab)
                     }
                     .padding(Theme.Spacing.lg)
                 }
@@ -726,39 +619,40 @@ struct RecordContent: View {
         .tabViewStyle(.page(indexDisplayMode: .never))
     }
 
-    /// ③タブバー／④ページャで共有する表示タブ順（よくやるは履歴がある時のみ）。
+    /// ③タブバー／④ページャで共有する表示タブ順。
+    /// 今日の計画があれば先頭に置く（計画は「今日やること」なので最初に目に入る場所が正しい）。
+    /// よくやるは履歴がある時のみ。
     private var availableTabs: [RecordCategoryTab] {
         var tabs: [RecordCategoryTab] = []
+        if todayPlan != nil { tabs.append(.plan) }
         if !frequentExercises.isEmpty { tabs.append(.frequent) }
         tabs.append(contentsOf: MuscleGroup.allCases.map { .group($0) })
         return tabs
     }
 
-    /// フリー：指定タブの種目カード。部位タブは「シェルフ」（既定=頻度トップ3→定番補完。
+    /// 指定タブの種目カード。部位タブは「シェルフ」（既定=頻度トップ3→定番補完。
     /// ユーザーが追加/削除でカスタマイズ可）＋末尾の「その他」カード。
+    /// 計画タブは計画の並び順そのまま（部位をまたぐのでシェルフ編集の対象にしない）。
     @ViewBuilder
-    private func freeCardsBody(for tab: RecordCategoryTab) -> some View {
+    private func cardsBody(for tab: RecordCategoryTab) -> some View {
         switch tab {
+        case .plan:
+            let specs = planCardSpecs
+            if specs.isEmpty {
+                EmptyStateView(systemImage: "calendar.badge.exclamationmark", title: "種目がありません",
+                               message: "今日の計画に種目がありません。")
+            } else {
+                cardGrid(specs)
+            }
         case .frequent:
-            cardGrid(frequentExercises.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) })
+            cardGrid(frequentExercises.map { CardSpec(exercise: $0, explicit: nil) })
         case .group(let mg):
             let shelf = shelfExercises(for: mg)
             if shelf.isEmpty {
                 Text("このタブに種目がありません。「その他」から追加できます。")
                     .font(.caption).foregroundStyle(Theme.textTertiary)
             }
-            shelfCardGrid(shelf.map { CardSpec(exercise: $0, routineExercise: nil, explicit: nil) }, group: mg)
-        }
-    }
-
-    @ViewBuilder
-    private var orderedCardsBody: some View {
-        let specs = orderedCardSpecs
-        if specs.isEmpty {
-            EmptyStateView(systemImage: "calendar.badge.exclamationmark", title: "種目がありません",
-                           message: mode == .plan ? "今日の計画に種目がありません。" : "このカスタムセットに種目がありません。")
-        } else {
-            cardGrid(specs)
+            shelfCardGrid(shelf.map { CardSpec(exercise: $0, explicit: nil) }, group: mg)
         }
     }
 
@@ -911,48 +805,6 @@ struct RecordContent: View {
         }
     }
 
-    // MARK: - モード選択シート
-
-    private var modePickerSheet: some View {
-        NavigationStack {
-            List {
-                Button { select(.free) } label: { modeRow("フリー", system: "infinity", selected: mode == .free) }
-                if let plan = todayPlan {
-                    Button { select(.plan) } label: { modeRow("本日の計画: \(plan.title)", system: "calendar", selected: mode == .plan) }
-                }
-                Section("カスタムセット") {
-                    ForEach(routines) { r in
-                        HStack {
-                            Button { select(.routine(r.id)) } label: {
-                                modeRow(r.name, system: "square.stack.3d.up.fill", selected: mode == .routine(r.id))
-                            }
-                            Spacer()
-                            Button { routineSession = .edit(r.id, container: context.container) } label: { Image(systemName: "pencil") }
-                                .buttonStyle(.plain).foregroundStyle(Theme.textSecondary)
-                        }
-                    }
-                    Button { createRoutine() } label: { Label("カスタムセットを作る", systemImage: "plus") }
-                }
-            }
-            .navigationTitle("表示する種目").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { showModePicker = false } } }
-            .sheet(item: $routineSession) { s in
-                RoutineEditorView(routine: s.routine, editorContext: s.context, isNew: s.isNew)
-            }
-        }
-        .presentationDetents([.medium, .large])
-    }
-
-    @State private var routineSession: RoutineEditSession?
-
-    private func modeRow(_ title: String, system: String, selected: Bool) -> some View {
-        HStack(spacing: Theme.Spacing.md) {
-            Image(systemName: system).foregroundStyle(Theme.lime).frame(width: 26)
-            Text(title).foregroundStyle(Theme.textPrimary)
-            Spacer()
-            if selected { Image(systemName: "checkmark").foregroundStyle(Theme.lime) }
-        }
-    }
 
     // MARK: - カード仕様 / スロット
 
@@ -977,38 +829,17 @@ struct RecordContent: View {
         return safeCount(angleCenter(for: spec), cap: 60)
     }
 
-    /// ルーティン/計画モードの順序付きカード。
-    private var orderedCardSpecs: [CardSpec] {
-        switch mode {
-        case .routine(let id):
-            guard let r = routines.first(where: { $0.id == id }) else { return [] }
-            return r.routineExercises.sorted { $0.orderIndex < $1.orderIndex }.compactMap { re in
-                guard let ex = re.exercise else { return nil }
-                return CardSpec(exercise: ex, routineExercise: re, explicit: nil)
-            }
-        case .plan:
-            return planCardSpecs
-        case .free:
-            return []
-        }
-    }
-
-    /// 計画モード：routineId があればそのルーティン、無ければ detailJSON の PlanExercise。
+    /// 計画タブ：`detailJSON` の PlanExercise を計画の並び順のままカードにする。
+    /// 重量/レップは計画値をカードの初期中央値に入れて、そのままタップで記録できるようにする。
     private var planCardSpecs: [CardSpec] {
-        guard let plan = todayPlan else { return [] }
-        if let rid = plan.routineId, let r = routines.first(where: { $0.id == rid }) {
-            return r.routineExercises.sorted { $0.orderIndex < $1.orderIndex }.compactMap { re in
-                guard let ex = re.exercise else { return nil }
-                return CardSpec(exercise: ex, routineExercise: re, explicit: nil)
-            }
-        }
-        guard let json = plan.detailJSON, let data = json.data(using: .utf8),
+        guard let plan = todayPlan,
+              let json = plan.detailJSON, let data = json.data(using: .utf8),
               let items = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data)
         else { return [] }
         return items.compactMap { item in
             guard let ex = allExercises.first(where: { $0.name == item.name }) else { return nil }
             let c = RecordSlots.Centers(weight: max(0, item.weight), reps: max(1, item.reps), duration: 0)
-            return CardSpec(exercise: ex, routineExercise: nil, explicit: c)
+            return CardSpec(exercise: ex, explicit: c)
         }
     }
 
@@ -1052,35 +883,37 @@ struct RecordContent: View {
             return (mg, FrequentExerciseRanker.rank(usage: filtered, asOf: .now, limit: 3, minExercises: 0))
         })
 
-        // 初期タブ：履歴があれば「よくやる」、無ければ胸。よくやるが消えた場合も部位へ退避。
+        // 初期タブ：今日の計画があればそれ、無ければ履歴ありで「よくやる」、それも無ければ胸。
+        // よくやる/計画が消えた場合も部位へ退避する。
         if !tabInitialized {
-            selectedTab = frequentExercises.isEmpty ? .group(.chest) : .frequent
+            selectedTab = defaultTab
             tabInitialized = true
         } else if frequentExercises.isEmpty, selectedTab == .frequent {
             selectedTab = .group(.chest)
+        } else if todayPlan == nil, selectedTab == .plan {
+            selectedTab = defaultTab
         }
     }
 
     // MARK: - 記録アクション
 
     /// セッション（Workout）を必要なら生成。最初のタップで開始。
+    ///
+    /// 計画タブで最初の1セットを記録したときだけ、そのセッションを今日の計画に紐づける
+    /// （＝計画を消化する）。計画がある日でも部位タブから始めたなら計画は未消化のまま残す。
+    /// 旧モードバー時代に「フリーへ切り替えて記録すれば計画は消えない」だった挙動を、
+    /// タブの選択で引き継ぐ。
     @discardableResult
     private func ensureWorkout() -> Workout {
         if let w = activeWorkout { return w }
         let name: String
-        var routineId: UUID?
-        switch mode {
-        case .free: name = "ワークアウト"
-        case .plan:
-            name = todayPlan?.title ?? "ワークアウト"
-            routineId = todayPlan?.routineId
-            activePlanId = todayPlan?.id
-        case .routine(let id):
-            let r = routines.first { $0.id == id }
-            name = r?.name ?? "ワークアウト"
-            routineId = id
+        if selectedTab == .plan, let plan = todayPlan {
+            name = plan.title
+            activePlanId = plan.id
+        } else {
+            name = "ワークアウト"
         }
-        let w = Workout(userId: userId, date: .now, name: name, routineId: routineId)
+        let w = Workout(userId: userId, date: .now, name: name)
         context.insert(w)
         try? context.save()   // 下書き(completedAt=nil)。サーバー同期は完了時のみ。
         activeWorkout = w
@@ -1235,16 +1068,8 @@ struct RecordContent: View {
     }
 
     private func currentSpec(for exerciseId: UUID) -> CardSpec? {
-        if let ex = allExercises.first(where: { $0.id == exerciseId }) {
-            switch mode {
-            case .routine(let id):
-                let re = routines.first { $0.id == id }?.routineExercises.first { $0.exercise?.id == exerciseId }
-                return CardSpec(exercise: ex, routineExercise: re, explicit: nil)
-            default:
-                return CardSpec(exercise: ex, routineExercise: nil, explicit: nil)
-            }
-        }
-        return nil
+        guard let ex = allExercises.first(where: { $0.id == exerciseId }) else { return nil }
+        return CardSpec(exercise: ex, explicit: nil)
     }
 
     // MARK: - 完了 / セッション終了
@@ -1375,23 +1200,13 @@ struct RecordContent: View {
         durCenters = [:]
         distCenters = [:]
         angleCenters = [:]
-        modeInitialized = false
-        initializeModeIfNeeded()
+        selectedTab = defaultTab
     }
 
-    private func initializeModeIfNeeded() {
-        guard !modeInitialized else { return }
-        mode = initialMode ?? (todayPlan != nil ? .plan : .free)
-        modeInitialized = true
-    }
-
-    private func select(_ newMode: RecordMode) {
-        mode = newMode
-        showModePicker = false
-    }
-
-    private func createRoutine() {
-        routineSession = .new(userId: userId, container: context.container)
+    /// 記録を始めるときに最初に開くタブ。今日の計画 → よくやる → 胸 の優先で選ぶ。
+    private var defaultTab: RecordCategoryTab {
+        if todayPlan != nil { return .plan }
+        return frequentExercises.isEmpty ? .group(.chest) : .frequent
     }
 
     // MARK: - 派生
@@ -1428,6 +1243,8 @@ struct RecordContent: View {
 
 /// フリーのカテゴリタブ（③）。よくやる＋部位でカード一覧をフィルタする。
 private enum RecordCategoryTab: Hashable {
+    /// 今日の計画（ある日だけ先頭に出る）。
+    case plan
     case frequent
     case group(MuscleGroup)
 }
@@ -1442,8 +1259,7 @@ private struct ShelfPickerTarget: Identifiable {
 
 private struct CardSpec {
     let exercise: Exercise
-    let routineExercise: RoutineExercise?
-    /// 計画モードなどで明示的に与える中央値（nil なら RecordSlots で算出）。
+    /// 計画タブなどで明示的に与える中央値（nil なら RecordSlots で算出）。
     let explicit: RecordSlots.Centers?
 }
 
