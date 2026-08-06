@@ -14,11 +14,9 @@ struct DayDetailView: View {
     @Environment(GoogleCalendarService.self) private var googleCalendar
     @Query private var workouts: [Workout]
     @Query private var planned: [PlannedWorkout]
-    @Query private var routines: [Routine]
     @State private var showAddPlan = false
     // 計画追加の下書き選択（保存するまで永続化しない）。
     @State private var planDraftTitle: String?
-    @State private var planDraftRoutineId: UUID?
 
     private let calendar = Calendar.current
 
@@ -46,7 +44,6 @@ struct DayDetailView: View {
             filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone && $0.date >= start && $0.date < end },
             sort: \PlannedWorkout.date
         )
-        _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
     }
 
     var body: some View {
@@ -111,20 +108,14 @@ struct DayDetailView: View {
         .sheet(isPresented: $showAddPlan) { addPlanSheet }
     }
 
-    /// 計画追加シート（カスタムセットから or 自由入力）。WeekPlannerView の追加シートと同形。
+    /// 計画追加シート。WeekPlannerView の追加シートと同形。
     /// 行タップは「選択」のみ。右上「保存」を押すまで永続化しない。
     private var addPlanSheet: some View {
         NavigationStack {
             List {
-                Section("カスタムセットから") {
-                    if routines.isEmpty { Text("カスタムセット未作成").foregroundStyle(.secondary) }
-                    ForEach(routines) { r in
-                        planSelectRow(title: r.name, routineId: r.id)
-                    }
-                }
-                Section("自由入力") {
-                    ForEach(["胸の日", "背中の日", "脚の日", "肩・腕", "有酸素", "休養"], id: \.self) { t in
-                        planSelectRow(title: t, routineId: nil)
+                Section("種類") {
+                    ForEach(PlanTitles.presets, id: \.self) { t in
+                        planSelectRow(title: t)
                     }
                 }
             }
@@ -143,11 +134,10 @@ struct DayDetailView: View {
 
     /// 計画追加シートの選択行（タップで選択、チェックマーク表示。保存まで永続化しない）。
     @ViewBuilder
-    private func planSelectRow(title: String, routineId: UUID?) -> some View {
-        let isSelected = planDraftRoutineId == routineId && planDraftTitle == title
+    private func planSelectRow(title: String) -> some View {
+        let isSelected = planDraftTitle == title
         Button {
             planDraftTitle = title
-            planDraftRoutineId = routineId
         } label: {
             HStack {
                 Text(title).foregroundStyle(Theme.textPrimary)
@@ -168,7 +158,7 @@ struct DayDetailView: View {
 
     /// 計画を開始＝実記録に変えて記録タブで開く（過去ワークアウトの編集はカレンダー内のまま）。
     private func startPlan(_ plan: PlannedWorkout) {
-        let workout = PlanStarter.start(plan, userId: userId, routines: routines, context: context)
+        let workout = PlanStarter.start(plan, userId: userId, context: context)
         NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil,
                                         userInfo: ["workoutId": workout.id.uuidString])
     }
@@ -183,7 +173,7 @@ struct DayDetailView: View {
     /// 「保存」押下時のみ永続化。下書き選択をクリアしてシートを閉じる。
     private func savePlan() {
         guard let title = planDraftTitle else { return }
-        addPlan(title: title, routineId: planDraftRoutineId)
+        addPlan(title: title)
         closeAddPlan()
     }
 
@@ -191,13 +181,12 @@ struct DayDetailView: View {
     private func closeAddPlan() {
         showAddPlan = false
         planDraftTitle = nil
-        planDraftRoutineId = nil
     }
 
     /// その日に計画を追加（今日・未来のみ）。PlannedWorkout は端末ローカルのみ（同期対象外）。
-    private func addPlan(title: String, routineId: UUID?) {
+    private func addPlan(title: String) {
         let day = calendar.startOfDay(for: date) // plannedDays/クエリは startOfDay 基準
-        let plan = PlannedWorkout(userId: userId, date: day, title: title, routineId: routineId)
+        let plan = PlannedWorkout(userId: userId, date: day, title: title)
         context.insert(plan)
         try? context.save()
         // 計画作成時に Google カレンダーへ終日予定として自動追加（連携中のみ）。

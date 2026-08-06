@@ -16,13 +16,11 @@ struct WeekPlannerView: View {
     @Environment(LocalSyncEngine.self) private var syncEngine
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
     @Query private var planned: [PlannedWorkout]
-    @Query private var routines: [Routine]
     @Query private var recentWorkouts: [Workout]
 
     @State private var addDay: PlanDay?
     // 計画追加の下書き選択（保存するまで永続化しない）。
     @State private var planDraftTitle: String?
-    @State private var planDraftRoutineId: UUID?
     @State private var aiInfo = false
     @State private var aiRunning = false
     /// カレンダー連携のミニシート（設定と同じ行を共用）。
@@ -60,7 +58,6 @@ struct WeekPlannerView: View {
         self.userId = userId
         self.onStart = onStart
         _planned = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId }, sort: \PlannedWorkout.date)
-        _routines = Query(filter: #Predicate<Routine> { $0.userId == userId }, sort: \Routine.name)
         let since = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
         _recentWorkouts = Query(
             filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil && $0.date >= since },
@@ -207,13 +204,9 @@ struct WeekPlannerView: View {
     private func addSheet(_ day: Date) -> some View {
         NavigationStack {
             List {
-                Section("カスタムセットから") {
-                    if routines.isEmpty {
-                        Text("カスタムセットがありません。「カスタムセット」から胸の日などのテンプレで作成すると、計画に使えます。")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    ForEach(routines) { r in
-                        planSelectRow(title: r.name, routineId: r.id)
+                Section("種類") {
+                    ForEach(PlanTitles.presets, id: \.self) { t in
+                        planSelectRow(title: t)
                     }
                 }
             }
@@ -232,11 +225,10 @@ struct WeekPlannerView: View {
 
     /// 計画追加シートの選択行（タップで選択、チェックマーク表示。保存まで永続化しない）。
     @ViewBuilder
-    private func planSelectRow(title: String, routineId: UUID?) -> some View {
-        let isSelected = planDraftRoutineId == routineId && planDraftTitle == title
+    private func planSelectRow(title: String) -> some View {
+        let isSelected = planDraftTitle == title
         Button {
             planDraftTitle = title
-            planDraftRoutineId = routineId
         } label: {
             HStack {
                 Text(title).foregroundStyle(Theme.textPrimary)
@@ -269,20 +261,18 @@ struct WeekPlannerView: View {
     /// 「保存」押下時のみ永続化。下書き選択をクリアしてシートを閉じる。
     private func savePlan(on day: Date) {
         guard let title = planDraftTitle else { return }
-        add(title: title, routineId: planDraftRoutineId, on: day)
+        add(title: title, on: day)
         planDraftTitle = nil
-        planDraftRoutineId = nil
     }
 
     /// シートを閉じて下書き選択を破棄（保存せず）。
     private func closeAdd() {
         addDay = nil
         planDraftTitle = nil
-        planDraftRoutineId = nil
     }
 
-    private func add(title: String, routineId: UUID?, on day: Date) {
-        let p = PlannedWorkout(userId: userId, date: day, title: title, routineId: routineId)
+    private func add(title: String, on day: Date) {
+        let p = PlannedWorkout(userId: userId, date: day, title: title)
         context.insert(p)
         try? context.save()
         addDay = nil
@@ -296,7 +286,7 @@ struct WeekPlannerView: View {
 
     /// 計画を「開始」：共通ロジックで実記録を作成し（AI詳細→ルーティン→空）ロガーを開く。
     private func start(_ plan: PlannedWorkout) {
-        onStart(PlanStarter.start(plan, userId: userId, routines: routines, context: context))
+        onStart(PlanStarter.start(plan, userId: userId, context: context))
     }
 
     /// AI計画のサインイン促し（ゲストがAIボタンを押した時。生成はクラウドで行うためサインイン必須）。
@@ -563,7 +553,6 @@ struct WeekPlannerView: View {
             fmt.calendar = cal
             fmt.locale = Locale(identifier: "en_US_POSIX")
             let dayStrings = days.map { fmt.string(from: $0) }
-            let routineNames = routines.map(\.name)
             let evs: [[String: Any]] = days.flatMap { d in
                 events(on: d).map { ev in
                     ["title": ev.title, "date": fmt.string(from: ev.start), "allDay": ev.isAllDay]
@@ -577,7 +566,7 @@ struct WeekPlannerView: View {
             if let hrv = aiHRV { condition["hrvMs"] = Int(hrv) }
             let messages = aiMessages.suffix(10).map { ["role": $0.role == .user ? "user" : "assistant", "text": $0.text] }
             let result = await auth.planWorkouts(
-                days: dayStrings, routines: routineNames, weeklyGoal: weeklyGoal,
+                days: dayStrings, routines: PlanTitles.presets, weeklyGoal: weeklyGoal,
                 events: evs, history: history, recovery: recovery,
                 condition: condition, messages: Array(messages), currentPlan: currentPlanPayload(formatter: fmt)
             )

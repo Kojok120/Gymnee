@@ -10,8 +10,6 @@ final class PlannedWorkout {
     /// 計画日（その日の予定）。
     var date: Date
     var title: String
-    /// 紐づくルーティン（任意）。
-    var routineId: UUID?
     var note: String?
     /// AI が組んだ種目内容（[PlanExercise] の JSON）。開始時にこの内容で実記録をプリフィルする。
     var detailJSON: String?
@@ -26,7 +24,6 @@ final class PlannedWorkout {
         userId: UUID,
         date: Date,
         title: String,
-        routineId: UUID? = nil,
         note: String? = nil,
         isDone: Bool = false,
         completedWorkoutId: UUID? = nil,
@@ -37,7 +34,6 @@ final class PlannedWorkout {
         self.userId = userId
         self.date = date
         self.title = title
-        self.routineId = routineId
         self.note = note
         self.isDone = isDone
         self.completedWorkoutId = completedWorkoutId

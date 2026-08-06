@@ -29,7 +29,7 @@ final class LocalSyncEngine: SyncEngine {
     private let syncedTables = [
         "profiles",
         "workouts", "exercises", "workout_exercises", "exercise_sets",
-        "routines", "routine_exercises", "personal_records",
+        "personal_records",
         "body_metrics", "progress_photos", "follows", "blocks", "reports", "feed_items", "post_reactions",
         "comments", "products", "supply_logs", "subscriptions",
     ]

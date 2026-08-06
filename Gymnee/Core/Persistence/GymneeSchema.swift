@@ -11,8 +11,6 @@ enum GymneeSchemaV1: VersionedSchema {
             Exercise.self,
             WorkoutExercise.self,
             ExerciseSet.self,
-            Routine.self,
-            RoutineExercise.self,
             PersonalRecord.self,
             BodyMetric.self,
             ProgressPhoto.self,

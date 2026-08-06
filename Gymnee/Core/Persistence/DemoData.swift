@@ -93,6 +93,17 @@ enum DemoData {
             }
         }
 
+        // 今日の計画（記録画面の「今日の計画」タブ・週プランナーの検証用）。
+        // AI 計画と同じく detailJSON に種目を持たせる（計画タブはこの JSON からカードを作る）。
+        let planExercises = """
+        [{"name":"ベンチプレス","muscleGroup":"chest","sets":3,"reps":8,"weight":75},\
+        {"name":"ラットプルダウン","muscleGroup":"back","sets":3,"reps":10,"weight":55},\
+        {"name":"スクワット","muscleGroup":"legs","sets":3,"reps":5,"weight":100}]
+        """
+        let plan = PlannedWorkout(userId: userId, date: today, title: "胸の日", isDirty: false)
+        plan.detailJSON = planExercises
+        context.insert(plan)
+
         // 身体メトリクス（体重推移チャート＋サイズ）のデモ。
         let bodyHistory: [(Int, Double, Double)] = [(120, 75.0, 18.0), (90, 74.2, 17.2), (60, 73.5, 16.5), (30, 73.0, 16.0), (1, 72.5, 15.0)]
         for (off, w, bf) in bodyHistory {

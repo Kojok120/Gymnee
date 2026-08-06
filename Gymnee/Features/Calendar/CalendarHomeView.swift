@@ -29,7 +29,6 @@ private struct CalendarHomeContent: View {
     @State private var selectedDate: SelectedDay?
     @State private var editingWorkout: Workout?
     @State private var showPlanner = false
-    @State private var showRoutines = false
     @State private var showNotifPrePrompt = false
     @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
@@ -53,7 +52,6 @@ private struct CalendarHomeContent: View {
                 heroCard
                 calendarCard
                 plannerButton
-                routinesButton
                 upcomingSection
             }
             .padding(Theme.Spacing.lg)
@@ -71,12 +69,6 @@ private struct CalendarHomeContent: View {
                                                     userInfo: ["workoutId": w.id.uuidString])
                 })
                     .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showPlanner = false } } }
-            }
-        }
-        .sheet(isPresented: $showRoutines) {
-            NavigationStack {
-                RoutinesView(userId: userId)
-                    .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showRoutines = false } } }
             }
         }
         .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
@@ -313,26 +305,6 @@ private struct CalendarHomeContent: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("計画を立てる").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
                     Text("予定・回復をみてAIが期間のメニューを提案").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .gymneeCard(padding: Theme.Spacing.md)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var routinesButton: some View {
-        Button { showRoutines = true } label: {
-            HStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "square.stack.3d.up.fill")
-                    .foregroundStyle(Theme.lime)
-                    .frame(width: 36, height: 36)
-                    .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("カスタムセットを管理する").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                    Text("カスタムセットの追加・編集・削除").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)

@@ -4,10 +4,10 @@ import SwiftData
 /// 計画(PlannedWorkout)を実記録(Workout)に変換する共通ロジック（§6.5）。
 /// WeekPlanner と 記録ホームの「今日の計画」の双方から使う。
 enum PlanStarter {
-    /// 計画から実記録を作成し、AI詳細→ルーティン→空 の優先で種目をプリフィル。計画は完了扱いにする。
+    /// 計画から実記録を作成し、AI詳細があれば種目をプリフィル。計画は完了扱いにする。
     @MainActor
-    static func start(_ plan: PlannedWorkout, userId: UUID, routines: [Routine], context: ModelContext) -> Workout {
-        let workout = Workout(userId: userId, date: .now, name: plan.title, routineId: plan.routineId)
+    static func start(_ plan: PlannedWorkout, userId: UUID, context: ModelContext) -> Workout {
+        let workout = Workout(userId: userId, date: .now, name: plan.title)
         context.insert(workout)
 
         if let json = plan.detailJSON, let data = json.data(using: .utf8),
@@ -19,20 +19,6 @@ enum PlanStarter {
                 context.insert(we)
                 for s in 0..<max(pe.sets, 1) {
                     context.insert(ExerciseSet(setIndex: s, weight: pe.weight, reps: pe.reps, workoutExercise: we))
-                }
-            }
-        } else if let rid = plan.routineId, let routine = routines.first(where: { $0.id == rid }) {
-            // ルーティンから（種目＋前回値）。
-            let ordered = routine.routineExercises.sorted { $0.orderIndex < $1.orderIndex }
-            for (i, re) in ordered.enumerated() {
-                guard let exercise = re.exercise else { continue }
-                let we = WorkoutExercise(orderIndex: i, restSeconds: re.restSeconds, workout: workout, exercise: exercise)
-                context.insert(we)
-                let prev = WorkoutMetrics.previousSets(for: exercise, userId: userId, excludingWorkoutId: workout.id)
-                let setCount = max(re.targetSets, prev.count)
-                for s in 0..<setCount {
-                    let p = s < prev.count ? prev[s] : nil
-                    context.insert(ExerciseSet(setIndex: s, weight: p?.weight ?? 0, reps: p?.reps ?? 0, workoutExercise: we))
                 }
             }
         }

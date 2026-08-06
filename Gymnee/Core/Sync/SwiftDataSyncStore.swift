@@ -54,8 +54,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "exercises":         return fetchExercise(id).flatMap { $0.isCustom ? encodeExercise($0) : nil }
         case "workout_exercises": return fetchWorkoutExercise(id).map(encodeWorkoutExercise)
         case "exercise_sets":     return fetchExerciseSet(id).map(encodeExerciseSet)
-        case "routines":          return fetchRoutine(id).map(encodeRoutine)
-        case "routine_exercises": return fetchRoutineExercise(id).map(encodeRoutineExercise)
         case "personal_records":  return fetchPersonalRecord(id).map(encodePersonalRecord)
         case "body_metrics":      return fetchBodyMetric(id).map(encodeBodyMetric)
         case "progress_photos":   return fetchProgressPhoto(id).map(encodeProgressPhoto)
@@ -124,8 +122,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
             case "exercises":         applyExercise(row)
             case "workout_exercises": applyWorkoutExercise(row)
             case "exercise_sets":     applyExerciseSet(row)
-            case "routines":          applyRoutine(row)
-            case "routine_exercises": applyRoutineExercise(row)
             case "personal_records":  applyPersonalRecord(row)
             case "body_metrics":      applyBodyMetric(row)
             case "progress_photos":   applyProgressPhoto(row)
@@ -238,7 +234,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - workouts
     private func encodeWorkout(_ m: Workout) -> [String: Any] {
         ["id": lower(m.id), "user_id": lower(ownerId(m.userId)),
-         "date": iso(m.date), "name": m.name, "routine_id": opt(m.routineId?.uuidString.lowercased()),
+         "date": iso(m.date), "name": m.name,
          "note": opt(m.note), "is_planned": m.isPlanned, "completed_at": opt(m.completedAt.map(iso)),
          "duration_seconds": opt(m.durationSeconds), "photo_url": opt(m.photoURL), "caption": opt(m.caption),
          "updated_at": iso(m.updatedAt)]
@@ -251,7 +247,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.userId = uuid(row["user_id"]) ?? m.userId
         m.date = date(row["date"]) ?? m.date
         m.name = str(row["name"]) ?? m.name
-        m.routineId = uuid(row["routine_id"])
         m.note = str(row["note"])
         m.isPlanned = bool(row["is_planned"]) ?? m.isPlanned
         m.completedAt = date(row["completed_at"])
@@ -344,44 +339,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.isCompleted = bool(row["is_completed"]) ?? m.isCompleted
         m.workoutExercise = uuid(row["workout_exercise_id"]).flatMap(fetchWorkoutExercise)
         m.createdAt = date(row["created_at"]) ?? m.createdAt
-        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
-        m.isDirty = false
-    }
-
-    // MARK: - routines
-    private func encodeRoutine(_ m: Routine) -> [String: Any] {
-        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "name": m.name, "note": opt(m.note), "updated_at": iso(m.updatedAt)]
-    }
-    private func applyRoutine(_ row: [String: Any]) {
-        guard let id = uuid(row["id"]) else { return }
-        let existing = fetchRoutine(id)
-        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
-        let m = existing ?? insert(Routine(id: id, userId: uuid(row["user_id"]) ?? UUID(), name: str(row["name"]) ?? "カスタムセット"))
-        m.userId = uuid(row["user_id"]) ?? m.userId
-        m.name = str(row["name"]) ?? m.name
-        m.note = str(row["note"])
-        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
-        m.isDirty = false
-    }
-
-    // MARK: - routine_exercises
-    private func encodeRoutineExercise(_ m: RoutineExercise) -> [String: Any] {
-        ["id": lower(m.id), "routine_id": opt(m.routine?.id.uuidString.lowercased()),
-         "exercise_id": opt(m.exercise?.id.uuidString.lowercased()), "order_index": m.orderIndex,
-         "target_sets": m.targetSets, "target_reps": opt(m.targetReps), "rest_seconds": opt(m.restSeconds),
-         "updated_at": iso(m.updatedAt)]
-    }
-    private func applyRoutineExercise(_ row: [String: Any]) {
-        guard let id = uuid(row["id"]) else { return }
-        let existing = fetchRoutineExercise(id)
-        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
-        let m = existing ?? insert(RoutineExercise(id: id, orderIndex: int(row["order_index"]) ?? 0))
-        m.orderIndex = int(row["order_index"]) ?? m.orderIndex
-        m.targetSets = int(row["target_sets"]) ?? m.targetSets
-        m.targetReps = int(row["target_reps"])
-        m.restSeconds = int(row["rest_seconds"])
-        m.routine = uuid(row["routine_id"]).flatMap(fetchRoutine)
-        m.exercise = uuid(row["exercise_id"]).flatMap(fetchExercise)
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
     }
@@ -678,8 +635,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "exercises":         seed(try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "workout_exercises": seed(try? context.fetch(FetchDescriptor<WorkoutExercise>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "exercise_sets":     seed(try? context.fetch(FetchDescriptor<ExerciseSet>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
-        case "routines":          seed(try? context.fetch(FetchDescriptor<Routine>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
-        case "routine_exercises": seed(try? context.fetch(FetchDescriptor<RoutineExercise>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "personal_records":  seed(try? context.fetch(FetchDescriptor<PersonalRecord>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "body_metrics":      seed(try? context.fetch(FetchDescriptor<BodyMetric>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "progress_photos":   seed(try? context.fetch(FetchDescriptor<ProgressPhoto>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
@@ -716,8 +671,6 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func fetchExercise(_ id: UUID) -> Exercise? { memoized("exercises", id) { first(FetchDescriptor<Exercise>(predicate: #Predicate { $0.id == id })) } }
     private func fetchWorkoutExercise(_ id: UUID) -> WorkoutExercise? { memoized("workout_exercises", id) { first(FetchDescriptor<WorkoutExercise>(predicate: #Predicate { $0.id == id })) } }
     private func fetchExerciseSet(_ id: UUID) -> ExerciseSet? { memoized("exercise_sets", id) { first(FetchDescriptor<ExerciseSet>(predicate: #Predicate { $0.id == id })) } }
-    private func fetchRoutine(_ id: UUID) -> Routine? { memoized("routines", id) { first(FetchDescriptor<Routine>(predicate: #Predicate { $0.id == id })) } }
-    private func fetchRoutineExercise(_ id: UUID) -> RoutineExercise? { memoized("routine_exercises", id) { first(FetchDescriptor<RoutineExercise>(predicate: #Predicate { $0.id == id })) } }
     private func fetchPersonalRecord(_ id: UUID) -> PersonalRecord? { memoized("personal_records", id) { first(FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.id == id })) } }
     private func fetchBodyMetric(_ id: UUID) -> BodyMetric? { memoized("body_metrics", id) { first(FetchDescriptor<BodyMetric>(predicate: #Predicate { $0.id == id })) } }
     private func fetchProgressPhoto(_ id: UUID) -> ProgressPhoto? { memoized("progress_photos", id) { first(FetchDescriptor<ProgressPhoto>(predicate: #Predicate { $0.id == id })) } }

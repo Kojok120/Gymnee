@@ -17,7 +17,6 @@ struct RootView: View {
     @AppStorage("gymnee.setupDone") private var setupDone = false
     #if DEBUG
     @State private var debugWorkout: Workout?
-    @State private var debugRoutine: Routine?
     #endif
 
     var body: some View {
@@ -80,10 +79,6 @@ struct RootView: View {
         if DebugSupport.screen == "logger", debugWorkout == nil {
             debugWorkout = DemoData.makeLoggerWorkout(context, userId: uid)
         }
-        if DebugSupport.screen == "routine", debugRoutine == nil {
-            debugRoutine = RoutineTemplates.create(RoutineTemplates.all[0], userId: uid, context: context)
-            try? context.save()
-        }
         #endif
     }
 
@@ -96,12 +91,6 @@ struct RootView: View {
         case "social": SocialFeedView()
         case "friends": SocialFeedView(openFriends: true)
         case "shop": ShopView()
-        case "routine":
-            if let r = debugRoutine {
-                NavigationStack { RoutineEditorView(routine: r, editorContext: context) }
-            } else {
-                NavigationStack { RoutinesView(userId: userId) }
-            }
         case "analytics": NavigationStack { AnalyticsView(userId: userId) }
         case "muscle":
             // 人体図の部位タップ先（種目のベスト一覧）の検証用。デモで最も記録が多い部位を開く。

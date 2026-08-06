@@ -8,8 +8,6 @@ final class Workout {
     var userId: UUID
     var date: Date
     var name: String
-    /// テンプレ参照（§4.2 routine_id nullable）。軽量参照のため UUID で保持。
-    var routineId: UUID?
     /// 自分用のメモ（非公開）。公開コメントは caption を使う。
     var note: String?
     /// 予定→実績（§6.2）。未来日に計画したワークアウトかどうか、消化済みか。
@@ -35,7 +33,6 @@ final class Workout {
         userId: UUID,
         date: Date = .now,
         name: String = "ワークアウト",
-        routineId: UUID? = nil,
         note: String? = nil,
         isPlanned: Bool = false,
         completedAt: Date? = nil,
@@ -50,7 +47,6 @@ final class Workout {
         self.userId = userId
         self.date = date
         self.name = name
-        self.routineId = routineId
         self.note = note
         self.isPlanned = isPlanned
         self.completedAt = completedAt
@@ -101,9 +97,6 @@ final class Exercise {
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutExercise.exercise)
     var workoutExercises: [WorkoutExercise] = []
-
-    @Relationship(deleteRule: .nullify, inverse: \RoutineExercise.exercise)
-    var routineExercises: [RoutineExercise] = []
 
     @Relationship(deleteRule: .cascade, inverse: \PersonalRecord.exercise)
     var personalRecords: [PersonalRecord] = []
