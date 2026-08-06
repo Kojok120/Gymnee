@@ -15,6 +15,8 @@ struct RootView: View {
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .workout
     @AppStorage("gymnee.setupDone") private var setupDone = false
+    /// ストア退避（GymneeSchema.makeContainer の復旧パス）が起きた直後の一度きりの通知。
+    @AppStorage(GymneeSchema.recoveryPendingKey) private var storeRecoveryPending = false
     #if DEBUG
     @State private var debugWorkout: Workout?
     #endif
@@ -42,6 +44,13 @@ struct RootView: View {
                 Button("OK", role: .cancel) {}
             } message: { msg in
                 Text(msg)
+            }
+            // ストア退避が起きた（＝端末上の記録を読み込めず新しい保存領域で起動した）ことの通知。
+            // 黙って空の状態を見せると「記録が消えた」動揺と誤った再入力を招くため、事実と窓口を一度だけ示す。
+            .alert("データの読み込みに問題が発生しました", isPresented: $storeRecoveryPending) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("端末内の記録を読み込めなかったため、保存領域を作り直しました。元のデータは端末内に退避してあります。サインイン済みの場合、同期済みの記録は自動的に復元されます。心当たりのない場合はお問い合わせください。")
             }
     }
 
