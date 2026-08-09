@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 enum AppTab: Hashable {
-    case calendar, workout, character, social, other
+    case workout, analytics, character, social, other
 }
 
 /// アプリのルート。サインインウォールは置かず、未サインインなら**ゲスト（ローカル）で即開始**する（§5）。
@@ -12,8 +12,12 @@ enum AppTab: Hashable {
 struct RootView: View {
     @Environment(AuthService.self) private var auth
     @Environment(AppErrorCenter.self) private var errors
+    @Environment(NotificationService.self) private var notifications
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .workout
+    /// 「その他」タブのナビゲーションスタック。カレンダー/ショップを外（通知・記録キャンセル）から
+    /// 開くため、パスをルート側で持つ。
+    @State private var otherPath: [AppRoute] = []
     @AppStorage("gymnee.setupDone") private var setupDone = false
     /// ストア退避（GymneeSchema.makeContainer の復旧パス）が起きた直後の一度きりの通知。
     @AppStorage(GymneeSchema.recoveryPendingKey) private var storeRecoveryPending = false
@@ -33,6 +37,9 @@ struct RootView: View {
                     await auth.restoreBackendSession()
                 }
                 ensureGuestSession()
+                // カレンダーをタブから外したため、Widget スナップショットと通知予約は
+                // 画面到達に依存させず起動時にも回す（§6.10）。
+                syncPlatformOnLaunch()
             }
             // サインアウト後もウォールへ戻さず、新しいゲストで続行（再サインインは設定から）。
             .onChange(of: auth.isSignedIn) { _, signedIn in
@@ -52,6 +59,13 @@ struct RootView: View {
             } message: {
                 Text("端末内の記録を読み込めなかったため、保存領域を作り直しました。元のデータは端末内に退避してあります。サインイン済みの場合、同期済みの記録は自動的に復元されます。心当たりのない場合はお問い合わせください。")
             }
+    }
+
+    /// 起動時の Widget スナップショット更新＋通知予約。許諾ダイアログはここでは出さない
+    /// （プリパーミッションはカレンダー画面が担当する）。
+    private func syncPlatformOnLaunch() {
+        guard let uid = auth.currentUserId else { return }
+        PlatformSync.run(userId: uid, context: context, notifications: notifications)
     }
 
     /// 未サインインならゲスト（ローカル）セッションを自動開始する。
@@ -121,7 +135,7 @@ struct RootView: View {
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()
         case "character": CharacterRoomView(userId: userId)
-        case "other": OtherTabView(userId: userId)
+        case "other": OtherTabView(userId: userId, path: $otherPath)
         case "summary":
             // 完了サマリーの検証用：デモの最新完了ワークアウトを表示（週次はゴール達成状態）。
             if let w = latestCompletedWorkout(userId: userId) {
@@ -203,9 +217,9 @@ struct RootView: View {
                 .tabItem { Label("記録", systemImage: "dumbbell.fill") }
                 .tag(AppTab.workout)
 
-            CalendarHomeView()
-                .tabItem { Label("カレンダー", systemImage: "calendar") }
-                .tag(AppTab.calendar)
+            analyticsTab
+                .tabItem { Label("分析", systemImage: "chart.bar.xaxis") }
+                .tag(AppTab.analytics)
 
             characterTab
                 .tabItem { Label("育成", systemImage: "figure.strengthtraining.traditional") }
@@ -230,9 +244,9 @@ struct RootView: View {
                 selection = .social
             }
         }
-        // 記録のキャンセルからカレンダータブへ。
+        // 記録のキャンセルからカレンダーへ（タブから外したので「その他」で開く）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCalendar)) { _ in
-            selection = .calendar
+            showCalendar()
         }
         // 計画/予定の「開始」から記録タブへ（RecordView 側が当該ワークアウトを再開する）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { _ in
@@ -243,12 +257,29 @@ struct RootView: View {
             switch note.userInfo?["type"] as? String {
             case "reaction", "follow", "invite": selection = .social
             case "workout": selection = .workout
-            // 分析はタブから「その他」配下へ移設（育成タブの追加で iOS のタブ上限 5 に収めるため）。
-            case "analytics": selection = .other
-            case "recap": selection = .calendar
-            case "shop": selection = .other
+            case "analytics": selection = .analytics
+            // 週次まとめはカレンダーで振り返る（カレンダーは「その他」配下）。
+            case "recap": showCalendar()
+            case "shop":
+                otherPath = [.shop]
+                selection = .other
             default: break
             }
+        }
+    }
+
+    /// カレンダーを開く（タブから外したので「その他」タブのスタックに push する）。
+    private func showCalendar() {
+        otherPath = [.calendar]
+        selection = .other
+    }
+
+    @ViewBuilder
+    private var analyticsTab: some View {
+        if let uid = auth.currentUserId {
+            NavigationStack { AnalyticsView(userId: uid).gymneeNavigationDestinations(userId: uid) }
+        } else {
+            EmptyStateView(systemImage: "chart.bar", title: "未ログイン")
         }
     }
 
@@ -264,7 +295,7 @@ struct RootView: View {
     @ViewBuilder
     private var otherTab: some View {
         if let uid = auth.currentUserId {
-            OtherTabView(userId: uid)
+            OtherTabView(userId: uid, path: $otherPath)
         } else {
             EmptyStateView(systemImage: "ellipsis", title: "未ログイン")
         }
