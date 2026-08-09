@@ -164,7 +164,7 @@ iOS の `.env` 相当は **xcconfig** で扱う。`Config/Secrets.example.xcconf
 
 ## デプロイ
 
-- **TestFlight**: `main` への push で `testflight.yml` が起動し、ビルド → 署名 → App Store Connect へ配信(GitHub Actions の課金は 2026-08 に再開済み)
+- **TestFlight**: `testflight.yml` を手動起動（`gh workflow run testflight.yml --ref main`）してビルド → 署名 → App Store Connect へ配信。2026-07 のCI整理で main push トリガーは外し workflow_dispatch のみ。GitHub Actions の課金は 2026-08 に再開済み。ビルド番号は run number + 100
 - **TestFlight 配信は外部グループまでやって完了**: アップロードと内部グループ配信で止めない。処理が VALID になったら ①テスト内容(ja)を設定 ②外部グループ(公開リンク付き「運営」)に追加 ③ベータ審査へ提出、まで一続きで行う。実テスターは外部グループにいるため内部止まりでは配信の意味がない。同じ `MARKETING_VERSION` で既にベータ審査を通過していれば提出直後に配信状態になる
 - **CI**: `ci.yml` でビルド / テストを実行
 - 署名・プロビジョニング・ASC / APNs 鍵などの秘匿値は CI のシークレットおよび `Config/Secrets.*.xcconfig` で管理し、リポジトリに含めない
