@@ -87,9 +87,8 @@ private struct DateHistoryList: View {
                 ForEach(grouped(visible), id: \.month) { group in
                     Section(monthLabel(group.month)) {
                         ForEach(group.items) { workout in
-                            NavigationLink {
-                                WorkoutDetailView(workout: workout)
-                            } label: {
+                            // List 内は値ベース遷移（クロージャ型は行描画のたびに遷移先を先行生成する）。
+                            NavigationLink(value: AppRoute.workoutDetail(workout)) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(workout.date, format: .dateTime.month().day().weekday(.abbreviated))
                                         .font(.caption).foregroundStyle(.secondary)
@@ -206,9 +205,7 @@ private struct ExerciseHistoryList: View {
                     ForEach(groups, id: \.muscle) { group in
                         Section(group.muscle.label) {
                             ForEach(group.items) { exercise in
-                                NavigationLink {
-                                    ExerciseDetailView(exercise: exercise, userId: userId)
-                                } label: {
+                                NavigationLink(value: AppRoute.exerciseDetail(exercise)) {
                                     HStack {
                                         Text(exercise.name)
                                         Spacer()

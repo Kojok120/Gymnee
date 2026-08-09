@@ -63,9 +63,9 @@ struct SettingsView: View {
                     ForEach(Visibility.allCases, id: \.self) { Text($0.label).tag($0.rawValue) }
                 }
                 if let uid = auth.currentUserId {
-                    NavigationLink {
-                        BlockedUsersView(currentUserId: uid)
-                    } label: {
+                    // 値ベース遷移（クロージャ型だと BlockedUsersView の init が Form 描画のたびに
+                    // @Query を作り直し、iOS 26 系でメインスレッドハングの条件になる）。
+                    NavigationLink(value: AppRoute.blockedUsers(uid)) {
                         Label("ブロック中のユーザー", systemImage: "hand.raised")
                     }
                 }

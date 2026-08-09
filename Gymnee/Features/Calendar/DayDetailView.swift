@@ -85,9 +85,8 @@ struct DayDetailView: View {
                     Text("ワークアウト記録なし").foregroundStyle(.secondary)
                 } else {
                     ForEach(workouts) { workout in
-                        NavigationLink {
-                            WorkoutDetailView(workout: workout)
-                        } label: {
+                        // List 内は値ベース遷移（クロージャ型は行描画のたびに遷移先を先行生成する）。
+                        NavigationLink(value: AppRoute.workoutDetail(workout)) {
                             WorkoutRow(workout: workout)
                         }
                         .swipeActions {
