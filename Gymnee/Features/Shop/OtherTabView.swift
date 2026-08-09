@@ -1,23 +1,25 @@
 import SwiftUI
 
-/// 「その他」タブ（§5 ナビ）。プロフィール・ショップ・設定を大きなカードで選ぶ
-/// （プロフィールはカレンダー右上のアイコンから移設。マイデータはプロフィール内）。
+/// 「その他」タブ（§5 ナビ）。プロフィール・カレンダー・ショップ・設定を大きなカードで選ぶ。
+///
+/// タブは iOS の上限 5 本（超えると More に畳まれる）。記録 / 分析 / 育成 / ソーシャル を
+/// タブに置いた結果、カレンダーはここへ移した。外（記録のキャンセル・通知タップ）から開けるよう
+/// ナビゲーションのパスは RootView が持ち、ここは受け取って使う。
 struct OtherTabView: View {
     let userId: UUID
-
-    private enum Dest: Hashable { case shop }
+    @Binding var path: [AppRoute]
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack(spacing: Theme.Spacing.lg) {
+                NavigationLink(value: AppRoute.calendar) {
+                    card(title: "カレンダー", subtitle: "連続記録・週の目標・予定", icon: "calendar", tint: Theme.lime)
+                }
                 NavigationLink(value: AppRoute.profile) {
                     card(title: "プロフィール", subtitle: "実績・マイデータ・まとめ", icon: "person.crop.circle.fill", tint: Theme.warning)
                 }
-                NavigationLink(value: AppRoute.analytics) {
-                    card(title: "分析", subtitle: "ボリューム・部位バランス", icon: "chart.bar.xaxis", tint: Theme.series2)
-                }
-                NavigationLink(value: Dest.shop) {
-                    card(title: "ショップ", subtitle: "サプリ・ギアを探す", icon: "bag.fill", tint: Theme.lime)
+                NavigationLink(value: AppRoute.shop) {
+                    card(title: "ショップ", subtitle: "サプリ・ギアを探す", icon: "bag.fill", tint: Theme.series2)
                 }
                 NavigationLink(value: AppRoute.settings) {
                     card(title: "設定", subtitle: "通知・目標・アカウント", icon: "gearshape.fill", tint: Theme.info)
@@ -28,13 +30,6 @@ struct OtherTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Theme.bg0)
             .navigationTitle("その他")
-            .navigationDestination(for: Dest.self) { dest in
-                switch dest {
-                case .shop:
-                    ShopContent(userId: userId)
-                        .navigationTitle("ショップ").navigationBarTitleDisplayMode(.inline)
-                }
-            }
             .gymneeNavigationDestinations(userId: userId)
         }
     }

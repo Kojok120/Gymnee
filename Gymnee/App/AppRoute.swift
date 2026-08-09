@@ -13,6 +13,9 @@ enum AppRoute: Hashable {
     case photos
     case body
     case analytics
+    /// カレンダーホーム。タブから外し「その他」配下へ移したため値ルートで開く。
+    case calendar
+    case shop
     case settings
     /// ブロック中のユーザー一覧（設定から）。遷移先 init が @Query を作るため必ず値ベースで開く。
     case blockedUsers(UUID)
@@ -30,6 +33,12 @@ extension View {
             case .photos: ProgressPhotosView(userId: userId)
             case .body: BodyMetricsView(userId: userId)
             case .analytics: AnalyticsView(userId: userId)
+            case .calendar:
+                CalendarHomeContent(userId: userId)
+                    .navigationTitle("カレンダー")
+            case .shop:
+                ShopContent(userId: userId)
+                    .navigationTitle("ショップ").navigationBarTitleDisplayMode(.inline)
             case .settings: SettingsView()
             case .blockedUsers(let uid): BlockedUsersView(currentUserId: uid)
             case .workoutDetail(let workout): WorkoutDetailView(workout: workout)

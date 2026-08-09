@@ -2,6 +2,8 @@ import SwiftUI
 import SwiftData
 
 /// カレンダーホーム（§6.2）。月/週表示・記録マーカー・連続記録・週次ゴール。
+/// 単体で開く場合の入口（DEBUG ハーネス）。タブからは外れ、通常は「その他」から
+/// `AppRoute.calendar` で push される（その場合の器は OtherTabView の NavigationStack）。
 struct CalendarHomeView: View {
     @Environment(AuthService.self) private var auth
 
@@ -9,6 +11,8 @@ struct CalendarHomeView: View {
         NavigationStack {
             if let uid = auth.currentUserId {
                 CalendarHomeContent(userId: uid)
+                    // AppRoute の destination は NavigationStack ルート側で宣言する（§AppRoute）。
+                    .gymneeNavigationDestinations(userId: uid)
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
@@ -16,7 +20,7 @@ struct CalendarHomeView: View {
     }
 }
 
-private struct CalendarHomeContent: View {
+struct CalendarHomeContent: View {
     let userId: UUID
 
     @Environment(\.modelContext) private var context
@@ -77,10 +81,9 @@ private struct CalendarHomeContent: View {
         } message: {
             Text("連続記録の途切れ予告・フレンドの活動・今週のまとめをお届けします。")
         }
-        // AppRoute の destination は NavigationStack ルート（ここ）で一括宣言する。
-        // push 先（ProfileView 等）の子リンクからも確実に解決できるようにするため
-        // （iOS 26.5 では pushed view 上の navigationDestination が無効化される）。
-        .gymneeNavigationDestinations(userId: userId)
+        // AppRoute の destination はこのビューを載せる NavigationStack のルート側で宣言する
+        // （CalendarHomeView / OtherTabView）。push 先の子リンクから解決できなくなるため、
+        // ここ（push されうるビュー）では宣言しない（iOS 26.5 の挙動）。
         .navigationDestination(item: $selectedDate) { selection in
             DayDetailView(userId: userId, date: selection.date, onEditWorkout: { editingWorkout = $0 })
         }
@@ -92,12 +95,8 @@ private struct CalendarHomeContent: View {
     }
 
     /// Widget スナップショット更新＋通知予約（§6.10）。
+    /// 実処理は `PlatformSync`（画面に依存しない）に置き、ここは通知許諾のプリパーミッション UI だけ持つ。
     private func syncPlatform() {
-        SnapshotUpdater.update(userId: userId, context: context)
-        scheduleReminders()
-    }
-
-    private func scheduleReminders() {
         // プリパーミッション：いきなりOSダイアログを出さず、価値説明の後に許諾を取る。
         // 拒否済み(.denied)では何も出さない（再有効化は設定画面から）。
         #if DEBUG
@@ -108,14 +107,8 @@ private struct CalendarHomeContent: View {
         if allowPrompt, notifications.status == .notDetermined, !notifPrePrompted {
             showNotifPrePrompt = true
         }
-        let today = calendar.startOfDay(for: .now)
-        let activeToday = activeDays.contains { calendar.isDateInToday($0) }
-        notifications.scheduleStreakReminder(streak: currentStreak, hasRecordedToday: activeToday)
-        notifications.scheduleWeeklyRecap()
-        let planned = workouts
-            .filter { $0.isPlanned && $0.completedAt == nil && $0.date >= today }
-            .map { (id: $0.id, name: $0.name, date: $0.date) }
-        notifications.schedulePlannedWorkouts(planned)
+        PlatformSync.run(userId: userId, context: context, workouts: workouts,
+                         notifications: notifications, calendar: calendar)
     }
 
     // MARK: - Hero (streak ring + week goal + plain language)
