@@ -42,6 +42,7 @@ struct AddBodyMetricView: View {
             }
             .navigationTitle("身体メトリクス")
             .navigationBarTitleDisplayMode(.inline)
+            .task { prefillFromLatest() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -49,6 +50,25 @@ struct AddBodyMetricView: View {
                         .disabled(weight == nil && bodyFat == nil && measurements.isEmpty)
                 }
             }
+        }
+    }
+
+    /// 身長・体重・体脂肪率は急に変わらないため、項目ごとに直近の記録値を初期表示する。
+    /// 部位サイズ（height 以外の measurements）は画面に出ないため引き継がない（見えない値の複製防止）。
+    private func prefillFromLatest() {
+        let target = userId
+        let descriptor = FetchDescriptor<BodyMetric>(
+            predicate: #Predicate { $0.userId == target },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        guard let metrics = try? context.fetch(descriptor) else { return }
+        for metric in metrics {
+            if weight == nil, let value = metric.weight { weight = value }
+            if bodyFat == nil, let value = metric.bodyFat { bodyFat = value }
+            if measurements["height"] == nil, let value = metric.measurements["height"] {
+                measurements["height"] = value
+            }
+            if weight != nil, bodyFat != nil, measurements["height"] != nil { break }
         }
     }
 
