@@ -45,6 +45,78 @@ final class ExpeditionRun {
     }
 }
 
+/// キャラの見た目の状態（ローカル専用・ユーザーごとに 1 行）。
+///
+/// 装備とスキンは見た目だけの情報で、強さ（レベル・進化・ステータス）には一切関与しない。
+/// 所持している装備は「受け取り済みの遠征」から導出できるのでここには持たず、
+/// 「どれを着ているか」と「どのスキンを買ったか」だけを保存する。
+@Model
+final class CharacterLoadout {
+    @Attribute(.unique) var userId: UUID
+    var headItemId: String?
+    var handItemId: String?
+    var waistItemId: String?
+    var auraItemId: String?
+    /// 選択中のスキン id（`SkinCatalog`）。
+    var skinId: String
+    /// 購入済み有料スキンの id（カンマ区切り。課金は未接続のダミー）。
+    var purchasedSkinIds: String
+    var updatedAt: Date
+
+    init(
+        userId: UUID,
+        headItemId: String? = nil,
+        handItemId: String? = nil,
+        waistItemId: String? = nil,
+        auraItemId: String? = nil,
+        skinId: String = SkinCatalog.defaultSkinId,
+        purchasedSkinIds: String = "",
+        updatedAt: Date = .now
+    ) {
+        self.userId = userId
+        self.headItemId = headItemId
+        self.handItemId = handItemId
+        self.waistItemId = waistItemId
+        self.auraItemId = auraItemId
+        self.skinId = skinId
+        self.purchasedSkinIds = purchasedSkinIds
+        self.updatedAt = updatedAt
+    }
+}
+
+extension CharacterLoadout {
+    /// 部位 → 装備 id。
+    var loadout: CharacterOutfit.Loadout {
+        var result: CharacterOutfit.Loadout = [:]
+        result[.head] = headItemId
+        result[.hand] = handItemId
+        result[.waist] = waistItemId
+        result[.aura] = auraItemId
+        return result.compactMapValues { $0 }
+    }
+
+    func setItem(_ itemId: String?, for slot: Expedition.Slot) {
+        switch slot {
+        case .head: headItemId = itemId
+        case .hand: handItemId = itemId
+        case .waist: waistItemId = itemId
+        case .aura: auraItemId = itemId
+        }
+        updatedAt = .now
+    }
+
+    var purchasedSkins: Set<String> {
+        Set(purchasedSkinIds.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+    }
+
+    func addPurchasedSkin(_ id: String) {
+        var current = purchasedSkins
+        current.insert(id)
+        purchasedSkinIds = current.sorted().joined(separator: ",")
+        updatedAt = .now
+    }
+}
+
 extension ExpeditionRun {
     var isClaimed: Bool { claimedAt != nil }
 

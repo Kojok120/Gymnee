@@ -111,38 +111,72 @@ enum Expedition {
         }
     }
 
+    /// 装備の部位。キャラの姿に重ねて描くため、1 部位 1 個だけ着けられる。
+    enum Slot: String, CaseIterable, Sendable {
+        case head, hand, waist, aura
+
+        var label: String {
+            switch self {
+            case .head: return "頭"
+            case .hand: return "手"
+            case .waist: return "腰"
+            case .aura: return "オーラ"
+            }
+        }
+    }
+
     /// 遠征で手に入る装備。強さには一切影響せず、見た目とコレクションのためだけに存在する。
     struct Item: Identifiable, Equatable, Sendable {
         let id: String
         let name: String
         let symbol: String
         let rarity: Rarity
+        let slot: Slot
     }
 
     static let items: [Item] = [
-        Item(id: "sports-drink", name: "スポーツドリンク", symbol: "drop.fill", rarity: .common),
-        Item(id: "wristband", name: "リストバンド", symbol: "hand.raised.fill", rarity: .common),
-        Item(id: "gym-bag", name: "ジムバッグ", symbol: "bag.fill", rarity: .common),
-        Item(id: "protein-bar", name: "プロテインバー", symbol: "leaf.fill", rarity: .common),
-        Item(id: "power-grip", name: "パワーグリップ", symbol: "bolt.fill", rarity: .rare),
-        Item(id: "knee-sleeve", name: "ニースリーブ", symbol: "shield.fill", rarity: .rare),
-        Item(id: "iron-plate", name: "鉄のプレート", symbol: "scalemass.fill", rarity: .rare),
-        Item(id: "champion-belt", name: "チャンピオンベルト", symbol: "crown.fill", rarity: .epic),
-        Item(id: "golden-dumbbell", name: "黄金のダンベル", symbol: "dumbbell.fill", rarity: .epic),
-        Item(id: "legend-log", name: "伝説の記録帳", symbol: "sparkles", rarity: .epic),
+        Item(id: "sweat-band", name: "ヘッドバンド", symbol: "bandage.fill", rarity: .common, slot: .head),
+        Item(id: "wristband", name: "リストバンド", symbol: "hand.raised.fill", rarity: .common, slot: .hand),
+        Item(id: "cloth-belt", name: "布のベルト", symbol: "minus", rarity: .common, slot: .waist),
+        Item(id: "protein-aura", name: "プロテインの香り", symbol: "leaf.fill", rarity: .common, slot: .aura),
+        Item(id: "cap", name: "トレーニングキャップ", symbol: "capsule.fill", rarity: .rare, slot: .head),
+        Item(id: "power-grip", name: "パワーグリップ", symbol: "bolt.fill", rarity: .rare, slot: .hand),
+        Item(id: "lifting-belt", name: "リフティングベルト", symbol: "rectangle.fill", rarity: .rare, slot: .waist),
+        Item(id: "sweat-aura", name: "立ちのぼる湯気", symbol: "wind", rarity: .rare, slot: .aura),
+        Item(id: "crown", name: "王者の冠", symbol: "crown.fill", rarity: .epic, slot: .head),
+        Item(id: "golden-grip", name: "黄金のグリップ", symbol: "dumbbell.fill", rarity: .epic, slot: .hand),
+        Item(id: "champion-belt", name: "チャンピオンベルト", symbol: "trophy.fill", rarity: .epic, slot: .waist),
+        Item(id: "legend-aura", name: "伝説のオーラ", symbol: "sparkles", rarity: .epic, slot: .aura),
     ]
+
+    /// 部位ごとの装備一覧（装備選択 UI 用）。
+    static func items(in slot: Slot) -> [Item] { items.filter { $0.slot == slot } }
 
     static func item(id: String) -> Item? { items.first { $0.id == id } }
 
+    /// 合トレ（同じ日に仲間も記録した）で上乗せするレア度の重み。
+    /// 強さは変わらず「良いものが出やすくなる」だけ＝現実の一緒に行った事実へのご褒美。
+    static let coopWeightBonus = [0, 15, 10]
+
     /// コースの重みに従って報酬を決める。同じ seed（＝遠征の id）なら常に同じ結果になるので、
     /// 受け取り前後で表示がぶれず、端末をまたいでも再現できる。
-    static func reward(courseId: String, seed: UUID) -> Item {
+    /// `coop` が true なら仲間と行った遠征として当たりが出やすくなる。
+    static func reward(courseId: String, seed: UUID, coop: Bool = false) -> Item {
         let target = course(id: courseId) ?? courses[0]
         var rng = SplitMix64(seed: seedValue(seed))
-        let rarity = pickRarity(weights: target.weights, rng: &rng)
+        let weights = coop ? boosted(target.weights) : target.weights
+        let rarity = pickRarity(weights: weights, rng: &rng)
         let pool = items.filter { $0.rarity == rarity }
         guard !pool.isEmpty else { return items[0] }
         return pool[Int(rng.next() % UInt64(pool.count))]
+    }
+
+    /// 合トレ補正をかけた重み。
+    static func boosted(_ weights: [Int]) -> [Int] {
+        weights.enumerated().map { index, value in
+            let bonus = index < coopWeightBonus.count ? coopWeightBonus[index] : 0
+            return max(0, value + bonus)
+        }
     }
 
     private static func pickRarity(weights: [Int], rng: inout SplitMix64) -> Rarity {

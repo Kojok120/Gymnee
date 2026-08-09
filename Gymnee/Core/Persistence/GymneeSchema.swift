@@ -38,19 +38,33 @@ enum GymneeSchemaV2: VersionedSchema {
     }
 }
 
+/// スキーマ v3。キャラの見た目（装備とスキン）の保存先 `CharacterLoadout` を追加。
+/// これも純粋な追加変更のため lightweight で足りる。
+enum GymneeSchemaV3: VersionedSchema {
+    static var versionIdentifier = Schema.Version(3, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        GymneeSchemaV2.models + [CharacterLoadout.self]
+    }
+}
+
 /// 段階的マイグレーション計画（§7 データ保護）。
 /// スキーマ変更時はここに MigrationStage を追加する。
 enum GymneeMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [GymneeSchemaV1.self, GymneeSchemaV2.self] }
+    static var schemas: [any VersionedSchema.Type] {
+        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self]
+    }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: GymneeSchemaV1.self, toVersion: GymneeSchemaV2.self)]
+        [
+            .lightweight(fromVersion: GymneeSchemaV1.self, toVersion: GymneeSchemaV2.self),
+            .lightweight(fromVersion: GymneeSchemaV2.self, toVersion: GymneeSchemaV3.self),
+        ]
     }
 }
 
 /// ModelContainer・Widget・テストから共通参照する単一の真実。
 enum GymneeSchema {
-    static let models = GymneeSchemaV2.models
-    static let schema = Schema(versionedSchema: GymneeSchemaV2.self)
+    static let models = GymneeSchemaV3.models
+    static let schema = Schema(versionedSchema: GymneeSchemaV3.self)
 
     /// ストア退避が起きたことを UI に伝えるフラグ（RootView が一度だけアラートを出して消す）。
     static let recoveryPendingKey = "gymnee.storeRecoveryPending"
