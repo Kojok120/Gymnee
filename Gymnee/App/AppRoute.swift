@@ -14,6 +14,10 @@ enum AppRoute: Hashable {
     case body
     case analytics
     case settings
+    /// ブロック中のユーザー一覧（設定から）。遷移先 init が @Query を作るため必ず値ベースで開く。
+    case blockedUsers(UUID)
+    case workoutDetail(Workout)
+    case exerciseDetail(Exercise)
 }
 
 extension View {
@@ -27,6 +31,9 @@ extension View {
             case .body: BodyMetricsView(userId: userId)
             case .analytics: AnalyticsView(userId: userId)
             case .settings: SettingsView()
+            case .blockedUsers(let uid): BlockedUsersView(currentUserId: uid)
+            case .workoutDetail(let workout): WorkoutDetailView(workout: workout)
+            case .exerciseDetail(let exercise): ExerciseDetailView(exercise: exercise, userId: userId)
             }
         }
     }

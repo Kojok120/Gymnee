@@ -47,18 +47,22 @@ struct RecordView: View {
     var body: some View {
         NavigationStack {
             if let uid = auth.currentUserId {
-                if gateOpen {
-                    RecordContent(userId: uid, resuming: resumeTarget,
-                                  onEnd: { gateOpen = false; resumeTarget = nil })
-                } else {
-                    StartGateView(
-                        userId: uid,
-                        resumables: resumableDrafts(for: uid),
-                        onStart: { resumeTarget = nil; gateOpen = true },
-                        onResume: { draft in resumeTarget = draft; gateOpen = true },
-                        onDiscard: { draft in discardDraft(draft) }
-                    )
+                Group {
+                    if gateOpen {
+                        RecordContent(userId: uid, resuming: resumeTarget,
+                                      onEnd: { gateOpen = false; resumeTarget = nil })
+                    } else {
+                        StartGateView(
+                            userId: uid,
+                            resumables: resumableDrafts(for: uid),
+                            onStart: { resumeTarget = nil; gateOpen = true },
+                            onResume: { draft in resumeTarget = draft; gateOpen = true },
+                            onDiscard: { draft in discardDraft(draft) }
+                        )
+                    }
                 }
+                // 履歴（HistoryView）内の値ベース遷移をこのスタックのルートで解決する。
+                .gymneeNavigationDestinations(userId: uid)
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
