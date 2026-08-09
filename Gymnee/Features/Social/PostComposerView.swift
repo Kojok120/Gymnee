@@ -70,7 +70,9 @@ struct PostComposerView: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { dismiss() } }
             }
             .onAppear {
-                caption = workout.caption ?? ""
+                // 本文の下書きにワークアウト中メモを流用する（過去に投稿済みなら caption を優先）。
+                // メモは投稿前にこの欄で本人が確認・編集できるため、勝手に公開されることはない。
+                caption = workout.caption ?? workout.note ?? ""
                 visibility = Visibility(rawValue: defaultVisibilityRaw) ?? .friends
                 photo = PhotoStore.load(workout.localPhotoFilename)
             }

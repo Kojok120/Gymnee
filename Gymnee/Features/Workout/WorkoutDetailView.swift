@@ -22,6 +22,12 @@ struct WorkoutDetailView: View {
                     }
                 }
             }
+            // 記録中に書いたメモ（私的・投稿とは別）。書いた内容を記録として読み返せるようにする。
+            if let note = workout.note, !note.isEmpty {
+                Section("メモ") {
+                    Text(note).font(.subheadline).foregroundStyle(Theme.textPrimary)
+                }
+            }
             if let caption = workout.caption, !caption.isEmpty {
                 Section("コメント") {
                     Text(caption).font(.subheadline).foregroundStyle(Theme.textPrimary)
