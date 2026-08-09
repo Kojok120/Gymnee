@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 enum AppTab: Hashable {
-    case calendar, workout, social, analytics, other
+    case calendar, workout, character, social, other
 }
 
 /// アプリのルート。サインインウォールは置かず、未サインインなら**ゲスト（ローカル）で即開始**する（§5）。
@@ -120,6 +120,7 @@ struct RootView: View {
             }
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()
+        case "character": CharacterRoomView(userId: userId)
         case "other": OtherTabView(userId: userId)
         case "summary":
             // 完了サマリーの検証用：デモの最新完了ワークアウトを表示（週次はゴール達成状態）。
@@ -206,13 +207,13 @@ struct RootView: View {
                 .tabItem { Label("カレンダー", systemImage: "calendar") }
                 .tag(AppTab.calendar)
 
+            characterTab
+                .tabItem { Label("育成", systemImage: "figure.strengthtraining.traditional") }
+                .tag(AppTab.character)
+
             SocialFeedView()
                 .tabItem { Label("ソーシャル", systemImage: "person.2.fill") }
                 .tag(AppTab.social)
-
-            analyticsTab
-                .tabItem { Label("分析", systemImage: "chart.bar.xaxis") }
-                .tag(AppTab.analytics)
 
             otherTab
                 .tabItem { Label("その他", systemImage: "ellipsis") }
@@ -242,7 +243,8 @@ struct RootView: View {
             switch note.userInfo?["type"] as? String {
             case "reaction", "follow", "invite": selection = .social
             case "workout": selection = .workout
-            case "analytics": selection = .analytics
+            // 分析はタブから「その他」配下へ移設（育成タブの追加で iOS のタブ上限 5 に収めるため）。
+            case "analytics": selection = .other
             case "recap": selection = .calendar
             case "shop": selection = .other
             default: break
@@ -251,11 +253,11 @@ struct RootView: View {
     }
 
     @ViewBuilder
-    private var analyticsTab: some View {
+    private var characterTab: some View {
         if let uid = auth.currentUserId {
-            NavigationStack { AnalyticsView(userId: uid) }
+            CharacterRoomView(userId: uid)
         } else {
-            EmptyStateView(systemImage: "chart.bar", title: "未ログイン")
+            EmptyStateView(systemImage: "figure.strengthtraining.traditional", title: "未ログイン")
         }
     }
 
