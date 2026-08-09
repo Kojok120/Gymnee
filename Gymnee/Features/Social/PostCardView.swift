@@ -43,7 +43,7 @@ struct PostCardView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: metrics.spacing) {
             header
-            if !entry.stats.isEmpty || entry.monthlyDay != nil { chipRow }
+            if !entry.stats.isEmpty || entry.monthlyDay != nil || entry.characterLevel != nil { chipRow }
             if entry.kind == .pr { prBody }
             photo
             if let caption = entry.caption, !caption.isEmpty {
@@ -97,6 +97,9 @@ struct PostCardView: View {
     private var chipRow: some View {
         HStack(spacing: metrics.spacing * 0.5) {
             if entry.prCount > 0 { prBadge }
+            if let level = entry.characterLevel {
+                chip(label: entry.characterStage ?? "育成", value: "Lv.\(level)")
+            }
             if let day = entry.monthlyDay, day > 0 {
                 chip(label: "今月", value: "\(day)日目")
             }

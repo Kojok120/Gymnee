@@ -167,11 +167,37 @@ enum FeedPublisher {
                     sets: we.sets.sorted { $0.setIndex < $1.setIndex }.map { FeedItemStats.SetLine(text: $0.detailText, isPR: $0.isPR) }
                 )
             }
+        let character = characterBadge(for: w, context: context)
         let stats = FeedItemStats(exercises: visibleExercises.count, sets: allSets.count, volume: totalVolume,
                                   minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines,
                                   caption: w.caption, photoRef: w.photoURL,
-                                  monthlyDay: monthlyDay(for: w, context: context))
+                                  monthlyDay: monthlyDay(for: w, context: context),
+                                  characterLevel: character.level, characterStage: character.stage)
         return PostContent(summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
+    }
+
+    /// 投稿時点の育成キャラのレベルと進化段階。他人の端末では再計算できないので feed に焼き込む。
+    /// 育成の進み具合がフィードに乗ることで、投稿そのものの中身が増える。
+    @MainActor
+    private static func characterBadge(for w: Workout, context: ModelContext) -> (level: Int?, stage: String?) {
+        let uid = w.userId
+        let completed = (try? context.fetch(
+            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
+        )) ?? []
+        guard !completed.isEmpty else { return (nil, nil) }
+        let records = (try? context.fetch(
+            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == uid })
+        )) ?? []
+        let sessions = CharacterInputs.sessions(from: completed,
+                                                prCountByWorkout: CharacterInputs.prCountByWorkout(records))
+        guard !sessions.isEmpty else { return (nil, nil) }
+        let level = CharacterProgress.level(totalExperience: CharacterProgress.totalExperience(sessions: sessions))
+        let goal = UserDefaults.standard.object(forKey: "gymnee.weeklyGoal") as? Int ?? 3
+        let weeks = StreakCalculator.currentWeeklyStreak(
+            activeDays: completed.map { $0.completedAt ?? $0.date }, weeklyGoal: goal
+        ).weeks
+        let stage = CharacterProgress.stage(level: level.value, prCount: records.count, weeklyStreakWeeks: weeks)
+        return (level.value, stage.title)
     }
 
     /// 投稿時点の「今月の活動日数」。他人の端末では再計算できないので feed に焼き込む。

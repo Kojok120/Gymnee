@@ -24,6 +24,10 @@ struct FeedItemStats: Codable {
     var photoRef: String? = nil
     /// 投稿時点の「今月の活動日数」（カードのチップ。再計算は他人側では不可能なので焼き込む）。
     var monthlyDay: Int? = nil
+    /// 投稿時点の育成キャラのレベル（任意・後方互換）。育成の進み具合をソーシャルに乗せるため。
+    var characterLevel: Int? = nil
+    /// 投稿時点の進化段階の名前（例: チャレンジャー）。
+    var characterStage: String? = nil
 
     /// 1 種目分のセット内訳。
     struct ExerciseLine: Codable, Equatable {
@@ -140,6 +144,10 @@ struct FeedEntry: Identifiable {
     /// 「今月○日目」チップ。nil なら非表示。
     var monthlyDay: Int? = nil
 
+    /// 投稿時点の育成キャラ（「Lv.12 チャレンジャー」チップ）。nil なら非表示。
+    var characterLevel: Int? = nil
+    var characterStage: String? = nil
+
     /// 他ユーザーの投稿か（メニュー・写真取得経路などの分岐用）。
     /// 自分の投稿にも authorName を入れるため「名前の有無」からは導出せず明示フラグで持つ。
     var isFromOther: Bool = false
@@ -235,6 +243,7 @@ enum FeedBuilder {
         isPublished: Bool,
         ownerName: String? = nil,
         ownerAvatarURL: String? = nil,
+        character: (level: Int, stage: String)? = nil,
         calendar: Calendar = .current
     ) -> FeedEntry {
         let sets = w.exercises.flatMap(\.sets)
@@ -284,6 +293,8 @@ enum FeedBuilder {
             monthlyDay: StreakCalculator.monthlyActiveDays(
                 activeDays: activeDays, in: w.completedAt ?? w.date, calendar: calendar
             ),
+            characterLevel: character?.level,
+            characterStage: character?.stage,
             isPublished: isPublished
         )
     }
@@ -326,6 +337,8 @@ enum FeedBuilder {
                 photoRef: stats?.photoRef,
                 caption: stats?.caption,
                 monthlyDay: stats?.monthlyDay,
+                characterLevel: stats?.characterLevel,
+                characterStage: stats?.characterStage,
                 isFromOther: true
             )
         }

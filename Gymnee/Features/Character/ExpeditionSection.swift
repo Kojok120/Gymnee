@@ -7,6 +7,8 @@ struct ExpeditionSection: View {
     let availableEnergy: Int
     /// 進行中または受け取り待ちの遠征（無ければ nil）。
     let activeRun: ExpeditionRun?
+    /// 今日いっしょに記録した仲間の名前（合トレ）。空でなければ共闘遠征になる。
+    let coopPartners: [String]
     let onStart: (Expedition.Course) -> Void
     let onClaim: (ExpeditionRun) -> Void
 
@@ -15,6 +17,10 @@ struct ExpeditionSection: View {
             SectionHeader(title: "遠征")
 
             energyBar
+
+            if !coopPartners.isEmpty {
+                coopBanner
+            }
 
             if let run = activeRun {
                 // 残り時間の更新はこのカードだけに閉じ込める（親は全ワークアウトを集計し直すため）。
@@ -50,6 +56,26 @@ struct ExpeditionSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .gymneeCard()
+    }
+
+    /// 合トレ（同じ日に仲間も記録した）が成立していることの告知。
+    private var coopBanner: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            Image(systemName: "person.2.fill")
+                .font(.subheadline)
+                .foregroundStyle(Theme.lime)
+                .frame(width: 32, height: 32)
+                .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("今日は\(coopPartners.prefix(2).joined(separator: "・"))と共闘")
+                    .font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
+                Text("同じ日に記録した仲間がいる。良い装備が出やすい。")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gymneeCard(padding: Theme.Spacing.md, highlighted: true)
     }
 
     // MARK: - 進行中 / 受け取り

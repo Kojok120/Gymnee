@@ -15,9 +15,14 @@ struct CharacterRoomView: View {
     @Query private var completedWorkouts: [Workout]
     @Query private var records: [PersonalRecord]
     @Query private var runs: [ExpeditionRun]
+    @Query private var loadouts: [CharacterLoadout]
+    /// 合トレ判定用：フォロー中の人の投稿（自分以外）。
+    @Query private var feedItems: [FeedItem]
 
-    /// 受け取り演出中の戦利品。
-    @State private var celebrating: Expedition.Item?
+    /// 受け取り演出中の戦利品（道中の出来事つき）。
+    @State private var celebrating: ClaimResult?
+    @State private var showOutfit = false
+    @State private var showSkins = false
 
     init(userId: UUID) {
         self.userId = userId
@@ -27,6 +32,16 @@ struct CharacterRoomView: View {
             filter: #Predicate<ExpeditionRun> { $0.userId == userId },
             sort: [SortDescriptor(\ExpeditionRun.startedAt, order: .reverse)]
         )
+        _loadouts = Query(filter: #Predicate<CharacterLoadout> { $0.userId == userId })
+        _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId != userId })
+    }
+
+    /// 受け取り結果（祝福シートに渡す）。
+    struct ClaimResult: Identifiable {
+        let item: Expedition.Item
+        let events: [ExpeditionJourney.Event]
+        let coop: Bool
+        var id: String { item.id }
     }
 
     // MARK: - 導出（すべて現実の記録から）
@@ -75,6 +90,29 @@ struct CharacterRoomView: View {
         runs.compactMap { run in run.reward.map { (run, $0) } }
     }
 
+    /// 持っている装備の id。
+    private var ownedItemIds: Set<String> {
+        Set(runs.compactMap(\.rewardItemId))
+    }
+
+    /// 見た目の状態（無ければ既定値。保存は必要になった時だけ作る）。
+    private var loadout: CharacterLoadout? { loadouts.first }
+
+    private var skin: CharacterSkin { SkinCatalog.skin(id: loadout?.skinId) }
+
+    private var equipped: [Expedition.Slot: Expedition.Item] {
+        CharacterOutfit.resolve(loadout: loadout?.loadout ?? [:], owned: ownedItemIds)
+    }
+
+    private var appearance: CharacterAppearance {
+        CharacterAppearance.make(stats: stats, stage: stage)
+    }
+
+    /// 今日いっしょに記録した仲間（合トレ）。フォロー中の人の今日の投稿から拾う。
+    private var coopPartners: [String] {
+        CoopDetector.partnersToday(feedItems: feedItems)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -88,6 +126,7 @@ struct CharacterRoomView: View {
                             level: level.value,
                             availableEnergy: availableEnergy,
                             activeRun: activeRun,
+                            coopPartners: coopPartners,
                             onStart: start(_:),
                             onClaim: claim(_:)
                         )
@@ -98,9 +137,21 @@ struct CharacterRoomView: View {
             }
             .background(Theme.bg0)
             .navigationTitle("育成")
-            .sheet(item: $celebrating) { item in
-                RewardCelebrationView(item: item)
-                    .presentationDetents([.height(360)])
+            .sheet(item: $celebrating) { result in
+                RewardCelebrationView(result: result)
+            }
+            .sheet(isPresented: $showOutfit) {
+                OutfitSheet(owned: ownedItemIds, equipped: equipped) { slot, itemId in
+                    equip(itemId, in: slot)
+                }
+            }
+            .sheet(isPresented: $showSkins) {
+                SkinShopSheet(
+                    currentSkinId: skin.id,
+                    purchased: loadout?.purchasedSkins ?? [],
+                    onSelect: { selectSkin($0) },
+                    onPurchase: { purchaseSkin($0) }
+                )
             }
         }
     }
@@ -109,7 +160,19 @@ struct CharacterRoomView: View {
 
     private var heroCard: some View {
         VStack(spacing: Theme.Spacing.md) {
-            CharacterAvatarView(stage: stage, levelProgress: level.progress)
+            ZStack {
+                // レベル進捗のリングをキャラの背後に回す。
+                Circle()
+                    .stroke(Theme.bg3, lineWidth: 6)
+                    .frame(width: 214, height: 214)
+                Circle()
+                    .trim(from: 0, to: max(0.001, min(1, level.progress)))
+                    .stroke(Theme.streakRing, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 214, height: 214)
+                CharacterFigureView(appearance: appearance, stage: stage, skin: skin, equipped: equipped, size: 200)
+            }
+            .frame(height: 220)
 
             Text(stage.title)
                 .font(.title3.bold())
@@ -141,6 +204,21 @@ struct CharacterRoomView: View {
                     }
                 }
             }
+
+            HStack(spacing: Theme.Spacing.sm) {
+                Button { showOutfit = true } label: {
+                    Label("着替え", systemImage: "tshirt.fill")
+                }
+                .buttonStyle(.gymneeSecondary)
+                .disabled(ownedItemIds.isEmpty)
+                .opacity(ownedItemIds.isEmpty ? 0.4 : 1)
+
+                Button { showSkins = true } label: {
+                    Label("スキン", systemImage: "paintpalette.fill")
+                }
+                .buttonStyle(.gymneeSecondary)
+            }
+            .padding(.top, Theme.Spacing.xs)
         }
         .frame(maxWidth: .infinity)
         .gymneeCard(highlighted: stage >= .veteran)
@@ -261,41 +339,106 @@ struct CharacterRoomView: View {
     }
 
     /// 帰還した遠征の報酬を受け取る。抽選は遠征 id をシードにした決定的抽選。
+    /// 空いている部位、または今より良いものが出たときは自動で着せる（持ち帰ったら姿が変わる）。
     private func claim(_ run: ExpeditionRun) {
         guard run.isAwaitingClaim(asOf: .now) else { return }
-        let item = Expedition.reward(courseId: run.courseId, seed: run.id)
+        let coop = !coopPartners.isEmpty
+        let item = Expedition.reward(courseId: run.courseId, seed: run.id, coop: coop)
         run.rewardItemId = item.id
         run.claimedAt = .now
+
+        let state = ensureLoadout()
+        if CharacterOutfit.shouldAutoEquip(item, current: equipped[item.slot]) {
+            state.setItem(item.id, for: item.slot)
+        }
         try? context.save()
-        celebrating = item
+
+        celebrating = ClaimResult(
+            item: item,
+            events: ExpeditionJourney.events(courseId: run.courseId, seed: run.id, coop: coop),
+            coop: coop
+        )
+    }
+
+    private func equip(_ itemId: String?, in slot: Expedition.Slot) {
+        let state = ensureLoadout()
+        state.setItem(itemId, for: slot)
+        try? context.save()
+    }
+
+    private func selectSkin(_ id: String) {
+        let state = ensureLoadout()
+        state.skinId = id
+        state.updatedAt = .now
+        try? context.save()
+    }
+
+    /// スキン購入。**課金は未接続のダミー**で、押した時点で所持扱いにする。
+    private func purchaseSkin(_ skin: CharacterSkin) {
+        let state = ensureLoadout()
+        state.addPurchasedSkin(skin.id)
+        state.skinId = skin.id
+        try? context.save()
+    }
+
+    /// 見た目の保存先を必要になった時に作る。
+    private func ensureLoadout() -> CharacterLoadout {
+        if let existing = loadout { return existing }
+        let created = CharacterLoadout(userId: userId)
+        context.insert(created)
+        return created
     }
 }
 
-/// 受け取り演出。PR ほどの祝祭ではないが、手に入った瞬間はきちんと見せる。
+/// 受け取り演出。道中に何が起きたかを見せてから戦利品を渡す（送って待つだけにしないため）。
 private struct RewardCelebrationView: View {
-    let item: Expedition.Item
+    let result: CharacterRoomView.ClaimResult
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            Image(systemName: item.symbol)
-                .font(.system(size: 64, weight: .semibold))
-                .foregroundStyle(Theme.lime)
-                .padding(Theme.Spacing.xl)
-                .background(Theme.limeSoft, in: Circle())
-            VStack(spacing: Theme.Spacing.xs) {
-                Text(item.rarity.label)
-                    .font(.overline)
-                    .foregroundStyle(Theme.textTertiary)
-                Text(item.name)
-                    .font(.title3.bold())
-                    .foregroundStyle(Theme.textPrimary)
+        ScrollView {
+            VStack(spacing: Theme.Spacing.lg) {
+                Image(systemName: result.item.symbol)
+                    .font(.system(size: 56, weight: .semibold))
+                    .foregroundStyle(Theme.lime)
+                    .padding(Theme.Spacing.lg)
+                    .background(Theme.limeSoft, in: Circle())
+
+                VStack(spacing: Theme.Spacing.xs) {
+                    Text(result.item.rarity.label)
+                        .font(.overline)
+                        .foregroundStyle(Theme.textTertiary)
+                    Text(result.item.name)
+                        .font(.title3.bold())
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("\(result.item.slot.label)に装備できる")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    SectionHeader(title: result.coop ? "道中（共闘）" : "道中")
+                    ForEach(result.events) { event in
+                        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+                            Image(systemName: event.symbol)
+                                .font(.subheadline)
+                                .foregroundStyle(event.isGood ? Theme.lime : Theme.textTertiary)
+                                .frame(width: 22)
+                            Text(event.text)
+                                .font(.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .gymneeCard()
+
+                Button("閉じる") { dismiss() }
+                    .buttonStyle(.gymneePrimary(fullWidth: true))
             }
-            Button("閉じる") { dismiss() }
-                .buttonStyle(.gymneePrimary(fullWidth: true))
+            .padding(Theme.Spacing.xl)
         }
-        .padding(Theme.Spacing.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg0)
     }
 }
