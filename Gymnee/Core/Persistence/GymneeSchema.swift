@@ -29,17 +29,28 @@ enum GymneeSchemaV1: VersionedSchema {
     }
 }
 
+/// スキーマ v2。育成タブの遠征記録（ローカル専用の `ExpeditionRun`）を追加しただけの
+/// 純粋な追加変更のため、移行は lightweight で足りる（既存エンティティは無改変）。
+enum GymneeSchemaV2: VersionedSchema {
+    static var versionIdentifier = Schema.Version(2, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        GymneeSchemaV1.models + [ExpeditionRun.self]
+    }
+}
+
 /// 段階的マイグレーション計画（§7 データ保護）。
-/// v1 のみのため stages は空。スキーマ変更時はここに MigrationStage を追加する。
+/// スキーマ変更時はここに MigrationStage を追加する。
 enum GymneeMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [GymneeSchemaV1.self] }
-    static var stages: [MigrationStage] { [] }
+    static var schemas: [any VersionedSchema.Type] { [GymneeSchemaV1.self, GymneeSchemaV2.self] }
+    static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: GymneeSchemaV1.self, toVersion: GymneeSchemaV2.self)]
+    }
 }
 
 /// ModelContainer・Widget・テストから共通参照する単一の真実。
 enum GymneeSchema {
-    static let models = GymneeSchemaV1.models
-    static let schema = Schema(versionedSchema: GymneeSchemaV1.self)
+    static let models = GymneeSchemaV2.models
+    static let schema = Schema(versionedSchema: GymneeSchemaV2.self)
 
     /// ストア退避が起きたことを UI に伝えるフラグ（RootView が一度だけアラートを出して消す）。
     static let recoveryPendingKey = "gymnee.storeRecoveryPending"

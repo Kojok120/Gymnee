@@ -13,6 +13,9 @@ struct OtherTabView: View {
                 NavigationLink(value: AppRoute.profile) {
                     card(title: "プロフィール", subtitle: "実績・マイデータ・まとめ", icon: "person.crop.circle.fill", tint: Theme.warning)
                 }
+                NavigationLink(value: AppRoute.analytics) {
+                    card(title: "分析", subtitle: "ボリューム・部位バランス", icon: "chart.bar.xaxis", tint: Theme.series2)
+                }
                 NavigationLink(value: Dest.shop) {
                     card(title: "ショップ", subtitle: "サプリ・ギアを探す", icon: "bag.fill", tint: Theme.lime)
                 }
