@@ -179,7 +179,8 @@ struct PostDetailView: View {
         let pr = ownPRs.first
         let kind = pr?.type ?? entry.prKind ?? .maxWeight
         let valueText = pr.map { $0.type.formatted($0.value) } ?? (entry.subtitle ?? "")
-        let exName = pr?.exercise?.name
+        // 他人の投稿は statsJSON 由来の prExercise から種目名を出す（ローカルに PR 実体が無い）。
+        let exName = pr?.exercise?.name ?? entry.prExercise
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             sectionHeader("自己ベスト", systemImage: "trophy.fill")
             HStack(spacing: Theme.Spacing.md) {

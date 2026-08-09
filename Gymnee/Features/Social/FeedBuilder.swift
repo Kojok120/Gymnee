@@ -135,6 +135,8 @@ struct FeedEntry: Identifiable {
     var prCount: Int = 0
     /// PR 投稿の計測タイプ（トロフィーのアイコン/ラベル）。
     var prKind: PRType? = nil
+    /// PR 投稿の種目名（カードに「何の種目のベストか」を出す。他人の投稿は statsJSON から復元）。
+    var prExercise: String? = nil
     /// 他人のワークアウト投稿の種目別セット内訳（feed の statsJSON から復元。自分の投稿はローカル実体から描く）。
     var workoutLines: [FeedItemStats.ExerciseLine]? = nil
     /// 他人の投稿の写真ストレージ参照（"bucket/path"）。SyncedPhoto で取得して表示する。
@@ -212,6 +214,7 @@ enum FeedBuilder {
                 authorName: ownerName,
                 authorAvatarURL: ownerAvatarURL,
                 prKind: pr.type,
+                prExercise: pr.exercise?.name,
                 isPublished: published(pr.id)
             ))
         }
@@ -318,12 +321,17 @@ enum FeedBuilder {
             }
             let profile = profilesById[item.userId]
             let stats = FeedItemStats.decode(item.statsJSON)
+            // PR 投稿は statsJSON が FeedItemPRStats（種目名＋計測タイプ別数値）。
+            // 改修前に発行された古い投稿は decode できず、従来どおり summary のみで描く。
+            let prStats = kind == .pr ? FeedItemPRStats.decode(item.statsJSON) : nil
+            let prItem = prStats?.items.first
+            let prKind = prItem.flatMap { PRType(rawValue: $0.type) }
             return FeedEntry(
                 id: item.id,
                 date: item.createdAt,
                 kind: kind,
                 title: item.summary ?? "投稿",
-                subtitle: nil,
+                subtitle: prKind.flatMap { k in prItem.map { k.formatted($0.value) } },
                 photoFilename: nil,
                 visibility: item.visibility,
                 partners: [],
@@ -333,6 +341,8 @@ enum FeedBuilder {
                 stats: stats?.feedStats ?? [],
                 muscles: stats?.muscleGroups ?? [],
                 prCount: stats?.prCount ?? 0,
+                prKind: prKind,
+                prExercise: prStats?.exercise,
                 workoutLines: stats?.exerciseLines,
                 photoRef: stats?.photoRef,
                 caption: stats?.caption,

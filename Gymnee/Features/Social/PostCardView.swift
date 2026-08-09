@@ -248,6 +248,10 @@ struct PostCardView: View {
                     .foregroundStyle(Theme.onLime)
             }
             VStack(alignment: .leading, spacing: 0) {
+                // 「何の種目のベストか」を必ず出す（PostDetailView.prDetail と同じ並び）。
+                if let name = entry.prExercise, !name.isEmpty {
+                    Text(name).font(metrics.exerciseName.bold()).foregroundStyle(Theme.textPrimary)
+                }
                 if let kind = entry.prKind { OverlineLabel(text: kind.label) }
                 if let v = entry.subtitle, !v.isEmpty {
                     Text(v).font(metrics.chipValue).foregroundStyle(Theme.lime)
