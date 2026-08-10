@@ -58,6 +58,15 @@ enum CharacterProgress {
         sessions.reduce(0) { $0 + experience(for: $1) }
     }
 
+    /// 完了ワークアウトの EXP に、部屋で拾ったレアグッズの EXP を足した合計。
+    ///
+    /// **原則の例外はここだけ**。「現実だけがエンジン」を厳密に貫くとアプリを開く理由が作れないため、
+    /// リテンションの都合で穴を 1 つ空けている。ただし EXP をくれるのはレアグッズだけで、
+    /// その出現率は前週の記録で上下する（`RoomPickup`）。結果として、伸ばせるのは実際に通った人だけ。
+    static func totalExperience(sessions: [SessionInput], pickupBonus: Int) -> Int {
+        totalExperience(sessions: sessions) + max(0, pickupBonus)
+    }
+
     // MARK: - レベル
 
     struct Level: Equatable, Sendable {

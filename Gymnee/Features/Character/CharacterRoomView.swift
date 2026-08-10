@@ -20,6 +20,8 @@ struct CharacterRoomView: View {
     @Query private var records: [PersonalRecord]
     @Query private var runs: [ExpeditionRun]
     @Query private var loadouts: [CharacterLoadout]
+    /// 拾ったグッズ（同じものを二度拾わせないための記録）。
+    @Query private var pickups: [RoomPickupRecord]
     /// 合トレ判定用：フォロー中の人の投稿（自分以外）。
     @Query private var feedItems: [FeedItem]
 
@@ -43,6 +45,7 @@ struct CharacterRoomView: View {
             sort: [SortDescriptor(\ExpeditionRun.startedAt, order: .reverse)]
         )
         _loadouts = Query(filter: #Predicate<CharacterLoadout> { $0.userId == userId })
+        _pickups = Query(filter: #Predicate<RoomPickupRecord> { $0.userId == userId })
         _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId != userId })
     }
 
@@ -74,6 +77,8 @@ struct CharacterRoomView: View {
         var sessionCount = 0
         var recordedToday = false
         var daysSinceLastWorkout: Int?
+        /// 前週の記録から決まるグッズの落下倍率。
+        var dropMultiplier: Double = 1
 
         static let empty = Derived()
     }
@@ -107,7 +112,7 @@ struct CharacterRoomView: View {
 
     /// 集計のやり直しが要るかを判定する軽い指紋。@Query の中身が変わったときだけ変化する。
     private var signature: String {
-        "\(completedWorkouts.count)-\(records.count)-\(runs.count)-\(loadouts.first?.updatedAt.timeIntervalSince1970 ?? 0)"
+        "\(completedWorkouts.count)-\(records.count)-\(runs.count)-\(pickups.count)-\(loadouts.first?.updatedAt.timeIntervalSince1970 ?? 0)"
     }
 
     // MARK: - 画面
@@ -171,6 +176,9 @@ struct CharacterRoomView: View {
 
             actors(in: size, dot: dot, floorTop: floorTop, floorBottom: floorBottom)
 
+            // 落ちているグッズ。キャラより手前に置くと主役が入れ替わるので、床に伏せて描く。
+            pickupLayer(in: size, dot: dot, floorTop: floorTop, floorBottom: floorBottom)
+
             if let run = activeRun, run.isAwaitingClaim(asOf: .now) {
                 treasureChest(in: size, dot: dot, floorTop: floorTop, floorBottom: floorBottom, run: run)
             }
@@ -200,6 +208,14 @@ struct CharacterRoomView: View {
                     .padding(.leading, max(0, size.width * Self.coachSpot.x - size.width * 0.11))
                     .padding(.top, coachBubbleTop(in: size, floorTop: floorTop, floorBottom: floorBottom) + 56)
                     .accessibilityLabel("コーチに相談する")
+            }
+
+            if let item = collectedToast {
+                pickupToast(item)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, hudHeight + Theme.Spacing.lg)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .allowsHitTesting(false)
             }
 
             hud(size: size)
@@ -253,6 +269,9 @@ struct CharacterRoomView: View {
     @State private var reactedAt: Date?
     @State private var reactionParticle = CharacterReaction.Particle.heart
     @State private var tapCount = 0
+
+    /// 拾った直後に出す告知。
+    @State private var collectedToast: RoomPickup.Item?
 
     /// キャラたち。**全員を 1 枚の Canvas に描く**ことで、毎フレームの View 差分を発生させない。
     private func actors(in size: CGSize, dot: CGFloat, floorTop: CGFloat, floorBottom: CGFloat) -> some View {
@@ -378,6 +397,77 @@ struct CharacterRoomView: View {
         let headTop = feetY - CGFloat(PixelCharacterArt.canvasHeight) * scaled
         // ふきだしの高さぶん上に逃がす。負にならないよう最低限のマージンを残す。
         return max(size.height * 0.06, headTop - 64)
+    }
+
+    // MARK: - 落ちているグッズ
+
+    /// いま床に落ちているもの。時刻から決定的に導出するので、保存も常駐処理も要らない。
+    private var drops: [RoomPickup.Drop] {
+        RoomPickup.drops(
+            now: .now,
+            seed: selfSeed,
+            collected: Set(pickups.map(\.storageId)),
+            multiplier: derived.dropMultiplier
+        )
+    }
+
+    @ViewBuilder
+    private func pickupLayer(in size: CGSize, dot: CGFloat, floorTop: CGFloat, floorBottom: CGFloat) -> some View {
+        ForEach(drops) { drop in
+            let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(drop.position.y))).rounded())
+            let center = CGPoint(
+                x: size.width * CGFloat(drop.position.x),
+                y: floorTop + (floorBottom - floorTop) * CGFloat(drop.position.y)
+            )
+            // ふわっと上下させて「拾えるもの」だと分かるようにする。
+            TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
+                let bounce = Int(timeline.date.timeIntervalSince1970 / 0.5) % 2 == 0
+                Canvas { context, _ in
+                    let sprite = PixelItemArt.pickup(id: drop.item.id)
+                    context.drawPixels(
+                        sprite,
+                        at: CGPoint(
+                            x: (center.x - CGFloat(sprite.width) * scaled / 2).rounded(),
+                            y: (center.y - CGFloat(sprite.height) * scaled - (bounce ? scaled : 0)).rounded()
+                        ),
+                        dot: scaled,
+                        palette: PixelItemArt.pickupPalette(id: drop.item.id)
+                    )
+                }
+                .frame(width: size.width, height: size.height)
+            }
+            .frame(width: size.width, height: size.height)
+            .allowsHitTesting(false)
+            .overlay(alignment: .topLeading) {
+                // 当たり判定は指で狙える大きさの矩形を別に重ねる。
+                Color.clear
+                    .frame(width: scaled * 20, height: scaled * 20)
+                    .contentShape(Rectangle())
+                    .onTapGesture { collect(drop) }
+                    .position(x: center.x, y: center.y - scaled * 6)
+                    .accessibilityLabel("\(drop.item.name)を拾う")
+            }
+        }
+    }
+
+    /// 拾う。拾った事実だけを残し、元気と EXP は次の集計で合流する。
+    private func collect(_ drop: RoomPickup.Drop) {
+        guard !pickups.contains(where: { $0.storageId == drop.storageId }) else { return }
+        context.insert(
+            RoomPickupRecord(
+                userId: userId,
+                storageId: drop.storageId,
+                itemId: drop.item.id
+            )
+        )
+        try? context.save()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.bouncy) { collectedToast = drop.item }
+        // 一定時間で消す（画面を触らせないと消えない告知にしない）。
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.snappy) { collectedToast = nil }
+        }
     }
 
     // MARK: - 宝箱
@@ -550,6 +640,30 @@ struct CharacterRoomView: View {
         .opacity(disabled ? 0.45 : 1)
     }
 
+    /// 拾った内容の告知。何が増えたのかをその場で伝える。
+    private func pickupToast(_ item: RoomPickup.Item) -> some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            PixelSpriteView(
+                sprite: PixelItemArt.pickup(id: item.id),
+                palette: PixelItemArt.pickupPalette(id: item.id),
+                side: 28
+            )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.name)
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                Text(item.experience > 0
+                     ? "元気 +\(item.energy) / EXP +\(item.experience)"
+                     : "元気 +\(item.energy)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(Self.hudAccent)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Self.hudPlate, in: Capsule())
+    }
+
     private var startPrompt: some View {
         VStack(spacing: Theme.Spacing.md) {
             Text("キャラが育つのは現実のトレーニングだけ")
@@ -620,7 +734,14 @@ struct CharacterRoomView: View {
         )
         let activeDays = completedWorkouts.map { $0.completedAt ?? $0.date }
         let streak = StreakCalculator.currentWeeklyStreak(activeDays: activeDays, weeklyGoal: weeklyGoal)
-        let level = CharacterProgress.level(totalExperience: CharacterProgress.totalExperience(sessions: sessions))
+        // 拾ったグッズの分を合流させる（元気は燃料、EXP はレアのみ）。
+        let collectedIds = pickups.map(\.itemId)
+        let level = CharacterProgress.level(
+            totalExperience: CharacterProgress.totalExperience(
+                sessions: sessions,
+                pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds)
+            )
+        )
         let stats = CharacterProgress.stats(volumeByMuscle: CharacterInputs.volumeByMuscle(from: completedWorkouts))
         let stage = CharacterProgress.stage(
             level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
@@ -638,7 +759,9 @@ struct CharacterRoomView: View {
         next.stats = stats
         next.build = CharacterBuild.make(from: CharacterAppearance.make(stats: stats, stage: stage))
         next.energy = Expedition.availableEnergy(
-            sessions: sessions, spent: runs.reduce(0) { $0 + $1.energySpent }
+            sessions: sessions,
+            spent: runs.reduce(0) { $0 + $1.energySpent },
+            bonus: RoomPickup.totalEnergy(collectedItemIds: collectedIds)
         )
         next.streakWeeks = streak.weeks
         next.sessionCount = sessions.count
@@ -649,6 +772,12 @@ struct CharacterRoomView: View {
         next.daysSinceLastWorkout = lastWorkout.map {
             calendar.dateComponents([.day], from: calendar.startOfDay(for: $0), to: today).day ?? 0
         }
+        // 前の週にどれだけ通ったかで、今週の落下率が決まる。
+        let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: .now) ?? .now
+        let lastWeekCount = activeDays.filter {
+            calendar.isDate($0, equalTo: lastWeek, toGranularity: .weekOfYear)
+        }.count
+        next.dropMultiplier = RoomPickup.multiplier(lastWeekCount: lastWeekCount, weeklyGoal: weeklyGoal)
         derived = next
     }
 

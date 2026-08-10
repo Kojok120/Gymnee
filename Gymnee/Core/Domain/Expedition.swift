@@ -23,9 +23,12 @@ enum Expedition {
         sessions.reduce(0) { $0 + energyEarned(for: $1) }
     }
 
-    /// 手持ちの元気＝これまでに貯めた分 − 遠征に払った分。
-    static func availableEnergy(sessions: [CharacterProgress.SessionInput], spent: Int) -> Int {
-        max(0, totalEnergyEarned(sessions: sessions) - max(0, spent))
+    /// 手持ちの元気＝これまでに貯めた分 ＋ 部屋で拾った分 − 遠征に払った分。
+    /// 拾った分（`bonus`）は `RoomPickup` 由来。強さには効かない燃料なので、ここで合流させてよい。
+    static func availableEnergy(
+        sessions: [CharacterProgress.SessionInput], spent: Int, bonus: Int = 0
+    ) -> Int {
+        max(0, totalEnergyEarned(sessions: sessions) + max(0, bonus) - max(0, spent))
     }
 
     // MARK: - コース
