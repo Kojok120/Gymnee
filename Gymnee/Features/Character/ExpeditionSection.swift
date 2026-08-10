@@ -42,7 +42,7 @@ struct ExpeditionSection: View {
     private var energyBar: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack {
-                Label("元気", systemImage: "bolt.heart.fill")
+                Label("テストステロンパワー", systemImage: "bolt.heart.fill")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textPrimary)
                 Spacer()
@@ -50,9 +50,6 @@ struct ExpeditionSection: View {
                     .font(.numM)
                     .foregroundStyle(Theme.lime)
             }
-            Text("記録するほど貯まる。遠征の燃料はこれだけ。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .gymneeCard()
@@ -159,7 +156,7 @@ struct ExpeditionSection: View {
                 Text(course.title).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
                 Text(unlocked ? course.subtitle : "Lv.\(course.minLevel)で解放")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("元気\(course.energyCost) / \(durationText(course))")
+                Text("消費\(course.energyCost) / \(durationText(course))")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(Theme.textTertiary)
             }

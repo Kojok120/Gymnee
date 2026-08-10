@@ -138,6 +138,11 @@ struct CharacterRoomView: View {
             startedAt = .now
             // 用事があれば、開いてすぐコーチが歩いて入ってくる。
             updateCoachPresence()
+            // 遊び方はこの部屋では説明されないので、初回だけ案内を出す。
+            if !hasSeenOnboarding {
+                showOnboarding = true
+                hasSeenOnboarding = true
+            }
         }
         .onChange(of: signature) { _, _ in
             refresh()
@@ -160,6 +165,9 @@ struct CharacterRoomView: View {
         .sheet(item: $sheet) { route in
             sheetContent(route)
         }
+        .sheet(isPresented: $showOnboarding) {
+            CharacterOnboardingSheet()
+        }
     }
 
     @ViewBuilder
@@ -178,7 +186,8 @@ struct CharacterRoomView: View {
                 stage: derived.stage,
                 shelfItems: collection.map(\.item),
                 horizon: horizon,
-                dot: dot
+                dot: dot,
+                doorGlows: canStartExpedition
             )
             .frame(width: size.width, height: size.height)
 
@@ -187,9 +196,17 @@ struct CharacterRoomView: View {
             // 落ちているグッズ。キャラより手前に置くと主役が入れ替わるので、床に伏せて描く。
             pickupLayer(in: size, dot: dot, floorTop: floorTop, floorBottom: floorBottom)
 
+            // 留守中の置き手紙。キャラが居ない部屋に「どこへ行ったか」を残す。
+            if let run = activeRun, run.isInProgress(asOf: .now), departedAt == nil {
+                letterLayer(in: size, dot: dot, floorTop: floorTop, floorBottom: floorBottom, run: run)
+            }
+
             if let run = activeRun, run.isAwaitingClaim(asOf: .now) {
                 treasureChest(in: size, dot: dot, floorTop: floorTop, floorBottom: floorBottom, run: run)
             }
+
+            // ドア＝遠征の専用ボタン。シートのボタンを探させず、部屋の中で完結させる。
+            doorButton(in: size, dot: dot, floorTop: floorTop)
 
             // ふきだしはアニメーション層の外に出す。中に入れるとタップを受け取れず、
             // 「記録をはじめる」「遠征へ」の導線が死ぬ。
@@ -297,6 +314,12 @@ struct CharacterRoomView: View {
     /// いまの Swoop（1 回のスライド）で拾ったもの。指を離したときにまとめて告知する。
     @State private var swoopItems: [RoomPickup.Item] = []
 
+    /// 遠征に送り出した時刻。ここから数秒だけ「ドアへ歩いて出ていく」演出を出す。
+    @State private var departedAt: Date?
+    /// 初回案内をまだ見ていないか。
+    @AppStorage(CharacterOnboardingSheet.hasSeenKey) private var hasSeenOnboarding = false
+    @State private var showOnboarding = false
+
     /// キャラたち。**全員を 1 枚の Canvas に描く**ことで、毎フレームの View 差分を発生させない。
     private func actors(in size: CGSize, dot: CGFloat, floorTop: CGFloat, floorBottom: CGFloat) -> some View {
         let look = PixelCharacterRenderer.Look(
@@ -317,14 +340,29 @@ struct CharacterRoomView: View {
                 // 奥にいる者から描く（手前が上に重なる）。
                 var cast: [(pose: CharacterScene.Pose, look: PixelCharacterRenderer.Look)] = []
 
-                // 自分のキャラ。タップされた直後は反応の仕草に差し替える（位置と向きは保つ）。
+                // 自分のキャラ。
+                // 遠征に出ている間は部屋にいない（不在そのものが「遠征中」の表示）。
+                // 送り出した直後だけ、ドアへ歩いて出ていく演出を挟む。
                 var selfPose = CharacterScene.pose(at: elapsed, seed: selfSeed)
                 let reactionElapsed = reactedAt.map { timeline.date.timeIntervalSince($0) }
                 if let reactionElapsed,
                    let reacting = CharacterReaction.pose(base: selfPose, elapsed: reactionElapsed) {
                     selfPose = reacting
                 }
-                cast.append((selfPose, look))
+
+                let isAway = activeRun?.isInProgress(asOf: timeline.date) ?? false
+                let departing = departedAt.flatMap {
+                    ExpeditionDeparture.pose(from: selfPose.position, elapsed: timeline.date.timeIntervalSince($0))
+                }
+                if let departing {
+                    // 出発中はグッズを抱えていく。
+                    var leaving = look
+                    leaving.carriesPack = true
+                    cast.append((departing, leaving))
+                    selfPose = departing
+                } else if !isAway {
+                    cast.append((selfPose, look))
+                }
 
                 // コーチ。用事があるときだけ歩いて入ってきて、済んだら歩いて帰る。
                 if let coachPose = CoachVisit.pose(
@@ -369,6 +407,25 @@ struct CharacterRoomView: View {
                     PixelCharacterRenderer.draw(
                         in: &context, look: member.look, frame: frame,
                         facing: pose.facing, feet: feet, dot: scaled
+                    )
+                }
+
+                // 出発中に抱えているグッズ。
+                if let departing, let run = activeRun {
+                    let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(departing.position.y))).rounded())
+                    let sprite = carriedSprite(for: run)
+                    let feet = CGPoint(
+                        x: size.width * CGFloat(departing.position.x),
+                        y: floorTop + (floorBottom - floorTop) * CGFloat(departing.position.y)
+                    )
+                    context.drawPixels(
+                        sprite,
+                        at: CGPoint(
+                            x: (feet.x + scaled * 5).rounded(),
+                            y: (feet.y - scaled * 13).rounded()
+                        ),
+                        dot: scaled,
+                        palette: .neutral
                     )
                 }
 
@@ -516,6 +573,88 @@ struct CharacterRoomView: View {
         Task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.snappy) { collectedToast = nil }
+        }
+    }
+
+    // MARK: - ドア（遠征の専用ボタン）
+
+    /// いま遠征に出せるか（ドアを光らせる条件）。
+    private var canStartExpedition: Bool {
+        guard activeRun == nil else { return false }
+        return Expedition.unlockedCourses(level: derived.level.value)
+            .contains { derived.energy >= $0.energyCost }
+    }
+
+    /// ドアのタップ受け口。絵は `RoomBackdrop` が描いているので、ここは当たり判定だけ。
+    private func doorButton(in size: CGSize, dot: CGFloat, floorTop: CGFloat) -> some View {
+        let sprite = PixelCharacterArt.door
+        let width = CGFloat(sprite.width) * dot
+        let height = CGFloat(sprite.height) * dot
+        return Color.clear
+            .frame(width: max(56, width), height: max(56, height))
+            .contentShape(Rectangle())
+            .onTapGesture { sheet = .expedition }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.leading, max(0, size.width * ExpeditionDeparture.doorSpot.x - max(56, width) / 2))
+            .padding(.top, max(0, floorTop - height))
+            .accessibilityLabel(activeRun == nil ? "遠征に出かける" : "遠征の様子を見る")
+    }
+
+    // MARK: - 置き手紙
+
+    private func carriedSprite(for run: ExpeditionRun) -> PixelSprite {
+        switch ExpeditionDeparture.carriedItemId(seed: run.id) {
+        case "kettlebell": return PixelCharacterArt.kettlebell
+        case "water-bottle": return PixelCharacterArt.waterBottle
+        default: return PixelCharacterArt.dumbbell
+        }
+    }
+
+    /// 留守中の置き手紙。タップで文面を読む。
+    private func letterLayer(
+        in size: CGSize, dot: CGFloat, floorTop: CGFloat, floorBottom: CGFloat, run: ExpeditionRun
+    ) -> some View {
+        let sprite = PixelCharacterArt.letter
+        let center = CGPoint(
+            x: size.width * ExpeditionDeparture.letterSpot.x,
+            y: floorTop + (floorBottom - floorTop) * ExpeditionDeparture.letterSpot.y
+        )
+        return Canvas { context, _ in
+            context.drawPixels(
+                sprite,
+                at: CGPoint(
+                    x: (center.x - CGFloat(sprite.width) * dot / 2).rounded(),
+                    y: (center.y - CGFloat(sprite.height) * dot).rounded()
+                ),
+                dot: dot,
+                palette: .neutral
+            )
+        }
+        .frame(width: size.width, height: size.height)
+        .overlay(alignment: .topLeading) {
+            Color.clear
+                .frame(width: dot * 18, height: dot * 14)
+                .contentShape(Rectangle())
+                .onTapGesture { sheet = .expedition }
+                .position(x: center.x, y: center.y - dot * 3)
+                .accessibilityLabel("置き手紙を読む")
+        }
+        .overlay(alignment: .top) {
+            // 文面はふきだしで読ませる（シートを開かせない）。
+            Text(ExpeditionDeparture.letterText(
+                courseTitle: run.course?.title ?? "遠征",
+                remaining: Expedition.remainingText(finishesAt: run.finishesAt, now: .now),
+                seed: run.id
+            ))
+            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .foregroundStyle(Theme.textPrimary)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+            .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.top, floorTop - 96)
         }
     }
 
@@ -705,8 +844,8 @@ struct CharacterRoomView: View {
                     .font(.caption.bold())
                     .foregroundStyle(.white)
                 Text(item.experience > 0
-                     ? "元気 +\(item.energy) / EXP +\(item.experience)"
-                     : "元気 +\(item.energy)")
+                     ? "テストステロンパワー +\(item.energy) / EXP +\(item.experience)"
+                     : "テストステロンパワー +\(item.energy)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(Self.hudAccent)
             }
@@ -966,6 +1105,12 @@ struct CharacterRoomView: View {
         )
         try? context.save()
         sheet = nil
+        // シートを閉じてから、ドアへ歩いて出ていく演出を始める。
+        departedAt = .now
+        Task {
+            try? await Task.sleep(for: .seconds(ExpeditionDeparture.duration))
+            departedAt = nil
+        }
     }
 
     /// 帰還した遠征の報酬を受け取る。抽選は遠征 id をシードにした決定的抽選。
