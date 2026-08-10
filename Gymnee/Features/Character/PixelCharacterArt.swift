@@ -605,3 +605,41 @@ enum PixelCharacterArt {
         ".gg.",
     ])
 }
+
+/// ドアと置き手紙（遠征の出入り口）。
+extension PixelCharacterArt {
+
+    /// 部屋のドア。遠征の専用ボタンを兼ねる（タップで遠征シート）。
+    static let door = PixelSprite([
+        "oooooooooooooo",
+        "okkkkkkkkkkkko",
+        "okkkkkkkkkkkko",
+        "okkddddddddkko",
+        "okkdkkkkkkdkko",
+        "okkdkkkkkkdkko",
+        "okkdkkkkkkdkko",
+        "okkddddddddkko",
+        "okkkkkkkkkkkko",
+        "okkkkkkkkkmmko",
+        "okkkkkkkkkmmko",
+        "okkddddddddkko",
+        "okkdkkkkkkdkko",
+        "okkdkkkkkkdkko",
+        "okkdkkkkkkdkko",
+        "okkddddddddkko",
+        "okkkkkkkkkkkko",
+        "okkkkkkkkkkkko",
+        "okkkkkkkkkkkko",
+        "oooooooooooooo",
+    ])
+
+    /// 置き手紙（封筒）。留守中の床に置かれる。
+    static let letter = PixelSprite([
+        "oooooooooooo",
+        "odlllllllldo",
+        "olldlllldllo",
+        "ollllddllllo",
+        "ollllllllllo",
+        "oooooooooooo",
+    ])
+}

@@ -17,6 +17,8 @@ struct RoomBackdrop: View {
     let horizon: CGFloat
     /// 1 ドットの一辺（pt）。キャラと必ず同じ値を使う。
     let dot: CGFloat
+    /// ドアを光らせるか（遠征に出せる状態の合図）。
+    let doorGlows: Bool
 
     var body: some View {
         Canvas { context, size in
@@ -26,6 +28,7 @@ struct RoomBackdrop: View {
             drawWindow(&context, size: size, horizonRow: horizonRow)
             drawShelf(&context, size: size, horizonRow: horizonRow)
             drawFurniture(&context, size: size, horizonRow: horizonRow)
+            drawDoor(&context, size: size, horizonRow: horizonRow)
         }
         .drawingGroup()
         .accessibilityHidden(true)
@@ -221,6 +224,35 @@ struct RoomBackdrop: View {
             onFloor(PixelCharacterArt.barbell, ratio: 0.40)
         }
     }
+
+    // MARK: - ドア（遠征の出入り口）
+
+    /// ドア。遠征の専用ボタンを兼ねるので、タップ位置と対になるよう
+    /// 中心 x を `ExpeditionDeparture.doorSpot.x` に合わせる。
+    private func drawDoor(_ context: inout GraphicsContext, size: CGSize, horizonRow: CGFloat) {
+        let cols = columns(size)
+        let sprite = PixelCharacterArt.door
+        let x = ((cols * ExpeditionDeparture.doorSpot.x).rounded() - CGFloat(sprite.width) / 2).rounded()
+        let y = horizonRow - CGFloat(sprite.height)
+        var palette = PixelPalette.neutral
+        palette.wood = doorWood
+        context.drawPixels(sprite, at: CGPoint(x: x * dot, y: (y * dot).rounded()), dot: dot, palette: palette)
+
+        // 出せる状態の合図。ドアの上できらめく。
+        if doorGlows {
+            var glow = PixelPalette.neutral
+            glow.accent = Color(hexF: 0xC6FF3D)
+            // ドアの左上に出す。右に出すと画面端で見切れる。
+            context.drawPixels(
+                PixelCharacterArt.sparkle,
+                at: CGPoint(x: ((x - 5) * dot).rounded(), y: ((y - 3) * dot).rounded()),
+                dot: dot,
+                palette: glow
+            )
+        }
+    }
+
+    private var doorWood: Color { Color(light: 0x8F6A44, dark: 0x4A3A28) }
 
     // MARK: - 配色
 

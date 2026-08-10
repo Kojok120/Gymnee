@@ -109,7 +109,7 @@ enum CharacterChatter {
 
         // 4. 元気が余っている。遠征に出せる。
         if context.expedition == .idle, canStartExpedition(context) {
-            return Line(text: "元気が\(context.energy)たまってる。どこか行ってきていい？", action: .expedition)
+            return Line(text: "テストステロンパワーが\(context.energy)たまってる。どこか行ってきていい？", action: .expedition)
         }
 
         // 5. 遠征中。残り時間を教える。
@@ -141,7 +141,7 @@ enum CharacterChatter {
             options.append("今週の目標、もう達成してる")
         }
         if context.energy > 0 {
-            options.append("元気が\(context.energy)ある。まだ動ける")
+            options.append("テストステロンパワーが\(context.energy)。まだ動ける")
         }
         var rng = DeterministicRandom(seed: seed)
         let index = Int(rng.next() % UInt64(options.count))

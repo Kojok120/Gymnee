@@ -183,16 +183,16 @@ enum CoachConsultation {
             answer = "いま遠征に出てる。\(remaining)で戻るよ"
         case .idle:
             if let cost = context.cheapestCourseCost, context.energy >= cost {
-                answer = "元気が\(context.energy)たまってる。遠征に出せるよ"
+                answer = "テストステロンパワーが\(context.energy)たまってる。遠征に出せるよ"
                 action = .expedition
                 actionTitle = "遠征へ"
             } else if let cost = context.cheapestCourseCost {
-                answer = "いま元気は\(context.energy)。あと\(max(0, cost - context.energy))で送り出せる。記録すると貯まるよ"
+                answer = "いまテストステロンパワーは\(context.energy)。あと\(max(0, cost - context.energy))で送り出せる。記録すると貯まるよ"
             } else {
-                answer = "元気は記録するほど貯まる。レベルが上がると行ける場所が増えるよ"
+                answer = "テストステロンパワーは記録するほど貯まる。レベルが上がると行ける場所が増えるよ"
             }
         }
-        return Topic(id: "energy", question: "元気は何に使えるの？", answer: answer, action: action, actionTitle: actionTitle)
+        return Topic(id: "energy", question: "テストステロンパワーって何に使うの？", answer: answer, action: action, actionTitle: actionTitle)
     }
 
     private static func evolution(_ context: CharacterChatter.Context) -> Topic {
