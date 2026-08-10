@@ -328,7 +328,10 @@ struct CharacterRoomView: View {
             equipped: equipped,
             stage: derived.stage,
             carriesPack: activeRun?.isInProgress(asOf: .now) ?? false,
-            nameTag: nil
+            nameTag: nil,
+            role: .trainee,
+            hairStyleId: loadout?.hairStyleId ?? PixelHairArt.defaultStyleId,
+            accessoryId: loadout?.accessoryId ?? "none"
         )
         let partners = Array(coopPartners.prefix(3))
         let started = startedAt
@@ -792,7 +795,7 @@ struct CharacterRoomView: View {
             sceneButton("遠征", "map.fill", route: .expedition, badge: expeditionBadge)
             sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
             sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
-            sceneButton("スキン", "paintpalette.fill", route: .skins)
+            sceneButton("見た目", "paintpalette.fill", route: .skins)
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.bottom, Theme.Spacing.xl)
@@ -902,11 +905,19 @@ struct CharacterRoomView: View {
                 equip(itemId, in: slot)
             }
         case .skins:
-            SkinShopSheet(
+            AppearanceSheet(
+                build: derived.build,
+                stage: derived.stage,
+                equipped: equipped,
                 currentSkinId: skin.id,
-                purchased: loadout?.purchasedSkins ?? [],
-                onSelect: { selectSkin($0) },
-                onPurchase: { purchaseSkin($0) }
+                currentHairId: loadout?.hairStyleId ?? PixelHairArt.defaultStyleId,
+                currentAccessoryId: loadout?.accessoryId ?? "none",
+                purchasedSkins: loadout?.purchasedSkins ?? [],
+                purchasedAppearances: loadout?.purchasedAppearances ?? [],
+                onSelectSkin: { selectSkin($0) },
+                onSelectHair: { selectHair($0) },
+                onSelectAccessory: { selectAccessory($0) },
+                onPurchase: { purchaseAppearance($0) }
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
@@ -1146,6 +1157,37 @@ struct CharacterRoomView: View {
         let state = ensureLoadout()
         state.skinId = id
         state.updatedAt = .now
+        try? context.save()
+    }
+
+    private func selectHair(_ id: String) {
+        let state = ensureLoadout()
+        state.hairStyleId = id
+        state.updatedAt = .now
+        try? context.save()
+    }
+
+    private func selectAccessory(_ id: String) {
+        let state = ensureLoadout()
+        state.accessoryId = id
+        state.updatedAt = .now
+        try? context.save()
+    }
+
+    /// 見た目の購入（スキン / 髪型 / アクセサリーを id で一括して扱う）。
+    /// **課金は未接続のダミー**で、押した時点で所持扱いにして即座に着せる。
+    private func purchaseAppearance(_ id: String) {
+        let state = ensureLoadout()
+        if let skin = SkinCatalog.all.first(where: { $0.id == id }) {
+            state.addPurchasedSkin(skin.id)
+            state.skinId = skin.id
+        } else if PixelHairArt.styles.contains(where: { $0.id == id }) {
+            state.addPurchasedAppearance(id)
+            state.hairStyleId = id
+        } else if PixelHairArt.accessories.contains(where: { $0.id == id }) {
+            state.addPurchasedAppearance(id)
+            state.accessoryId = id
+        }
         try? context.save()
     }
 

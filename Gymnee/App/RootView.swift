@@ -150,6 +150,20 @@ struct RootView: View {
         // ドット絵の一覧。絵を足したり直したりしたとき、崩れをスクショ 1 枚で確認する用。
         // コーチとのチャット（部屋でコーチをタップしたときに出るもの）。
         case "coach": CoachChatView(userId: userId)
+        // 見た目シート（色 / 髪型 / アクセサリー）。部屋から開くのと同じもの。
+        case "appearance":
+            AppearanceSheet(
+                build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
+                stage: .challenger,
+                equipped: [:],
+                currentSkinId: SkinCatalog.defaultSkinId,
+                currentHairId: PixelHairArt.defaultStyleId,
+                currentAccessoryId: "glasses",
+                purchasedSkins: [],
+                purchasedAppearances: [],
+                onSelectSkin: { _ in }, onSelectHair: { _ in },
+                onSelectAccessory: { _ in }, onPurchase: { _ in }
+            )
         case "pixelart": PixelArtGallery(section: .character)
         case "pixelart-items": PixelArtGallery(section: .items)
         case "pixelart-room": PixelArtGallery(section: .room)
