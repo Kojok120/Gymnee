@@ -65,6 +65,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "comments":          return fetchComment(id).map(encodeComment)
         case "supply_logs":       return fetchSupplyLog(id).map(encodeSupplyLog)
         case "subscriptions":     return fetchSubscription(id).map(encodeSubscription)
+        case "coach_messages":    return fetchCoachMessage(id).map(encodeCoachMessage)
         // products はサーバ管理カタログ（クライアントから push しない）。
         default: return nil
         }
@@ -133,6 +134,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
             case "comments":          applyComment(row)
             case "products":          applyProduct(row)
             case "supply_logs":       applySupplyLog(row)
+            case "coach_messages":    applyCoachMessage(row)
             case "subscriptions":     applySubscription(row)
             default: break
             }
@@ -577,6 +579,37 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.isDirty = false
     }
 
+    // MARK: - coach_messages（AI コーチとの会話 / #79）
+    // 本人しか読めない（RLS）。フィードにも出さないので visibility の概念は持たない。
+    private func encodeCoachMessage(_ m: CoachMessage) -> [String: Any] {
+        ["id": lower(m.id), "user_id": lower(ownerId(m.userId)),
+         "is_from_coach": m.isFromCoach, "body": m.text,
+         "proposal": m.proposalJSON.flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) } ?? NSNull(),
+         "is_applied": m.isApplied,
+         "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
+    }
+    private func applyCoachMessage(_ row: [String: Any]) {
+        guard let id = uuid(row["id"]) else { return }
+        let existing = fetchCoachMessage(id)
+        if remoteIsStale(localUpdatedAt: existing?.updatedAt, row) { return }
+        let m = existing ?? insert(CoachMessage(
+            id: id, userId: uuid(row["user_id"]) ?? UUID(),
+            isFromCoach: bool(row["is_from_coach"]) ?? true, text: str(row["body"]) ?? ""
+        ))
+        m.userId = uuid(row["user_id"]) ?? m.userId
+        m.isFromCoach = bool(row["is_from_coach"]) ?? m.isFromCoach
+        m.text = str(row["body"]) ?? m.text
+        if let proposal = row["proposal"], !(proposal is NSNull),
+           let data = try? JSONSerialization.data(withJSONObject: proposal) {
+            m.proposalJSON = String(data: data, encoding: .utf8)
+        }
+        m.isApplied = bool(row["is_applied"]) ?? m.isApplied
+        m.createdAt = date(row["created_at"]) ?? m.createdAt
+        m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
+        m.isDirty = false
+    }
+
     // MARK: - subscriptions
     private func encodeSubscription(_ m: Subscription) -> [String: Any] {
         ["id": lower(m.id), "user_id": lower(ownerId(m.userId)), "tier": m.tierRaw, "status": m.statusRaw,
@@ -646,6 +679,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
         case "comments":          seed(try? context.fetch(FetchDescriptor<Comment>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "products":          seed(try? context.fetch(FetchDescriptor<Product>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "supply_logs":       seed(try? context.fetch(FetchDescriptor<SupplyLog>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
+        case "coach_messages":    seed(try? context.fetch(FetchDescriptor<CoachMessage>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         case "subscriptions":     seed(try? context.fetch(FetchDescriptor<Subscription>(predicate: #Predicate { ids.contains($0.id) })), ids: ids, entity: table) { $0.id }
         default: break
         }
@@ -683,6 +717,7 @@ final class SwiftDataSyncStore: SyncBackingStore {
     private func fetchProduct(_ id: UUID) -> Product? { memoized("products", id) { first(FetchDescriptor<Product>(predicate: #Predicate { $0.id == id })) } }
     private func fetchProductByName(_ name: String) -> Product? { first(FetchDescriptor<Product>(predicate: #Predicate { $0.name == name })) }
     private func fetchSupplyLog(_ id: UUID) -> SupplyLog? { memoized("supply_logs", id) { first(FetchDescriptor<SupplyLog>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchCoachMessage(_ id: UUID) -> CoachMessage? { memoized("coach_messages", id) { first(FetchDescriptor<CoachMessage>(predicate: #Predicate { $0.id == id })) } }
     private func fetchSubscription(_ id: UUID) -> Subscription? { memoized("subscriptions", id) { first(FetchDescriptor<Subscription>(predicate: #Predicate { $0.id == id })) } }
 
     private func first<T: PersistentModel>(_ descriptor: FetchDescriptor<T>) -> T? {

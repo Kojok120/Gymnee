@@ -15,6 +15,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         static let streak = "gymnee.notif.streak"
         static let planned = "gymnee.notif.planned"
         static let weeklyRecap = "gymnee.notif.weeklyRecap"
+        /// AI コーチの声かけ（朝の予告・完了後の称賛）。
+        static let coach = "gymnee.notif.coach"
     }
 
     /// 未設定（キー無し）は ON 扱い。
@@ -115,6 +117,60 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
             schedule(id: id, title: "今日の予定: \(item.name)", body: "ワークアウトの予定があります💪", trigger: trigger, userInfo: ["type": "workout"])
         }
+    }
+
+    // MARK: - AI コーチの声かけ（#79）
+
+    /// コーチの声かけは **1 日 2 回まで**（朝の予告 + 完了後の称賛）。
+    /// 「関係」を作るのが目的なので、鳴らしすぎると逆に切られる。
+    enum CoachNotice {
+        static let morningId = "gymnee.coach.morning"
+        static let morningHour = 7
+    }
+
+    /// 朝の予告。今日のメニューがあればその名前を、無ければ今週の残りを伝える。
+    /// **サボりを責めない**（週次ストリークの思想に合わせる）。
+    func scheduleCoachMorning(planTitle: String?, weeklyRemaining: Int) {
+        let id = CoachNotice.morningId
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        guard prefEnabled(PrefKey.coach) else { return }
+
+        let body: String
+        if let planTitle {
+            body = "今日は「\(planTitle)」。いつもの時間にどう？"
+        } else if weeklyRemaining > 0 {
+            body = "今週はあと\(weeklyRemaining)回。無理のない日に入れよう"
+        } else {
+            body = "今週の目標はもう達成してる。今日は休んでもいい"
+        }
+
+        var comps = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        comps.hour = CoachNotice.morningHour
+        comps.minute = 0
+        // 今日の分が過ぎていれば明日に回す（過去に予約しても鳴らない）。
+        if let today = Calendar.current.date(from: comps), today <= .now {
+            comps = Calendar.current.dateComponents(
+                [.year, .month, .day],
+                from: Calendar.current.date(byAdding: .day, value: 1, to: .now) ?? .now
+            )
+            comps.hour = CoachNotice.morningHour
+            comps.minute = 0
+        }
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+        schedule(id: id, title: "コーチから", body: body, trigger: trigger, userInfo: ["type": "coach"])
+    }
+
+    /// 記録を終えた直後の称賛。予約ではなく即時に出す。
+    func notifyCoachPraise(workoutName: String, streakWeeks: Int) {
+        guard prefEnabled(PrefKey.coach) else { return }
+        let body = streakWeeks >= 2
+            ? "「\(workoutName)」おつかれ。\(streakWeeks)週続いてる"
+            : "「\(workoutName)」おつかれ。よく来たね"
+        fire(id: "gymnee.coach.praise", title: "コーチから", body: body, userInfo: ["type": "coach"])
+    }
+
+    func cancelCoachNotices() {
+        center.removePendingNotificationRequests(withIdentifiers: [CoachNotice.morningId])
     }
 
     // MARK: - 種類別トグルOFF時の即時キャンセル（設定画面から呼ぶ）

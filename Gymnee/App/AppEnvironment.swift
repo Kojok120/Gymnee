@@ -16,6 +16,7 @@ final class AppEnvironment {
     let subscription: SubscriptionService
     let calendar: CalendarService
     let googleCalendar: GoogleCalendarService
+    let coach: CoachService
 
     init(container: ModelContainer? = nil) {
         let resolved = container ?? GymneeSchema.makeContainer()
@@ -28,6 +29,7 @@ final class AppEnvironment {
         self.subscription = SubscriptionService()
         self.calendar = CalendarService()
         self.googleCalendar = GoogleCalendarService()
+        self.coach = CoachService()
         self.googleCalendar.restore()
         self.auth.bootstrap(context: resolved.mainContext)
         self.notifications.configure()
@@ -43,6 +45,7 @@ final class AppEnvironment {
         sync.configureRemote(client)
         sync.store = SwiftDataSyncStore(context: container.mainContext)
         auth.configureSupabase(client)
+        coach.configure(client: client)
         backfillExercisesIfNeeded()
         pushDirtyOwnProfileIfNeeded()
         // APNs トークン取得時に Supabase の device_tokens へ登録（要サインイン＝best-effort）。

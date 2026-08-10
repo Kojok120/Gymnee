@@ -32,6 +32,8 @@ final class LocalSyncEngine: SyncEngine {
         "personal_records",
         "body_metrics", "progress_photos", "follows", "blocks", "reports", "feed_items", "post_reactions",
         "comments", "products", "supply_logs", "subscriptions",
+        // AI コーチとの会話（#79）。本人のみ読み書き（RLS）。
+        "coach_messages",
     ]
 
     /// 他端末での DELETE（いいね取消／コメント削除）を伝播するため、差分 pull とは別に

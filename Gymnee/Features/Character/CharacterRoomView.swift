@@ -236,11 +236,10 @@ struct CharacterRoomView: View {
     /// 話しかける相手がいつも同じ場所にいることで、ふきだしの主が誰なのかが迷いなく伝わる。
     private static let coachSpot = CGPoint(x: 0.23, y: 0.14)
 
-    /// コーチ機能そのもののオン/オフ。
-    /// #79 で「全部おまかせ / 提案だけ / オフ」の 3 択が入る予定で、**オフではコーチは一切現れない**。
-    /// その設定がまだ無いので既定で有効にし、切り替え口だけここに用意しておく。
-    @AppStorage("gymnee.coachMode") private var coachMode = "auto"
-    private var coachEnabled: Bool { coachMode != "off" }
+    /// コーチの関わり方（設定の 3 択）。**オフではコーチは一切現れない**。
+    @AppStorage(CoachMode.storageKey) private var coachModeRaw = CoachMode.default.rawValue
+    private var coachMode: CoachMode { CoachMode(rawValue: coachModeRaw) ?? .default }
+    private var coachEnabled: Bool { coachMode.showsCoach }
 
     /// 同じ用事で見送った記録（クールダウン用）。端末ローカルで十分な情報。
     @AppStorage("gymnee.coachDismissedTopic") private var dismissedTopicRaw = ""
@@ -607,15 +606,7 @@ struct CharacterRoomView: View {
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
         case .coach:
-            CoachSheet(
-                topics: CoachConsultation.topics(for: chatterContext()),
-                opening: chatter?.text ?? currentLine().text,
-                onAction: { action in
-                    sheet = nil
-                    perform(action)
-                },
-                onDismiss: { dismissCoach() }
-            )
+            CoachChatView(userId: userId)
         }
     }
 

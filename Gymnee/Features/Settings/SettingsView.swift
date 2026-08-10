@@ -10,6 +10,7 @@ struct SettingsView: View {
     @Environment(HealthKitService.self) private var health
     @Environment(AppErrorCenter.self) private var errors
     @Environment(NotificationService.self) private var notifications
+    @Environment(SubscriptionService.self) private var subscription
     @Environment(CalendarService.self) private var calendarService
     @Environment(GoogleCalendarService.self) private var googleCalendar
     @Environment(\.modelContext) private var context
@@ -27,7 +28,10 @@ struct SettingsView: View {
     @AppStorage("gymnee.restSeconds") private var restSeconds: Int = 90
     // レスト終了チャイム（RestChime が参照。サイレントスイッチでも鳴る）。
     @AppStorage(RestChime.enabledKey) private var restSoundEnabled = true
+    // AI コーチの関わり方（#79）。育成タブのコーチ表示とチャットの挙動を決める。
+    @AppStorage(CoachMode.storageKey) private var coachModeRaw = CoachMode.default.rawValue
     // 通知の種類別 ON/OFF。ローカル通知はこの @AppStorage を NotificationService が参照。
+    @AppStorage(NotificationService.PrefKey.coach) private var notifCoach = true
     @AppStorage(NotificationService.PrefKey.streak) private var notifStreak = true
     @AppStorage(NotificationService.PrefKey.planned) private var notifPlanned = true
     @AppStorage(NotificationService.PrefKey.weeklyRecap) private var notifWeeklyRecap = true
@@ -90,6 +94,30 @@ struct SettingsView: View {
             }
 
             Section {
+                Picker("コーチ", selection: $coachModeRaw) {
+                    ForEach(CoachMode.allCases) { mode in
+                        Text(mode.title).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(coachMode.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if coachMode.requiresSubscription && !subscription.isPremium {
+                    Label("「全部おまかせ」は有料プランの機能です（現在は課金未接続のため無料で試せます）",
+                          systemImage: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(Theme.warning)
+                }
+            } header: {
+                Text("AIコーチ")
+            } footer: {
+                Text("コーチは記録だけを根拠に助言します。育成タブに用事があるときだけ現れ、タップで相談できます。オフにすると一切現れません。")
+            }
+
+            Section {
                 switch notifications.status {
                 case .authorized, .provisional, .ephemeral:
                     EmptyView()
@@ -113,6 +141,11 @@ struct SettingsView: View {
                         .disabled(myProfile == nil)
                     Toggle("コメント", isOn: pushBinding(\.notifyComments))
                         .disabled(myProfile == nil)
+                    Toggle("コーチの声かけ", isOn: $notifCoach)
+                        .onChange(of: notifCoach) { _, on in
+                            if !on { notifications.cancelCoachNotices() }
+                        }
+                        .disabled(coachMode == .off)
                     Toggle("連続記録の途切れ予告", isOn: $notifStreak)
                         .onChange(of: notifStreak) { _, on in if !on { notifications.cancelStreakReminder() } }
                     Toggle("予定ワークアウト", isOn: $notifPlanned)
@@ -282,6 +315,9 @@ struct SettingsView: View {
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
         return "\(v) (\(b))"
     }
+
+    /// 選択中のコーチの関わり方。
+    private var coachMode: CoachMode { CoachMode(rawValue: coachModeRaw) ?? .default }
 
     /// 通知が許諾済みか（種類別トグルの有効/無効の判定）。
     private var notifAuthorized: Bool {

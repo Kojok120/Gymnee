@@ -136,20 +136,8 @@ struct RootView: View {
         case "calendar": CalendarHomeView()
         case "character": CharacterRoomView(userId: userId)
         // ドット絵の一覧。絵を足したり直したりしたとき、崩れをスクショ 1 枚で確認する用。
-        // コーチとの相談シート（部屋でコーチをタップしたときに出るもの）。
-        case "coach":
-            CoachSheet(
-                topics: CoachConsultation.topics(
-                    for: CharacterChatter.Context(
-                        recordedToday: false, weeklyDone: 2, weeklyGoal: 3, streakWeeks: 3,
-                        energy: 128, cheapestCourseCost: 20, expedition: .idle,
-                        nextStageUnmet: ["Lv.5まであと2"], daysSinceLastWorkout: 1
-                    )
-                ),
-                opening: "あと1回で今週の目標。ここで行けると気持ちよく終われる",
-                onAction: { _ in },
-                onDismiss: {}
-            )
+        // コーチとのチャット（部屋でコーチをタップしたときに出るもの）。
+        case "coach": CoachChatView(userId: userId)
         case "pixelart": PixelArtGallery(section: .character)
         case "pixelart-items": PixelArtGallery(section: .items)
         case "pixelart-room": PixelArtGallery(section: .room)
