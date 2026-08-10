@@ -55,7 +55,7 @@ struct CharacterRoomView: View {
     }
 
     enum SheetRoute: String, Identifiable {
-        case status, expedition, outfit, skins, collection
+        case status, expedition, outfit, skins, collection, coach
         var id: String { rawValue }
     }
 
@@ -124,13 +124,23 @@ struct CharacterRoomView: View {
         .onAppear {
             refresh()
             startedAt = .now
-            // 開いた瞬間に用事を告げる。タップされるまで無言だと、せっかくの導線に誰も気づかない。
-            speak()
+            // 用事があれば、開いてすぐコーチが歩いて入ってくる。
+            updateCoachPresence()
         }
-        .onChange(of: signature) { _, _ in refresh() }
+        .onChange(of: signature) { _, _ in
+            refresh()
+            updateCoachPresence()
+        }
         .onChange(of: scenePhase) { _, phase in
             // バックグラウンドから戻ったら時間を巻き戻さない（歩いている途中から続く）。
-            if phase == .active { refresh() }
+            if phase == .active {
+                refresh()
+                updateCoachPresence()
+            }
+        }
+        // 出入りの歩きが終わったかを見るだけの軽いタイマー。毎フレームは要らない。
+        .onReceive(Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()) { now in
+            advanceCoachTransition(now: now)
         }
         .sheet(item: $celebrating) { result in
             RewardCelebrationView(result: result)
@@ -170,21 +180,26 @@ struct CharacterRoomView: View {
             //
             // 喋るのは**コーチ**であって自分のキャラではない。自分のアバターが自分に
             // 「あと1回で今週の目標」と言うのは筋が通らないので、ふきだしはコーチの頭上に置く。
-            if let line = chatter {
-                if showsCoach {
-                    SpeechBubble(text: line.text) { perform(line.action) }
-                        .frame(maxWidth: size.width * 0.64, alignment: .leading)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(.leading, size.width * Self.coachSpot.x)
-                        .padding(.top, coachBubbleTop(in: size, floorTop: floorTop, floorBottom: floorBottom))
-                        .transition(.scale(scale: 0.9, anchor: .bottomLeading).combined(with: .opacity))
-                } else {
-                    // コーチがオフのときは自分のキャラの独り言として、窓より下の帯に出す。
-                    SpeechBubble(text: line.text) { perform(line.action) }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .padding(.top, size.height * 0.30)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
-                }
+            // コーチが立っている間だけふきだしを出す。歩いている最中に喋らせると読めない。
+            if coachPhase == .present, let line = chatter {
+                SpeechBubble(text: line.text) { openCoach() }
+                    .frame(maxWidth: size.width * 0.64, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.leading, size.width * Self.coachSpot.x)
+                    .padding(.top, coachBubbleTop(in: size, floorTop: floorTop, floorBottom: floorBottom))
+                    .transition(.scale(scale: 0.9, anchor: .bottomLeading).combined(with: .opacity))
+            }
+
+            // コーチ本体のタップ受け口（Canvas は当たり判定を持たないので矩形を重ねる）。
+            if coachPhase == .present {
+                Color.clear
+                    .frame(width: size.width * 0.22, height: size.height * 0.16)
+                    .contentShape(Rectangle())
+                    .onTapGesture { openCoach() }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.leading, max(0, size.width * Self.coachSpot.x - size.width * 0.11))
+                    .padding(.top, coachBubbleTop(in: size, floorTop: floorTop, floorBottom: floorBottom) + 56)
+                    .accessibilityLabel("コーチに相談する")
             }
 
             hud(size: size)
@@ -198,11 +213,19 @@ struct CharacterRoomView: View {
     /// 話しかける相手がいつも同じ場所にいることで、ふきだしの主が誰なのかが迷いなく伝わる。
     private static let coachSpot = CGPoint(x: 0.23, y: 0.14)
 
-    /// コーチを部屋に出すか。
+    /// コーチ機能そのもののオン/オフ。
     /// #79 で「全部おまかせ / 提案だけ / オフ」の 3 択が入る予定で、**オフではコーチは一切現れない**。
-    /// その設定がまだ無いので既定で表示し、切り替え口だけここに用意しておく。
-    private var showsCoach: Bool { coachMode != "off" }
+    /// その設定がまだ無いので既定で有効にし、切り替え口だけここに用意しておく。
     @AppStorage("gymnee.coachMode") private var coachMode = "auto"
+    private var coachEnabled: Bool { coachMode != "off" }
+
+    /// 同じ用事で見送った記録（クールダウン用）。端末ローカルで十分な情報。
+    @AppStorage("gymnee.coachDismissedTopic") private var dismissedTopicRaw = ""
+    @AppStorage("gymnee.coachDismissedAt") private var dismissedAt: Double = 0
+
+    /// コーチの出入りの段階と、その段階に入った時刻。
+    @State private var coachPhase = CoachVisit.Phase.away
+    @State private var coachPhaseSince = Date.now
 
     /// キャラたち。**全員を 1 枚の Canvas に描く**ことで、毎フレームの View 差分を発生させない。
     private func actors(in size: CGSize, dot: CGFloat, floorTop: CGFloat, floorBottom: CGFloat) -> some View {
@@ -225,18 +248,14 @@ struct CharacterRoomView: View {
                 var cast: [(pose: CharacterScene.Pose, look: PixelCharacterRenderer.Look)] = []
                 cast.append((CharacterScene.pose(at: elapsed, seed: selfSeed), look))
 
-                // コーチ。歩き回らず、呼吸とまばたきだけで生きていることを見せる。
-                if showsCoach {
+                // コーチ。用事があるときだけ歩いて入ってきて、済んだら歩いて帰る。
+                if let coachPose = CoachVisit.pose(
+                    phase: coachPhase,
+                    elapsed: timeline.date.timeIntervalSince(coachPhaseSince),
+                    spot: Self.coachSpot
+                ) {
                     cast.append((
-                        CharacterScene.Pose(
-                            position: Self.coachSpot,
-                            facing: .down,
-                            behavior: .emoting(.rest),
-                            walkPhase: 0,
-                            emotePhase: 0,
-                            breathPhase: CharacterScene.breath(at: elapsed),
-                            blink: CharacterScene.blink(at: elapsed, seed: 0xC0AC_4)
-                        ),
+                        coachPose,
                         PixelCharacterRenderer.Look(
                             build: PixelCharacterRenderer.coachBuild,
                             skin: PixelCharacterRenderer.coachSkin,
@@ -364,16 +383,22 @@ struct CharacterRoomView: View {
         .frame(width: size.width, height: size.height)
     }
 
+    /// HUD の台座。**ライト/ダークに関わらず常に暗い**ので、上に載せる色は明色で固定する。
+    /// `Theme.lime` のような可変トークンを載せると、ライトモードでは濃い緑が暗い台座に
+    /// 沈んで読めなくなる（実際に「ルーキー」が潰れていた）。
+    private static let hudPlate = Color.black.opacity(0.55)
+    private static let hudAccent = Color(hexF: 0xC6FF3D)
+
     private var levelBadge: some View {
         Button { sheet = .status } label: {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: derived.stage.symbol)
-                        .font(.caption2.bold())
-                    Text(derived.stage.title)
                         .font(.caption.bold())
+                    Text(derived.stage.title)
+                        .font(.subheadline.weight(.bold))
                 }
-                .foregroundStyle(Theme.lime)
+                .foregroundStyle(Self.hudAccent)
 
                 Text("Lv.\(derived.level.value)")
                     .font(.numS)
@@ -382,8 +407,8 @@ struct CharacterRoomView: View {
                 // EXP バー。
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(.white.opacity(0.22))
-                        Capsule().fill(Theme.limeFill)
+                        Capsule().fill(.white.opacity(0.25))
+                        Capsule().fill(Self.hudAccent)
                             .frame(width: proxy.size.width * max(0.02, derived.level.progress))
                     }
                 }
@@ -391,7 +416,7 @@ struct CharacterRoomView: View {
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
-            .background(.black.opacity(0.42), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+            .background(Self.hudPlate, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -401,14 +426,14 @@ struct CharacterRoomView: View {
             HStack(spacing: Theme.Spacing.xs) {
                 Image(systemName: "bolt.heart.fill")
                     .font(.caption)
-                    .foregroundStyle(Theme.lime)
+                    .foregroundStyle(Self.hudAccent)
                 Text("\(derived.energy)")
                     .font(.numS)
                     .foregroundStyle(.white)
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
-            .background(.black.opacity(0.42), in: Capsule())
+            .background(Self.hudPlate, in: Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -437,19 +462,20 @@ struct CharacterRoomView: View {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: symbol)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(disabled ? Theme.textTertiary : .white)
+                        .foregroundStyle(disabled ? Color.white.opacity(0.35) : .white)
                         .frame(width: 46, height: 46)
-                        .background(.black.opacity(0.42), in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+                        .background(Self.hudPlate, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
                     if badge {
                         Circle()
-                            .fill(Theme.limeFill)
+                            .fill(Self.hudAccent)
                             .frame(width: 10, height: 10)
                             .offset(x: 3, y: -3)
                     }
                 }
                 Text(title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(disabled ? Theme.textTertiary : .white.opacity(0.85))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(disabled ? Color.white.opacity(0.4) : .white.opacity(0.9))
+                    .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
             }
         }
         .buttonStyle(.plain)
@@ -512,6 +538,16 @@ struct CharacterRoomView: View {
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
+        case .coach:
+            CoachSheet(
+                topics: CoachConsultation.topics(for: chatterContext()),
+                opening: chatter?.text ?? currentLine().text,
+                onAction: { action in
+                    sheet = nil
+                    perform(action)
+                },
+                onDismiss: { dismissCoach() }
+            )
         }
     }
 
@@ -559,8 +595,73 @@ struct CharacterRoomView: View {
 
     // MARK: - 操作
 
-    /// キャラに喋らせる。画面をタップしたときと、用事があるときに出す。
-    private func speak() {
+    // MARK: - コーチの来訪
+
+    /// 見送った用事（クールダウン判定に使う）。
+    private var lastDismissed: (topic: CoachVisit.Topic, at: Date)? {
+        guard let topic = CoachVisit.Topic(rawValue: dismissedTopicRaw), dismissedAt > 0 else { return nil }
+        return (topic, Date(timeIntervalSince1970: dismissedAt))
+    }
+
+    /// いまコーチに来てもらう用事があるか。
+    private var pendingTopic: CoachVisit.Topic? {
+        guard coachEnabled else { return nil }
+        return CoachVisit.Topic(action: currentLine().action)
+    }
+
+    /// 来訪の要否を判定して段階を進める。画面表示時と、記録・遠征が変わったときに呼ぶ。
+    private func updateCoachPresence() {
+        let shouldVisit = CoachVisit.shouldVisit(topic: pendingTopic, lastDismissed: lastDismissed)
+        switch coachPhase {
+        case .away where shouldVisit:
+            setCoachPhase(.arriving)
+            chatter = currentLine()
+        case .present where !shouldVisit:
+            setCoachPhase(.leaving)
+        case .arriving where !shouldVisit:
+            setCoachPhase(.leaving)
+        default:
+            break
+        }
+    }
+
+    /// 歩き終わりを見て、次の段階へ送る。
+    private func advanceCoachTransition(now: Date) {
+        let elapsed = now.timeIntervalSince(coachPhaseSince)
+        guard CoachVisit.isTransitionFinished(elapsed: elapsed) else { return }
+        switch coachPhase {
+        case .arriving: setCoachPhase(.present)
+        case .leaving: setCoachPhase(.away)
+        case .away, .present: break
+        }
+    }
+
+    private func setCoachPhase(_ phase: CoachVisit.Phase) {
+        guard coachPhase != phase else { return }
+        coachPhase = phase
+        coachPhaseSince = .now
+        if phase == .away || phase == .leaving {
+            withAnimation(.snappy) { chatter = nil }
+        }
+    }
+
+    /// 用事を見送る。同じ用事では一定時間戻ってこない。
+    private func dismissCoach() {
+        if let topic = pendingTopic {
+            dismissedTopicRaw = topic.rawValue
+            dismissedAt = Date.now.timeIntervalSince1970
+        }
+        setCoachPhase(.leaving)
+    }
+
+    private func openCoach() {
+        sheet = .coach
+    }
+
+    // MARK: - セリフ
+
+    /// いまの状況をコーチの材料にまとめる。
+    private func chatterContext() -> CharacterChatter.Context {
         let expeditionState: CharacterChatter.ExpeditionState
         if let run = activeRun {
             expeditionState = run.isAwaitingClaim(asOf: .now)
@@ -569,23 +670,28 @@ struct CharacterRoomView: View {
         } else {
             expeditionState = .idle
         }
-
-        let line = CharacterChatter.line(
-            for: CharacterChatter.Context(
-                recordedToday: derived.recordedToday,
-                weeklyDone: derived.weeklyDone,
-                weeklyGoal: weeklyGoal,
-                streakWeeks: derived.streakWeeks,
-                energy: derived.energy,
-                cheapestCourseCost: Expedition.unlockedCourses(level: derived.level.value).map(\.energyCost).min(),
-                expedition: expeditionState,
-                partners: coopPartners.map(\.name),
-                nextStageUnmet: derived.nextStage?.unmet ?? [],
-                daysSinceLastWorkout: derived.daysSinceLastWorkout
-            ),
-            seed: UInt64(Date.now.timeIntervalSince1970)
+        return CharacterChatter.Context(
+            recordedToday: derived.recordedToday,
+            weeklyDone: derived.weeklyDone,
+            weeklyGoal: weeklyGoal,
+            streakWeeks: derived.streakWeeks,
+            energy: derived.energy,
+            cheapestCourseCost: Expedition.unlockedCourses(level: derived.level.value).map(\.energyCost).min(),
+            expedition: expeditionState,
+            partners: coopPartners.map(\.name),
+            nextStageUnmet: derived.nextStage?.unmet ?? [],
+            daysSinceLastWorkout: derived.daysSinceLastWorkout
         )
-        withAnimation(.bouncy) { chatter = line }
+    }
+
+    private func currentLine() -> CharacterChatter.Line {
+        CharacterChatter.line(for: chatterContext(), seed: UInt64(Date.now.timeIntervalSince1970))
+    }
+
+    /// コーチが立っているときだけ、いまの用事を喋らせる。
+    private func speak() {
+        guard coachPhase == .present else { return }
+        withAnimation(.bouncy) { chatter = currentLine() }
     }
 
     private func perform(_ action: CharacterChatter.Line.Action?) {
@@ -597,8 +703,10 @@ struct CharacterRoomView: View {
         case .claim:
             if let run = activeRun { claim(run) }
         case nil:
-            withAnimation(.snappy) { chatter = nil }
+            break
         }
+        // 用事に応じたので、コーチはいったん引き上げる。
+        dismissCoach()
     }
 
     /// 遠征に送り出す。元気は `ExpeditionRun.energySpent` の合計として引かれる。
