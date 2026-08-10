@@ -20,6 +20,8 @@ struct CharacterRoomView: View {
     @Query private var records: [PersonalRecord]
     @Query private var runs: [ExpeditionRun]
     @Query private var loadouts: [CharacterLoadout]
+    /// 髪型・アクセサリー（`CharacterLoadout` とは別モデル）。
+    @Query private var styles: [CharacterStyle]
     /// 拾ったグッズ（同じものを二度拾わせないための記録）。
     @Query private var pickups: [RoomPickupRecord]
     /// 合トレ判定用：フォロー中の人の投稿（自分以外）。
@@ -45,6 +47,7 @@ struct CharacterRoomView: View {
             sort: [SortDescriptor(\ExpeditionRun.startedAt, order: .reverse)]
         )
         _loadouts = Query(filter: #Predicate<CharacterLoadout> { $0.userId == userId })
+        _styles = Query(filter: #Predicate<CharacterStyle> { $0.userId == userId })
         _pickups = Query(filter: #Predicate<RoomPickupRecord> { $0.userId == userId })
         _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId != userId })
     }
@@ -112,7 +115,7 @@ struct CharacterRoomView: View {
 
     /// 集計のやり直しが要るかを判定する軽い指紋。@Query の中身が変わったときだけ変化する。
     private var signature: String {
-        "\(completedWorkouts.count)-\(records.count)-\(runs.count)-\(pickups.count)-\(loadouts.first?.updatedAt.timeIntervalSince1970 ?? 0)"
+        "\(completedWorkouts.count)-\(records.count)-\(runs.count)-\(pickups.count)-\(loadouts.first?.updatedAt.timeIntervalSince1970 ?? 0)-\(styles.first?.updatedAt.timeIntervalSince1970 ?? 0)"
     }
 
     // MARK: - 画面
@@ -342,8 +345,8 @@ struct CharacterRoomView: View {
             carriesPack: activeRun?.isInProgress(asOf: .now) ?? false,
             nameTag: nil,
             role: .trainee,
-            hairStyleId: loadout?.hairStyleId ?? PixelHairArt.defaultStyleId,
-            accessoryId: loadout?.accessoryId ?? "none"
+            hairStyleId: style?.hairStyleId ?? PixelHairArt.defaultStyleId,
+            accessoryId: style?.accessoryId ?? "none"
         )
         let partners = Array(coopPartners.prefix(3))
         let started = startedAt
@@ -670,8 +673,12 @@ struct CharacterRoomView: View {
     private func letterNoteOverlay(_ text: String) -> some View {
         VStack(spacing: Theme.Spacing.md) {
             PixelSpriteView(sprite: PixelCharacterArt.letter, palette: .neutral, side: 60)
+            // 手書きの手紙に見せる。日本語で手書き感が出る既定フォントは明朝体なので serif を使う
+            // （Chalkboard 等の手書き欧文フォントは日本語グリフを持たず、結局ゴシックに落ちる）。
             Text(text)
-                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .font(.system(size: 16, design: .serif))
+                .tracking(0.5)
+                .lineSpacing(4)
                 .foregroundStyle(Theme.textPrimary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -750,11 +757,11 @@ struct CharacterRoomView: View {
 
             Spacer()
 
-            if derived.sessionCount == 0 {
-                startPrompt
-            } else {
-                actionBar
-            }
+            // 記録がまだ無くても下部ボタンは必ず出す。
+            // 以前は代わりに大きな案内ブロックを出していたが、それが常時居座って
+            // ステータス・遠征・見た目に一切たどり着けなくなっていた（実機で発覚）。
+            // 記録への促しはコーチのふきだしと初回案内が担う。
+            actionBar
         }
         // タブバー（＋ホームインジケータ）の高さぶん持ち上げる。
         // これが無いとボタン列がタブバーの真下に潜る（実機で発覚）。
@@ -886,24 +893,6 @@ struct CharacterRoomView: View {
         .background(Self.hudPlate, in: Capsule())
     }
 
-    private var startPrompt: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            Text("キャラが育つのは現実のトレーニングだけ")
-                .font(.subheadline.bold())
-                .foregroundStyle(.white)
-            Text("1回記録すると、この部屋が動き出す")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.7))
-            Button("記録をはじめる") {
-                NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil)
-            }
-            .buttonStyle(.gymneePrimary)
-        }
-        .padding(Theme.Spacing.lg)
-        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.bottom, Theme.Spacing.xl)
-    }
 
     // MARK: - シート
 
@@ -938,10 +927,10 @@ struct CharacterRoomView: View {
                 stage: derived.stage,
                 equipped: equipped,
                 currentSkinId: skin.id,
-                currentHairId: loadout?.hairStyleId ?? PixelHairArt.defaultStyleId,
-                currentAccessoryId: loadout?.accessoryId ?? "none",
+                currentHairId: style?.hairStyleId ?? PixelHairArt.defaultStyleId,
+                currentAccessoryId: style?.accessoryId ?? "none",
                 purchasedSkins: loadout?.purchasedSkins ?? [],
-                purchasedAppearances: loadout?.purchasedAppearances ?? [],
+                purchasedAppearances: style?.purchased ?? [],
                 onSelectSkin: { selectSkin($0) },
                 onSelectHair: { selectHair($0) },
                 onSelectAccessory: { selectAccessory($0) },
@@ -1194,14 +1183,14 @@ struct CharacterRoomView: View {
     }
 
     private func selectHair(_ id: String) {
-        let state = ensureLoadout()
+        let state = ensureStyle()
         state.hairStyleId = id
         state.updatedAt = .now
         try? context.save()
     }
 
     private func selectAccessory(_ id: String) {
-        let state = ensureLoadout()
+        let state = ensureStyle()
         state.accessoryId = id
         state.updatedAt = .now
         try? context.save()
@@ -1215,11 +1204,13 @@ struct CharacterRoomView: View {
             state.addPurchasedSkin(skin.id)
             state.skinId = skin.id
         } else if PixelHairArt.styles.contains(where: { $0.id == id }) {
-            state.addPurchasedAppearance(id)
-            state.hairStyleId = id
+            let style = ensureStyle()
+            style.addPurchased(id)
+            style.hairStyleId = id
         } else if PixelHairArt.accessories.contains(where: { $0.id == id }) {
-            state.addPurchasedAppearance(id)
-            state.accessoryId = id
+            let style = ensureStyle()
+            style.addPurchased(id)
+            style.accessoryId = id
         }
         try? context.save()
     }
@@ -1230,6 +1221,16 @@ struct CharacterRoomView: View {
         state.addPurchasedSkin(skin.id)
         state.skinId = skin.id
         try? context.save()
+    }
+
+    private var style: CharacterStyle? { styles.first }
+
+    /// 髪型・アクセサリーの保存先を必要になった時に作る。
+    private func ensureStyle() -> CharacterStyle {
+        if let existing = style { return existing }
+        let created = CharacterStyle(userId: userId)
+        context.insert(created)
+        return created
     }
 
     /// 見た目の保存先を必要になった時に作る。

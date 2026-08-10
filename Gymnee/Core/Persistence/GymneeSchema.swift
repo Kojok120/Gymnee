@@ -65,17 +65,25 @@ enum GymneeSchemaV5: VersionedSchema {
     }
 }
 
-// 注意: **新しいモデル型を足さないプロパティ追加では VersionedSchema を増やさないこと**。
-// モデルの型一覧が前バージョンと同じだとチェックサムも同じになり、
-// SwiftData が「Duplicate version checksums detected.」で起動時に落ちる（実際に踏んだ）。
-// 既定値つきプロパティの追加は現行バージョンのまま lightweight migration が面倒を見る
-// （`CharacterLoadout` の髪型・アクセサリーはこれに当たる）。
+/// スキーマ v6。髪型・アクセサリーの `CharacterStyle` を追加。
+///
+/// **既存モデルへのプロパティ追加ではなく、必ず「型の追加」で表現すること。**
+/// モデル型の一覧が前バージョンと同じだとチェックサムが衝突して
+/// 「Duplicate version checksums detected.」で落ち、かといってバージョンを据え置くと
+/// 「Cannot use staged migration with an unknown model version」でストアが開けず、
+/// 退避＝ユーザーのローカルデータ消失につながる（実際に起こした）。
+enum GymneeSchemaV6: VersionedSchema {
+    static var versionIdentifier = Schema.Version(6, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        GymneeSchemaV5.models + [CharacterStyle.self]
+    }
+}
 
 /// 段階的マイグレーション計画（§7 データ保護）。
 /// スキーマ変更時はここに MigrationStage を追加する。
 enum GymneeMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self]
+        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -83,14 +91,15 @@ enum GymneeMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: GymneeSchemaV2.self, toVersion: GymneeSchemaV3.self),
             .lightweight(fromVersion: GymneeSchemaV3.self, toVersion: GymneeSchemaV4.self),
             .lightweight(fromVersion: GymneeSchemaV4.self, toVersion: GymneeSchemaV5.self),
+            .lightweight(fromVersion: GymneeSchemaV5.self, toVersion: GymneeSchemaV6.self),
         ]
     }
 }
 
 /// ModelContainer・Widget・テストから共通参照する単一の真実。
 enum GymneeSchema {
-    static let models = GymneeSchemaV5.models
-    static let schema = Schema(versionedSchema: GymneeSchemaV5.self)
+    static let models = GymneeSchemaV6.models
+    static let schema = Schema(versionedSchema: GymneeSchemaV6.self)
 
     /// ストア退避が起きたことを UI に伝えるフラグ（RootView が一度だけアラートを出して消す）。
     static let recoveryPendingKey = "gymnee.storeRecoveryPending"
