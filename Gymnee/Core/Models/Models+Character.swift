@@ -132,3 +132,34 @@ extension ExpeditionRun {
 
     var reward: Expedition.Item? { rewardItemId.flatMap { Expedition.item(id: $0) } }
 }
+
+/// 拾ったグッズ（ローカル専用モデル）。
+///
+/// 落ちているものは時刻から決定的に導出するので保存しない。保存するのは
+/// **「どのスロットで湧いた何を拾ったか」だけ**で、これがあれば同じものが復活しない。
+///
+/// `SwiftDataSyncStore` の同期対象に含めていない（遠征と同じく、サーバーに持つ意味がまだ無い）。
+@Model
+final class RoomPickupRecord {
+    @Attribute(.unique) var id: UUID
+    var userId: UUID
+    /// `RoomPickup.Drop.storageId`（"スロット番号-アイテムid"）。同じものを二度拾わせない鍵。
+    var storageId: String
+    /// 拾ったグッズの id（`RoomPickup.items`）。元気と EXP はここから引く。
+    var itemId: String
+    var collectedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        userId: UUID,
+        storageId: String,
+        itemId: String,
+        collectedAt: Date = .now
+    ) {
+        self.id = id
+        self.userId = userId
+        self.storageId = storageId
+        self.itemId = itemId
+        self.collectedAt = collectedAt
+    }
+}

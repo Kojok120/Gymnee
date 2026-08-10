@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// 装備・戦利品・遠征コースのドット絵（16 × 16）。
 ///
@@ -376,5 +377,129 @@ enum PixelItemArt {
         "gggggggggggggggg",
         "kkkkkkkkkkkkkkkk",
         "kkkkkkkkkkkkkkkk",
+    ])
+}
+
+/// 部屋に落ちているグッズのドット絵（12 × 12）。
+///
+/// 戦利品（16 × 12 の装備）より一回り小さい。床に転がっている物なので、
+/// キャラより目立つと部屋の主役が入れ替わってしまう。
+extension PixelItemArt {
+
+    static let pickupSide = 12
+
+    /// グッズごとの配色。**レア度の色を流用しない**。
+    /// 装備は「レア度が価値」だが、こちらは食べ物・飲み物なので、
+    /// 色がその物を表していないと何が落ちているのか読めない（バナナが灰色の棒になる）。
+    static func pickupPalette(id: String) -> PixelPalette {
+        var palette = PixelPalette.neutral
+        switch id {
+        case "coffee":
+            palette.accent = Color(hexF: 0xC9C6C0)      // 湯気
+            palette.cloth = Color(hexF: 0x7A4A2B)       // 中身のコーヒー
+        case "banana":
+            palette.accent = Color(hexF: 0xF7D046)
+            palette.dark = Color(hexF: 0x8A6B1F)
+        case "amino":
+            palette.accent = Color(hexF: 0x4FC1E9)
+        case "protein-bar":
+            palette.accent = Color(hexF: 0x9A6234)
+        case "creatine":
+            palette.accent = Color(hexF: 0xE8563F)
+        default:
+            break
+        }
+        return palette
+    }
+
+    static func pickup(id: String) -> PixelSprite {
+        switch id {
+        case "coffee": return coffee
+        case "banana": return banana
+        case "amino": return aminoBottle
+        case "protein-bar": return proteinBar
+        case "creatine": return creatineTub
+        default: return coffee
+        }
+    }
+
+    /// コーヒー。湯気付きの紙カップ。
+    private static let coffee = PixelSprite([
+        "............",
+        "..r......r..",
+        "...r....r...",
+        "..r......r..",
+        "............",
+        "..oooooooo..",
+        "..ollllllo..",
+        "..offffffo..",
+        "..offffffo..",
+        "...offffo...",
+        "...oooooo...",
+        "............",
+    ])
+
+    /// バナナ。
+    private static let banana = PixelSprite([
+        "............",
+        ".......dd...",
+        "......drrd..",
+        ".....drrrd..",
+        "....drrrd...",
+        "...drrrd....",
+        "..drrrd.....",
+        "..drrd......",
+        "..ddd.......",
+        "............",
+        "............",
+        "............",
+    ])
+
+    /// アミノ酸サプリ。ボトル。
+    private static let aminoBottle = PixelSprite([
+        "............",
+        "....oooo....",
+        "....ommo....",
+        "...oooooo...",
+        "..orrrrrro..",
+        "..orrrrrro..",
+        "..ollllllo..",
+        "..orrrrrro..",
+        "..orrrrrro..",
+        "..orrrrrro..",
+        "...oooooo...",
+        "............",
+    ])
+
+    /// プロテインバー。包装のねじりを両端に。
+    private static let proteinBar = PixelSprite([
+        "............",
+        "............",
+        "............",
+        ".o........o.",
+        "oooooooooooo",
+        "orrllrrrrrro",
+        "orrrrrrrrrro",
+        "orrrrrrllrro",
+        "oooooooooooo",
+        ".o........o.",
+        "............",
+        "............",
+    ])
+
+    /// クレアチンサプリ。大きめのタブ（レアなので一回り大きく見せる）。
+    private static let creatineTub = PixelSprite([
+        "............",
+        "...oooooo...",
+        "...ommmmo...",
+        "..oooooooo..",
+        "..orrrrrro..",
+        "..orllllro..",
+        "..orlddlro..",
+        "..orllllro..",
+        "..orrrrrro..",
+        "..orrrrrro..",
+        "..oooooooo..",
+        "............",
     ])
 }
