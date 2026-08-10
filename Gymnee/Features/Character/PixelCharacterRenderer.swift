@@ -7,6 +7,14 @@ import SwiftUI
 /// 途中で小数を挟むとドットの境目がにじんで、ドット絵に見えなくなる。
 enum PixelCharacterRenderer {
 
+    /// 誰を描くか。骨格は共通で、頭と小物だけ差し替える。
+    enum Role: Equatable {
+        /// プレイヤー自身と、部屋に居合わせた仲間。
+        case trainee
+        /// AI コーチ（#79）。帽子とクリップボードで描き分ける。
+        case coach
+    }
+
     /// 描くのに要る材料。
     struct Look: Equatable {
         var build: CharacterBuild
@@ -17,7 +25,18 @@ enum PixelCharacterRenderer {
         var carriesPack: Bool
         /// 頭上に出す名前（仲間キャラ用。自分は nil）。
         var nameTag: String?
+        var role: Role = .trainee
     }
+
+    /// コーチの配色。プレイヤーのスキンとは独立させる（着せ替えの対象ではない）。
+    static let coachSkin = CharacterSkin(
+        id: "coach", name: "コーチ",
+        bodyHex: 0xD9A87F, accentHex: 0x2B4B7A,
+        isPaid: false, priceLabel: ""
+    )
+
+    /// コーチの体格。プレイヤーの記録では変わらない。
+    static let coachBuild = CharacterBuild(girth: .normal, arm: .thick, leg: .thick)
 
     // MARK: - 画枠の基準位置（ドット）
 
@@ -131,10 +150,21 @@ enum PixelCharacterRenderer {
             context.drawPixels(armSprite, at: place(near.x, near.y), dot: dot, palette: palette, flipped: mirrored)
         }
 
-        // 頭。向きが変わるのはここ。
-        let headSprite = PixelCharacterArt.head(facing: facing, blinking: frame.blinking)
+        // 頭。向きが変わるのはここ。コーチは帽子付きの頭に差し替える。
+        let headSprite = look.role == .coach
+            ? PixelCharacterArt.coachHead(blinking: frame.blinking)
+            : PixelCharacterArt.head(facing: facing, blinking: frame.blinking)
         let headY = Anchor.headY + upperY
         context.drawPixels(headSprite, at: place(Anchor.headX, headY), dot: dot, palette: palette, flipped: mirrored)
+
+        // コーチのクリップボード。腕の外側に垂らす（内側に置くと胴に重なって読めない）。
+        if look.role == .coach, let hand = armPositions.last {
+            context.drawPixels(
+                PixelCharacterArt.clipboard,
+                at: place(hand.x, hand.y + PixelCharacterArt.armHeight - 3),
+                dot: dot, palette: palette
+            )
+        }
 
         // 装備と小道具（体の上に重ねる）。横向きでは手前の手にだけ持たせる。
         let handAnchors = sideways ? Array(armPositions.suffix(1)) : armPositions

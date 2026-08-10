@@ -167,14 +167,24 @@ struct CharacterRoomView: View {
 
             // ふきだしはアニメーション層の外に出す。中に入れるとタップを受け取れず、
             // 「記録をはじめる」「遠征へ」の導線が死ぬ。
+            //
+            // 喋るのは**コーチ**であって自分のキャラではない。自分のアバターが自分に
+            // 「あと1回で今週の目標」と言うのは筋が通らないので、ふきだしはコーチの頭上に置く。
             if let line = chatter {
-                VStack {
-                    // 窓より下・床より上の帯に置く。窓に重ねると外の景色が隠れる。
+                if showsCoach {
                     SpeechBubble(text: line.text) { perform(line.action) }
+                        .frame(maxWidth: size.width * 0.64, alignment: .leading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(.leading, size.width * Self.coachSpot.x)
+                        .padding(.top, coachBubbleTop(in: size, floorTop: floorTop, floorBottom: floorBottom))
+                        .transition(.scale(scale: 0.9, anchor: .bottomLeading).combined(with: .opacity))
+                } else {
+                    // コーチがオフのときは自分のキャラの独り言として、窓より下の帯に出す。
+                    SpeechBubble(text: line.text) { perform(line.action) }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .padding(.top, size.height * 0.30)
-                    Spacer()
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
                 }
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
 
             hud(size: size)
@@ -183,6 +193,16 @@ struct CharacterRoomView: View {
         .contentShape(Rectangle())
         .onTapGesture { speak() }
     }
+
+    /// コーチの立ち位置（歩き回らず、部屋の決まった場所にいる）。
+    /// 話しかける相手がいつも同じ場所にいることで、ふきだしの主が誰なのかが迷いなく伝わる。
+    private static let coachSpot = CGPoint(x: 0.23, y: 0.14)
+
+    /// コーチを部屋に出すか。
+    /// #79 で「全部おまかせ / 提案だけ / オフ」の 3 択が入る予定で、**オフではコーチは一切現れない**。
+    /// その設定がまだ無いので既定で表示し、切り替え口だけここに用意しておく。
+    private var showsCoach: Bool { coachMode != "off" }
+    @AppStorage("gymnee.coachMode") private var coachMode = "auto"
 
     /// キャラたち。**全員を 1 枚の Canvas に描く**ことで、毎フレームの View 差分を発生させない。
     private func actors(in size: CGSize, dot: CGFloat, floorTop: CGFloat, floorBottom: CGFloat) -> some View {
@@ -204,6 +224,30 @@ struct CharacterRoomView: View {
                 // 奥にいる者から描く（手前が上に重なる）。
                 var cast: [(pose: CharacterScene.Pose, look: PixelCharacterRenderer.Look)] = []
                 cast.append((CharacterScene.pose(at: elapsed, seed: selfSeed), look))
+
+                // コーチ。歩き回らず、呼吸とまばたきだけで生きていることを見せる。
+                if showsCoach {
+                    cast.append((
+                        CharacterScene.Pose(
+                            position: Self.coachSpot,
+                            facing: .down,
+                            behavior: .emoting(.rest),
+                            walkPhase: 0,
+                            emotePhase: 0,
+                            breathPhase: CharacterScene.breath(at: elapsed),
+                            blink: CharacterScene.blink(at: elapsed, seed: 0xC0AC_4)
+                        ),
+                        PixelCharacterRenderer.Look(
+                            build: PixelCharacterRenderer.coachBuild,
+                            skin: PixelCharacterRenderer.coachSkin,
+                            equipped: [:],
+                            stage: .rookie,
+                            carriesPack: false,
+                            nameTag: nil,
+                            role: .coach
+                        )
+                    ))
+                }
                 for partner in partners {
                     // 仲間ごとに別のシードと時間差を与えて、同じ動きが揃わないようにする。
                     let seed = DeterministicRandom.seed(from: partner.id)
@@ -239,6 +283,16 @@ struct CharacterRoomView: View {
 
     /// 自分のキャラの歩き方を決めるシード。人によって歩き回り方が変わる。
     private var selfSeed: UInt64 { DeterministicRandom.seed(from: userId) }
+
+    /// コーチのふきだしを置く高さ（コーチの頭より少し上）。
+    private func coachBubbleTop(in size: CGSize, floorTop: CGFloat, floorBottom: CGFloat) -> CGFloat {
+        let dot = max(3, (size.width / 84).rounded())
+        let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(Self.coachSpot.y))).rounded())
+        let feetY = floorTop + (floorBottom - floorTop) * CGFloat(Self.coachSpot.y)
+        let headTop = feetY - CGFloat(PixelCharacterArt.canvasHeight) * scaled
+        // ふきだしの高さぶん上に逃がす。負にならないよう最低限のマージンを残す。
+        return max(size.height * 0.06, headTop - 64)
+    }
 
     // MARK: - 宝箱
 

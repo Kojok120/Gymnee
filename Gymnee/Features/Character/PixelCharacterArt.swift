@@ -113,6 +113,57 @@ enum PixelCharacterArt {
         "...oooooooo...",
     ])
 
+    // MARK: - コーチの頭
+
+    /// AI コーチ（#79）の顔。プレイヤーと同じ画枠・同じ骨格を使い、**帽子で人物を描き分ける**。
+    /// 部屋にもう 1 人立たせるので、シルエットが被ると「自分が 2 人いる」ように見えてしまう。
+    static func coachHead(blinking: Bool) -> PixelSprite {
+        blinking ? coachHeadBlink : coachHeadFront
+    }
+
+    private static let coachHeadFront = PixelSprite([
+        "....oooooo....",
+        "..oowwwwwwoo..",
+        ".owwwwwwwwwwo.",
+        "owwwwwwwwwwwwo",
+        "owwwwwwwwwwwwo",
+        "oWWWWWWWWWWWWo",
+        "oooooooooooooo",
+        "ohsslesslessHo",
+        "ohsseesseessHo",
+        "ohscsssssscsHo",
+        "ohssssoossssHo",
+        "..osssssssso..",
+        "...oooooooo...",
+    ])
+
+    private static let coachHeadBlink = PixelSprite([
+        "....oooooo....",
+        "..oowwwwwwoo..",
+        ".owwwwwwwwwwo.",
+        "owwwwwwwwwwwwo",
+        "owwwwwwwwwwwwo",
+        "oWWWWWWWWWWWWo",
+        "oooooooooooooo",
+        "ohssssssssssHo",
+        "ohssoossoossHo",
+        "ohscsssssscsHo",
+        "ohssssoossssHo",
+        "..osssssssso..",
+        "...oooooooo...",
+    ])
+
+    /// コーチが持つクリップボード。何をする人か一目で分かるようにする。
+    /// 身長 24 ドットに対して縦長すぎると体を覆ってしまうので 6 段に抑える。
+    static let clipboard = PixelSprite([
+        "..o..",
+        "ooooo",
+        "olllo",
+        "oldlo",
+        "olllo",
+        "ooooo",
+    ])
+
     static let headWidth = 14
     static let headHeight = 13
 

@@ -12,6 +12,9 @@ final class PixelSpriteTests: XCTestCase {
             ("headBack", PixelCharacterArt.headBack),
             ("headSide", PixelCharacterArt.headSide),
             ("headSideBlink", PixelCharacterArt.headSideBlink),
+            ("coachHead", PixelCharacterArt.coachHead(blinking: false)),
+            ("coachHeadBlink", PixelCharacterArt.coachHead(blinking: true)),
+            ("clipboard", PixelCharacterArt.clipboard),
             ("dumbbell", PixelCharacterArt.dumbbell),
             ("backpack", PixelCharacterArt.backpack),
             ("plant", PixelCharacterArt.plant),
@@ -108,6 +111,25 @@ final class PixelSpriteTests: XCTestCase {
             XCTAssertEqual(PixelCharacterArt.leg(limb).width, PixelCharacterArt.legWidth(limb), "\(limb) の脚幅")
             XCTAssertEqual(PixelCharacterArt.leg(limb).height, PixelCharacterArt.legHeight, "\(limb) の脚高")
         }
+    }
+
+    /// コーチはプレイヤーと同じ画枠・同じ骨格を使い、頭だけ差し替える。
+    /// 寸法が違うと首から上がずれ、シルエットが被るとプレイヤーと見分けられなくなる。
+    func testCoachSharesRigButNotSilhouette() {
+        for blinking in [true, false] {
+            let sprite = PixelCharacterArt.coachHead(blinking: blinking)
+            XCTAssertEqual(sprite.width, PixelCharacterArt.headWidth)
+            XCTAssertEqual(sprite.height, PixelCharacterArt.headHeight)
+            XCTAssertNotEqual(
+                sprite, PixelCharacterArt.head(facing: .down, blinking: blinking),
+                "コーチとプレイヤーの頭が同じ絵になっている"
+            )
+        }
+        // コーチの配色は着せ替えの対象にしない（スキンショップに並ばない）。
+        XCTAssertFalse(
+            SkinCatalog.all.contains { $0.id == PixelCharacterRenderer.coachSkin.id },
+            "コーチのスキンがショップに並んでいる"
+        )
     }
 
     /// 頭の装備は頭と同じ幅（ずれると頭からはみ出す）。

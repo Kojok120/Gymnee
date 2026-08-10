@@ -92,6 +92,33 @@ struct PixelArtGallery: View {
                 }
             }
 
+            SectionHeader(title: "AI コーチ（#79）")
+            LazyVGrid(columns: grid(minimum: 76), spacing: Theme.Spacing.md) {
+                labelled("通常") {
+                    CharacterPreview(
+                        build: PixelCharacterRenderer.coachBuild,
+                        frame: .standing,
+                        skin: PixelCharacterRenderer.coachSkin,
+                        role: .coach
+                    )
+                }
+                labelled("まばたき") {
+                    CharacterPreview(
+                        build: PixelCharacterRenderer.coachBuild,
+                        frame: PixelCharacterLayout.frame(for: pose(.emoting(.rest), blink: 1)),
+                        skin: PixelCharacterRenderer.coachSkin,
+                        role: .coach
+                    )
+                }
+                labelled("自分と並べて") {
+                    CharacterPreview(
+                        build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
+                        frame: .standing,
+                        skin: SkinCatalog.all[0]
+                    )
+                }
+            }
+
             SectionHeader(title: "装備を着せた状態")
             LazyVGrid(columns: grid(minimum: 76), spacing: Theme.Spacing.md) {
                 ForEach(Expedition.Rarity.allCases, id: \.self) { rarity in
@@ -288,6 +315,7 @@ private struct CharacterPreview: View {
     let skin: CharacterSkin
     var equipped: [Expedition.Slot: Expedition.Item] = [:]
     var facing: CharacterScene.Facing = .down
+    var role: PixelCharacterRenderer.Role = .trainee
 
     var body: some View {
         Canvas { context, size in
@@ -296,7 +324,7 @@ private struct CharacterPreview: View {
                 in: &context,
                 look: PixelCharacterRenderer.Look(
                     build: build, skin: skin, equipped: equipped,
-                    stage: .rookie, carriesPack: false, nameTag: nil
+                    stage: .rookie, carriesPack: false, nameTag: nil, role: role
                 ),
                 frame: frame,
                 facing: facing,
