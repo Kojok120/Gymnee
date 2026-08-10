@@ -224,13 +224,15 @@ enum CharacterScene {
         return sin(progress * .pi)
     }
 
-    // MARK: - 奥行き
+    // MARK: - 描画倍率
 
-    /// 奥行き（y: 0＝奥 / 1＝手前）に応じた大きさの倍率。手前ほど大きく見せて立体感を出す。
-    static func depthScale(_ y: Double) -> Double {
-        let clamped = min(1, max(0, y.isFinite ? y : 0))
-        return 0.80 + 0.28 * clamped
-    }
+    /// キャラ・グッズの描画倍率。**奥行きでサイズは変えない**（ユーザー判断・2026-08-10）。
+    ///
+    /// 以前は手前ほど大きく描いていた（0.80〜1.08）が、ドット絵は整数倍でしか綺麗に拡縮できず、
+    /// 歩くたびにドットの粒度が切り替わってチラつくのも気になった。
+    /// 値は旧・最奥時の倍率（＝いちばん小さかったサイズ）に固定する。
+    /// 引数は呼び出し側の書き換えを最小にするために残している（未使用）。
+    static func depthScale(_ y: Double) -> Double { 0.80 }
 
     // MARK: - 時間帯
 

@@ -157,10 +157,11 @@ final class CharacterSceneTests: XCTestCase {
 
     // MARK: - 奥行き
 
-    func testDepthScaleGrowsTowardViewer() {
-        XCTAssertLessThan(CharacterScene.depthScale(0), CharacterScene.depthScale(1))
-        XCTAssertEqual(CharacterScene.depthScale(-5), CharacterScene.depthScale(0), accuracy: 0.0001)
-        XCTAssertEqual(CharacterScene.depthScale(9), CharacterScene.depthScale(1), accuracy: 0.0001)
+    /// 奥行きでサイズを変えない（ユーザー判断・2026-08-10）。値は旧・最奥時の倍率に固定。
+    func testDepthScaleIsConstant() {
+        XCTAssertEqual(CharacterScene.depthScale(0), CharacterScene.depthScale(1), accuracy: 0.0001)
+        XCTAssertEqual(CharacterScene.depthScale(0.5), 0.80, accuracy: 0.0001)
+        XCTAssertEqual(CharacterScene.depthScale(.nan), 0.80, accuracy: 0.0001)
     }
 
     // MARK: - 時間帯
