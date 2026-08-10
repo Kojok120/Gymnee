@@ -65,6 +65,12 @@ enum GymneeSchemaV5: VersionedSchema {
     }
 }
 
+// 注意: **新しいモデル型を足さないプロパティ追加では VersionedSchema を増やさないこと**。
+// モデルの型一覧が前バージョンと同じだとチェックサムも同じになり、
+// SwiftData が「Duplicate version checksums detected.」で起動時に落ちる（実際に踏んだ）。
+// 既定値つきプロパティの追加は現行バージョンのまま lightweight migration が面倒を見る
+// （`CharacterLoadout` の髪型・アクセサリーはこれに当たる）。
+
 /// 段階的マイグレーション計画（§7 データ保護）。
 /// スキーマ変更時はここに MigrationStage を追加する。
 enum GymneeMigrationPlan: SchemaMigrationPlan {

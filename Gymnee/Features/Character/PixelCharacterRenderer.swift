@@ -26,6 +26,10 @@ enum PixelCharacterRenderer {
         /// 頭上に出す名前（仲間キャラ用。自分は nil）。
         var nameTag: String?
         var role: Role = .trainee
+        /// 髪型（`PixelHairArt.styles`）。
+        var hairStyleId: String = PixelHairArt.defaultStyleId
+        /// アクセサリー（`PixelHairArt.accessories`）。"none" は着けていない。
+        var accessoryId: String = "none"
     }
 
     /// コーチの配色。プレイヤーのスキンとは独立させる（着せ替えの対象ではない）。
@@ -150,12 +154,29 @@ enum PixelCharacterRenderer {
             context.drawPixels(armSprite, at: place(near.x, near.y), dot: dot, palette: palette, flipped: mirrored)
         }
 
-        // 頭。向きが変わるのはここ。コーチは帽子付きの頭に差し替える。
-        let headSprite = look.role == .coach
-            ? PixelCharacterArt.coachHead(blinking: frame.blinking)
-            : PixelCharacterArt.head(facing: facing, blinking: frame.blinking)
+        // 頭。向きが変わるのはここ。
+        // コーチは帽子付きの専用スプライト。プレイヤーは **素体 → 髪 → アクセサリー** の 3 層で描き、
+        // 髪型とアクセサリーを着せ替えられるようにする。
         let headY = Anchor.headY + upperY
-        context.drawPixels(headSprite, at: place(Anchor.headX, headY), dot: dot, palette: palette, flipped: mirrored)
+        let headOrigin = place(Anchor.headX, headY)
+        if look.role == .coach {
+            context.drawPixels(
+                PixelCharacterArt.coachHead(blinking: frame.blinking),
+                at: headOrigin, dot: dot, palette: palette, flipped: mirrored
+            )
+        } else {
+            context.drawPixels(
+                PixelHairArt.headBase(facing: facing, blinking: frame.blinking),
+                at: headOrigin, dot: dot, palette: palette, flipped: mirrored
+            )
+            context.drawPixels(
+                PixelHairArt.hair(styleId: look.hairStyleId, facing: facing),
+                at: headOrigin, dot: dot, palette: palette, flipped: mirrored
+            )
+            if let accessory = PixelHairArt.accessorySprite(id: look.accessoryId, facing: facing) {
+                context.drawPixels(accessory, at: headOrigin, dot: dot, palette: palette, flipped: mirrored)
+            }
+        }
 
         // コーチのクリップボード。腕の外側に垂らす（内側に置くと胴に重なって読めない）。
         if look.role == .coach, let hand = armPositions.last {
