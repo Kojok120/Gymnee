@@ -74,7 +74,7 @@ struct OutfitSheet: View {
         let isSelected = equipped[slot]?.id == item.id
         return Button { onEquip(slot, isSelected ? nil : item.id) } label: {
             VStack(spacing: Theme.Spacing.xs) {
-                Image(systemName: item.symbol).font(.title3).foregroundStyle(rarityColor(item.rarity))
+                PixelSpriteView(sprite: PixelItemArt.icon(for: item), palette: .item(rarity: item.rarity), side: 40)
                 Text(item.name)
                     .font(.caption2).foregroundStyle(Theme.textSecondary)
                     .lineLimit(2).multilineTextAlignment(.center)

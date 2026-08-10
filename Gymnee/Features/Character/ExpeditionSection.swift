@@ -140,14 +140,21 @@ struct ExpeditionSection: View {
         let unlocked = level >= course.minLevel
         let affordable = availableEnergy >= course.energyCost
         return HStack(spacing: Theme.Spacing.md) {
-            Image(systemName: unlocked ? course.symbol : "lock.fill")
-                .font(.title3)
-                .foregroundStyle(unlocked ? Theme.lime : Theme.textTertiary)
-                .frame(width: 44, height: 44)
-                .background(
-                    (unlocked ? Theme.limeSoft : Theme.bg2),
-                    in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous)
-                )
+            Group {
+                if unlocked {
+                    PixelSpriteView(sprite: PixelItemArt.course(id: course.id), palette: .neutral, side: 44)
+                } else {
+                    Image(systemName: "lock.fill")
+                        .font(.title3)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .background(
+                (unlocked ? Theme.bg2 : Theme.bg2),
+                in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(course.title).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
                 Text(unlocked ? course.subtitle : "Lv.\(course.minLevel)で解放")
