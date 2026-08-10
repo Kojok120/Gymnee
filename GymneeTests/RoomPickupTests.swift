@@ -159,6 +159,45 @@ final class RoomPickupTests: XCTestCase {
         XCTAssertEqual(CharacterProgress.totalExperience(sessions: sessions, pickupBonus: -10), base)
     }
 
+    // MARK: - Swoop（なぞって拾う）
+
+    func testSwoopHitsWithinRadius() {
+        let center = CGPoint(x: 200, y: 300)
+        XCTAssertTrue(RoomPickup.isSwooped(finger: CGPoint(x: 210, y: 310), dropCenter: center, radius: 40))
+        XCTAssertFalse(RoomPickup.isSwooped(finger: CGPoint(x: 300, y: 300), dropCenter: center, radius: 40))
+        // 境界ちょうどは外（< で判定）。
+        XCTAssertFalse(RoomPickup.isSwooped(finger: CGPoint(x: 240, y: 300), dropCenter: center, radius: 40))
+    }
+
+    func testSwoopWithZeroRadiusNeverHits() {
+        XCTAssertFalse(RoomPickup.isSwooped(finger: .zero, dropCenter: .zero, radius: 0))
+        XCTAssertFalse(RoomPickup.isSwooped(finger: .zero, dropCenter: .zero, radius: -5))
+    }
+
+    /// まとめて拾った告知。1 個なら名前、複数なら個数で言う。
+    func testSwoopSummaryAggregates() {
+        let coffee = RoomPickup.item(id: "coffee")!
+        let creatine = RoomPickup.item(id: "creatine")!
+
+        let single = RoomPickup.summarize(collected: [coffee])
+        XCTAssertEqual(single.count, 1)
+        XCTAssertEqual(single.title, "コーヒー")
+
+        let multi = RoomPickup.summarize(collected: [coffee, coffee, creatine])
+        XCTAssertEqual(multi.count, 3)
+        XCTAssertEqual(multi.title, "3個まとめて回収")
+        XCTAssertEqual(multi.energy, coffee.energy * 2 + creatine.energy)
+        XCTAssertEqual(multi.experience, creatine.experience)
+        XCTAssertEqual(multi.lastItem, creatine)
+    }
+
+    func testSwoopSummaryOfNothingIsEmpty() {
+        let empty = RoomPickup.summarize(collected: [])
+        XCTAssertEqual(empty.count, 0)
+        XCTAssertNil(empty.lastItem)
+        XCTAssertEqual(empty.title, "")
+    }
+
     // MARK: - 絵
 
     func testEveryItemHasArt() {

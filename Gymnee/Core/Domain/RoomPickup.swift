@@ -161,6 +161,42 @@ enum RoomPickup {
         return Drop(slot: slot, item: item, position: position)
     }
 
+    // MARK: - Swoop（なぞって拾う）
+
+    /// 指の位置がグッズに触れているか。
+    ///
+    /// `fingerprint` と `dropCenter` は同じ座標系（画面 pt）。`radius` は絵の大きさに応じた当たり半径で、
+    /// 撫でるだけで拾える程度に緩くする（厳密に狙わせるとスワイプの気持ちよさが消える）。
+    static func isSwooped(finger: CGPoint, dropCenter: CGPoint, radius: CGFloat) -> Bool {
+        guard radius > 0 else { return false }
+        let dx = finger.x - dropCenter.x
+        let dy = finger.y - dropCenter.y
+        return dx * dx + dy * dy < radius * radius
+    }
+
+    /// 1 回の Swoop で拾った合計のまとめ。指を離したときの告知に使う。
+    struct SwoopSummary: Equatable, Sendable {
+        let count: Int
+        let energy: Int
+        let experience: Int
+        /// 最後に拾ったもの（1 個だけならその名前を出す）。
+        let lastItem: Item?
+
+        var title: String {
+            guard let lastItem else { return "" }
+            return count == 1 ? lastItem.name : "\(count)個まとめて回収"
+        }
+    }
+
+    static func summarize(collected: [Item]) -> SwoopSummary {
+        SwoopSummary(
+            count: collected.count,
+            energy: collected.reduce(0) { $0 + $1.energy },
+            experience: collected.reduce(0) { $0 + $1.experience },
+            lastItem: collected.last
+        )
+    }
+
     // MARK: - 合計
 
     /// 拾った分の元気の合計。

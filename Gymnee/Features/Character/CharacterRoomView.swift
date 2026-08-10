@@ -222,9 +222,23 @@ struct CharacterRoomView: View {
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
-        .onTapGesture(coordinateSpace: .local) { location in
-            handleSceneTap(at: location, size: size, floorTop: floorTop, floorBottom: floorBottom)
-        }
+        // タップとスワイプを 1 つのジェスチャで受ける。
+        // スワイプ（Swoop）は指が通った先のグッズを**連続で**拾う。指を離すまでが 1 回の Swoop。
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { value in
+                    swoop(through: value.location, size: size, floorTop: floorTop, floorBottom: floorBottom)
+                }
+                .onEnded { value in
+                    let moved = hypot(value.translation.width, value.translation.height)
+                    let collectedAny = !swoopItems.isEmpty
+                    endSwoop()
+                    // ほぼ動いていない＝タップ。スワイプで何か拾った指離しはタップ扱いにしない。
+                    if moved < 12, !collectedAny {
+                        handleSceneTap(at: value.location, size: size, floorTop: floorTop, floorBottom: floorBottom)
+                    }
+                }
+        )
     }
 
     /// 画面のタップ。キャラに当たっていれば反応させ、外していればコーチに喋ってもらう。
@@ -272,6 +286,8 @@ struct CharacterRoomView: View {
 
     /// 拾った直後に出す告知。
     @State private var collectedToast: RoomPickup.Item?
+    /// いまの Swoop（1 回のスライド）で拾ったもの。指を離したときにまとめて告知する。
+    @State private var swoopItems: [RoomPickup.Item] = []
 
     /// キャラたち。**全員を 1 枚の Canvas に描く**ことで、毎フレームの View 差分を発生させない。
     private func actors(in size: CGSize, dot: CGFloat, floorTop: CGFloat, floorBottom: CGFloat) -> some View {
@@ -437,16 +453,24 @@ struct CharacterRoomView: View {
                 .frame(width: size.width, height: size.height)
             }
             .frame(width: size.width, height: size.height)
+            // 回収はシーン全体の Swoop ジェスチャが受ける（個別の当たり判定は持たない）。
             .allowsHitTesting(false)
-            .overlay(alignment: .topLeading) {
-                // 当たり判定は指で狙える大きさの矩形を別に重ねる。
-                Color.clear
-                    .frame(width: scaled * 20, height: scaled * 20)
-                    .contentShape(Rectangle())
-                    .onTapGesture { collect(drop) }
-                    .position(x: center.x, y: center.y - scaled * 6)
-                    .accessibilityLabel("\(drop.item.name)を拾う")
-            }
+            .accessibilityElement()
+            .accessibilityLabel("\(drop.item.name)が落ちている。なぞって拾う")
+        }
+    }
+
+    /// Swoop。指が通った位置の近くにあるグッズを拾う。ドラッグ中は毎フレーム呼ばれるので軽く保つ。
+    private func swoop(through location: CGPoint, size: CGSize, floorTop: CGFloat, floorBottom: CGFloat) {
+        let dot = max(3, (size.width / 84).rounded())
+        for drop in drops {
+            let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(drop.position.y))).rounded())
+            let center = CGPoint(
+                x: size.width * CGFloat(drop.position.x),
+                y: floorTop + (floorBottom - floorTop) * CGFloat(drop.position.y) - scaled * 6
+            )
+            guard RoomPickup.isSwooped(finger: location, dropCenter: center, radius: scaled * 11) else { continue }
+            collect(drop)
         }
     }
 
@@ -461,8 +485,25 @@ struct CharacterRoomView: View {
             )
         )
         try? context.save()
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        withAnimation(.bouncy) { collectedToast = drop.item }
+
+        // 連続で拾うほど手応えを強くする（Swoop の気持ちよさはここで作る）。
+        swoopItems.append(drop.item)
+        UIImpactFeedbackGenerator(style: swoopItems.count >= 3 ? .heavy : .medium).impactOccurred()
+    }
+
+    /// Swoop の締め。拾った合計をまとめて 1 回だけ告知する（1 個ごとに出すとうるさい）。
+    private func endSwoop() {
+        defer { swoopItems = [] }
+        let summary = RoomPickup.summarize(collected: swoopItems)
+        guard summary.count > 0, let last = summary.lastItem else { return }
+        let toast = RoomPickup.Item(
+            id: last.id,
+            name: summary.title,
+            rarity: last.rarity,
+            energy: summary.energy,
+            experience: summary.experience
+        )
+        withAnimation(.bouncy) { collectedToast = toast }
         // 一定時間で消す（画面を触らせないと消えない告知にしない）。
         Task {
             try? await Task.sleep(for: .seconds(2))
