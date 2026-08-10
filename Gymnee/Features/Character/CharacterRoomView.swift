@@ -159,6 +159,11 @@ struct CharacterRoomView: View {
         .onReceive(Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()) { now in
             advanceCoachTransition(now: now)
         }
+        // 遠征の帰還は時刻でしか変わらない（@Query は動かない）ので、
+        // 一定間隔で用事を見直す。これが無いとセリフと部屋の様子が食い違ったままになる。
+        .onReceive(Timer.publish(every: 20, on: .main, in: .common).autoconnect()) { _ in
+            updateCoachPresence()
+        }
         .sheet(item: $celebrating) { result in
             RewardCelebrationView(result: result)
         }
@@ -243,6 +248,11 @@ struct CharacterRoomView: View {
                     .allowsHitTesting(false)
             }
 
+            if let letterNote {
+                letterNoteOverlay(letterNote)
+                    .transition(.opacity)
+            }
+
             hud(size: size, bottomInset: bottomInset)
         }
         .frame(width: size.width, height: size.height)
@@ -311,6 +321,8 @@ struct CharacterRoomView: View {
 
     /// 拾った直後に出す告知。
     @State private var collectedToast: RoomPickup.Item?
+    /// 開いた置き手紙の文面（nil＝閉じている）。
+    @State private var letterNote: String?
     /// いまの Swoop（1 回のスライド）で拾ったもの。指を離したときにまとめて告知する。
     @State private var swoopItems: [RoomPickup.Item] = []
 
@@ -635,30 +647,46 @@ struct CharacterRoomView: View {
         }
         .frame(width: size.width, height: size.height)
         .overlay(alignment: .topLeading) {
+            // 文面は**タップしたときだけ**読ませる。常時ふきだしで出すと、
+            // コーチのふきだしと重なって両方読めなくなる（実機で発覚）。
             Color.clear
                 .frame(width: dot * 18, height: dot * 14)
                 .contentShape(Rectangle())
-                .onTapGesture { sheet = .expedition }
+                .onTapGesture {
+                    withAnimation(.bouncy) {
+                        letterNote = ExpeditionDeparture.letterText(
+                            courseTitle: run.course?.title ?? "遠征",
+                            remaining: Expedition.remainingText(finishesAt: run.finishesAt, now: .now),
+                            seed: run.id
+                        )
+                    }
+                }
                 .position(x: center.x, y: center.y - dot * 3)
                 .accessibilityLabel("置き手紙を読む")
         }
-        .overlay(alignment: .top) {
-            // 文面はふきだしで読ませる（シートを開かせない）。
-            Text(ExpeditionDeparture.letterText(
-                courseTitle: run.course?.title ?? "遠征",
-                remaining: Expedition.remainingText(finishesAt: run.finishesAt, now: .now),
-                seed: run.id
-            ))
-            .font(.system(size: 13, weight: .medium, design: .rounded))
-            .foregroundStyle(Theme.textPrimary)
-            .multilineTextAlignment(.leading)
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.sm)
-            .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
-            .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
-            .padding(.horizontal, Theme.Spacing.xl)
-            .padding(.top, floorTop - 96)
+    }
+
+    /// 開いた置き手紙。画面のどこかを触れば閉じる。
+    private func letterNoteOverlay(_ text: String) -> some View {
+        VStack(spacing: Theme.Spacing.md) {
+            PixelSpriteView(sprite: PixelCharacterArt.letter, palette: .neutral, side: 60)
+            Text(text)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundStyle(Theme.textPrimary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("タップして閉じる")
+                .font(.caption2)
+                .foregroundStyle(Theme.textTertiary)
         }
+        .padding(Theme.Spacing.xl)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .shadow(color: .black.opacity(0.28), radius: 18, y: 8)
+        .padding(.horizontal, Theme.Spacing.xxl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.35))
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.snappy) { letterNote = nil } }
     }
 
     // MARK: - 宝箱
@@ -1008,6 +1036,11 @@ struct CharacterRoomView: View {
             chatter = currentLine()
         case .present where !shouldVisit:
             setCoachPhase(.leaving)
+        case .present:
+            // 立っている間に状況が変わることがある（遠征が帰ってきた等）。
+            // 古いセリフを出しっぱなしにすると、部屋の様子と食い違う。
+            let fresh = currentLine()
+            if chatter?.action != fresh.action { chatter = fresh }
         case .arriving where !shouldVisit:
             setCoachPhase(.leaving)
         default:
