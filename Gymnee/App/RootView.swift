@@ -13,6 +13,7 @@ struct RootView: View {
     @Environment(AuthService.self) private var auth
     @Environment(AppErrorCenter.self) private var errors
     @Environment(NotificationService.self) private var notifications
+    @Environment(LocalSyncEngine.self) private var syncEngine
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .workout
     /// 「その他」タブのナビゲーションスタック。カレンダー/ショップを外（通知・記録キャンセル）から
@@ -37,6 +38,14 @@ struct RootView: View {
                     await auth.restoreBackendSession()
                 }
                 ensureGuestSession()
+                // ストア退避が起きた直後は、サーバー上の記録を**フル取得で**引き戻す。
+                // 差分基準は UserDefaults にあり退避を生き延びるため、これが無いと
+                // 「サインイン済みなのにフィードが空のまま」から復帰できない。
+                // 退避時にも基準を捨てているが、既に退避済みの端末を救うためここでも捨てる。
+                if storeRecoveryPending {
+                    GymneeSchema.resetSyncWatermarks()
+                    await syncEngine.syncNow(force: true)
+                }
                 // カレンダーをタブから外したため、Widget スナップショットと通知予約は
                 // 画面到達に依存させず起動時にも回す（§6.10）。
                 syncPlatformOnLaunch()

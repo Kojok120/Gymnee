@@ -104,6 +104,18 @@ enum GymneeSchema {
     /// ストア退避が起きたことを UI に伝えるフラグ（RootView が一度だけアラートを出して消す）。
     static let recoveryPendingKey = "gymnee.storeRecoveryPending"
 
+    /// 差分 pull の基準時刻を全テーブルぶん捨てる。
+    /// ストアを作り直したときに呼ぶと、次回の同期がフル取得になりサーバー上のデータが戻る。
+    /// キーの綴りは `SwiftDataSyncStore.key(_:)` と対で維持する。
+    static func resetSyncWatermarks() {
+        let defaults = UserDefaults.standard
+        let prefix = "gymnee.sync.lastPulled."
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+            defaults.removeObject(forKey: key)
+        }
+        log.info("差分同期の基準時刻を破棄した（次回はフル取得）")
+    }
+
     private static let storeFileSuffixes = ["", "-wal", "-shm"]
     private static let log = Logger(subsystem: "com.gymnee.app", category: "persistence")
 
@@ -131,6 +143,11 @@ enum GymneeSchema {
             backupStoreFiles(at: configuration.url)
             UserDefaults.standard.set(true, forKey: recoveryPendingKey)
             #endif
+            // ストアを作り直したら**差分同期の基準時刻も必ず捨てる**。
+            // 基準時刻は UserDefaults にあるためストア退避を生き延び、
+            // そのままだと「前回以降に変更なし」と判断されてサーバー上の記録が
+            // 一切戻ってこない（実際にフィードが空のままになる事故を起こした）。
+            resetSyncWatermarks()
             // 退避（移動）に失敗して旧ストアが残っている場合はここも失敗し、
             // 下のインメモリへ落ちる＝ディスク上のデータには触れない。
             if let fresh = try? ModelContainer(for: schema, migrationPlan: GymneeMigrationPlan.self, configurations: configuration) {
