@@ -24,6 +24,30 @@ function extractJson(s: string): string {
   return a >= 0 && b > a ? s.slice(a, b + 1) : s;
 }
 
+/// 壊れた JSON から reply の中身だけを拾う。
+/// 出力が途中で切れると `{"reply": "胸と背中の…` のように閉じ引用符すら無いので、
+/// 「reply の値の開始位置から、閉じ引用符 or 文字列の終わりまで」を素朴に取り出す。
+function salvageReply(raw: string): string {
+  const key = raw.indexOf('"reply"');
+  if (key < 0) return "";
+  const start = raw.indexOf('"', raw.indexOf(":", key) + 1);
+  if (start < 0) return "";
+  let out = "";
+  for (let i = start + 1; i < raw.length; i++) {
+    const c = raw[i];
+    if (c === "\\") { i++; out += raw[i] === "n" ? "\n" : (raw[i] ?? ""); continue; }
+    if (c === '"') break;
+    out += c;
+  }
+  return out.trim().slice(0, 500);
+}
+
+/// JSON の断片が返答として紛れ込んでいないか。
+function looksLikeJSON(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith("{") || t.startsWith("[") || t.includes('"reply"') || t.includes('"plan"');
+}
+
 /// 認証 JWT(sub=ユーザーid)を取り出す（レート制限キー用。署名検証は verify_jwt が担う）。
 function userIdFromJWT(req: Request): string | null {
   try {
@@ -150,7 +174,9 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 800, responseMimeType: "application/json" },
+        // 1500 まで上げる。800 だとメニュー提案つきの応答が途中で切れ、
+        // JSON が壊れて生テキストが表示される事故につながった。
+        generationConfig: { temperature: 0.7, maxOutputTokens: 1500, responseMimeType: "application/json" },
       }),
     });
     if (!res.ok) {
@@ -160,6 +186,9 @@ Deno.serve(async (req) => {
     }
     const json = await res.json();
     raw = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    // 上限で打ち切られると JSON が壊れる。原因究明のために記録しておく。
+    const finish = json?.candidates?.[0]?.finishReason;
+    if (finish && finish !== "STOP") console.error("gemini finishReason", finish);
   } catch (e) {
     console.error("gemini fetch failed", e);
     return new Response(JSON.stringify({ error: "upstream" }), { status: 502, headers: cors });
@@ -184,9 +213,14 @@ Deno.serve(async (req) => {
       if (plan.exercises.length === 0) plan = null;
     }
   } catch {
-    // JSON にならなかったときは本文をそのまま返答として使う。
-    reply = raw.trim().slice(0, 500);
+    // JSON が壊れている（多くは出力が途中で切れたケース）。
+    // **生の JSON を返答として出さない**。実際に `{ "reply": "…` がそのまま
+    // ユーザーに表示される事故が起きた。まず reply の中身だけ拾い出す。
+    reply = salvageReply(raw);
   }
+
+  // 二重の歯止め: 何らかの経路で JSON らしき文字列が残っていたら捨てる。
+  if (looksLikeJSON(reply)) reply = "";
 
   if (!reply) reply = "うまく言葉にできなかった。もう一度聞いてくれる？";
 

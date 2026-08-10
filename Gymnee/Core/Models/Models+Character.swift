@@ -59,14 +59,8 @@ final class CharacterLoadout {
     var auraItemId: String?
     /// 選択中のスキン id（`SkinCatalog`）。
     var skinId: String
-    /// 選択中の髪型 id（`PixelHairArt.styles`）。
-    var hairStyleId: String = PixelHairArt.defaultStyleId
-    /// 選択中のアクセサリー id（`PixelHairArt.accessories`）。"none" は着けていない。
-    var accessoryId: String = "none"
     /// 購入済み有料スキンの id（カンマ区切り。課金は未接続のダミー）。
     var purchasedSkinIds: String
-    /// 購入済みの髪型・アクセサリー id（カンマ区切り）。スキンとは別枠で持つ。
-    var purchasedAppearanceIds: String = ""
     var updatedAt: Date
 
     init(
@@ -76,10 +70,7 @@ final class CharacterLoadout {
         waistItemId: String? = nil,
         auraItemId: String? = nil,
         skinId: String = SkinCatalog.defaultSkinId,
-        hairStyleId: String = PixelHairArt.defaultStyleId,
-        accessoryId: String = "none",
         purchasedSkinIds: String = "",
-        purchasedAppearanceIds: String = "",
         updatedAt: Date = .now
     ) {
         self.userId = userId
@@ -88,10 +79,7 @@ final class CharacterLoadout {
         self.waistItemId = waistItemId
         self.auraItemId = auraItemId
         self.skinId = skinId
-        self.hairStyleId = hairStyleId
-        self.accessoryId = accessoryId
         self.purchasedSkinIds = purchasedSkinIds
-        self.purchasedAppearanceIds = purchasedAppearanceIds
         self.updatedAt = updatedAt
     }
 }
@@ -128,17 +116,6 @@ extension CharacterLoadout {
         updatedAt = .now
     }
 
-    /// 購入済みの髪型・アクセサリー。
-    var purchasedAppearances: Set<String> {
-        Set(purchasedAppearanceIds.split(separator: ",").map(String.init).filter { !$0.isEmpty })
-    }
-
-    func addPurchasedAppearance(_ id: String) {
-        var current = purchasedAppearances
-        current.insert(id)
-        purchasedAppearanceIds = current.sorted().joined(separator: ",")
-        updatedAt = .now
-    }
 }
 
 extension ExpeditionRun {
@@ -185,5 +162,54 @@ final class RoomPickupRecord {
         self.storageId = storageId
         self.itemId = itemId
         self.collectedAt = collectedAt
+    }
+}
+
+
+/// キャラの髪型とアクセサリー（ローカル専用モデル・ユーザーごとに 1 行）。
+///
+/// **`CharacterLoadout` に列を足さず、別のモデル型として持つ。**
+/// SwiftData の VersionedSchema はモデル型の一覧からチェックサムを作るため、
+/// 既存モデルにプロパティだけ足すとバージョンを上げてもチェックサムが変わらず
+/// （「Duplicate version checksums」）、かといってバージョンを据え置くと
+/// 「Cannot use staged migration with an unknown model version」でストアが開けなくなる。
+/// 実際にこれで**ユーザーのローカルデータが退避（＝実質リセット）される事故を起こした**。
+/// 型を新設すればモデル一覧が変わるので、これまでどおり lightweight migration で安全に移行できる。
+@Model
+final class CharacterStyle {
+    @Attribute(.unique) var userId: UUID
+    /// 選択中の髪型 id（`PixelHairArt.styles`）。
+    var hairStyleId: String
+    /// 選択中のアクセサリー id（`PixelHairArt.accessories`）。"none" は着けていない。
+    var accessoryId: String
+    /// 購入済みの髪型・アクセサリー id（カンマ区切り。課金は未接続のダミー）。
+    var purchasedIds: String
+    var updatedAt: Date
+
+    init(
+        userId: UUID,
+        hairStyleId: String = PixelHairArt.defaultStyleId,
+        accessoryId: String = "none",
+        purchasedIds: String = "",
+        updatedAt: Date = .now
+    ) {
+        self.userId = userId
+        self.hairStyleId = hairStyleId
+        self.accessoryId = accessoryId
+        self.purchasedIds = purchasedIds
+        self.updatedAt = updatedAt
+    }
+}
+
+extension CharacterStyle {
+    var purchased: Set<String> {
+        Set(purchasedIds.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+    }
+
+    func addPurchased(_ id: String) {
+        var current = purchased
+        current.insert(id)
+        purchasedIds = current.sorted().joined(separator: ",")
+        updatedAt = .now
     }
 }

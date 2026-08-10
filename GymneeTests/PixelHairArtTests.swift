@@ -129,6 +129,29 @@ final class PixelHairArtTests: XCTestCase {
         XCTAssertTrue(PixelHairArt.isOwned(PixelHairArt.accessory(id: "none"), purchased: []))
     }
 
+    /// 髪型・アクセサリーは **CharacterLoadout に列を足さず別モデル**で持つ。
+    /// 既存モデルへの列追加はスキーマのチェックサム問題を招き、
+    /// 実際にユーザーのローカルデータ消失を起こした。
+    func testStyleIsItsOwnModel() {
+        let style = CharacterStyle(userId: UUID())
+        XCTAssertEqual(style.hairStyleId, PixelHairArt.defaultStyleId)
+        XCTAssertEqual(style.accessoryId, "none")
+        XCTAssertTrue(style.purchased.isEmpty)
+        style.addPurchased("ponytail")
+        XCTAssertEqual(style.purchased, ["ponytail"])
+        // 二重購入で重複しない。
+        style.addPurchased("ponytail")
+        XCTAssertEqual(style.purchased, ["ponytail"])
+    }
+
+    /// 返答に JSON の断片が混ざっていたら画面に出さない（生 JSON が吹き出しに出た事故の再発防止）。
+    func testRawJSONIsNeverPresentable() {
+        XCTAssertFalse(CoachPersona.isPresentable("{ \"reply\": \"胸と背中の疲労度が高いから"))
+        XCTAssertFalse(CoachPersona.isPresentable("[1,2]"))
+        XCTAssertFalse(CoachPersona.isPresentable("   "))
+        XCTAssertTrue(CoachPersona.isPresentable("今日は肩を休めよう"))
+    }
+
     /// id は保存値なので変えると既存ユーザーの見た目が飛ぶ。
     func testIdsAreStable() {
         XCTAssertEqual(PixelHairArt.defaultStyleId, "short")
