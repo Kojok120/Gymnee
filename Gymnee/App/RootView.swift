@@ -135,6 +135,18 @@ struct RootView: View {
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()
         case "character": CharacterRoomView(userId: userId)
+        // タブバー込みのレイアウト検証用。単体表示では safe area にタブバーが乗らず、
+        // ボタンとタブバーの重なり（実機で発覚した不具合）を再現できないため。
+        case "character-tab":
+            TabView(selection: .constant("character")) {
+                Tab("記録", systemImage: "dumbbell.fill", value: "record") { Color.clear }
+                Tab("分析", systemImage: "chart.bar.fill", value: "analytics") { Color.clear }
+                Tab("育成", systemImage: "figure.strengthtraining.traditional", value: "character") {
+                    CharacterRoomView(userId: userId)
+                }
+                Tab("ソーシャル", systemImage: "person.2.fill", value: "social") { Color.clear }
+                Tab("その他", systemImage: "ellipsis", value: "other") { Color.clear }
+            }
         // ドット絵の一覧。絵を足したり直したりしたとき、崩れをスクショ 1 枚で確認する用。
         // コーチとのチャット（部屋でコーチをタップしたときに出るもの）。
         case "coach": CoachChatView(userId: userId)

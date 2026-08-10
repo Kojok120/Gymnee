@@ -119,10 +119,17 @@ struct CharacterRoomView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
-                scene(in: geometry.size)
+            // 外側で safe area の量（＝タブバー + ホームインジケータの高さ）を測ってから、
+            // 内側で safe area を無視して全面に描く。部屋（床）はタブバーの下まで広がるが、
+            // ボタン類は inset ぶん持ち上げてタブバーに重ねない。
+            // 単体ハーネス（タブバー無し）では inset がホームインジケータ分だけになり、両方で正しく出る。
+            GeometryReader { outer in
+                let bottomInset = outer.safeAreaInsets.bottom
+                GeometryReader { geometry in
+                    scene(in: geometry.size, bottomInset: bottomInset)
+                }
+                .ignoresSafeArea(edges: .bottom)
             }
-            .ignoresSafeArea(edges: .bottom)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
         }
@@ -156,13 +163,14 @@ struct CharacterRoomView: View {
     }
 
     @ViewBuilder
-    private func scene(in size: CGSize) -> some View {
+    private func scene(in size: CGSize, bottomInset: CGFloat) -> some View {
         // 1 ドットの一辺。画面幅を基準に決め、部屋とキャラで必ず同じ値を使う。
         // 分母を小さくするほどドットが粗く（＝キャラが大きく）なる。
         let dot = max(3, (size.width / 84).rounded())
         let horizon: CGFloat = 0.42
         let floorTop = size.height * horizon
-        let floorBottom = size.height - hudHeight
+        // キャラの歩ける下限は HUD とタブバーの上まで（後ろに潜ると拾えない・見えない）。
+        let floorBottom = size.height - hudHeight - bottomInset
 
         ZStack(alignment: .bottom) {
             RoomBackdrop(
@@ -213,12 +221,12 @@ struct CharacterRoomView: View {
             if let item = collectedToast {
                 pickupToast(item)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, hudHeight + Theme.Spacing.lg)
+                    .padding(.bottom, hudHeight + bottomInset + Theme.Spacing.lg)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .allowsHitTesting(false)
             }
 
-            hud(size: size)
+            hud(size: size, bottomInset: bottomInset)
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
@@ -560,7 +568,7 @@ struct CharacterRoomView: View {
 
     private var hudHeight: CGFloat { 132 }
 
-    private func hud(size: CGSize) -> some View {
+    private func hud(size: CGSize, bottomInset: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 levelBadge
@@ -578,6 +586,9 @@ struct CharacterRoomView: View {
                 actionBar
             }
         }
+        // タブバー（＋ホームインジケータ）の高さぶん持ち上げる。
+        // これが無いとボタン列がタブバーの真下に潜る（実機で発覚）。
+        .padding(.bottom, bottomInset)
         .frame(width: size.width, height: size.height)
     }
 
