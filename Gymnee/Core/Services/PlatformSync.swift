@@ -38,4 +38,26 @@ enum PlatformSync {
             .map { (id: $0.id, name: $0.name, date: $0.date) }
         notifications.schedulePlannedWorkouts(planned)
     }
+
+    /// コーチの朝の声かけ（#79）。オフのときは予約しない。
+    /// 週の残り回数は「目標 − 今週の記録数」で、達成済みなら 0（＝休んでいいと伝える）。
+    static func scheduleCoachMorning(
+        workouts: [Workout],
+        todayPlanTitle: String?,
+        weeklyGoal: Int,
+        mode: CoachMode,
+        notifications: NotificationService,
+        calendar: Calendar = .current
+    ) {
+        guard mode.showsCoach else {
+            notifications.cancelCoachNotices()
+            return
+        }
+        let activeDays = workouts.filter { $0.completedAt != nil }.map { $0.completedAt ?? $0.date }
+        let done = activeDays.filter { calendar.isDate($0, equalTo: .now, toGranularity: .weekOfYear) }.count
+        notifications.scheduleCoachMorning(
+            planTitle: todayPlanTitle,
+            weeklyRemaining: max(0, weeklyGoal - done)
+        )
+    }
 }

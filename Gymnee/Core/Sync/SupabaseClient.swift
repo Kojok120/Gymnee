@@ -353,6 +353,69 @@ actor SupabaseClient {
         let exercises: [PlanExercise]
     }
 
+    // MARK: - AI コーチとの会話（#79）
+
+    /// コーチの返答。`plan` が付いていればその日のメニュー提案。
+    struct CoachReply: Sendable {
+        let text: String
+        let planTitle: String?
+        let exercises: [PlanExercise]
+
+        var hasPlan: Bool { !exercises.isEmpty }
+    }
+
+    /// コーチとの 1 往復（Edge Function coach-chat → Gemini）。
+    /// 週の計画をまとめて組む `planWorkouts` とは別関数にしている（プロンプトも応答形式も別物のため）。
+    /// 503(not_configured) など非 2xx は send が throw する（呼び出し側でフォールバック表示）。
+    func coachChat(
+        message: String,
+        history: [[String: String]],
+        brief: [String: Any],
+        decidesMenu: Bool
+    ) async throws -> CoachReply {
+        let url = config.url.appendingPathComponent("functions/v1/coach-chat")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        if let accessToken { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: Self.sanitizeForJSON([
+            "message": message,
+            "messages": history,
+            "brief": brief,
+            "decidesMenu": decidesMenu,
+        ]))
+        // 生成は REST 用の短いタイムアウトでは打ち切られるため、functions 用 session で送る。
+        let data = try await send(request, via: functionsSession)
+        let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let text = (obj?["reply"] as? String) ?? ""
+        let plan = obj?["plan"] as? [String: Any]
+        let exercises: [PlanExercise] = (plan?["exercises"] as? [[String: Any]] ?? []).compactMap { e in
+            guard let name = e["name"] as? String, !name.isEmpty else { return nil }
+            // NaN/Infinity を Int 変換するとトラップするため安全に読む。
+            func intVal(_ any: Any?, _ def: Int) -> Int {
+                if let i = any as? Int { return i }
+                if let d = any as? Double, d.isFinite { return Int(d) }
+                return def
+            }
+            func dblVal(_ any: Any?, _ def: Double) -> Double {
+                if let d = any as? Double, d.isFinite { return d }
+                if let i = any as? Int { return Double(i) }
+                return def
+            }
+            return PlanExercise(
+                name: name, muscleGroup: nil,
+                sets: intVal(e["sets"], 3), reps: intVal(e["reps"], 10),
+                weight: dblVal(e["weightKg"], 0)
+            )
+        }
+        return CoachReply(
+            text: text,
+            planTitle: plan?["title"] as? String,
+            exercises: exercises
+        )
+    }
+
     /// AI 計画の応答（計画＋変更内容の説明メッセージ。チャットUIで使う）。
     struct PlanResult: Sendable {
         let items: [PlanItem]
