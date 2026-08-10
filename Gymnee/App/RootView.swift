@@ -135,6 +135,10 @@ struct RootView: View {
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()
         case "character": CharacterRoomView(userId: userId)
+        // ドット絵の一覧。絵を足したり直したりしたとき、崩れをスクショ 1 枚で確認する用。
+        case "pixelart": PixelArtGallery(section: .character)
+        case "pixelart-items": PixelArtGallery(section: .items)
+        case "pixelart-room": PixelArtGallery(section: .room)
         case "other": OtherTabView(userId: userId, path: $otherPath)
         case "summary":
             // 完了サマリーの検証用：デモの最新完了ワークアウトを表示（週次はゴール達成状態）。

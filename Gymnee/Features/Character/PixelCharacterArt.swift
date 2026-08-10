@@ -16,8 +16,21 @@ enum PixelCharacterArt {
 
     // MARK: - 頭（14 × 13）
 
+    /// 向きと目の開閉から頭の絵を選ぶ。
+    ///
+    /// **向きは頭だけで伝える**。低解像度のスプライトでは、体を向きごとに描き分けても
+    /// 数ドットしか変わらず労力に見合わない。輪郭が大きく変わるのは髪と顔なので、そこに絵を集中させる。
+    /// 横向きは右向きで持ち、左向きは描画側で反転して使う（背面はまばたきの描き分けが要らない）。
+    static func head(facing: CharacterScene.Facing, blinking: Bool) -> PixelSprite {
+        switch facing {
+        case .up: return headBack
+        case .left, .right: return blinking ? headSideBlink : headSide
+        case .down: return blinking ? headBlink : headFront
+        }
+    }
+
     /// 通常の顔。
-    static let head = PixelSprite([
+    static let headFront = PixelSprite([
         "....oooooo....",
         "..oohhhhhhoo..",
         ".ohhhhhhhhhho.",
@@ -50,6 +63,56 @@ enum PixelCharacterArt {
         "...oooooooo...",
     ])
 
+    /// 背面。顔が無いぶん、つむじで「後ろ姿」だと分かるようにする。
+    static let headBack = PixelSprite([
+        "....oooooo....",
+        "..oohhhhhhoo..",
+        ".ohhhhhhhhhho.",
+        "ohhhhhhhhhhhho",
+        "ohhhhHHhhhhhho",
+        "ohhhhHhHhhhhho",
+        "ohhhhhHHhhhhho",
+        "ohhhhhhhhhhhho",
+        "ohhhhhhhhhhhho",
+        "ohhhhhhhhhhhho",
+        "ohhhhhhhhhhhho",
+        "..ohhhhhhhho..",
+        "...oooooooo...",
+    ])
+
+    /// 横向き（右向き）。左向きは反転して使う。
+    static let headSide = PixelSprite([
+        "...oooooo.....",
+        ".oohhhhhhoo...",
+        "ohhhhhhhhhho..",
+        "ohhhhhhhhhhho.",
+        "ohhhhhhhhhssso",
+        "ohhhhhhhssssso",
+        "ohhhhhhsseesso",
+        "ohhhhhhsseesso",
+        "ohhhhhhsscssso",
+        "ohhhhhhsssooso",
+        ".ohhhhhssssso.",
+        "..ohhhssssso..",
+        "...oooooooo...",
+    ])
+
+    static let headSideBlink = PixelSprite([
+        "...oooooo.....",
+        ".oohhhhhhoo...",
+        "ohhhhhhhhhho..",
+        "ohhhhhhhhhhho.",
+        "ohhhhhhhhhssso",
+        "ohhhhhhhssssso",
+        "ohhhhhhsssssso",
+        "ohhhhhhssoosso",
+        "ohhhhhhsscssso",
+        "ohhhhhhsssooso",
+        ".ohhhhhssssso.",
+        "..ohhhssssso..",
+        "...oooooooo...",
+    ])
+
     static let headWidth = 14
     static let headHeight = 13
 
@@ -71,43 +134,41 @@ enum PixelCharacterArt {
         }
     }
 
-    // 上 5 段がタンクトップ、下 3 段がショートパンツ。
+    // 上 4 段がタンクトップ、下 3 段がショートパンツ。
     // 上下の段数を変えると「ワンピースを着ている」ように見えてしまうので、この比率は崩さない。
+    // 右端 1 列を影にして、真四角の板に見えないようにしている。
 
     private static let bodySlim = PixelSprite([
-        "osswwsso",
-        "oswwwwso",
-        "owwwwwwo",
-        "owwwwwwo",
+        "osswwSso",
+        "oswwwWso",
+        "owwwwwWo",
         "oWWWWWWo",
-        "oppppppo",
-        "oppppppo",
+        "opppppPo",
+        "opppppPo",
         "oPPPPPPo",
     ])
 
     private static let bodyNormal = PixelSprite([
-        "osswwwwsso",
-        "oswwwwwwso",
-        "owwwwwwwwo",
-        "owwwwwwwwo",
+        "osswwwwSso",
+        "oswwwwwWso",
+        "owwwwwwwWo",
         "oWWWWWWWWo",
-        "oppppppppo",
-        "oppppppppo",
+        "opppppppPo",
+        "opppppppPo",
         "oPPPPPPPPo",
     ])
 
     private static let bodyWide = PixelSprite([
-        "osswwwwwwsso",
-        "oswwwwwwwwso",
-        "owwwwwwwwwwo",
-        "owwwwwwwwwwo",
+        "osswwwwwwSso",
+        "oswwwwwwwWso",
+        "owwwwwwwwwWo",
         "oWWWWWWWWWWo",
-        "oppppppppppo",
-        "oppppppppppo",
+        "opppppppppPo",
+        "opppppppppPo",
         "oPPPPPPPPPPo",
     ])
 
-    static let bodyHeight = 8
+    static let bodyHeight = 7
 
     // MARK: - 腕（幅 3 / 4 × 高さ 5）
 
@@ -154,6 +215,7 @@ enum PixelCharacterArt {
         "osso",
         "osso",
         "osso",
+        "osso",
         "dddd",
     ])
 
@@ -161,10 +223,11 @@ enum PixelCharacterArt {
         "osSso",
         "osSso",
         "osSso",
+        "osSso",
         "ddddd",
     ])
 
-    static let legHeight = 4
+    static let legHeight = 5
 
     // MARK: - 小道具
 
@@ -175,15 +238,17 @@ enum PixelCharacterArt {
         "d...d",
     ])
 
-    /// リュック（遠征中に背負う）。
+    /// リュック（遠征中に背負う）。留め具と肩ベルトを入れて、ただの塊に見えないようにする。
     static let backpack = PixelSprite([
-        "..kk..",
-        ".kkkk.",
-        "kkkkkk",
-        "kkkkkk",
-        "kkkkkk",
-        "kkkkkk",
-        ".kkkk.",
+        "..oooo..",
+        ".okkkko.",
+        "okkkkkko",
+        "okkkkkko",
+        "ommmmmmo",
+        "okkkkkko",
+        "okkmmkko",
+        "okkkkkko",
+        ".oooooo.",
     ])
 
     // MARK: - 装備（部位 × レア度）
@@ -274,10 +339,11 @@ enum PixelCharacterArt {
         "o..........o",
     ])
 
+    /// ベンチ。座面が薄いと鳥居に見えるので、厚みを持たせる。
     static let bench = PixelSprite([
         "..dddddddd..",
         ".dddddddddd.",
-        "..oo....oo..",
+        ".dddddddddd.",
         "..oo....oo..",
         "..oo....oo..",
         ".oooo..oooo.",
@@ -290,8 +356,16 @@ enum PixelCharacterArt {
         "d........d",
     ])
 
-    /// 帰還した遠征の宝箱。
-    static let chest = PixelSprite([
+    /// 帰還した遠征の宝箱。閉じている / 開きかけ / 開いた の 3 コマ。
+    static func chest(_ frame: Int) -> PixelSprite {
+        switch max(0, frame) % 3 {
+        case 1: return chestAjar
+        case 2: return chestOpen
+        default: return chestClosed
+        }
+    }
+
+    static let chestClosed = PixelSprite([
         "..oooooooo..",
         ".okkkkkkkko.",
         "okkkkkkkkkko",
@@ -300,5 +374,163 @@ enum PixelCharacterArt {
         "okkkkmmkkkko",
         "okkkkmmkkkko",
         "oooooooooooo",
+    ])
+
+    private static let chestAjar = PixelSprite([
+        ".oooooooooo.",
+        "okkkkkkkkkko",
+        "ommmmmmmmmmo",
+        "..llllllll..",
+        "okkkkkkkkkko",
+        "okkkkmmkkkko",
+        "okkkkmmkkkko",
+        "oooooooooooo",
+    ])
+
+    private static let chestOpen = PixelSprite([
+        "okkkkkkkkkko",
+        "ommmmmmmmmmo",
+        ".llllllllll.",
+        ".llllllllll.",
+        "okkkkkkkkkko",
+        "okkkkmmkkkko",
+        "okkkkmmkkkko",
+        "oooooooooooo",
+    ])
+
+    // MARK: - 家具（続きが増えるほど部屋が埋まる）
+
+    static let mirror = PixelSprite([
+        "oooooooo",
+        "obbbbbbo",
+        "obbbbllo",
+        "obbblbbo",
+        "obbbbbbo",
+        "obbbbbbo",
+        "obbbbbbo",
+        "obbbbbbo",
+        "obbbbbbo",
+        "obbbbbbo",
+        "oooooooo",
+        "..o..o..",
+        "..o..o..",
+        ".ooooooo",
+    ])
+
+    static let waterBottle = PixelSprite([
+        ".oo.",
+        ".oo.",
+        "oooo",
+        "obbo",
+        "obbo",
+        "obbo",
+        "obbo",
+        "oooo",
+    ])
+
+    /// タオル掛け。バーにタオルが掛かって垂れている形にする（枠で囲うと額縁に見える）。
+    static let towelRack = PixelSprite([
+        "oooooooooo",
+        ".ffffffff.",
+        ".ffffffff.",
+        ".ffffffff.",
+        ".ffffffff.",
+        ".fffffff..",
+        "..fffff...",
+        "...fff....",
+    ])
+
+    static let wallClock = PixelSprite([
+        ".oooooo.",
+        "ooffffoo",
+        "offofffo",
+        "offofffo",
+        "offoooff",
+        "offffffo",
+        "ooffffoo",
+        ".oooooo.",
+    ])
+
+    /// ケトルベル。取っ手を細いアーチにしないとハンドバッグに見える。
+    static let kettlebell = PixelSprite([
+        "..oooo..",
+        ".oo..oo.",
+        ".o....o.",
+        "..oooo..",
+        ".ommmmo.",
+        "ommmmmmo",
+        "ommmmmmo",
+        ".oooooo.",
+    ])
+
+    /// サンドバッグ。細いとボトルに見えるので、幅を取って締めバンドを 2 本入れる。
+    static let punchingBag = PixelSprite([
+        "...oo...",
+        "...oo...",
+        ".oooooo.",
+        ".oddddo.",
+        ".oddddo.",
+        ".oddddo.",
+        ".ommmmo.",
+        ".oddddo.",
+        ".oddddo.",
+        ".oddddo.",
+        ".ommmmo.",
+        ".oddddo.",
+        ".oddddo.",
+        ".oddddo.",
+        ".oooooo.",
+        "........",
+    ])
+
+    /// ポスター。ダンベルの図。プレートを枠から 1 ドット離さないと、
+    /// 枠とつながって砂時計のような形に見える。
+    static let poster = PixelSprite([
+        "oooooooo",
+        "obbbbbbo",
+        "obbbbbbo",
+        "obdbbdbo",
+        "obdmmdbo",
+        "obdbbdbo",
+        "obbbbbbo",
+        "obffffbo",
+        "oooooooo",
+    ])
+
+    // MARK: - 演出（仕草に添える小物）
+
+    /// 汗。スクワット中などに飛ばす。
+    static let sweatDrop = PixelSprite([
+        ".o.",
+        "obo",
+        "obo",
+        ".o.",
+    ])
+
+    /// きらめき。進化直後や自己ベスト時に散らす。
+    static let sparkle = PixelSprite([
+        "..r..",
+        "..r..",
+        "rrlrr",
+        "..r..",
+        "..r..",
+    ])
+
+    /// 湯気。オーラ装備の表現に使う。
+    static let steamWisp = PixelSprite([
+        ".r.",
+        "r..",
+        ".r.",
+        "..r",
+        ".r.",
+        "r..",
+    ])
+
+    /// 葉。プロテインの香りの表現に使う。
+    static let leafBit = PixelSprite([
+        ".gg.",
+        "gggg",
+        "gggg",
+        ".gg.",
     ])
 }

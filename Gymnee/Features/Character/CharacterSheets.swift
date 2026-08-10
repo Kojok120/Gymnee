@@ -185,9 +185,7 @@ struct LootCollectionSheet: View {
 
     private func tile(_ item: Expedition.Item) -> some View {
         VStack(spacing: Theme.Spacing.xs) {
-            Image(systemName: item.symbol)
-                .font(.title2)
-                .foregroundStyle(PixelCharacterRenderer.rarityColor(item.rarity))
+            PixelSpriteView(sprite: PixelItemArt.icon(for: item), palette: .item(rarity: item.rarity), side: 48)
             Text(item.name)
                 .font(.caption2)
                 .foregroundStyle(Theme.textSecondary)

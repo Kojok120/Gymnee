@@ -58,9 +58,11 @@ enum PixelCharacterLayout {
         var rightArmY: Int
         /// 腕を肩より上に構えるか（伸び・ガッツポーズ）。
         var armsRaised: Bool
-        /// 脚の持ち上げ。
+        /// 脚の持ち上げ（正面・背面向きで使う。左右交互に足が上がる）。
         var leftLegLift: Int
         var rightLegLift: Int
+        /// 脚の前後の開き（横向きで使う。正面向きの「持ち上げ」に相当する）。
+        var legStride: Int
         /// 手にダンベルを持つ。
         var holdsDumbbell: Bool
         /// 目を閉じている。
@@ -69,7 +71,7 @@ enum PixelCharacterLayout {
         static let standing = Frame(
             lift: 0, crouch: 0,
             leftArmX: 0, rightArmX: 0, leftArmY: 0, rightArmY: 0, armsRaised: false,
-            leftLegLift: 0, rightLegLift: 0,
+            leftLegLift: 0, rightLegLift: 0, legStride: 0,
             holdsDumbbell: false, blinking: false
         )
     }
@@ -106,11 +108,13 @@ enum PixelCharacterLayout {
             frame.leftLegLift = 2
             frame.leftArmX = 1
             frame.rightArmX = -1
+            frame.legStride = 2
         case 3:
             frame.lift = -1
             frame.rightLegLift = 2
             frame.leftArmX = -1
             frame.rightArmX = 1
+            frame.legStride = -2
         default:
             // 接地コマ。
             break

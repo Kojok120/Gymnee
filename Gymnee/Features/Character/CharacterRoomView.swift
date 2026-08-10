@@ -227,7 +227,7 @@ struct CharacterRoomView: View {
                     let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(pose.position.y))).rounded())
                     PixelCharacterRenderer.draw(
                         in: &context, look: member.look, frame: frame,
-                        facingRight: pose.facingRight, feet: feet, dot: scaled
+                        facing: pose.facing, feet: feet, dot: scaled
                     )
                 }
             }
@@ -246,17 +246,34 @@ struct CharacterRoomView: View {
         let x = size.width * 0.78
         let y = floorTop + (floorBottom - floorTop) * 0.35
         return TimelineView(.periodic(from: .now, by: 0.4)) { timeline in
-            let bounce = Int(timeline.date.timeIntervalSince1970 / 0.4) % 2 == 0
+            // 跳ねながら蓋がガタつく＝「開けてほしい」を無言で伝える。
+            let tick = Int(timeline.date.timeIntervalSince1970 / 0.4)
+            let bounce = tick % 2 == 0
+            let sprite = PixelCharacterArt.chest(bounce ? 1 : 0)
             Canvas { context, _ in
                 context.drawPixels(
-                    PixelCharacterArt.chest,
+                    sprite,
                     at: CGPoint(
-                        x: (x - CGFloat(PixelCharacterArt.chest.width) * dot / 2).rounded(),
-                        y: (y - CGFloat(PixelCharacterArt.chest.height) * dot - (bounce ? dot : 0)).rounded()
+                        x: (x - CGFloat(sprite.width) * dot / 2).rounded(),
+                        y: (y - CGFloat(sprite.height) * dot - (bounce ? dot : 0)).rounded()
                     ),
                     dot: dot,
-                    palette: PixelPalette.make(skin: skin)
+                    palette: .neutral
                 )
+                // 目印のきらめき。床に紛れて見落とされないように。
+                if bounce {
+                    var palette = PixelPalette.item(rarity: .epic)
+                    palette.accent = Theme.lime
+                    context.drawPixels(
+                        PixelCharacterArt.sparkle,
+                        at: CGPoint(
+                            x: (x + CGFloat(sprite.width) * dot / 2 - dot).rounded(),
+                            y: (y - CGFloat(sprite.height + 4) * dot).rounded()
+                        ),
+                        dot: dot,
+                        palette: palette
+                    )
+                }
             }
             .frame(width: size.width, height: size.height)
         }
@@ -635,11 +652,13 @@ private struct RewardCelebrationView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Theme.Spacing.lg) {
-                Image(systemName: result.item.symbol)
-                    .font(.system(size: 56, weight: .semibold))
-                    .foregroundStyle(Theme.lime)
-                    .padding(Theme.Spacing.lg)
-                    .background(Theme.limeSoft, in: Circle())
+                PixelSpriteView(
+                    sprite: PixelItemArt.icon(for: result.item),
+                    palette: .item(rarity: result.item.rarity),
+                    side: 128
+                )
+                .padding(Theme.Spacing.lg)
+                .background(Theme.limeSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
 
                 VStack(spacing: Theme.Spacing.xs) {
                     Text(result.item.rarity.label)

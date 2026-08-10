@@ -154,14 +154,22 @@ struct RoomBackdrop: View {
         fill(&context, x: x, y: y, w: w, h: 1, shelfLight)
         fill(&context, x: x, y: y + 1, w: w, h: 1, shelfColor)
 
-        // 戦利品は 2 × 3 ドットの小瓶として並べる（アイコンを縮めるより読みやすい）。
-        let items = Array(shelfItems.prefix(6))
+        // 戦利品のアイコンをそのまま並べる。16 ドットの絵は棚には大きいので、
+        // 1 ドット＝1 ドットのまま置かず、偶数分の 1 に間引いて縮める（小数倍は使わない）。
+        let items = Array(shelfItems.prefix(5))
         let slot = w / CGFloat(max(1, items.count))
         for (index, item) in items.enumerated() {
-            let ix = (x + slot * CGFloat(index) + (slot / 2).rounded() - 1).rounded()
-            let color = PixelCharacterRenderer.rarityColor(item.rarity)
-            fill(&context, x: ix, y: y - 3, w: 2, h: 3, color)
-            fill(&context, x: ix, y: y - 4, w: 2, h: 1, color.opacity(0.65))
+            let sprite = PixelItemArt.icon(for: item)
+            let scale: CGFloat = 0.5
+            let iconW = CGFloat(sprite.width) * scale
+            let ix = (x + slot * CGFloat(index) + (slot - iconW) / 2).rounded()
+            let iy = (y - CGFloat(sprite.height) * scale).rounded()
+            context.drawPixels(
+                sprite,
+                at: CGPoint(x: ix * dot, y: iy * dot),
+                dot: dot * scale,
+                palette: .item(rarity: item.rarity)
+            )
         }
     }
 
@@ -169,22 +177,49 @@ struct RoomBackdrop: View {
 
     private func drawFurniture(_ context: inout GraphicsContext, size: CGSize, horizonRow: CGFloat) {
         let cols = columns(size)
-        var palette = PixelPalette.make(skin: SkinCatalog.all[0])
+        var palette = PixelPalette.neutral
         palette.wood = shelfColor
 
-        // 奥の壁ぎわに並べる。キャラは必ず手前を歩くので重ならない。
-        func place(_ sprite: PixelSprite, ratio: CGFloat) {
+        /// 床置きの家具。奥の壁ぎわに並べる（キャラは必ず手前を歩くので重ならない）。
+        func onFloor(_ sprite: PixelSprite, ratio: CGFloat) {
             let x = ((cols * ratio).rounded() * dot).rounded()
             let y = ((horizonRow + 1) * dot - CGFloat(sprite.height) * dot).rounded()
             context.drawPixels(sprite, at: CGPoint(x: x, y: y), dot: dot, palette: palette)
         }
 
-        // ルーキーから置いてある観葉植物。部屋が空っぽに見えないように。
-        // 端に寄せすぎると見切れるので、いちばん左でも余白を残す。
-        place(PixelCharacterArt.plant, ratio: 0.10)
-        if stage >= .trainee { place(PixelCharacterArt.dumbbellRack, ratio: 0.30) }
-        if stage >= .challenger { place(PixelCharacterArt.bench, ratio: 0.58) }
-        if stage >= .veteran { place(PixelCharacterArt.barbell, ratio: 0.82) }
+        /// 壁掛けの小物。
+        func onWall(_ sprite: PixelSprite, ratio: CGFloat, top: CGFloat) {
+            let x = ((cols * ratio).rounded() * dot).rounded()
+            context.drawPixels(sprite, at: CGPoint(x: x, y: (top * dot).rounded()), dot: dot, palette: palette)
+        }
+
+        // 進化するほど部屋が埋まっていく。グラフを読ませずに「続けた量」を見せるのが狙い。
+        // 端に寄せすぎると見切れるので、いちばん左右でも余白を残す。
+        // 初日から置いてある最低限。ここが空だと「まだ何も無い部屋」ではなく「作りかけ」に見える。
+        onFloor(PixelCharacterArt.plant, ratio: 0.10)
+        onFloor(PixelCharacterArt.waterBottle, ratio: 0.21)
+        onWall(PixelCharacterArt.wallClock, ratio: 0.62, top: horizonRow * 0.16)
+
+        if stage >= .trainee {
+            onFloor(PixelCharacterArt.dumbbellRack, ratio: 0.28)
+        }
+        if stage >= .challenger {
+            onFloor(PixelCharacterArt.bench, ratio: 0.56)
+            onWall(PixelCharacterArt.towelRack, ratio: 0.80, top: horizonRow * 0.30)
+        }
+        if stage >= .veteran {
+            onFloor(PixelCharacterArt.kettlebell, ratio: 0.72)
+            onWall(PixelCharacterArt.poster, ratio: 0.44, top: horizonRow * 0.14)
+        }
+        if stage >= .champion {
+            onFloor(PixelCharacterArt.punchingBag, ratio: 0.88)
+        }
+        if stage >= .legend {
+            onFloor(PixelCharacterArt.mirror, ratio: 0.03)
+        }
+        if stage >= .veteran {
+            onFloor(PixelCharacterArt.barbell, ratio: 0.40)
+        }
     }
 
     // MARK: - 配色

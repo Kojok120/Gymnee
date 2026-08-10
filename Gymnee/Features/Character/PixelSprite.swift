@@ -52,6 +52,12 @@ struct PixelSprite: Equatable {
         case leaf = "g"
         /// 差し色。装備のレア度など、描くたびに色が変わるものに使う。
         case accent = "r"
+        /// 差し色の影。
+        case accentShade = "R"
+        /// 布（タオル・マット・ポスターなど、差し色に依らない中間色）。
+        case cloth = "f"
+        /// 空（窓の外・遠景）。
+        case sky = "b"
     }
 
     /// 行の文字列からスプライトを組み立てる。未知の文字は透明として扱う（絵が壊れても落とさない）。
@@ -110,11 +116,17 @@ struct PixelPalette {
     var leaf: Color
     /// 差し色。装備を描く直前に、そのレア度の色へ差し替える。
     var accent: Color = .white
+    var accentShade: Color = .gray
+    var cloth: Color = Color(hexF: 0xB6AE94)
+    var sky: Color = Color(hexF: 0x6FC4F5)
 
     func color(for ink: PixelSprite.Ink) -> Color? {
         switch ink {
         case .none: return nil
         case .accent: return accent
+        case .accentShade: return accentShade
+        case .cloth: return cloth
+        case .sky: return sky
         case .outline: return outline
         case .skin: return skin
         case .skinShade: return skinShade
@@ -134,8 +146,17 @@ struct PixelPalette {
         }
     }
 
+    /// 一段沈めたパレット。横向きのとき、奥にある手足を体の後ろにあるように見せる。
+    var recessed: PixelPalette {
+        var copy = self
+        copy.skin = skinShade
+        copy.skinShade = skinShade.mix(with: Self.ink, by: 0.30)
+        copy.dark = dark.mix(with: Self.ink, by: 0.40)
+        return copy
+    }
+
     /// 影を作るときに混ぜる色（＝輪郭色）。色数を増やさず 1 色から陰影を作る。
-    private static let ink = Color(hexF: 0x2A2320)
+    fileprivate static let ink = Color(hexF: 0x2A2320)
     private static let paper = Color(hexF: 0xFFFFFF)
 
     /// スキンからパレットを作る。
@@ -148,10 +169,12 @@ struct PixelPalette {
         let accent = Color(hexF: skin.accentHex)
         let bodyShade: Color = body.mix(with: ink, by: 0.26)
         let hairShade: Color = accent.mix(with: ink, by: 0.40)
-        let wear: Color = accent.mix(with: paper, by: 0.30)
-        let wearShade: Color = accent.mix(with: paper, by: 0.12)
-        let pants: Color = accent.mix(with: paper, by: 0.06)
-        let pantsShade: Color = accent.mix(with: ink, by: 0.22)
+        // ウェアははっきり持ち上げ、ショートパンツは差し色そのままにする。
+        // ここの差が小さいと上下がつながって、ワンピースを着ているように見える。
+        let wear: Color = accent.mix(with: paper, by: 0.38)
+        let wearShade: Color = accent.mix(with: paper, by: 0.20)
+        let pants: Color = accent
+        let pantsShade: Color = accent.mix(with: ink, by: 0.28)
         return PixelPalette(
             // 輪郭は真っ黒にせず、少し茶を含ませる（ドット絵が硬くなりすぎないように）。
             outline: ink,

@@ -55,12 +55,25 @@ enum CharacterScene {
         case emoting(Emote)
     }
 
+    /// 体の向き。歩いている方向をそのまま向く。
+    ///
+    /// `down` は画面手前＝プレイヤー側を向いた状態。仕草をしている間は常に `down` にして、
+    /// 顔が見えないまま何かをしている状態を作らない（背を向けて腕立てされても伝わらない）。
+    enum Facing: String, CaseIterable, Sendable {
+        case down, up, left, right
+
+        /// 左右どちらかを向いているか（描画側で横向きの絵に切り替える）。
+        var isSideways: Bool { self == .left || self == .right }
+        /// 絵を左右反転して描くか。横向きの絵は右向きで持ち、左向きは反転して使う。
+        var isMirrored: Bool { self == .left }
+    }
+
     /// ある時刻のキャラの姿勢。描画側はこれをそのまま絵にする。
     struct Pose: Equatable, Sendable {
         /// 立ち位置。x/y とも 0...1 の正規化値（y は 0＝奥 / 1＝手前）。実寸への変換は描画側。
         var position: CGPoint
-        /// 右を向いているか。
-        var facingRight: Bool
+        /// 体の向き。
+        var facing: Facing
         var behavior: Behavior
         /// 歩行サイクルの位相（0...1）。手足のスイングに使う。
         var walkPhase: Double
@@ -114,7 +127,7 @@ enum CharacterScene {
         guard travel >= minimumWalkDistance else {
             return Pose(
                 position: from,
-                facingRight: facing(seed: seed, index: index),
+                facing: .down,
                 behavior: .emoting(emote),
                 walkPhase: 0,
                 emotePhase: repeatedPhase(min(1, local / segmentDuration), repeats: emote.repeats),
@@ -130,7 +143,7 @@ enum CharacterScene {
                     x: from.x + (to.x - from.x) * progress,
                     y: from.y + (to.y - from.y) * progress
                 ),
-                facingRight: to.x >= from.x,
+                facing: facing(from: from, to: to),
                 behavior: .walking,
                 walkPhase: (local * stepsPerSecond).truncatingRemainder(dividingBy: 1),
                 emotePhase: 0,
@@ -143,14 +156,26 @@ enum CharacterScene {
         let progress = rest > 0 ? min(1, (local - walkTime) / rest) : 1
         return Pose(
             position: to,
-            // 歩き終えた向きのまま仕草に入る（急に振り向かない）。
-            facingRight: to.x >= from.x,
+            // 仕草の間はこちらを向く。背中を向けたまま腕立てされても何をしているか伝わらない。
+            facing: .down,
             behavior: .emoting(emote),
             walkPhase: 0,
             emotePhase: repeatedPhase(progress, repeats: emote.repeats),
             breathPhase: breath(at: t),
             blink: blink(at: t, seed: seed)
         )
+    }
+
+    /// 移動ベクトルから向きを決める。
+    /// 横向きは体の輪郭が最も変わって歩いて見えるので、縦横が拮抗したときは横を優先する。
+    static func facing(from: CGPoint, to: CGPoint) -> Facing {
+        let dx = Double(to.x - from.x)
+        let dy = Double(to.y - from.y)
+        if abs(dx) >= abs(dy) {
+            return dx >= 0 ? .right : .left
+        }
+        // y は 0＝奥 / 1＝手前。手前へ進む＝こちらを向く。
+        return dy >= 0 ? .down : .up
     }
 
     /// 区間 `index` の目的地。
@@ -174,12 +199,6 @@ enum CharacterScene {
             if roll < 0 { return candidate }
         }
         return .rest
-    }
-
-    /// 移動しない区間で向いている方向。
-    private static func facing(seed: UInt64, index: Int) -> Bool {
-        var rng = DeterministicRandom(seed: seed &+ 0x1357_9BDF &* UInt64(bitPattern: Int64(index)))
-        return rng.next() % 2 == 0
     }
 
     /// 呼吸の位相（-1...1）。

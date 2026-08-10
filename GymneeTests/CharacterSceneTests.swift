@@ -85,17 +85,59 @@ final class CharacterSceneTests: XCTestCase {
 
     // MARK: - 向き
 
-    func testFacingFollowsWalkDirection() {
+    /// 移動ベクトルから向きが決まる。y は 0＝奥 / 1＝手前なので、手前へ進む＝こちらを向く。
+    func testFacingFromMovement() {
+        func facing(_ dx: Double, _ dy: Double) -> CharacterScene.Facing {
+            CharacterScene.facing(from: CGPoint(x: 0.5, y: 0.5), to: CGPoint(x: 0.5 + dx, y: 0.5 + dy))
+        }
+        XCTAssertEqual(facing(0.3, 0.0), .right)
+        XCTAssertEqual(facing(-0.3, 0.0), .left)
+        XCTAssertEqual(facing(0.0, 0.3), .down)
+        XCTAssertEqual(facing(0.0, -0.3), .up)
+        // 縦横が拮抗したときは横を優先する（輪郭が変わって歩いて見えるため）。
+        XCTAssertEqual(facing(0.2, 0.2), .right)
+        XCTAssertEqual(facing(-0.2, -0.2), .left)
+        // 斜めでも支配的な軸に寄る。
+        XCTAssertEqual(facing(0.1, -0.4), .up)
+    }
+
+    func testWalkFacingMatchesMovement() {
         // 歩いている最中は、必ず進行方向を向いている。
         for t in stride(from: 0.0, through: 200.0, by: 0.25) {
             let pose = CharacterScene.pose(at: t, seed: seed)
             guard pose.behavior == .walking else { continue }
             let next = CharacterScene.pose(at: t + 0.25, seed: seed)
             guard next.behavior == .walking else { continue }
-            let dx = next.position.x - pose.position.x
-            guard abs(dx) > 0.002 else { continue }
-            XCTAssertEqual(pose.facingRight, dx > 0, "t=\(t) で進行方向と向きが逆")
+            let dx = Double(next.position.x - pose.position.x)
+            let dy = Double(next.position.y - pose.position.y)
+            guard abs(dx) > 0.002 || abs(dy) > 0.002 else { continue }
+            switch pose.facing {
+            case .right: XCTAssertGreaterThan(dx, -0.0001, "t=\(t)")
+            case .left: XCTAssertLessThan(dx, 0.0001, "t=\(t)")
+            case .down: XCTAssertGreaterThan(dy, -0.0001, "t=\(t)")
+            case .up: XCTAssertLessThan(dy, 0.0001, "t=\(t)")
+            }
         }
+    }
+
+    /// 仕草の間は必ずこちらを向く（背中を向けたまま腕立てされても伝わらない）。
+    func testEmotingAlwaysFacesViewer() {
+        for t in stride(from: 0.0, through: 300.0, by: 0.21) {
+            let pose = CharacterScene.pose(at: t, seed: seed)
+            if case .emoting = pose.behavior {
+                XCTAssertEqual(pose.facing, .down, "t=\(t) で仕草中に横／背を向けている")
+            }
+        }
+    }
+
+    func testFacingMirrorFlags() {
+        XCTAssertTrue(CharacterScene.Facing.left.isSideways)
+        XCTAssertTrue(CharacterScene.Facing.right.isSideways)
+        XCTAssertFalse(CharacterScene.Facing.up.isSideways)
+        XCTAssertFalse(CharacterScene.Facing.down.isSideways)
+        // 横向きの絵は右向きで持ち、左向きだけ反転する。
+        XCTAssertTrue(CharacterScene.Facing.left.isMirrored)
+        XCTAssertFalse(CharacterScene.Facing.right.isMirrored)
     }
 
     // MARK: - まばたき

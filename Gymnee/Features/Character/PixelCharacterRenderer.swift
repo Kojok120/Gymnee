@@ -29,8 +29,8 @@ enum PixelCharacterRenderer {
         static let bodyY = 12
         /// 腕の上端。
         static let armY = 13
-        /// 脚の上端。
-        static let legY = 20
+        /// 脚の上端（胴の下端に合わせる）。
+        static let legY = bodyY + PixelCharacterArt.bodyHeight
         /// 画枠の横中心。
         static let centerX = 12
     }
@@ -42,12 +42,14 @@ enum PixelCharacterRenderer {
         in context: inout GraphicsContext,
         look: Look,
         frame: PixelCharacterLayout.Frame,
-        facingRight: Bool,
+        facing: CharacterScene.Facing,
         feet: CGPoint,
         dot: CGFloat
     ) {
         guard dot > 0 else { return }
         var palette = PixelPalette.make(skin: look.skin)
+        let mirrored = facing.isMirrored
+        let sideways = facing.isSideways
 
         // 画枠の左上（＝足元から左へ半分、上へ画枠の高さぶん）。ドット境界に吸着させる。
         let originX = (feet.x - CGFloat(PixelCharacterArt.canvasWidth) * dot / 2).rounded()
@@ -61,7 +63,9 @@ enum PixelCharacterRenderer {
         drawShadow(in: &context, feet: feet, dot: dot, width: bodyWidth(look) + 4, lift: frame.lift)
         drawAura(in: &context, look: look, feet: feet, dot: dot)
 
-        let bodyW = bodyWidth(look)
+        // 横から見た体は正面より薄い。1 段細い胴を使うだけで「横を向いている」と読める。
+        let girth = sideways ? slimmer(look.build.girth) : look.build.girth
+        let bodyW = PixelCharacterArt.bodyWidth(girth)
         let armW = PixelCharacterArt.armWidth(look.build.arm)
         let legW = PixelCharacterArt.legWidth(look.build.leg)
 
@@ -69,42 +73,74 @@ enum PixelCharacterRenderer {
         // 上半身は「浮き」と「しゃがみ」の両方で上下する。脚は接地したまま。
         let upperY = frame.lift + frame.crouch
 
-        // 脚（胴の後ろに置く）。
+        // 脚。正面・背面は左右に並べ、横向きは重ねて前後に開く（横から見ると脚は並ばない）。
         let legSprite = PixelCharacterArt.leg(look.build.leg)
-        for (legX, lift) in [(Anchor.centerX - legW, frame.leftLegLift), (Anchor.centerX, frame.rightLegLift)] {
-            context.drawPixels(legSprite, at: place(legX, Anchor.legY - lift), dot: dot, palette: palette, flipped: !facingRight)
+        let legSlots: [(x: Int, lift: Int)] = sideways
+            ? [
+                // 奥の脚を先に、手前の脚を後に描く。
+                // 奥の足は 1 ドット持ち上げる。同じ高さに並べると靴が横一列につながって、
+                // 足ではなく板を履いているように見えるため。
+                (Anchor.centerX - legW / 2 - frame.legStride, frame.legStride == 0 ? 0 : 1),
+                (Anchor.centerX - legW / 2 + frame.legStride, 0),
+            ]
+            : [
+                (Anchor.centerX - legW, frame.leftLegLift),
+                (Anchor.centerX, frame.rightLegLift),
+            ]
+        for (index, slot) in legSlots.enumerated() {
+            // 横向きの奥側の脚は影色で沈めて、2 本が重なって見えるようにする。
+            let legPalette = (sideways && index == 0) ? palette.recessed : palette
+            context.drawPixels(legSprite, at: place(slot.x, Anchor.legY - slot.lift), dot: dot, palette: legPalette, flipped: mirrored)
         }
 
         // リュック（胴の後ろ）。
         if look.carriesPack {
-            let packX = facingRight ? bodyX - 4 : bodyX + bodyW - 2
+            let packW = PixelCharacterArt.backpack.width
+            let packX = sideways
+                ? (mirrored ? bodyX + bodyW - 2 : bodyX + 2 - packW)
+                : Anchor.centerX - packW / 2
             context.drawPixels(
                 PixelCharacterArt.backpack,
-                at: place(packX, Anchor.bodyY + 1 + upperY), dot: dot, palette: palette, flipped: !facingRight
+                at: place(packX, Anchor.bodyY + 1 + upperY), dot: dot, palette: palette, flipped: mirrored
             )
         }
 
-        // 腕。
+        // 腕。横向きでは手前の腕しか見えないので、奥の腕は胴の後ろに影色で置く。
         let armSprite = PixelCharacterArt.arm(look.build.arm)
-        let armPositions = armAnchors(bodyX: bodyX, bodyW: bodyW, armW: armW, frame: frame, upperY: upperY)
-        for anchor in armPositions {
-            context.drawPixels(armSprite, at: place(anchor.x, anchor.y), dot: dot, palette: palette, flipped: !facingRight)
+        let armPositions = armAnchors(
+            bodyX: bodyX, bodyW: bodyW, armW: armW, frame: frame, upperY: upperY, sideways: sideways
+        )
+        if sideways {
+            if let far = armPositions.first {
+                context.drawPixels(armSprite, at: place(far.x, far.y), dot: dot, palette: palette.recessed, flipped: mirrored)
+            }
+        } else {
+            for anchor in armPositions {
+                context.drawPixels(armSprite, at: place(anchor.x, anchor.y), dot: dot, palette: palette, flipped: mirrored)
+            }
         }
 
         // 胴。
         context.drawPixels(
             PixelCharacterArt.body(look.build.girth),
-            at: place(bodyX, Anchor.bodyY + upperY), dot: dot, palette: palette, flipped: !facingRight
+            at: place(bodyX, Anchor.bodyY + upperY), dot: dot, palette: palette, flipped: mirrored
         )
 
-        // 頭。
-        let headSprite = frame.blinking ? PixelCharacterArt.headBlink : PixelCharacterArt.head
-        let headY = Anchor.headY + upperY
-        context.drawPixels(headSprite, at: place(Anchor.headX, headY), dot: dot, palette: palette, flipped: !facingRight)
+        // 横向きの手前の腕は胴より前に出す。
+        if sideways, let near = armPositions.last {
+            context.drawPixels(armSprite, at: place(near.x, near.y), dot: dot, palette: palette, flipped: mirrored)
+        }
 
-        // 装備と小道具（体の上に重ねる）。
+        // 頭。向きが変わるのはここ。
+        let headSprite = PixelCharacterArt.head(facing: facing, blinking: frame.blinking)
+        let headY = Anchor.headY + upperY
+        context.drawPixels(headSprite, at: place(Anchor.headX, headY), dot: dot, palette: palette, flipped: mirrored)
+
+        // 装備と小道具（体の上に重ねる）。横向きでは手前の手にだけ持たせる。
+        let handAnchors = sideways ? Array(armPositions.suffix(1)) : armPositions
+
         if frame.holdsDumbbell {
-            for anchor in armPositions {
+            for anchor in handAnchors {
                 let handX = anchor.x + armW / 2 - 2
                 let handY = anchor.y + PixelCharacterArt.armHeight - 1
                 context.drawPixels(PixelCharacterArt.dumbbell, at: place(handX, handY), dot: dot, palette: palette)
@@ -114,7 +150,7 @@ enum PixelCharacterRenderer {
         if let hand = look.equipped[.hand] {
             palette.accent = rarityColor(hand.rarity)
             let sprite = PixelCharacterArt.handGear(hand.rarity)
-            for anchor in armPositions {
+            for anchor in handAnchors {
                 let handX = anchor.x + (armW - sprite.width) / 2
                 let handY = anchor.y + PixelCharacterArt.armHeight - sprite.height
                 context.drawPixels(sprite, at: place(handX, handY), dot: dot, palette: palette)
@@ -130,7 +166,7 @@ enum PixelCharacterRenderer {
             palette.accent = rarityColor(headItem.rarity)
             let sprite = PixelCharacterArt.headGear(headItem.rarity)
             let offset = PixelCharacterArt.headGearOffset(headItem.rarity)
-            context.drawPixels(sprite, at: place(Anchor.headX, headY + offset), dot: dot, palette: palette, flipped: !facingRight)
+            context.drawPixels(sprite, at: place(Anchor.headX, headY + offset), dot: dot, palette: palette, flipped: mirrored)
         }
 
         if let name = look.nameTag {
@@ -145,23 +181,42 @@ enum PixelCharacterRenderer {
         let y: Int
     }
 
-    /// 左右の腕の左上位置。挙げているときは肩の上に出す。
+    /// 腕の左上位置。返り値は [奥, 手前] の順（横向きで描き分けるため）。
+    /// 挙げているときは肩の上に出す。
     private static func armAnchors(
         bodyX: Int, bodyW: Int, armW: Int,
-        frame: PixelCharacterLayout.Frame, upperY: Int
+        frame: PixelCharacterLayout.Frame, upperY: Int, sideways: Bool
     ) -> [ArmAnchor] {
         let baseY = frame.armsRaised
             ? Anchor.bodyY - PixelCharacterArt.armHeight + 2 + upperY
             : Anchor.armY + upperY
-        // 内側の輪郭を胴の輪郭に 1 ドット重ねる。重ねないと黒い線が 2 本並んで腕が太く暗く見える。
+
+        guard sideways else {
+            // 内側の輪郭を胴の輪郭に 1 ドット重ねる。重ねないと黒い線が 2 本並んで腕が太く暗く見える。
+            return [
+                ArmAnchor(x: bodyX - armW + 1 + frame.leftArmX, y: baseY + frame.leftArmY),
+                ArmAnchor(x: bodyX + bodyW - 1 + frame.rightArmX, y: baseY + frame.rightArmY),
+            ]
+        }
+
+        // 横向きは腕が前後に並ぶ。胴の中央付近に重ね、歩幅ぶんだけ前後にずらす。
+        let center = Anchor.centerX - armW / 2
         return [
-            ArmAnchor(x: bodyX - armW + 1 + frame.leftArmX, y: baseY + frame.leftArmY),
-            ArmAnchor(x: bodyX + bodyW - 1 + frame.rightArmX, y: baseY + frame.rightArmY),
+            ArmAnchor(x: center - frame.legStride, y: baseY + frame.leftArmY),
+            ArmAnchor(x: center + frame.legStride, y: baseY + frame.rightArmY),
         ]
     }
 
     private static func bodyWidth(_ look: Look) -> Int {
         PixelCharacterArt.bodyWidth(look.build.girth)
+    }
+
+    /// 1 段細い胴。横向きのときに使う。
+    private static func slimmer(_ girth: CharacterBuild.Girth) -> CharacterBuild.Girth {
+        switch girth {
+        case .wide: return .normal
+        case .normal, .slim: return .slim
+        }
     }
 
     // MARK: - 影・オーラ・ベルト・名札

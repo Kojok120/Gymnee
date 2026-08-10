@@ -7,16 +7,38 @@ final class PixelSpriteTests: XCTestCase {
     /// 検証対象のスプライト（名前つき）。新しい絵を足したらここにも足す。
     private var allSprites: [(String, PixelSprite)] {
         var list: [(String, PixelSprite)] = [
-            ("head", PixelCharacterArt.head),
+            ("headFront", PixelCharacterArt.headFront),
             ("headBlink", PixelCharacterArt.headBlink),
+            ("headBack", PixelCharacterArt.headBack),
+            ("headSide", PixelCharacterArt.headSide),
+            ("headSideBlink", PixelCharacterArt.headSideBlink),
             ("dumbbell", PixelCharacterArt.dumbbell),
             ("backpack", PixelCharacterArt.backpack),
             ("plant", PixelCharacterArt.plant),
             ("dumbbellRack", PixelCharacterArt.dumbbellRack),
             ("bench", PixelCharacterArt.bench),
             ("barbell", PixelCharacterArt.barbell),
-            ("chest", PixelCharacterArt.chest),
+            ("mirror", PixelCharacterArt.mirror),
+            ("waterBottle", PixelCharacterArt.waterBottle),
+            ("towelRack", PixelCharacterArt.towelRack),
+            ("wallClock", PixelCharacterArt.wallClock),
+            ("kettlebell", PixelCharacterArt.kettlebell),
+            ("punchingBag", PixelCharacterArt.punchingBag),
+            ("poster", PixelCharacterArt.poster),
+            ("sweatDrop", PixelCharacterArt.sweatDrop),
+            ("sparkle", PixelCharacterArt.sparkle),
+            ("steamWisp", PixelCharacterArt.steamWisp),
+            ("leafBit", PixelCharacterArt.leafBit),
         ]
+        for frame in 0..<3 {
+            list.append(("chest-\(frame)", PixelCharacterArt.chest(frame)))
+        }
+        for item in Expedition.items {
+            list.append(("item-\(item.id)", PixelItemArt.icon(for: item)))
+        }
+        for course in Expedition.courses {
+            list.append(("course-\(course.id)", PixelItemArt.course(id: course.id)))
+        }
         for girth in CharacterBuild.Girth.allCases {
             list.append(("body-\(girth)", PixelCharacterArt.body(girth)))
         }
@@ -53,10 +75,28 @@ final class PixelSpriteTests: XCTestCase {
 
     /// パーツの寸法宣言と実物が一致していること。ここがずれると合成位置が全部ずれる。
     func testDeclaredSizesMatchSprites() {
-        XCTAssertEqual(PixelCharacterArt.head.width, PixelCharacterArt.headWidth)
-        XCTAssertEqual(PixelCharacterArt.head.height, PixelCharacterArt.headHeight)
-        XCTAssertEqual(PixelCharacterArt.headBlink.width, PixelCharacterArt.headWidth)
-        XCTAssertEqual(PixelCharacterArt.headBlink.height, PixelCharacterArt.headHeight)
+        // 向き・まばたきのどの組み合わせでも頭の寸法は同じ（違うと首から上がずれる）。
+        for facing in CharacterScene.Facing.allCases {
+            for blinking in [true, false] {
+                let sprite = PixelCharacterArt.head(facing: facing, blinking: blinking)
+                XCTAssertEqual(sprite.width, PixelCharacterArt.headWidth, "\(facing)/\(blinking) の幅")
+                XCTAssertEqual(sprite.height, PixelCharacterArt.headHeight, "\(facing)/\(blinking) の高さ")
+            }
+        }
+        // 向きごとに絵が実際に differ すること（全部同じなら向きが伝わらない）。
+        XCTAssertNotEqual(PixelCharacterArt.headFront, PixelCharacterArt.headBack)
+        XCTAssertNotEqual(PixelCharacterArt.headFront, PixelCharacterArt.headSide)
+        XCTAssertNotEqual(PixelCharacterArt.headBack, PixelCharacterArt.headSide)
+        // 背面は目が無いので、まばたきでも絵が変わらない。
+        XCTAssertEqual(
+            PixelCharacterArt.head(facing: .up, blinking: true),
+            PixelCharacterArt.head(facing: .up, blinking: false)
+        )
+        // 左右は同じ絵を反転して使う。
+        XCTAssertEqual(
+            PixelCharacterArt.head(facing: .left, blinking: false),
+            PixelCharacterArt.head(facing: .right, blinking: false)
+        )
 
         for girth in CharacterBuild.Girth.allCases {
             XCTAssertEqual(PixelCharacterArt.body(girth).width, PixelCharacterArt.bodyWidth(girth), "\(girth) の胴幅")
@@ -107,6 +147,28 @@ final class PixelSpriteTests: XCTestCase {
     func testRowsAreRectangularHelper() {
         XCTAssertTrue(PixelSprite.rowsAreRectangular(["ab", "cd"]))
         XCTAssertFalse(PixelSprite.rowsAreRectangular(["ab", "c"]))
+    }
+
+    /// 戦利品 12 種すべてに専用の絵があること（取りこぼすと汎用の四角が出る）。
+    func testEveryLootItemHasItsOwnIcon() {
+        var seen: [String: [PixelSprite.Run]] = [:]
+        for item in Expedition.items {
+            let sprite = PixelItemArt.icon(for: item)
+            XCTAssertEqual(sprite.width, PixelItemArt.side, "\(item.id) の幅")
+            XCTAssertEqual(sprite.height, PixelItemArt.side, "\(item.id) の高さ")
+            seen[item.id] = sprite.runs
+        }
+        // 同じ絵を使い回していないこと（レア度で色は変わるが形は別であるべき）。
+        let distinct = Set(seen.values.map { $0.count })
+        XCTAssertGreaterThan(distinct.count, 1, "全アイテムが同じ形になっている")
+    }
+
+    func testEveryCourseHasArt() {
+        for course in Expedition.courses {
+            let sprite = PixelItemArt.course(id: course.id)
+            XCTAssertEqual(sprite.width, PixelItemArt.side, "\(course.id) の幅")
+            XCTAssertEqual(sprite.height, PixelItemArt.side, "\(course.id) の高さ")
+        }
     }
 }
 
@@ -205,7 +267,7 @@ final class PixelCharacterLayoutTests: XCTestCase {
     ) -> CharacterScene.Pose {
         CharacterScene.Pose(
             position: CGPoint(x: 0.5, y: 0.5),
-            facingRight: true,
+            facing: .down,
             behavior: behavior,
             walkPhase: walkPhase,
             emotePhase: emotePhase,
