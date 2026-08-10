@@ -211,23 +211,25 @@ enum PixelItemArt {
 
     // MARK: オーラ
 
+    /// プロテインの香り。葉と鉢で描くと観葉植物に見えるので、
+    /// シェイカーから香りが立ちのぼる形にする（同じオーラ枠の「湯気」とも造形を揃える）。
     private static let proteinAura = PixelSprite([
         "................",
+        "....r...r...r...",
+        "...r...r...r....",
+        "....r...r...r...",
+        "...r...r...r....",
         "................",
-        "......oooo......",
-        ".....ogggglo....",
-        "....ogggggglo...",
-        "...oggggggggo...",
-        "...ogglgggggo...",
-        "...oggggggggo...",
-        "....oggggggo....",
-        ".....oooooo.....",
-        "......okko......",
-        "......okko......",
-        ".....okkkko.....",
-        "......oooo......",
-        "................",
-        "................",
+        "....oooooooo....",
+        "...oRRRRRRRRo...",
+        "..oooooooooooo..",
+        "..orrrrrrrrrro..",
+        "..orrrrrrrrrro..",
+        "..oRRRRRRRRRRo..",
+        "..orrrrrrrrrro..",
+        "..orrrrrrrrrro..",
+        "..orrrrrrrrrro..",
+        "..oooooooooooo..",
     ])
 
     private static let steamAura = PixelSprite([
