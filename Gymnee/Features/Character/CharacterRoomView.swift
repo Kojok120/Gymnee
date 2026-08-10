@@ -22,6 +22,8 @@ struct CharacterRoomView: View {
     @Query private var loadouts: [CharacterLoadout]
     /// 髪型・アクセサリー（`CharacterLoadout` とは別モデル）。
     @Query private var styles: [CharacterStyle]
+    /// 今日のクエスト（コーチが組んだメニュー）。
+    @Query private var quests: [PlannedWorkout]
     /// 拾ったグッズ（同じものを二度拾わせないための記録）。
     @Query private var pickups: [RoomPickupRecord]
     /// 合トレ判定用：フォロー中の人の投稿（自分以外）。
@@ -48,6 +50,7 @@ struct CharacterRoomView: View {
         )
         _loadouts = Query(filter: #Predicate<CharacterLoadout> { $0.userId == userId })
         _styles = Query(filter: #Predicate<CharacterStyle> { $0.userId == userId })
+        _quests = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone })
         _pickups = Query(filter: #Predicate<RoomPickupRecord> { $0.userId == userId })
         _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId != userId })
     }
@@ -61,7 +64,7 @@ struct CharacterRoomView: View {
     }
 
     enum SheetRoute: String, Identifiable {
-        case status, expedition, outfit, skins, collection, coach
+        case status, expedition, quest, outfit, skins, collection, coach
         var id: String { rawValue }
     }
 
@@ -827,13 +830,19 @@ struct CharacterRoomView: View {
     private var actionBar: some View {
         HStack(spacing: Theme.Spacing.md) {
             sceneButton("ステータス", "chart.bar.fill", route: .status)
-            sceneButton("遠征", "map.fill", route: .expedition, badge: expeditionBadge)
+            sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
             sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
             sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
             sceneButton("見た目", "paintpalette.fill", route: .skins)
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.bottom, Theme.Spacing.xl)
+    }
+
+    /// 今日のクエストがあるか（下部ボタンの印）。
+    private var hasQuestToday: Bool {
+        let calendar = Calendar.current
+        return quests.contains { calendar.isDate($0.date, inSameDayAs: .now) && !$0.isDone }
     }
 
     /// 遠征ボタンに出す印。今すぐ触れる用事があるときだけ点ける。
@@ -938,6 +947,8 @@ struct CharacterRoomView: View {
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
+        case .quest:
+            QuestSheet(userId: userId) { sheet = .coach }
         case .coach:
             CoachChatView(userId: userId)
         }
