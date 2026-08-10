@@ -113,7 +113,9 @@ final class CoachService {
                 decidesMenu: mode.decidesMenu
             )
             lastFailure = nil
-            return Reply(text: result.text, proposalJSON: Self.encodeProposal(result))
+            // 壊れた返答（JSON の断片など）はそのまま出さない。
+            let text = CoachPersona.isPresentable(result.text) ? result.text : CoachPersona.malformed
+            return Reply(text: text, proposalJSON: Self.encodeProposal(result))
         } catch {
             // 503(not_configured) と通信断で文言を変える。どちらも会話は続けられる形にする。
             let isNotConfigured = "\(error)".contains("503")

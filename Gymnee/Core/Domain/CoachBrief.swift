@@ -133,4 +133,20 @@ enum CoachPersona {
 
     /// 未設定（Edge Function に鍵が無い）ときの返答。
     static let notConfigured = "まだ話す準備ができていないみたい。しばらくしてからまた声をかけて"
+
+    /// 返答が壊れていた（JSON の断片など）ときの言い換え。
+    static let malformed = "うまく言葉にできなかった。もう一度聞いてくれる？"
+
+    /// 返答として画面に出してよい文字列か。
+    ///
+    /// Edge Function 側でも弾いているが、関数のデプロイとアプリの配信は独立して進むため、
+    /// 古い関数に当たっても生の JSON が表示されないようクライアントでも確かめる
+    /// （実際に `{ "reply": "…` がそのまま吹き出しに出た）。
+    static func isPresentable(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") { return false }
+        if trimmed.contains("\"reply\"") || trimmed.contains("\"plan\"") { return false }
+        return true
+    }
 }
