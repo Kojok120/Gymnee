@@ -577,6 +577,26 @@ enum PixelCharacterArt {
         "r..",
     ])
 
+    /// ハート。キャラをタップしたときに浮かせる。
+    static let heart = PixelSprite([
+        ".rr.rr.",
+        "rrrrrrr",
+        "rrrrrrr",
+        ".rrrrr.",
+        "..rrr..",
+        "...r...",
+    ])
+
+    /// 音符。ハートと交互に出して、同じ反応の繰り返しに見えないようにする。
+    static let note = PixelSprite([
+        "...rr",
+        "...rr",
+        "...rr",
+        "...rr",
+        ".rrrr",
+        "rrrr.",
+    ])
+
     /// 葉。プロテインの香りの表現に使う。
     static let leafBit = PixelSprite([
         ".gg.",

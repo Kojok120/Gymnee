@@ -206,7 +206,30 @@ struct CharacterRoomView: View {
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
-        .onTapGesture { speak() }
+        .onTapGesture(coordinateSpace: .local) { location in
+            handleSceneTap(at: location, size: size, floorTop: floorTop, floorBottom: floorBottom)
+        }
+    }
+
+    /// 画面のタップ。キャラに当たっていれば反応させ、外していればコーチに喋ってもらう。
+    private func handleSceneTap(at location: CGPoint, size: CGSize, floorTop: CGFloat, floorBottom: CGFloat) {
+        let dot = max(3, (size.width / 84).rounded())
+        let pose = CharacterScene.pose(at: Date.now.timeIntervalSince(startedAt), seed: selfSeed)
+        let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(pose.position.y))).rounded())
+        let feet = CGPoint(
+            x: size.width * CGFloat(pose.position.x),
+            y: floorTop + (floorBottom - floorTop) * CGFloat(pose.position.y)
+        )
+        let side = CGFloat(PixelCharacterArt.canvasHeight) * scaled
+
+        if CharacterReaction.isHit(tap: location, feet: feet, size: side) {
+            tapCount += 1
+            reactionParticle = CharacterReaction.Particle.next(count: tapCount)
+            reactedAt = .now
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } else {
+            speak()
+        }
     }
 
     /// コーチの立ち位置（歩き回らず、部屋の決まった場所にいる）。
@@ -227,6 +250,11 @@ struct CharacterRoomView: View {
     @State private var coachPhase = CoachVisit.Phase.away
     @State private var coachPhaseSince = Date.now
 
+    /// キャラをタップした時刻と、そのとき浮かべる絵。
+    @State private var reactedAt: Date?
+    @State private var reactionParticle = CharacterReaction.Particle.heart
+    @State private var tapCount = 0
+
     /// キャラたち。**全員を 1 枚の Canvas に描く**ことで、毎フレームの View 差分を発生させない。
     private func actors(in size: CGSize, dot: CGFloat, floorTop: CGFloat, floorBottom: CGFloat) -> some View {
         let look = PixelCharacterRenderer.Look(
@@ -246,7 +274,15 @@ struct CharacterRoomView: View {
 
                 // 奥にいる者から描く（手前が上に重なる）。
                 var cast: [(pose: CharacterScene.Pose, look: PixelCharacterRenderer.Look)] = []
-                cast.append((CharacterScene.pose(at: elapsed, seed: selfSeed), look))
+
+                // 自分のキャラ。タップされた直後は反応の仕草に差し替える（位置と向きは保つ）。
+                var selfPose = CharacterScene.pose(at: elapsed, seed: selfSeed)
+                let reactionElapsed = reactedAt.map { timeline.date.timeIntervalSince($0) }
+                if let reactionElapsed,
+                   let reacting = CharacterReaction.pose(base: selfPose, elapsed: reactionElapsed) {
+                    selfPose = reacting
+                }
+                cast.append((selfPose, look))
 
                 // コーチ。用事があるときだけ歩いて入ってきて、済んだら歩いて帰る。
                 if let coachPose = CoachVisit.pose(
@@ -293,6 +329,30 @@ struct CharacterRoomView: View {
                         facing: pose.facing, feet: feet, dot: scaled
                     )
                 }
+
+                // タップの返事。自分のキャラの頭上に、ハートや音符をふわっと浮かせる。
+                if let reactionElapsed,
+                   let progress = CharacterReaction.particleProgress(elapsed: reactionElapsed) {
+                    let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(selfPose.position.y))).rounded())
+                    let side = CGFloat(PixelCharacterArt.canvasHeight) * scaled
+                    let feet = CGPoint(
+                        x: size.width * CGFloat(selfPose.position.x),
+                        y: floorTop + (floorBottom - floorTop) * CGFloat(selfPose.position.y)
+                    )
+                    var palette = PixelPalette.neutral
+                    palette.accent = reactionParticle == .heart ? Color(hexF: 0xFF7B9C) : Theme.limeFill
+                    let sprite = reactionSprite
+                    context.drawPixels(
+                        sprite,
+                        at: CGPoint(
+                            x: (feet.x + side * 0.22).rounded(),
+                            y: (feet.y - side - side * CGFloat(CharacterReaction.particleRise(progress: progress))).rounded()
+                        ),
+                        dot: scaled,
+                        palette: palette,
+                        opacity: CharacterReaction.particleOpacity(progress: progress)
+                    )
+                }
             }
             .frame(width: size.width, height: size.height)
         }
@@ -302,6 +362,14 @@ struct CharacterRoomView: View {
 
     /// 自分のキャラの歩き方を決めるシード。人によって歩き回り方が変わる。
     private var selfSeed: UInt64 { DeterministicRandom.seed(from: userId) }
+
+    private var reactionSprite: PixelSprite {
+        switch reactionParticle {
+        case .heart: return PixelCharacterArt.heart
+        case .note: return PixelCharacterArt.note
+        case .sparkle: return PixelCharacterArt.sparkle
+        }
+    }
 
     /// コーチのふきだしを置く高さ（コーチの頭より少し上）。
     private func coachBubbleTop(in size: CGSize, floorTop: CGFloat, floorBottom: CGFloat) -> CGFloat {
