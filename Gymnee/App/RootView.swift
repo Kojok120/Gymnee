@@ -38,14 +38,15 @@ struct RootView: View {
                     await auth.restoreBackendSession()
                 }
                 ensureGuestSession()
-                // ストア退避が起きた直後は、サーバー上の記録を**フル取得で**引き戻す。
-                // 差分基準は UserDefaults にあり退避を生き延びるため、これが無いと
-                // 「サインイン済みなのにフィードが空のまま」から復帰できない。
-                // 退避時にも基準を捨てているが、既に退避済みの端末を救うためここでも捨てる。
-                if storeRecoveryPending {
-                    GymneeSchema.resetSyncWatermarks()
-                    await syncEngine.syncNow(force: true)
-                }
+                // 「同期履歴はあるのに手元が空」＝ストアが作り直された、と見てフル取得し直す。
+                // 復旧フラグを条件にすると、フラグがアラート表示で消費されたあとの端末を救えない
+                // （実際にそれで復帰できなかった）。状態そのものを毎回見る。
+                await SyncRecovery.recoverIfNeeded(
+                    userId: auth.currentUserId,
+                    isSignedIn: auth.isPermanentAccount,
+                    context: context,
+                    sync: syncEngine
+                )
                 // カレンダーをタブから外したため、Widget スナップショットと通知予約は
                 // 画面到達に依存させず起動時にも回す（§6.10）。
                 syncPlatformOnLaunch()
