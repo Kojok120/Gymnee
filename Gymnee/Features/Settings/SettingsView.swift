@@ -20,6 +20,10 @@ struct SettingsView: View {
     @State private var browserURL: IdentifiableURL?
     /// CSV 書き出し結果（分析画面から移設）。
     @State private var csvURL: URL?
+    /// ユーザーIDをコピーしたことの一時表示。
+    @State private var copiedUserId = false
+    /// フル再取得の実行中フラグ。
+    @State private var isRefetching = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
@@ -54,10 +58,29 @@ struct SettingsView: View {
                 }
                 .tint(.primary)
                 if let id = auth.currentUserId {
-                    LabeledContent("ユーザーID") {
-                        Text(id.uuidString.prefix(8) + "…")
+                    // 問い合わせのときに読み上げ・コピーできる必要があるので、
+                    // 見切れさせず全桁を出す（先頭 8 桁だけだと「…」で切れて用を成さない）。
+                    // 長いので値だけを次の行に置き、タップでコピーできるようにする。
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("ユーザーID")
+                            .foregroundStyle(.primary)
+                        Text(id.uuidString.lowercased())
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        UIPasteboard.general.string = id.uuidString.lowercased()
+                        copiedUserId = true
+                    }
+                    if copiedUserId {
+                        Text("コピーしました")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.lime)
                     }
                 }
             }
@@ -163,7 +186,7 @@ struct SettingsView: View {
             }
             .task { await notifications.refreshStatus() }
 
-            Section("同期") {
+            Section {
                 LabeledContent("バックエンド", value: sync.isRemoteEnabled ? "接続済み" : "ローカルのみ")
                 if sync.isRemoteEnabled {
                     // 匿名（ゲスト）セッションは同期は動くが「サインイン済み」とは表示しない。
@@ -181,6 +204,26 @@ struct SettingsView: View {
                     } label: {
                         Label("今すぐ同期", systemImage: "arrow.triangle.2.circlepath")
                     }
+                    // 差分同期は「前回どこまで取ったか」を基準にするため、端末側だけが空になると
+                    // 「取得済み」と判断されて永久に戻ってこない。その手動の脱出口。
+                    Button {
+                        Task {
+                            isRefetching = true
+                            SyncRecovery.clearWatermarks()
+                            await sync.syncNow(force: true)
+                            isRefetching = false
+                        }
+                    } label: {
+                        if isRefetching {
+                            HStack(spacing: Theme.Spacing.sm) {
+                                ProgressView().controlSize(.small)
+                                Text("取り直しています…")
+                            }
+                        } else {
+                            Label("サーバーから全部取り直す", systemImage: "arrow.down.circle")
+                        }
+                    }
+                    .disabled(isRefetching)
                     if !auth.isPermanentAccount {
                         SignInWithAppleButton(.signIn) { request in
                             auth.prepareAppleRequest(request)
@@ -203,6 +246,10 @@ struct SettingsView: View {
                     Text("現在はローカルのみで動作中（Supabase 未設定）。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            } header: {
+                Text("同期")
+            } footer: {
+                Text("記録はサーバーにも保存されます。手元の表示が実際より少ないときは「サーバーから全部取り直す」を押してください。")
             }
 
             Section("データ") {
