@@ -209,7 +209,7 @@ struct SettingsView: View {
                     Button {
                         Task {
                             isRefetching = true
-                            SyncRecovery.clearWatermarks()
+                            sync.resetPullWatermarks()
                             await sync.syncNow(force: true)
                             isRefetching = false
                         }

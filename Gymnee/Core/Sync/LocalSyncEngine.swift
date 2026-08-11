@@ -80,6 +80,10 @@ final class LocalSyncEngine: SyncEngine {
     }
     var pendingCount: Int { outbox.count }
 
+    /// 差分基準を捨てて、次回の pull をサーバー全件の取り直しにする。
+    /// 設定の「サーバーから全部取り直す」と、`SyncRecovery` の自動復帰から呼ぶ。
+    func resetPullWatermarks() { store?.clearWatermarks() }
+
     /// outbox 重複判定キー（entity + recordId の組）。
     private struct PendingKey: Hashable {
         let entity: String
@@ -353,6 +357,8 @@ protocol SyncBackingStore: AnyObject {
     func lastPulledAt(table: String) -> Date?
     /// 最終 pull 時刻を更新する。
     func setLastPulledAt(_ date: Date, table: String)
+    /// 差分基準を全部捨てる（次回の pull がフル取得になる）。
+    func clearWatermarks()
     /// FK 親依存（例: visits→gyms）。push 時にこれらを先に送って外部キー違反(23503)を防ぐ。既定は依存なし。
     func dependencies(for change: PendingChange) -> [PendingChange]
     /// 親 feed_item 不在の FK 違反(23503)で push が詰まった反応/コメントを「孤児」として破棄してよいか。

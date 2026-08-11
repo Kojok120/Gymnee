@@ -67,6 +67,7 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 - 新しい helper / service を作る前に、`Gymnee/Core/Services` や既存サービスに同責務がないか確認する
 - ビジネスルールは View や ViewModel に直書きせず、`Core/Domain/` の純粋関数へ切り出してテストする
 - ソースファイルを追加・削除・移動したら **`xcodegen generate` を再実行**する。`.xcodeproj`（pbxproj）を手で編集しない
+- **SwiftData のスキーマ・同期を触ったら、ユニットテストだけで完了にしない。旧→新の上書きインストールを実際に走らせて検証する**（手順は「スキーマ変更の検証」）。ユーザーのローカルデータ消失は取り返しがつかない
 - デザインは `Gymnee/App/Theme.swift` のトークン経由で当てる（色のハードコード禁止）。予約アクセント **Gymnee Lime `#C6FF3D`** は達成・アクティブ状態（完了セット / ストリーク / PR）にのみ使う
 - 問題を局所化して直せるなら、まず局所修正を選ぶ。将来の一般化より現在のユースケースの可読性・保守性を優先する
 
@@ -144,6 +145,28 @@ xcodebuild -project Gymnee.xcodeproj -scheme Gymnee \
 xcodebuild -project Gymnee.xcodeproj -scheme Gymnee \
   -destination 'platform=iOS Simulator,name=iPhone 16' test
 ```
+
+### スキーマ変更の検証（必須・省略禁止）
+
+SwiftData のスキーマや差分同期を触った PR は、**旧ビルドを入れた端末に新ビルドを上書きインストールして**、
+データが残ることを実際に確かめてから出す。ユニットテストは移行を検証しない（通っていてもストアは壊れる）。
+
+```bash
+DEV=<simulator id>   # xcrun simctl list devices available
+# 1. 変更前（main）をビルドして入れ、起動してデータを作る
+git stash push -u && xcodegen generate
+xcodebuild -project Gymnee.xcodeproj -scheme Gymnee -destination "id=$DEV" -derivedDataPath /tmp/ddOld build
+xcrun simctl install $DEV <ddOld>/Gymnee.app && xcrun simctl launch $DEV com.gymnee.app.dev -gymneeDemo
+# 2. ストアの行数を控える（実体は App Group 側。ModelConfiguration の groupContainer が .automatic のため）
+S=~/Library/Developer/CoreSimulator/Devices/$DEV/data/Containers/Shared/AppGroup/*/Library/Application\ Support/default.store
+sqlite3 "$S" "select count(*) from ZWORKOUT;"
+# 3. 変更後をビルドし **uninstall せずに** 上書きインストールして起動
+git stash pop && xcodegen generate && xcodebuild ... -derivedDataPath /tmp/ddNew build
+xcrun simctl install $DEV <ddNew>/Gymnee.app && xcrun simctl launch --console-pty $DEV com.gymnee.app.dev
+```
+
+合格条件は 3 つとも: **行数が減っていない** / ログに `ストアを開けない` `unknown model version` `Duplicate version checksums` が出ない /
+`Application Support/StoreBackups` が増えていない（増えていたら退避＝ユーザーのデータ消失）。
 
 DEBUG 限定の検証ハーネス（製品ビルドには含まれない）:
 

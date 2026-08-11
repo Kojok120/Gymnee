@@ -79,11 +79,22 @@ enum GymneeSchemaV6: VersionedSchema {
     }
 }
 
+/// スキーマ v7。差分 pull の基準時刻 `SyncWatermark` を追加。
+///
+/// 基準時刻を UserDefaults からストアの中へ移すための追加。
+/// ストアが作り直されたら基準も一緒に消える＝次回が自動でフル取得になる（`SyncWatermark` 参照）。
+enum GymneeSchemaV7: VersionedSchema {
+    static var versionIdentifier = Schema.Version(7, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        GymneeSchemaV6.models + [SyncWatermark.self]
+    }
+}
+
 /// 段階的マイグレーション計画（§7 データ保護）。
 /// スキーマ変更時はここに MigrationStage を追加する。
 enum GymneeMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self]
+        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self, GymneeSchemaV7.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -92,28 +103,24 @@ enum GymneeMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: GymneeSchemaV3.self, toVersion: GymneeSchemaV4.self),
             .lightweight(fromVersion: GymneeSchemaV4.self, toVersion: GymneeSchemaV5.self),
             .lightweight(fromVersion: GymneeSchemaV5.self, toVersion: GymneeSchemaV6.self),
+            .lightweight(fromVersion: GymneeSchemaV6.self, toVersion: GymneeSchemaV7.self),
         ]
     }
 }
 
 /// ModelContainer・Widget・テストから共通参照する単一の真実。
 enum GymneeSchema {
-    static let models = GymneeSchemaV6.models
-    static let schema = Schema(versionedSchema: GymneeSchemaV6.self)
+    static let models = GymneeSchemaV7.models
+    static let schema = Schema(versionedSchema: GymneeSchemaV7.self)
 
     /// ストア退避が起きたことを UI に伝えるフラグ（RootView が一度だけアラートを出して消す）。
     static let recoveryPendingKey = "gymnee.storeRecoveryPending"
 
-    /// 差分 pull の基準時刻を全テーブルぶん捨てる。
-    /// ストアを作り直したときに呼ぶと、次回の同期がフル取得になりサーバー上のデータが戻る。
-    /// キーの綴りは `SwiftDataSyncStore.key(_:)` と対で維持する。
-    static func resetSyncWatermarks() {
-        let defaults = UserDefaults.standard
-        let prefix = "gymnee.sync.lastPulled."
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
-            defaults.removeObject(forKey: key)
-        }
-        log.info("差分同期の基準時刻を破棄した（次回はフル取得）")
+    /// 旧実装（UserDefaults に基準時刻を置いていた頃）の残骸を掃除する。
+    /// 現在の基準時刻は `SyncWatermark` としてストアの中にあり、ストアと生死を共にする。
+    static func purgeLegacyWatermarkDefaults() {
+        SyncRecovery.purgeLegacyWatermarks()
+        log.info("旧実装の差分基準（UserDefaults）を掃除した")
     }
 
     private static let storeFileSuffixes = ["", "-wal", "-shm"]
@@ -143,11 +150,10 @@ enum GymneeSchema {
             backupStoreFiles(at: configuration.url)
             UserDefaults.standard.set(true, forKey: recoveryPendingKey)
             #endif
-            // ストアを作り直したら**差分同期の基準時刻も必ず捨てる**。
-            // 基準時刻は UserDefaults にあるためストア退避を生き延び、
-            // そのままだと「前回以降に変更なし」と判断されてサーバー上の記録が
-            // 一切戻ってこない（実際にフィードが空のままになる事故を起こした）。
-            resetSyncWatermarks()
+            // 差分同期の基準時刻（`SyncWatermark`）はストアの中にあるので、
+            // ストアを作り直せば自動的に消えて次回がフル取得になる。
+            // 旧実装で UserDefaults に残っている分だけここで掃除する。
+            purgeLegacyWatermarkDefaults()
             // 退避（移動）に失敗して旧ストアが残っている場合はここも失敗し、
             // 下のインメモリへ落ちる＝ディスク上のデータには触れない。
             if let fresh = try? ModelContainer(for: schema, migrationPlan: GymneeMigrationPlan.self, configurations: configuration) {

@@ -4,7 +4,7 @@ import SwiftData
 /// SwiftData 行 ⇄ Supabase(PostgREST) JSON の変換実装（`SyncBackingStore`）。
 /// - `payload(for:)`: outbox の 1 件（recordId）をモデルから snake_case の行 JSON へ符号化。
 /// - `apply(table:rows:)`: 受信行を ConflictResolver（updated_at の LWW, §9-7）でローカルへ統合。
-/// - `lastPulledAt`/`setLastPulledAt`: 差分 pull の基準時刻を UserDefaults に保持。
+/// - `lastPulledAt`/`setLastPulledAt`: 差分 pull の基準時刻を**ストアの中**（`SyncWatermark`）に保持。
 ///
 /// ⚠️ 実 Supabase での結合テスト（型・NULL・関係の往復）は M2 で行うこと。列名は `supabase/migrations` と一致。
 @MainActor
@@ -15,6 +15,9 @@ final class SwiftDataSyncStore: SyncBackingStore {
     init(context: ModelContext, defaults: UserDefaults = .standard) {
         self.context = context
         self.defaults = defaults
+        // 旧実装（UserDefaults に基準時刻を置いていた頃）の残骸は、ストア側の基準と
+        // 食い違って紛らわしいだけなので起動時に掃除する。
+        SyncRecovery.purgeLegacyWatermarks(defaults: defaults)
     }
 
     /// 同期中のバックエンド本人 id（AuthService が永続化）。RLS の created_by = auth.uid() 整合用。
@@ -29,16 +32,48 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - 差分基準
 
-    func lastPulledAt(table: String) -> Date? {
-        let t = defaults.double(forKey: key(table))
-        return t > 0 ? Date(timeIntervalSince1970: t) : nil
+    /// テーブル名 → 基準行のキャッシュ。pull は 1 回で全テーブルぶん引くので、
+    /// 毎回 fetch せず 1 度だけ読んで持ち回る。
+    private var watermarkCache: [String: SyncWatermark]?
+
+    /// 基準行を読み込む（重複があれば新しい方に寄せて掃除する）。
+    /// 一意制約に頼ると save 時に落ちる余地があるため、整合は自前で取る。
+    private func watermarks() -> [String: SyncWatermark] {
+        if let watermarkCache { return watermarkCache }
+        var byTable: [String: SyncWatermark] = [:]
+        for row in (try? context.fetch(FetchDescriptor<SyncWatermark>())) ?? [] {
+            guard let existing = byTable[row.table] else {
+                byTable[row.table] = row
+                continue
+            }
+            let (keep, drop) = row.lastPulledAt > existing.lastPulledAt ? (row, existing) : (existing, row)
+            byTable[row.table] = keep
+            context.delete(drop)
+        }
+        watermarkCache = byTable
+        return byTable
     }
+
+    func lastPulledAt(table: String) -> Date? { watermarks()[table]?.lastPulledAt }
 
     func setLastPulledAt(_ date: Date, table: String) {
-        defaults.set(date.timeIntervalSince1970, forKey: key(table))
+        if let existing = watermarks()[table] {
+            existing.lastPulledAt = date
+        } else {
+            let row = SyncWatermark(table: table, lastPulledAt: date)
+            context.insert(row)
+            watermarkCache?[table] = row
+        }
+        try? context.save()
     }
 
-    private func key(_ table: String) -> String { "gymnee.sync.lastPulled.\(table)" }
+    /// 基準時刻を全部捨てる（次回の pull がフル取得になる）。
+    /// 「サーバーから全部取り直す」と、同期の取りこぼしからの自動復帰で使う。
+    func clearWatermarks() {
+        for row in (try? context.fetch(FetchDescriptor<SyncWatermark>())) ?? [] { context.delete(row) }
+        watermarkCache = [:]
+        try? context.save()
+    }
 
     // MARK: - 符号化（push）
 
