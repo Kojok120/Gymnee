@@ -22,6 +22,8 @@ struct CoachChatView: View {
 
     @State private var draft = ""
     @State private var appliedPlanTitle: String?
+    /// 今日より前の会話まで遡って表示しているか（既定は畳む）。
+    @State private var showsPast = false
     @FocusState private var inputFocused: Bool
 
     init(userId: UUID) {
@@ -53,8 +55,20 @@ struct CoachChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                        if messages.isEmpty { emptyState }
-                        ForEach(messages) { message in
+                        // 既定は今日の相談だけを開く。過去は消さずに畳んでおき、明示的に遡れる。
+                        let split = transcript
+                        if !split.past.isEmpty {
+                            if showsPast {
+                                ForEach(split.past) { message in
+                                    bubble(message).id(message.id)
+                                }
+                                todayDivider
+                            } else {
+                                pastButton(count: split.past.count, proxy: proxy)
+                            }
+                        }
+                        if split.today.isEmpty { emptyState }
+                        ForEach(split.today) { message in
                             bubble(message)
                                 .id(message.id)
                         }
@@ -83,6 +97,35 @@ struct CoachChatView: View {
     }
 
     // MARK: - 会話
+
+    /// 今日ぶんと、それ以前に割った会話。
+    private var transcript: CoachTranscript.Split<CoachMessage> {
+        CoachTranscript.split(messages) { $0.createdAt }
+    }
+
+    /// 過去の相談へ遡る入口。消えてはいないことを件数で示す。
+    /// 開いたあとは表示位置を今日の末尾に戻す。上に過去が挿し込まれるぶん、
+    /// そのままだと履歴の先頭（一番古い相談）へ飛んでしまい、いた場所を見失う。
+    private func pastButton(count: Int, proxy: ScrollViewProxy) -> some View {
+        Button {
+            showsPast = true
+            Task { @MainActor in proxy.scrollTo("bottom", anchor: .bottom) }
+        } label: {
+            Label("これまでの相談を見る（\(count)件）", systemImage: "clock.arrow.circlepath")
+                .font(.caption)
+        }
+        .buttonStyle(.gymneeSecondary)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// 遡って表示したときの「ここから今日」の目印。
+    private var todayDivider: some View {
+        Text("今日")
+            .font(.caption2)
+            .foregroundStyle(Theme.textTertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Theme.Spacing.xs)
+    }
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
