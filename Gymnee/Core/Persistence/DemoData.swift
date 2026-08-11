@@ -118,6 +118,21 @@ enum DemoData {
             context.insert(ProgressPhoto(userId: userId, date: date, localPhotoFilename: "demo_\(i).jpg", visibility: i % 2 == 0 ? .private : .friends, isDirty: false))
         }
 
+        // コーチとの過去の会話。`-gymneeScreen coach` で「これまでの相談を見る」の畳み表示を
+        // 確認するための土台（今日ぶんは入れない＝開いた直後は空状態になるのが正）。
+        // 時刻は 1 分ずつずらす。同着だと表示順が不定になり、質問と返答が入れ替わって見える。
+        let pastChat: [(Int, Int, Bool, String)] = [
+            (5, 0, false, "肩が痛いんだけど今日はどうしよう"),
+            (5, 1, true, "肩に負担の少ない下半身の日にしてみよう。痛みが続くなら医療機関で診てもらって"),
+            (3, 0, false, "ベンチが伸び悩んでる"),
+            (3, 1, true, "重量を落として回数を増やす週を挟んでみよう。フォームが安定すると伸びやすい"),
+        ]
+        for (off, minute, fromCoach, text) in pastChat {
+            guard let day = cal.date(byAdding: .day, value: -off, to: today),
+                  let date = cal.date(byAdding: .minute, value: minute, to: day) else { continue }
+            context.insert(CoachMessage(userId: userId, isFromCoach: fromCoach, text: text, createdAt: date, isDirty: false))
+        }
+
         // PersonalRecord（PRタイムライン用）。
         if let bench {
             context.insert(PersonalRecord(userId: userId, type: .maxWeight, value: 80, achievedAt: cal.date(byAdding: .day, value: -2, to: today) ?? today, exercise: bench, isDirty: false))

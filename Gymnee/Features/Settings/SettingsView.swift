@@ -15,6 +15,7 @@ struct SettingsView: View {
     @Environment(GoogleCalendarService.self) private var googleCalendar
     @Environment(\.modelContext) private var context
     @State private var showDeleteConfirm = false
+    @State private var showCoachDeleteConfirm = false
     @State private var showEmailSignIn = false
     @State private var showProfileEdit = false
     @State private var browserURL: IdentifiableURL?
@@ -313,6 +314,13 @@ struct SettingsView: View {
                         auth.signOut()
                     }
                 }
+                // コーチとの会話だけを消せるようにする。体調や体の話をする相手なので、
+                // 「消したければアカウントごと」しか手が無いのは筋が悪い。
+                if coachMessageCount > 0 {
+                    Button("コーチとの会話を削除", role: .destructive) {
+                        showCoachDeleteConfirm = true
+                    }
+                }
                 Button("すべてのデータを削除", role: .destructive) {
                     showDeleteConfirm = true
                 }
@@ -331,6 +339,12 @@ struct SettingsView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("この端末上の全記録が消えます。元に戻せません。")
+        }
+        .confirmationDialog("コーチとの会話を削除しますか？", isPresented: $showCoachDeleteConfirm, titleVisibility: .visible) {
+            Button("削除する", role: .destructive) { deleteCoachMessages() }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("これまでの相談がすべて消えます（記録・クエストは残ります）。元に戻せません。")
         }
         .sheet(isPresented: $showEmailSignIn) {
             EmailSignInSheet()
@@ -395,7 +409,33 @@ struct SettingsView: View {
         )
     }
 
+    /// コーチとの会話の件数（0 件なら削除ボタンを出さない）。
+    private var coachMessageCount: Int {
+        (try? context.fetchCount(FetchDescriptor<CoachMessage>())) ?? 0
+    }
+
+    /// コーチとの会話だけを削除する（記録・クエストには触らない）。
+    /// サーバー側（`coach_messages`）も outbox 経由で消す。RLS は本人のみ削除可。
+    private func deleteCoachMessages() {
+        let messages = (try? context.fetch(FetchDescriptor<CoachMessage>())) ?? []
+        guard !messages.isEmpty else { return }
+        // ローカルを消す前に id を控える（削除後はモデルから読めない）。
+        let changes = messages.map {
+            PendingChange(entity: "coach_messages", recordId: $0.id, operation: .delete, updatedAt: .now)
+        }
+        for message in messages { context.delete(message) }
+        do {
+            try context.save()
+        } catch {
+            errors.report("会話の削除に失敗しました。\(error.localizedDescription)")
+            return
+        }
+        sync.enqueueBatch(changes)
+    }
+
     /// ローカルデータの全削除（§7 データ削除）。
+    /// **`GymneeSchema` のモデルを 1 つ残らず消す**。消し漏れがあると「全部消した」と言いながら
+    /// 会話や育成データが残る（実際に 9 型が漏れていた）。モデルを足したらここにも足すこと。
     private func deleteAllData() {
         try? context.delete(model: Profile.self)
         try? context.delete(model: Workout.self)
@@ -409,9 +449,19 @@ struct SettingsView: View {
         try? context.delete(model: Block.self)
         try? context.delete(model: Report.self)
         try? context.delete(model: FeedItem.self)
+        try? context.delete(model: PostReaction.self)
+        try? context.delete(model: Comment.self)
+        try? context.delete(model: PlannedWorkout.self)
         try? context.delete(model: Product.self)
         try? context.delete(model: SupplyLog.self)
         try? context.delete(model: Subscription.self)
+        try? context.delete(model: ExpeditionRun.self)
+        try? context.delete(model: CharacterLoadout.self)
+        try? context.delete(model: CharacterStyle.self)
+        try? context.delete(model: CoachMessage.self)
+        try? context.delete(model: RoomPickupRecord.self)
+        // 差分同期の基準も捨てる。残すと「消したのに次の同期で取り直さない」状態になる。
+        try? context.delete(model: SyncWatermark.self)
         do {
             try context.save()
         } catch {
