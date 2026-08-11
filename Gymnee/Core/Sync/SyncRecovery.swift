@@ -33,13 +33,16 @@ enum SyncRecovery {
     ///
     /// - Parameters:
     ///   - isSignedIn: 本人性のあるアカウントでサインインしているか。ゲストはサーバーに取りに行く先が無い
-    ///   - hasWatermarks: 一度でも pull したことがあるか
     ///   - localRowCount: 手元にある同期対象の行数（記録＋フィード）
     ///
-    /// 「取得済みのはずなのに 1 行も無い」＝ストアが作り直された、と判断する。
-    /// 新規ユーザーは `hasWatermarks` が false なので対象にならない。
-    static func needsFullResync(isSignedIn: Bool, hasWatermarks: Bool, localRowCount: Int) -> Bool {
-        isSignedIn && hasWatermarks && localRowCount == 0
+    /// 条件は **「サインイン済みなのに手元が空」だけ**にする。
+    /// 以前は「一度でも pull した履歴がある」も条件にしていたが、履歴の有無は
+    /// 復旧処理そのものが消してしまうことがあり、当てにならなかった（実際にこれで復帰できなかった）。
+    ///
+    /// 新規ユーザーでも 1 回だけフル取得が走るが、サーバーに何も無いので実害は無く、
+    /// データが入れば以後は発火しない。**確実に空から抜け出せること**を優先する。
+    static func needsFullResync(isSignedIn: Bool, localRowCount: Int) -> Bool {
+        isSignedIn && localRowCount == 0
     }
 
     /// 手元の同期対象の行数。記録とフィードだけ数えれば十分（どちらも空なら明らかに異常）。
@@ -62,8 +65,8 @@ enum SyncRecovery {
     ) async {
         guard let userId else { return }
         let rows = localRowCount(userId: userId, context: context)
-        guard needsFullResync(isSignedIn: isSignedIn, hasWatermarks: hasWatermarks(), localRowCount: rows) else { return }
-        log.warning("同期履歴があるのに手元が空。フル取得し直す")
+        guard needsFullResync(isSignedIn: isSignedIn, localRowCount: rows) else { return }
+        log.warning("サインイン済みだが手元が空。フル取得し直す")
         clearWatermarks()
         await sync.syncNow(force: true)
     }
