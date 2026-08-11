@@ -5,32 +5,20 @@ import XCTest
 /// 「取得済みのはずなのに手元が空」という食い違いを検出できることが要件。
 final class SyncRecoveryTests: XCTestCase {
 
-    /// ストアだけ作り直された状態（履歴あり・手元は空・サインイン済み）で復帰する。
-    func testRecoversWhenSyncedBeforeButLocalIsEmpty() {
-        XCTAssertTrue(
-            SyncRecovery.needsFullResync(isSignedIn: true, hasWatermarks: true, localRowCount: 0)
-        )
-    }
-
-    /// 新規ユーザーは対象外。まだ一度も pull していないので履歴が無い。
-    func testNewUserIsNotAffected() {
-        XCTAssertFalse(
-            SyncRecovery.needsFullResync(isSignedIn: true, hasWatermarks: false, localRowCount: 0)
-        )
+    /// サインイン済みなのに手元が空なら、必ずフル取得し直す。
+    /// 「一度でも pull した履歴」は復旧処理自身が消すことがあり当てにならないので条件にしない。
+    func testRecoversWheneverSignedInAndEmpty() {
+        XCTAssertTrue(SyncRecovery.needsFullResync(isSignedIn: true, localRowCount: 0))
     }
 
     /// 手元にデータがあるなら何もしない（毎起動でフル取得しない）。
     func testDoesNothingWhenDataExists() {
-        XCTAssertFalse(
-            SyncRecovery.needsFullResync(isSignedIn: true, hasWatermarks: true, localRowCount: 1)
-        )
+        XCTAssertFalse(SyncRecovery.needsFullResync(isSignedIn: true, localRowCount: 1))
     }
 
     /// ゲストは取りに行く先が無いので対象外。
     func testGuestIsNotAffected() {
-        XCTAssertFalse(
-            SyncRecovery.needsFullResync(isSignedIn: false, hasWatermarks: true, localRowCount: 0)
-        )
+        XCTAssertFalse(SyncRecovery.needsFullResync(isSignedIn: false, localRowCount: 0))
     }
 
     // MARK: - 差分基準の破棄
