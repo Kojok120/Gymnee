@@ -14,6 +14,8 @@ final class CoachService {
 
     /// リモート呼び出し先。未設定ならローカルのみで動く。
     private var client: SupabaseClient?
+    /// 会話をサーバーへ送るための同期エンジン。未設定ならローカルのみに残る。
+    private weak var sync: LocalSyncEngine?
 
     /// 送信中か（UI の入力欄を止めるために見る）。
     private(set) var isSending = false
@@ -43,8 +45,21 @@ final class CoachService {
     private static let sentCountKey = "gymnee.coach.sentToday"
     private static let lastSentKey = "gymnee.coach.lastSentAt"
 
-    func configure(client: SupabaseClient?) {
+    func configure(client: SupabaseClient?, sync: LocalSyncEngine?) {
         self.client = client
+        self.sync = sync
+    }
+
+    /// 会話 1 通を outbox に積む。**これを忘れると会話が端末から出ていかない**。
+    /// `coach_messages` はテーブルも RLS も用意してあるのに、積み忘れで
+    /// サーバーに 1 件も保存されていなかった（機種変更で会話が全部消える状態だった）。
+    private func enqueue(_ message: CoachMessage) {
+        sync?.enqueue(PendingChange(
+            entity: "coach_messages",
+            recordId: message.id,
+            operation: .upsert,
+            updatedAt: message.updatedAt
+        ))
     }
 
     /// リモートに繋がる状態か（未設定なら選択肢式の相談に留める）。
@@ -74,6 +89,7 @@ final class CoachService {
         let outgoing = CoachMessage(userId: userId, isFromCoach: false, text: trimmed)
         context.insert(outgoing)
         try? context.save()
+        enqueue(outgoing)
         sentToday += 1
 
         let reply = await requestReply(
@@ -89,6 +105,7 @@ final class CoachService {
         )
         context.insert(incoming)
         try? context.save()
+        enqueue(incoming)
         return incoming
     }
 
@@ -186,6 +203,7 @@ final class CoachService {
         message.updatedAt = .now
         message.isDirty = true
         try? context.save()
+        enqueue(message) // 取り込み済みの印もサーバーへ（別端末で二度提案を適用させない）
         return planned
     }
 }

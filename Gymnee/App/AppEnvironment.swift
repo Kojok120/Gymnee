@@ -45,7 +45,7 @@ final class AppEnvironment {
         sync.configureRemote(client)
         sync.store = SwiftDataSyncStore(context: container.mainContext)
         auth.configureSupabase(client)
-        coach.configure(client: client)
+        coach.configure(client: client, sync: sync)
         backfillExercisesIfNeeded()
         pushDirtyOwnProfileIfNeeded()
         // APNs トークン取得時に Supabase の device_tokens へ登録（要サインイン＝best-effort）。
