@@ -73,9 +73,65 @@ enum WorkoutGrowth {
         let muscles: [MuscleShare]
         /// この 1 回で更新した自己ベストの数。
         let prCount: Int
+        /// 完了した時点で見た「次の段階」。集計の反映を待たずに出せるよう、ここに固定する。
+        let nextStage: CharacterProgress.NextStage?
 
         var didLevelUp: Bool { levelAfter.value > levelBefore.value }
         var didEvolve: Bool { stageAfter > stageBefore }
+    }
+
+    /// 育成の状態のうち、差分に要るものだけ。SwiftData の取得は呼び出し側が行い、
+    /// **判定はここ（純粋関数）で完結させる**。育成側の式を変えたときに祝いだけが
+    /// 取り残されないよう、同じ入力から同じ規則で組み立てる。
+    struct Snapshot: Equatable, Sendable {
+        let totalExperience: Int
+        let prCount: Int
+        let streakWeeks: Int
+
+        init(totalExperience: Int, prCount: Int, streakWeeks: Int) {
+            self.totalExperience = totalExperience
+            self.prCount = prCount
+            self.streakWeeks = streakWeeks
+        }
+    }
+
+    /// この 1 回で何が動いたかを組み立てる。
+    ///
+    /// - Parameters:
+    ///   - before: 完了処理の**前**の状態（あとから復元できないので必ず控えたものを渡す）。
+    ///   - after: 完了処理の**直後**の状態（あとで同期が走っても動かないよう固定する）。
+    ///   - energy: この 1 回で貯まったテストステロンパワー。
+    ///   - volumeByMuscle: この 1 回の部位別ボリューム。
+    ///   - prCount: この 1 回に紐づく自己ベストの件数。
+    static func gain(
+        before: Snapshot,
+        after: Snapshot,
+        energy: Int,
+        volumeByMuscle: [MuscleGroup: Double],
+        prCount: Int
+    ) -> Gain {
+        let levelBefore = CharacterProgress.level(totalExperience: before.totalExperience)
+        let levelAfter = CharacterProgress.level(totalExperience: after.totalExperience)
+        return Gain(
+            // 実際に増えた分をそのまま出す。この回の式から取り直すと、自己ベストを
+            // 更新しただけの回で「前の記録から移っただけの 120」を上乗せしてしまい、
+            // 伸びたバーの幅と数字が食い違う。
+            exp: max(0, after.totalExperience - before.totalExperience),
+            energy: max(0, energy),
+            levelBefore: levelBefore,
+            levelAfter: levelAfter,
+            stageBefore: CharacterProgress.stage(
+                level: levelBefore.value, prCount: before.prCount, weeklyStreakWeeks: before.streakWeeks
+            ),
+            stageAfter: CharacterProgress.stage(
+                level: levelAfter.value, prCount: after.prCount, weeklyStreakWeeks: after.streakWeeks
+            ),
+            muscles: muscleShares(volumeByMuscle: volumeByMuscle),
+            prCount: max(0, prCount),
+            nextStage: CharacterProgress.nextStage(
+                level: levelAfter.value, prCount: after.prCount, weeklyStreakWeeks: after.streakWeeks
+            )
+        )
     }
 
     /// 部位別ボリュームを多い順に並べる。0 と、部位に紐づかないもの（cardio 等）は落とす。

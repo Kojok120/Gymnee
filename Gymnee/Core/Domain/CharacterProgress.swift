@@ -167,7 +167,7 @@ enum CharacterProgress {
     }
 
     /// 次の進化段階と、まだ満たしていない条件（UI で「あと何が足りないか」を出す）。
-    struct NextStage: Equatable, Sendable {
+    struct NextStage: Equatable, Sendable, Codable {
         let stage: Stage
         /// 未達の条件の説明。空＝次の段階の条件はすべて満たしている。
         let unmet: [String]

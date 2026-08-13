@@ -6,8 +6,9 @@ import SwiftUI
 /// 説明するほうが、数字と姿がひとつに結びつく。
 struct GrowthCelebrationSheet: View {
     let gain: WorkoutGrowth.Gain
+    /// 姿。**進化段階は `gain.stageAfter` を使う**（集計の反映を待たずに出すため、
+    /// 呼び出し側の derived から取ると進化した回に旧段階の姿を描いてしまう）。
     let look: PixelCharacterRenderer.Look
-    let nextStage: CharacterProgress.NextStage?
 
     @Environment(\.dismiss) private var dismiss
     @State private var appeared = false
@@ -102,7 +103,7 @@ struct GrowthCelebrationSheet: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
-            if let hint = WorkoutGrowth.nextStageHint(nextStage) {
+            if let hint = WorkoutGrowth.nextStageHint(gain.nextStage) {
                 Text(hint)
                     .font(.caption2)
                     .foregroundStyle(Theme.textTertiary)

@@ -181,7 +181,8 @@ struct RootView: View {
                             .init(muscle: .chest, volumeKg: 4200),
                             .init(muscle: .arms, volumeKg: 1800),
                         ],
-                        prCount: 1
+                        prCount: 1,
+                        nextStage: CharacterProgress.nextStage(level: 4, prCount: 1, weeklyStreakWeeks: 1)
                     ))
                     NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
                 }

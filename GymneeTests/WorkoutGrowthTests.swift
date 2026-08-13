@@ -24,8 +24,88 @@ final class WorkoutGrowthTests: XCTestCase {
             stageBefore: stageBefore,
             stageAfter: stageAfter,
             muscles: muscles,
-            prCount: prCount
+            prCount: prCount,
+            nextStage: nil
         )
+    }
+
+    // MARK: - 差分の組み立て（純粋関数）
+
+    private func snapshot(exp: Int, pr: Int = 0, weeks: Int = 0) -> WorkoutGrowth.Snapshot {
+        WorkoutGrowth.Snapshot(totalExperience: exp, prCount: pr, streakWeeks: weeks)
+    }
+
+    /// EXP は**実際に増えた分**。この回の式から取り直すと、自己ベストを更新しただけの回で
+    /// 「前の記録から移っただけの 120」を上乗せしてしまい、伸びたバーと数字が食い違う。
+    func testExpIsTheActualIncrease() {
+        let g = WorkoutGrowth.gain(
+            before: snapshot(exp: 400), after: snapshot(exp: 586),
+            energy: 48, volumeByMuscle: [:], prCount: 0
+        )
+        XCTAssertEqual(g.exp, 186)
+    }
+
+    /// 自己ベストの更新は行が増えないので累積が動かないことがある。
+    /// そのとき EXP を水増ししない（負にもしない）。
+    func testExpIsNeverNegativeWhenTotalDidNotMove() {
+        let g = WorkoutGrowth.gain(
+            before: snapshot(exp: 600), after: snapshot(exp: 590),
+            energy: 0, volumeByMuscle: [:], prCount: 1
+        )
+        XCTAssertEqual(g.exp, 0)
+    }
+
+    /// レベルは前後それぞれの累積から出す。
+    func testLevelsComeFromEachSnapshot() {
+        let g = WorkoutGrowth.gain(
+            before: snapshot(exp: 0), after: snapshot(exp: 600),
+            energy: 0, volumeByMuscle: [:], prCount: 0
+        )
+        XCTAssertEqual(g.levelBefore, CharacterProgress.level(totalExperience: 0))
+        XCTAssertEqual(g.levelAfter, CharacterProgress.level(totalExperience: 600))
+        XCTAssertTrue(g.didLevelUp)
+    }
+
+    /// 進化はレベルだけでは決まらない（自己ベスト数・連続週も要る）。
+    /// 前後それぞれの条件で判定していることを固定する。
+    func testEvolutionUsesAllThreeConditions() {
+        // トレーニーは Lv.5 / 自己ベスト1 / 連続1週。レベルだけ足りても進化しない。
+        let levelOnly = WorkoutGrowth.gain(
+            before: snapshot(exp: 0), after: snapshot(exp: 2000, pr: 0, weeks: 0),
+            energy: 0, volumeByMuscle: [:], prCount: 0
+        )
+        XCTAssertFalse(levelOnly.didEvolve)
+
+        let all = WorkoutGrowth.gain(
+            before: snapshot(exp: 0, pr: 0, weeks: 0),
+            after: snapshot(exp: 2000, pr: 1, weeks: 1),
+            energy: 0, volumeByMuscle: [:], prCount: 1
+        )
+        XCTAssertTrue(all.didEvolve)
+        XCTAssertEqual(all.stageAfter, .trainee)
+    }
+
+    /// 次の段階も**完了した時点**で固定する（集計の反映を待たずに出すため）。
+    func testNextStageIsCapturedFromTheAfterState() {
+        let g = WorkoutGrowth.gain(
+            before: snapshot(exp: 0), after: snapshot(exp: 600, pr: 0, weeks: 0),
+            energy: 0, volumeByMuscle: [:], prCount: 0
+        )
+        XCTAssertEqual(
+            g.nextStage,
+            CharacterProgress.nextStage(
+                level: g.levelAfter.value, prCount: 0, weeklyStreakWeeks: 0
+            )
+        )
+    }
+
+    func testNegativeInputsAreClamped() {
+        let g = WorkoutGrowth.gain(
+            before: snapshot(exp: 0), after: snapshot(exp: 100),
+            energy: -5, volumeByMuscle: [:], prCount: -3
+        )
+        XCTAssertEqual(g.energy, 0)
+        XCTAssertEqual(g.prCount, 0)
     }
 
     // MARK: - 何が起きたかの判定

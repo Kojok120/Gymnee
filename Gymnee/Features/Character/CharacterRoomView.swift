@@ -208,11 +208,12 @@ struct CharacterRoomView: View {
             GrowthCelebrationSheet(
                 gain: gain,
                 look: PixelCharacterRenderer.Look(
-                    build: derived.build, skin: skin, equipped: equipped, stage: derived.stage,
+                    // 段階だけは保存済みの値を使う。集計の反映が切替より遅れることがあり、
+                    // derived から取ると進化した回に旧段階の姿を描いてしまう。
+                    build: derived.build, skin: skin, equipped: equipped, stage: gain.stageAfter,
                     carriesPack: false, nameTag: nil, role: .trainee,
                     hairStyleId: hairStyleId, accessoryId: accessoryId
-                ),
-                nextStage: derived.nextStage
+                )
             )
         }
         .sheet(item: $sheet) { route in
