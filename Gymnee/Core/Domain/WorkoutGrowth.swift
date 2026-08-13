@@ -20,6 +20,9 @@ enum WorkoutGrowth {
     ///   それを今回のぶんとして数えないよう、完了直後の値で固定する。
     /// - 対象のワークアウトを見に行かないので、`@Query` の反映を待たずに出せる。
     struct Pending: Codable, Equatable, Sendable {
+        /// **渡した時点**の時刻。古さはここからの経過で測る。
+        /// 作った時点（完了時）を使うと、サマリーを長く開いたままにしただけで
+        /// 渡した直後に期限切れと見なされ、祝いが出ない。
         let savedAt: Date
         let gain: Gain
 
@@ -28,9 +31,11 @@ enum WorkoutGrowth {
         /// これより古い控えは出さない。落ちたあとに何日も前の記録を祝われても意味がない。
         static let maxAge: TimeInterval = 60 * 60
 
-        func save(to defaults: UserDefaults = .standard) {
-            guard let data = try? JSONEncoder().encode(self) else { return }
-            defaults.set(data, forKey: Self.key)
+        /// 渡す。時刻はここで打つ。
+        static func save(_ gain: Gain, to defaults: UserDefaults = .standard, now: Date = .now) {
+            let pending = Pending(savedAt: now, gain: gain)
+            guard let data = try? JSONEncoder().encode(pending) else { return }
+            defaults.set(data, forKey: key)
         }
 
         /// 読み出して消す。取り出せたら一度きり（毎回開くたびに祝わない）。

@@ -172,7 +172,7 @@ struct RootView: View {
             CharacterRoomView(userId: userId)
                 .onAppear {
                     // レベルアップした回の見え方を確認する用の作り物。
-                    WorkoutGrowth.Pending(savedAt: .now, gain: WorkoutGrowth.Gain(
+                    WorkoutGrowth.Pending.save(WorkoutGrowth.Gain(
                         exp: 186, energy: 48,
                         levelBefore: CharacterProgress.level(totalExperience: 380),
                         levelAfter: CharacterProgress.level(totalExperience: 566),
@@ -182,7 +182,7 @@ struct RootView: View {
                             .init(muscle: .arms, volumeKg: 1800),
                         ],
                         prCount: 1
-                    )).save()
+                    ))
                     NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
                 }
         case "pixelart": PixelArtGallery(section: .character)

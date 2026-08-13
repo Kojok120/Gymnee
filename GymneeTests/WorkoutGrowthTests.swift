@@ -148,10 +148,10 @@ final class WorkoutGrowthTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "WorkoutGrowthTests.pending")!
         defaults.removePersistentDomain(forName: "WorkoutGrowthTests.pending")
 
-        let pending = WorkoutGrowth.Pending(savedAt: .now, gain: gain(exp: 186, prCount: 1))
-        pending.save(to: defaults)
+        let g = gain(exp: 186, prCount: 1)
+        WorkoutGrowth.Pending.save(g, to: defaults)
 
-        XCTAssertEqual(WorkoutGrowth.Pending.take(from: defaults), pending)
+        XCTAssertEqual(WorkoutGrowth.Pending.take(from: defaults)?.gain, g)
         XCTAssertNil(WorkoutGrowth.Pending.take(from: defaults), "2 回目も取れてしまうと毎回祝ってしまう")
     }
 
@@ -176,13 +176,25 @@ final class WorkoutGrowthTests: XCTestCase {
         defaults.removePersistentDomain(forName: "WorkoutGrowthTests.stale")
 
         let saved = Date(timeIntervalSince1970: 1_800_000_000)
-        WorkoutGrowth.Pending(savedAt: saved, gain: gain()).save(to: defaults)
+        WorkoutGrowth.Pending.save(gain(), to: defaults, now: saved)
 
         let tooLate = saved.addingTimeInterval(WorkoutGrowth.Pending.maxAge + 1)
         XCTAssertNil(WorkoutGrowth.Pending.take(from: defaults, now: tooLate))
 
-        WorkoutGrowth.Pending(savedAt: saved, gain: gain()).save(to: defaults)
+        WorkoutGrowth.Pending.save(gain(), to: defaults, now: saved)
         let inTime = saved.addingTimeInterval(WorkoutGrowth.Pending.maxAge - 1)
         XCTAssertNotNil(WorkoutGrowth.Pending.take(from: defaults, now: inTime))
+    }
+
+    /// 古さは**渡した時点**から測る。サマリーを長く開いたままにしただけで
+    /// 祝いが消えないことを固定する。
+    func testAgeIsMeasuredFromHandOffNotFromCompletion() {
+        let defaults = UserDefaults(suiteName: "WorkoutGrowthTests.handoff")!
+        defaults.removePersistentDomain(forName: "WorkoutGrowthTests.handoff")
+
+        // 完了から何時間も経ってサマリーを閉じた、という状況。渡した時刻で打つので出る。
+        let handOff = Date(timeIntervalSince1970: 1_800_000_000)
+        WorkoutGrowth.Pending.save(gain(), to: defaults, now: handOff)
+        XCTAssertNotNil(WorkoutGrowth.Pending.take(from: defaults, now: handOff.addingTimeInterval(1)))
     }
 }
