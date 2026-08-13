@@ -208,7 +208,7 @@ final class WorkoutGrowthTests: XCTestCase {
 
     func testNextStageHintWhenAlreadyQualified() {
         let next = CharacterProgress.NextStage(stage: .trainee, unmet: [])
-        XCTAssertEqual(WorkoutGrowth.nextStageHint(next), "トレーニー の条件を満たしている")
+        XCTAssertEqual(WorkoutGrowth.nextStageHint(next), "トレーニー の条件を満たしています")
     }
 
     /// 最上位まで行っていれば出さない。

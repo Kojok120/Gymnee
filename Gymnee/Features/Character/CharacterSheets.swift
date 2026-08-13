@@ -65,7 +65,7 @@ struct CharacterStatusSheet: View {
                             .foregroundStyle(Theme.textPrimary)
                     }
                     if next.unmet.isEmpty {
-                        Text("条件達成。次の記録で進化する")
+                        Text("条件を満たしています。次の記録で進化します")
                             .font(.caption)
                             .foregroundStyle(Theme.lime)
                     } else {
@@ -75,7 +75,7 @@ struct CharacterStatusSheet: View {
                                 .foregroundStyle(Theme.textSecondary)
                         }
                     }
-                    Text("進化すると姿が変わり、部屋に器具が増える。")
+                    Text("進化すると姿が変わり、部屋に器具が増えます。")
                         .font(.caption2)
                         .foregroundStyle(Theme.textTertiary)
                 }
@@ -94,7 +94,7 @@ struct CharacterStatusSheet: View {
                 }
             }
             .gymneeCard()
-            Text("押す力で肩が、腕力で腕が、脚力で脚が太くなる。伸ばした部位がそのまま体型に出る。")
+            Text("押す力で肩が、腕力で腕が、脚力で脚が太くなります。伸ばした部位がそのまま体型に出ます。")
                 .font(.caption2)
                 .foregroundStyle(Theme.textTertiary)
         }

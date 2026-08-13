@@ -22,7 +22,7 @@ struct CharacterOnboardingSheet: View {
                 Text("ここはキャラの部屋")
                     .font(.title2.bold())
                     .foregroundStyle(Theme.textPrimary)
-                Text("あなたが積み上げた記録が、そのまま姿になる")
+                Text("あなたが積み上げた記録が、そのまま姿になります")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
@@ -32,31 +32,31 @@ struct CharacterOnboardingSheet: View {
                 row(
                     sprite: PixelCharacterArt.dumbbell,
                     accent: Color(hexF: 0xC6FF3D),
-                    title: "筋トレするとテストステロンパワーが貯まる",
-                    detail: "記録した分だけ増える。アプリの中で増やす方法は無い"
+                    title: "筋トレするとテストステロンパワーが貯まります",
+                    detail: "記録した分だけ増えます。アプリの中で増やす方法はありません"
                 )
                 row(
                     sprite: PixelItemArt.course(id: "morning-hill"),
                     accent: Theme.info,
                     title: "パワーを使って遠征に送り出す",
-                    detail: "ドアから出かけて、時間が経つとおみやげを持って帰る"
+                    detail: "ドアから出かけて、時間が経つとおみやげを持って帰ります"
                 )
                 row(
                     sprite: PixelItemArt.pickup(id: "creatine"),
                     accent: Color(hexF: 0xE8563F),
-                    title: "床に落ちた物はなぞって拾える",
-                    detail: "前の週に目標を達成していると、落ちやすくなる"
+                    title: "床に落ちた物はなぞって拾えます",
+                    detail: "前の週に目標を達成していると、落ちやすくなります"
                 )
                 row(
                     sprite: PixelCharacterArt.mirror,
                     accent: Theme.series2,
-                    title: "キャラをタップするとからだが見られる",
-                    detail: "今週どこを鍛えたか、どこが回復したかが人体図で分かる"
+                    title: "キャラをタップするとからだが見られます",
+                    detail: "今週どこを鍛えたか、どこが回復したかが人体図で分かります"
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("強くなるのは現実のトレーニングだけ。ここでは装備と見た目しか手に入らない。")
+            Text("強くなるのは現実のトレーニングだけです。ここでは装備と見た目しか手に入りません。")
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .multilineTextAlignment(.center)

@@ -95,10 +95,10 @@ struct ShopContent: View {
 
     private func goalStrategy(_ key: String) -> String {
         switch key {
-        case "bulk": return "消費を上回る摂取がカギ。ホエイ＋カーボ（マルト）でエネルギーとたんぱく質を確保し、クレアチンで高強度を支える。"
-        case "cut": return "低カロリーかつ高たんぱくを維持。植物性プロテインやEAAで筋量を守りつつ、摂取カロリーを抑える。カーボの摂りすぎに注意。"
-        case "maintain": return "摂取と消費のバランスを保つ。ホエイで日々のたんぱく質を充足し、EAAでトレ中の分解を抑える。"
-        case "strength": return "高重量に向けた出力と保護。クレアチンでパワーを底上げし、リストラップ/ベルトで手首・体幹を守る。"
+        case "bulk": return "消費を上回る摂取がカギです。ホエイ＋カーボ（マルト）でエネルギーとたんぱく質を確保し、クレアチンで高強度を支えます。"
+        case "cut": return "低カロリーかつ高たんぱくを維持します。植物性プロテインやEAAで筋量を守りつつ、摂取カロリーを抑えます。カーボの摂りすぎにご注意ください。"
+        case "maintain": return "摂取と消費のバランスを保ちます。ホエイで日々のたんぱく質を充足し、EAAでトレ中の分解を抑えます。"
+        case "strength": return "高重量に向けた出力と保護。クレアチンでパワーを底上げし、リストラップ/ベルトで手首・体幹を守ります。"
         default: return ""
         }
     }

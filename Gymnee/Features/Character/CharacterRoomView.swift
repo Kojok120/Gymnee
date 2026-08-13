@@ -401,7 +401,7 @@ struct CharacterRoomView: View {
     /// 「キャラを押すとからだが見られる」の一度きりの案内。
     /// 図の上に重ねる `AnalyticsView` のヒントと同じ作りにして、押し方の説明は同じ見た目で統一する。
     private var bodyTapHint: some View {
-        Label("キャラをタップすると、からだの状態が見られる", systemImage: "hand.tap.fill")
+        Label("キャラをタップすると、からだの状態が見られます", systemImage: "hand.tap.fill")
             .font(.caption.weight(.semibold))
             .foregroundStyle(Theme.bg1)
             .padding(.horizontal, Theme.Spacing.lg)
@@ -741,7 +741,7 @@ struct CharacterRoomView: View {
             // 回収はシーン全体の Swoop ジェスチャが受ける（個別の当たり判定は持たない）。
             .allowsHitTesting(false)
             .accessibilityElement()
-            .accessibilityLabel("\(drop.item.name)が落ちている。なぞって拾う")
+            .accessibilityLabel("\(drop.item.name)が落ちています。なぞって拾えます")
         }
     }
 
@@ -1590,7 +1590,7 @@ private struct RewardCelebrationView: View {
                     Text(result.item.name)
                         .font(.title3.bold())
                         .foregroundStyle(Theme.textPrimary)
-                    Text("\(result.item.slot.label)に装備できる")
+                    Text("\(result.item.slot.label)に装備できます")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

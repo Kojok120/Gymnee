@@ -66,7 +66,7 @@ struct ExpeditionSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("今日は\(coopPartners.prefix(2).joined(separator: "・"))と共闘")
                     .font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
-                Text("同じ日に記録した仲間がいる。良い装備が出やすい。")
+                Text("同じ日に記録した仲間がいます。良い装備が出やすくなります。")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()

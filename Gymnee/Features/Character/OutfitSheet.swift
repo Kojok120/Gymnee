@@ -13,7 +13,7 @@ struct OutfitSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                    Text("遠征で持ち帰った装備を着せ替えられる。見た目だけで、強さは変わらない。")
+                    Text("遠征で持ち帰った装備を着せ替えられます。見た目だけで、強さは変わりません。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 

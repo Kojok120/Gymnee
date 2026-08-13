@@ -89,7 +89,7 @@ struct QuestSheet: View {
 
             let lines = exerciseLines(plan)
             if lines.isEmpty {
-                Text("種目はまだ決まっていない。コーチに相談すると組んでくれる")
+                Text("種目はまだ決まっていません。コーチに相談すると組んでくれます")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -145,7 +145,7 @@ struct QuestSheet: View {
                     .foregroundStyle(Theme.textPrimary)
                 Spacer()
             }
-            Text("コーチに相談すると、今日のメニューを組んでくれる。決まったものはここに並ぶ。")
+            Text("コーチに相談すると、今日のメニューを組んでくれます。決まったものはここに並びます。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("コーチに相談する") {
