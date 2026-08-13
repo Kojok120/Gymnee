@@ -20,6 +20,7 @@ struct GymneeApp: App {
                 .environment(env.notifications)
                 .environment(env.errors)
                 .environment(env.store)
+                .environment(env.live)
                 .environment(env.calendar)
                 .environment(env.googleCalendar)
                 .modelContainer(env.container)

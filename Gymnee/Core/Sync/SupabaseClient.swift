@@ -117,6 +117,89 @@ actor SupabaseClient {
         try await send(request)
     }
 
+    // MARK: - ライブセッション（トレ中の配信と応援）
+
+    /// ローカル（SwiftData）には持たない。オンラインでしか意味が無い情報で、
+    /// 端末を正にすると「終わっていないセッション」がオフラインで残り続けるため。
+    /// どれも失敗しても記録の妨げにならないよう、呼び出し側で握り潰してよい。
+
+    /// トレ開始を配信する。返り値はセッション id（配信オフや失敗なら nil）。
+    func startLiveSession() async throws -> UUID? {
+        var request = restRequest(path: "live_sessions", query: "select=id")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [[:] as [String: Any]])
+        let data = try await send(request)
+        let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+        return (rows.first?["id"] as? String).flatMap(UUID.init(uuidString:))
+    }
+
+    /// 配信を終える。終えないと期限（3時間）まで「トレーニング中」のままになる。
+    func endLiveSession(id: UUID) async throws {
+        var request = restRequest(path: "live_sessions", query: "id=eq.\(id.uuidString.lowercased())")
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "ended_at": ISO8601DateFormatter.supabase.string(from: .now),
+            "updated_at": ISO8601DateFormatter.supabase.string(from: .now),
+        ])
+        try await send(request)
+    }
+
+    /// いまトレーニング中の人（フォロー中のみ。RLS が絞る）。
+    func liveSessions() async throws -> [[String: Any]] {
+        var request = restRequest(
+            path: "live_sessions",
+            query: "select=id,user_id,started_at&ended_at=is.null&order=started_at.desc&limit=50"
+        )
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+    }
+
+    /// 応援を送る。同じスタンプの連打は一意制約で 1 回になる（409 は成功扱い）。
+    func sendCheer(sessionId: UUID, kind: String) async throws {
+        var request = restRequest(path: "session_cheers")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=minimal,resolution=ignore-duplicates", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [[
+            "session_id": sessionId.uuidString.lowercased(),
+            "kind": kind,
+        ]])
+        try await send(request)
+    }
+
+    /// 自分のセッションに届いた応援（記録画面に残すぶん）。
+    func cheers(sessionId: UUID) async throws -> [[String: Any]] {
+        var request = restRequest(
+            path: "session_cheers",
+            query: "select=id,user_id,kind,created_at&session_id=eq.\(sessionId.uuidString.lowercased())"
+                + "&order=created_at.asc&limit=200"
+        )
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+    }
+
+    /// 指定ユーザーの表示名（応援の送り主を出すため）。
+    func displayNames(userIds: [UUID]) async throws -> [UUID: String] {
+        guard !userIds.isEmpty else { return [:] }
+        let list = userIds.map { $0.uuidString.lowercased() }.joined(separator: ",")
+        var request = restRequest(path: "profiles", query: "select=id,display_name&id=in.(\(list))")
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        let rows = ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+        var result: [UUID: String] = [:]
+        for row in rows {
+            guard let id = (row["id"] as? String).flatMap(UUID.init(uuidString:)) else { continue }
+            result[id] = (row["display_name"] as? String) ?? "フレンド"
+        }
+        return result
+    }
+
     /// 指定 id 群を削除。
     func delete(table: String, ids: [UUID]) async throws {
         guard !ids.isEmpty else { return }

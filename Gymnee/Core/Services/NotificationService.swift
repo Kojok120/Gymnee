@@ -214,6 +214,13 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     ) {
         // レストタイマーはフォアグラウンドではアプリ内チャイム（RestChime・サイレントでも鳴る）が
         // 担当するため通知音を出さない（二重に鳴るのを防ぐ）。バナーは残す。
+        // 応援は記録中に届く。バナーで手を止めさせず、記録画面の帯に足すだけにする。
+        let info = notification.request.content.userInfo
+        if info["type"] as? String == "cheer" {
+            postCheer(info)
+            completionHandler([])
+            return
+        }
         if notification.request.identifier == RestTimer.notificationId {
             completionHandler([.banner, .list])
         } else {
@@ -222,6 +229,18 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// 通知タップ時のルーティング（ローカル/リモート共通）。userInfo の type を見て該当タブへ。
+    /// 届いた応援を記録画面へ流す。プッシュの中身をそのまま使い、取り直しを待たせない。
+    nonisolated private func postCheer(_ info: [AnyHashable: Any]) {
+        let name = (info["cheererName"] as? String) ?? "フレンド"
+        let kind = (info["cheerKind"] as? String) ?? "fire"
+        Task { @MainActor in
+            NotificationCenter.default.post(
+                name: .gymneeCheerReceived, object: nil,
+                userInfo: ["name": name, "kind": kind]
+            )
+        }
+    }
+
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
@@ -230,6 +249,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         let info = response.notification.request.content.userInfo
         let type = info["type"] as? String
         let feedItemId = info["feedItemId"] as? String
+        if type == "cheer" { postCheer(info) }
         Task { @MainActor in
             var ui: [String: String] = [:]
             if let type { ui["type"] = type }

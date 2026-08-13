@@ -29,9 +29,9 @@ enum CoachMode: String, CaseIterable, Sendable, Identifiable {
 
     var detail: String {
         switch self {
-        case .auto: return "毎朝その日のメニューを決めて出す。重量も休養日も任せる"
-        case .suggest: return "案を出すだけ。やるかどうか、内容を変えるかは自分で決める"
-        case .off: return "コーチは出てこない。記録だけを使う"
+        case .auto: return "毎朝その日のメニューを決めて出します。重量も休養日も任せられます"
+        case .suggest: return "案を出すだけです。やるかどうか、内容を変えるかは自分で決められます"
+        case .off: return "コーチは出てきません。記録だけを使います"
         }
     }
 

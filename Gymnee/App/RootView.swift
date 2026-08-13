@@ -335,7 +335,7 @@ struct RootView: View {
         // 通知タップのルーティング（type に応じて該当タブへ）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
-            case "reaction", "follow", "invite": selection = .social
+            case "reaction", "follow", "invite", "live_start": selection = .social
             case "workout": selection = .workout
             // 週次まとめはカレンダーで振り返る。
             case "recap": selection = .calendar

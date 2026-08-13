@@ -170,6 +170,82 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
   }
 
+  // --- トレ開始 → フォロワーへ通知 ---
+  // 配信するかは DB トリガー側で profiles.share_live_start を見て絞ってある（既定オフ）。
+  // ここでは受け取る側の設定（notify_live_start）だけを見る。
+  if (event === "live_start") {
+    const sessionId = payload.sessionId;
+    if (!sessionId) return new Response("missing sessionId", { status: 400 });
+    const { data: session } = await db
+      .from("live_sessions").select("user_id, ended_at").eq("id", sessionId).single();
+    if (!session) return new Response(JSON.stringify({ sent: 0, reason: "session not found" }), { status: 200 });
+    if (session.ended_at) return new Response(JSON.stringify({ sent: 0, reason: "already ended" }), { status: 200 });
+    const trainerId = session.user_id as string;
+
+    // フォロワー（follows.followee_id = 本人）のうち、この通知をオンにしている人だけ。
+    const [{ data: followers }, { data: profile }] = await Promise.all([
+      db.from("follows").select("follower_id").eq("followee_id", trainerId),
+      db.from("profiles").select("display_name").eq("id", trainerId).single(),
+    ]);
+    const followerIds = (followers ?? []).map((r: { follower_id: string }) => r.follower_id);
+    if (followerIds.length === 0) {
+      return new Response(JSON.stringify({ sent: 0, reason: "no followers" }), { status: 200 });
+    }
+    const { data: prefs } = await db
+      .from("profiles").select("id, notify_live_start").in("id", followerIds);
+    // 列が無い/未設定なら既定で送る（設定を明示的にオフにした人だけ外す）。
+    const targets = (prefs ?? [])
+      .filter((p: { notify_live_start: boolean | null }) => p.notify_live_start !== false)
+      .map((p: { id: string }) => p.id);
+    if (targets.length === 0) {
+      return new Response(JSON.stringify({ sent: 0, reason: "all muted" }), { status: 200 });
+    }
+
+    const name = profile?.display_name ?? "フレンド";
+    const sent = await pushToUsers(
+      db, targets,
+      `${name}さんがトレーニングを始めました！`,
+      "応援しましょう！",
+      { type: "live_start", sessionId },
+    );
+    return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
+  // --- 応援 → トレ中の人へ通知 ---
+  if (event === "cheer") {
+    const cheerId = payload.cheerId;
+    if (!cheerId) return new Response("missing cheerId", { status: 400 });
+    const { data: cheer } = await db
+      .from("session_cheers").select("user_id, session_id, kind").eq("id", cheerId).single();
+    if (!cheer) return new Response(JSON.stringify({ sent: 0, reason: "cheer not found" }), { status: 200 });
+    const { data: session } = await db
+      .from("live_sessions").select("user_id, ended_at").eq("id", cheer.session_id).single();
+    if (!session) return new Response(JSON.stringify({ sent: 0, reason: "session not found" }), { status: 200 });
+    const trainerId = session.user_id as string;
+    const cheererId = cheer.user_id as string;
+    if (trainerId === cheererId) return new Response(JSON.stringify({ sent: 0, reason: "self" }), { status: 200 });
+    // 終わったあとに届いた応援では鳴らさない（記録画面にはあとで載る）。
+    if (session.ended_at) return new Response(JSON.stringify({ sent: 0, reason: "ended" }), { status: 200 });
+
+    const [{ data: trainerPref }, { data: profile }] = await Promise.all([
+      db.from("profiles").select("notify_cheer").eq("id", trainerId).single(),
+      db.from("profiles").select("display_name").eq("id", cheererId).single(),
+    ]);
+    if (trainerPref && trainerPref.notify_cheer === false) {
+      return new Response(JSON.stringify({ sent: 0, reason: "muted" }), { status: 200 });
+    }
+    const kind = (cheer.kind as string) ?? "fire";
+    const emoji = kind === "fire" ? "🔥" : kind === "strong" ? "💪" : kind === "clap" ? "👏" : "❤️";
+    const name = profile?.display_name ?? "フレンド";
+    const sent = await pushToUsers(
+      db, [trainerId],
+      `${name}さんが応援しています`,
+      emoji,
+      { type: "cheer", sessionId: cheer.session_id, cheerKind: kind, cheererName: name },
+    );
+    return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
   // --- コメント → 投稿者へ通知 ---
   if (event === "comment") {
     const commentId = payload.commentId;

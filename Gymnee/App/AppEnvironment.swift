@@ -14,6 +14,7 @@ final class AppEnvironment {
     let notifications: NotificationService
     let errors: AppErrorCenter
     let store: StoreService
+    let live: LiveSessionService
     let calendar: CalendarService
     let googleCalendar: GoogleCalendarService
     let coach: CoachService
@@ -27,6 +28,7 @@ final class AppEnvironment {
         self.notifications = NotificationService()
         self.errors = AppErrorCenter()
         self.store = StoreService()
+        self.live = LiveSessionService()
         self.calendar = CalendarService()
         self.googleCalendar = GoogleCalendarService()
         self.coach = CoachService()
@@ -46,6 +48,7 @@ final class AppEnvironment {
         sync.store = SwiftDataSyncStore(context: container.mainContext)
         auth.configureSupabase(client)
         coach.configure(client: client, sync: sync)
+        live.configure(client: client)
         backfillExercisesIfNeeded()
         pushDirtyOwnProfileIfNeeded()
         // APNs トークン取得時に Supabase の device_tokens へ登録（要サインイン＝best-effort）。

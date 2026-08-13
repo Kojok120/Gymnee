@@ -261,6 +261,7 @@ struct RecordContent: View {
     @Environment(AuthService.self) private var auth
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AppErrorCenter.self) private var errors
+    @Environment(LiveSessionService.self) private var live
 
     @Query private var todayPlanned: [PlannedWorkout]
     @Query(sort: \Exercise.name) private var allExercises: [Exercise]
@@ -282,6 +283,7 @@ struct RecordContent: View {
     /// @State の値型辞書ではなく参照型に持つ（identity 不変＝ビュー更新を誘発しない）。
     @State private var centersCache = CentersCache()
     @State private var showSummary = false
+    /// 応援は記録画面に残す（届いた順に積み上がる）。
     /// サマリーを閉じたあと、育成タブで出す内容（初回完了のときだけ入る）。
     @State private var pendingGrowth: WorkoutGrowth.Gain?
     /// 連続週の判定に使う週の目標（育成タブと同じ値を見る）。
@@ -342,6 +344,7 @@ struct RecordContent: View {
     var body: some View {
         VStack(spacing: 0) {
             logStrip
+            cheerStrip
             categoryTabBar
             cardsArea
         }
@@ -382,7 +385,21 @@ struct RecordContent: View {
         }
         .safeAreaInset(edge: .bottom) { timerBar }
         // フォアグラウンド復帰時にレスト残りを実時計から即時同期（バックグラウンド中の凍結表示を解消）。
-        .onChange(of: scenePhase) { _, phase in if phase == .active { restTimer.refresh() } }
+        // 応援もここで取り直す。バックグラウンド中に届いたプッシュは画面に載っていないため。
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                restTimer.refresh()
+                Task { await live.refreshCheers() }
+            }
+        }
+        .task { await live.refreshCheers() }
+        // プッシュで届いた応援をその場で帯に足す（取り直しを待たせない）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeCheerReceived)) { note in
+            live.appendFromPush(
+                name: note.userInfo?["name"] as? String ?? "フレンド",
+                kind: note.userInfo?["kind"] as? String ?? "fire"
+            )
+        }
         // 除外対象（編集中ワークアウト）が変わると前回値の計算結果も変わるためキャッシュを捨てる。
         .onChange(of: activeWorkout?.id) { _, _ in centersCache.values.removeAll() }
         // 「その他」カード: その部位の種目ピッカー。選んだ/作った種目をタブへ永続追加する。
@@ -925,7 +942,38 @@ struct RecordContent: View {
         context.insert(w)
         try? context.save()   // 下書き(completedAt=nil)。サーバー同期は完了時のみ。
         activeWorkout = w
+        // トレ開始をフォロワーに知らせる（設定がオンのときだけ）。失敗しても記録は妨げない。
+        Task { await live.start() }
         return w
+    }
+
+    /// 届いた応援。**消さずに積み上げる**（あとから全部読める）。
+    /// セット入力の領域を圧迫しないよう 1 行に収め、横に流す。
+    @ViewBuilder
+    private var cheerStrip: some View {
+        if !live.cheers.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    ForEach(live.cheers) { cheer in
+                        HStack(spacing: 4) {
+                            Text(cheer.emoji)
+                            Text(cheer.name)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, 5)
+                        .background(Theme.bg2, in: Capsule())
+                    }
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
+            }
+            .frame(height: 34)
+            .padding(.bottom, Theme.Spacing.xs)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(live.cheers.count)人が応援しています")
+        }
     }
 
     /// セッション内でこの種目の WorkoutExercise を取得（無ければ作成）。種目あたり1つ。
@@ -1240,6 +1288,8 @@ struct RecordContent: View {
             context.delete(w)
             try? context.save()
         }
+        // 配信を終える。終えないと期限まで「トレーニング中」のままになる。
+        Task { await live.end() }
         activeWorkout = nil
         activePlanId = nil
         armed = [:]
@@ -1268,6 +1318,9 @@ struct RecordContent: View {
     }
 
     private func endSession() {
+        // 完了でも中断でも配信は必ず終える。終えないと期限（3時間）まで
+        // 「トレーニング中」のままになり、いない人を応援させてしまう。
+        Task { await live.end() }
         if let onEnd { onEnd(); return }   // タブ起点：ゲートへ戻す（state は再生成でリセット）
         if resuming != nil { dismiss(); return }   // カレンダーからの過去編集 push を閉じる
         activeWorkout = nil
