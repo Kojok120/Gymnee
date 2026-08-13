@@ -158,8 +158,8 @@ enum WorkoutGrowth {
 
     /// 見出しの下の一言。**何がどう効いたのか**を、この 1 回の数字で説明する。
     static func detail(for gain: Gain) -> String {
-        var parts = ["今日の記録が \(gain.exp) EXP になった"]
-        if gain.energy > 0 { parts.append("テストステロンパワーも \(gain.energy) 貯まった") }
+        var parts = ["今日の記録が \(gain.exp) EXP になりました"]
+        if gain.energy > 0 { parts.append("テストステロンパワーも \(gain.energy) 貯まりました") }
         return parts.joined(separator: "。") + "。"
     }
 
@@ -174,7 +174,7 @@ enum WorkoutGrowth {
     /// 進化した直後は次の目標を出し、まだなら残りを出す。
     static func nextStageHint(_ next: CharacterProgress.NextStage?) -> String? {
         guard let next else { return nil }
-        guard !next.unmet.isEmpty else { return "\(next.stage.title) の条件を満たしている" }
+        guard !next.unmet.isEmpty else { return "\(next.stage.title) の条件を満たしています" }
         return "次は \(next.stage.title)：" + next.unmet.joined(separator: " / ")
     }
 }

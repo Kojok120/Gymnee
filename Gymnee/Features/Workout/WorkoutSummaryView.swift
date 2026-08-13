@@ -118,9 +118,9 @@ struct WorkoutSummaryView: View {
 
     /// 労いのひとこと。内容（PR/連続日数）で出し分ける（乱数は使わず決定的）。
     private var appreciationMessage: String {
-        if hasPR { return "限界をひとつ超えた日。しっかり休んで、また積み上げよう。" }
-        if streak >= 3 { return "継続は力。今日もちゃんとやり切ったのが一番えらい。" }
-        return "今日もお疲れさま。この1回が確実に積み重なっていく。"
+        if hasPR { return "限界をひとつ超えた日です。しっかり休んで、また積み上げましょう。" }
+        if streak >= 3 { return "継続は力です。今日もちゃんとやり切ったことが一番の成果です。" }
+        return "今日もお疲れさまでした。この1回が確実に積み重なっていきます。"
     }
 
     /// スタットタイル1行（連続 / 今週 / 総量 / 時間）。今週は週次ゴール達成で lime。

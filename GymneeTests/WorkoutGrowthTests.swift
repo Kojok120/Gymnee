@@ -150,16 +150,21 @@ final class WorkoutGrowthTests: XCTestCase {
 
     // MARK: - 説明文（この 1 回の数字で説明する）
 
+    /// 数値だけでなく**文面そのもの**を固定する。
+    /// 敬体に揃えた文言が常体へ戻っても気づけるようにしておく。
     func testDetailStatesTheExpAndEnergy() {
-        let text = WorkoutGrowth.detail(for: gain(exp: 164, energy: 38))
-        XCTAssertTrue(text.contains("164"), text)
-        XCTAssertTrue(text.contains("38"), text)
+        XCTAssertEqual(
+            WorkoutGrowth.detail(for: gain(exp: 164, energy: 38)),
+            "今日の記録が 164 EXP になりました。テストステロンパワーも 38 貯まりました。"
+        )
     }
 
     /// パワーが増えていない回に「0 貯まった」と書かない。
     func testDetailOmitsEnergyWhenNoneGained() {
-        let text = WorkoutGrowth.detail(for: gain(energy: 0))
-        XCTAssertFalse(text.contains("パワー"), text)
+        XCTAssertEqual(
+            WorkoutGrowth.detail(for: gain(exp: 164, energy: 0)),
+            "今日の記録が 164 EXP になりました。"
+        )
     }
 
     // MARK: - 効いた部位
@@ -208,7 +213,7 @@ final class WorkoutGrowthTests: XCTestCase {
 
     func testNextStageHintWhenAlreadyQualified() {
         let next = CharacterProgress.NextStage(stage: .trainee, unmet: [])
-        XCTAssertEqual(WorkoutGrowth.nextStageHint(next), "トレーニー の条件を満たしている")
+        XCTAssertEqual(WorkoutGrowth.nextStageHint(next), "トレーニー の条件を満たしています")
     }
 
     /// 最上位まで行っていれば出さない。

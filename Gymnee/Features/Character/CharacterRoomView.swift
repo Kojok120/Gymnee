@@ -302,24 +302,15 @@ struct CharacterRoomView: View {
                     .transition(.opacity)
             }
 
-            if showBodyTapHint {
-                bodyTapHint
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, hudHeight + bottomInset + Theme.Spacing.lg)
-            }
-
             hud(size: size, bottomInset: bottomInset)
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
         // 部屋の中身は Canvas でヒットテストを持たず、操作は座標タップに依存している。
-        // そのままだと VoiceOver から人体図に一切たどり着けない（分析タブを畳んだので、
-        // ここが唯一の入口）。歩き回る相手を座標で追わせず、名前つきの操作として出す。
+        // 歩き回る相手を座標で追わせないよう、名前つきの操作としても出す
+        // （「ボディ」は下部のボタンからも開けるが、ペットを撫でる手段はここにしかない）。
         .accessibilityElement(children: .contain)
-        .accessibilityAction(named: "からだの状態を見る") {
-            bodyTapHinted = true
-            sheet = .body
-        }
+        .accessibilityAction(named: "からだの状態を見る") { sheet = .body }
         .accessibilityActions {
             if activePet != nil {
                 Button("ペットを撫でる") { petReaction.fire() }
@@ -384,40 +375,11 @@ struct CharacterRoomView: View {
         if !isAway, TapReaction.isHit(tap: location, feet: feet(charPose.position), size: side) {
             // 押せたことが分かるよう触覚だけ返し、そのままシートを開く。
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            bodyTapHinted = true
             sheet = .body
             return
         }
 
         speak()
-    }
-
-    /// からだのヒントを出すか。キャラが遠征で不在のときは押す相手がいないので出さない。
-    private var showBodyTapHint: Bool {
-        guard !bodyTapHinted, bodyHintVisible, sheet == nil else { return false }
-        return !(activeRun?.isInProgress(asOf: .now) ?? false)
-    }
-
-    /// 「キャラを押すとからだが見られる」の一度きりの案内。
-    /// 図の上に重ねる `AnalyticsView` のヒントと同じ作りにして、押し方の説明は同じ見た目で統一する。
-    private var bodyTapHint: some View {
-        Label("キャラをタップすると、からだの状態が見られる", systemImage: "hand.tap.fill")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Theme.bg1)
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm)
-            .background(Theme.textPrimary.opacity(0.88), in: Capsule())
-            .allowsHitTesting(false)
-            .transition(.opacity)
-            .task {
-                // 気づかれないまま出し続けない。押されたら AppStorage 側で恒久的に消える。
-                try? await Task.sleep(for: .seconds(8))
-                // `.task` はビューが消えると**キャンセルされるが sleep は例外を飲む**ので、
-                // ここで確認しないと「8秒待った」と同じ扱いで消してしまう。
-                // 案内が出て数秒でシートを開いただけで、そのセッション中は二度と出なくなる。
-                guard !Task.isCancelled else { return }
-                withAnimation(.snappy) { bodyHintVisible = false }
-            }
     }
 
     /// コーチの立ち位置（歩き回らず、部屋の決まった場所にいる）。
@@ -443,12 +405,6 @@ struct CharacterRoomView: View {
     /// 記録を終えた直後に出す「この 1 回で何が育ったか」。
     /// 記録タブが完了処理の前の状態を保存し、育成タブに来たときに消費する。
     @State private var celebratingGain: WorkoutGrowth.Gain?
-
-    /// 「キャラを押すとからだが見られる」を一度だけ伝えるヒント。
-    /// 初回案内シートは既に見た人には二度と出ないので、部屋の中でも一度だけ出して取りこぼさない。
-    @AppStorage("gymnee.character.bodyTapHinted") private var bodyTapHinted = false
-    /// 押されないまま出しっぱなしにしない（数秒で引っ込める）。
-    @State private var bodyHintVisible = true
 
     /// 拾った直後に出す告知。
     @State private var collectedToast: RoomPickup.Item?
@@ -741,7 +697,13 @@ struct CharacterRoomView: View {
             // 回収はシーン全体の Swoop ジェスチャが受ける（個別の当たり判定は持たない）。
             .allowsHitTesting(false)
             .accessibilityElement()
-            .accessibilityLabel("\(drop.item.name)が落ちている。なぞって拾う")
+            .accessibilityLabel("\(drop.item.name)が落ちています。なぞって拾えます")
+            // なぞる操作は VoiceOver では出せないので、拾う操作を名前つきで置く。
+            // これが無いと「拾えます」と読み上げるだけで、実際には拾えない。
+            .accessibilityAction(named: "拾う") {
+                collect(drop)
+                endSwoop()
+            }
         }
     }
 
@@ -1028,7 +990,10 @@ struct CharacterRoomView: View {
 
     private var actionBar: some View {
         HStack(spacing: Theme.Spacing.md) {
-            sceneButton("ステータス", "chart.bar.fill", route: .status)
+            // ステータスは左上の Lv バッジが同じシートを開くので、ここには置かない。
+            // 空いた枠は「からだ」（人体図）に充てる。キャラ本体のタップだけだと、
+            // 押せることに気づかないと一生たどり着けない。
+            sceneButton("ボディ", "figure.stand", route: .body)
             sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
             sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
             sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
@@ -1590,7 +1555,7 @@ private struct RewardCelebrationView: View {
                     Text(result.item.name)
                         .font(.title3.bold())
                         .foregroundStyle(Theme.textPrimary)
-                    Text("\(result.item.slot.label)に装備できる")
+                    Text("\(result.item.slot.label)に装備できます")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -13,10 +13,6 @@ struct OutfitSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                    Text("遠征で持ち帰った装備を着せ替えられる。見た目だけで、強さは変わらない。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
                     ForEach(Expedition.Slot.allCases, id: \.self) { slot in
                         slotSection(slot)
                     }
