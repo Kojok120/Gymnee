@@ -499,6 +499,7 @@ struct SettingsView: View {
         try? context.delete(model: ExpeditionRun.self)
         try? context.delete(model: CharacterLoadout.self)
         try? context.delete(model: CharacterStyle.self)
+        try? context.delete(model: PetState.self)
         try? context.delete(model: CoachMessage.self)
         try? context.delete(model: RoomPickupRecord.self)
         // 差分同期の基準も捨てる。残すと「消したのに次の同期で取り直さない」状態になる。

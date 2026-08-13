@@ -321,4 +321,13 @@ extension DeterministicRandom {
         }
         return value
     }
+
+    /// 文字列 id から安定したシードを作る（同じ FNV-1a）。ペットの個体差などに使う。
+    static func seed(from text: String) -> UInt64 {
+        var value: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in text.utf8 {
+            value = (value ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
+        }
+        return value
+    }
 }

@@ -15,6 +15,8 @@ struct AppearanceSheet: View {
     let currentSkinId: String
     let currentHairId: String
     let currentAccessoryId: String
+    /// 連れているペット id（`PetCatalog.noneId` は連れていない）。
+    let currentPetId: String
 
     /// 所持しているか。StoreKit の所持と、1.4.1 以前のダミー購入の和集合を呼び出し側が解決する。
     /// 種別ごとに id 空間が別なので、Set を渡さずクロージャで引く。
@@ -27,6 +29,7 @@ struct AppearanceSheet: View {
     let onSelectSkin: (String) -> Void
     let onSelectHair: (String) -> Void
     let onSelectAccessory: (String) -> Void
+    let onSelectPet: (String) -> Void
     /// 購入。成功したら true。
     let onPurchase: (StoreCatalog.Kind, String) async -> Bool
     let onRestore: () async -> Void
@@ -38,13 +41,14 @@ struct AppearanceSheet: View {
     @State private var isRestoring = false
 
     enum Tab: String, CaseIterable, Identifiable {
-        case color, hair, accessory
+        case color, hair, accessory, pet
         var id: String { rawValue }
         var title: String {
             switch self {
             case .color: return "色"
             case .hair: return "髪型"
-            case .accessory: return "アクセサリー"
+            case .accessory: return "アクセ"
+            case .pet: return "ペット"
             }
         }
     }
@@ -66,6 +70,7 @@ struct AppearanceSheet: View {
                         case .color: colorRows
                         case .hair: hairRows
                         case .accessory: accessoryRows
+                        case .pet: petRows
                         }
                         Text("売るのは見た目だけ。強さは現実のトレーニングでしか手に入らない。")
                             .font(.caption2)
@@ -112,15 +117,42 @@ struct AppearanceSheet: View {
     // MARK: - プレビュー
 
     /// いまの選択で実際に描いた姿。正面と横を並べ、髪型の違いが分かるようにする。
+    /// ペットタブでは足元にペットも並べる（連れて歩いたらこう見える、が一目で分かる）。
     private var preview: some View {
         HStack(spacing: Theme.Spacing.xl) {
             previewFigure(facing: .down)
             previewFigure(facing: .right)
-            previewFigure(facing: .up)
+            if tab == .pet {
+                previewPet
+            } else {
+                previewFigure(facing: .up)
+            }
         }
         .frame(height: 120)
         .frame(maxWidth: .infinity)
         .background(Theme.bg1)
+    }
+
+    /// 選択中のペット（未選択なら足跡だけ）。キャラと同じ縮尺で並べて大きさの差を見せる。
+    @ViewBuilder
+    private var previewPet: some View {
+        if let pet = PetCatalog.pet(id: currentPetId) {
+            Canvas { context, size in
+                let dot = max(1, (size.height / CGFloat(PixelCharacterArt.canvasHeight)).rounded(.down))
+                let sprite = PixelPetArt.sprite(petId: pet.id, facing: .down, blink: false)
+                let origin = CGPoint(
+                    x: ((size.width - CGFloat(sprite.width) * dot) / 2).rounded(),
+                    y: (size.height - CGFloat(sprite.height) * dot - dot * 2).rounded()
+                )
+                context.drawPixels(sprite, at: origin, dot: dot, palette: PixelPetArt.palette(petId: pet.id))
+            }
+            .frame(width: 84, height: 110)
+        } else {
+            Image(systemName: "pawprint")
+                .font(.title2)
+                .foregroundStyle(Theme.textTertiary.opacity(0.5))
+                .frame(width: 84, height: 110)
+        }
     }
 
     private func previewFigure(facing: CharacterScene.Facing) -> some View {
@@ -196,6 +228,57 @@ struct AppearanceSheet: View {
                 headThumbnail(hairId: currentHairId, accessoryId: accessory.id)
             }
         }
+    }
+
+    /// ペットの一覧。未所持でもシルエットにせず普通に描く。
+    /// 何が手に入るのか分からないと買う理由が生まれないし、審査用のスクリーンショットにも使えない。
+    private var petRows: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            // 買ったあと外せないのは不親切なので、「連れていない」を必ず選べるようにする。
+            row(
+                kind: .pet,
+                id: PetCatalog.noneId,
+                name: "連れていない",
+                owned: true,
+                isCurrent: currentPetId == PetCatalog.noneId,
+                select: { onSelectPet(PetCatalog.noneId) }
+            ) {
+                Image(systemName: "nosign")
+                    .font(.title3)
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 42, height: 40)
+            }
+            ForEach(PetCatalog.all) { pet in
+                row(
+                    kind: .pet,
+                    id: pet.id,
+                    name: pet.name,
+                    owned: isOwned(.pet, pet.id),
+                    isCurrent: pet.id == currentPetId,
+                    select: { onSelectPet(pet.id) }
+                ) {
+                    petThumbnail(pet.id)
+                }
+            }
+            Text("ペットは見た目だけ。強さにも遠征の結果にも影響しない。")
+                .font(.caption2)
+                .foregroundStyle(Theme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.top, Theme.Spacing.xs)
+        }
+    }
+
+    private func petThumbnail(_ petId: String) -> some View {
+        Canvas { context, size in
+            let sprite = PixelPetArt.sprite(petId: petId, facing: .down, blink: false)
+            let dot = max(1, (size.height / CGFloat(PixelPetArt.canvasHeight)).rounded(.down))
+            let origin = CGPoint(
+                x: ((size.width - CGFloat(sprite.width) * dot) / 2).rounded(),
+                y: ((size.height - CGFloat(sprite.height) * dot) / 2).rounded()
+            )
+            context.drawPixels(sprite, at: origin, dot: dot, palette: PixelPetArt.palette(petId: petId))
+        }
+        .frame(width: 42, height: 40)
     }
 
     /// 一覧の見本は**顔だけ**を描く。全身だと髪型の差が小さくて選べない。

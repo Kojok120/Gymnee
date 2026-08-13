@@ -37,6 +37,9 @@ enum DemoData {
         // フォローのデモ。
         context.insert(Follow(followerId: userId, followeeId: UUID(), followeeDisplayName: "ゆうき", isDirty: false))
 
+        // ペットを連れた状態を検証できるようにする（所持判定は DEBUG の全解錠で通る）。
+        context.insert(PetState(userId: userId, petId: "shiba"))
+
         // ベンチプレスの履歴（強度進捗・PRタイムライン用に複数セッション）。
         // ラットプルダウンも混ぜて完了種目を3種以上にする（「よくやる種目」セクションの表示検証用）。
         let bench = (try? context.fetch(FetchDescriptor<Exercise>(predicate: #Predicate { $0.name == "ベンチプレス" })))?.first

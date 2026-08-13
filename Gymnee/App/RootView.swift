@@ -169,18 +169,20 @@ struct RootView: View {
                 currentSkinId: SkinCatalog.defaultSkinId,
                 currentHairId: PixelHairArt.defaultStyleId,
                 currentAccessoryId: "glasses",
+                currentPetId: PetCatalog.noneId,
                 isOwned: { _, _ in false },
                 priceText: { kind, id in
                     StoreCatalog.entry(kind: kind, contentID: id)?.fallbackPrice ?? "—"
                 },
                 canPurchase: true,
                 onSelectSkin: { _ in }, onSelectHair: { _ in },
-                onSelectAccessory: { _ in },
+                onSelectAccessory: { _ in }, onSelectPet: { _ in },
                 onPurchase: { _, _ in false }, onRestore: {}
             )
         case "pixelart": PixelArtGallery(section: .character)
         case "pixelart-items": PixelArtGallery(section: .items)
         case "pixelart-room": PixelArtGallery(section: .room)
+        case "pixelart-pets": PixelArtGallery(section: .pets)
         case "other": OtherTabView(userId: userId, path: $otherPath)
         case "summary":
             // 完了サマリーの検証用：デモの最新完了ワークアウトを表示（週次はゴール達成状態）。
