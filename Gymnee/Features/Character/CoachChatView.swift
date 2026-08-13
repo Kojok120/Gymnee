@@ -19,6 +19,9 @@ struct CoachChatView: View {
     @Query private var workouts: [Workout]
     @Query private var records: [PersonalRecord]
     @Query private var plans: [PlannedWorkout]
+    /// 育成の現在値（パワー・レベル）の材料。部屋と同じ式で出すために要る。
+    @Query private var pickups: [RoomPickupRecord]
+    @Query private var runs: [ExpeditionRun]
 
     @State private var draft = ""
     @State private var appliedPlanTitle: String?
@@ -35,6 +38,8 @@ struct CoachChatView: View {
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil })
         _records = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId })
         _plans = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId })
+        _pickups = Query(filter: #Predicate<RoomPickupRecord> { $0.userId == userId })
+        _runs = Query(filter: #Predicate<ExpeditionRun> { $0.userId == userId })
     }
 
     private var mode: CoachMode { CoachMode(rawValue: modeRaw) ?? .default }
@@ -312,7 +317,11 @@ struct CoachChatView: View {
             streakWeeks: StreakCalculator.currentWeeklyStreak(
                 activeDays: workouts.map { $0.completedAt ?? $0.date }, weeklyGoal: weeklyGoal
             ).weeks,
-            todayPlan: todayPlan
+            todayPlan: todayPlan,
+            growth: CharacterInputs.growth(
+                completedWorkouts: workouts, records: records,
+                pickups: pickups, runs: runs, weeklyGoal: weeklyGoal
+            )
         )
     }
 

@@ -125,16 +125,47 @@ final class CoachBriefTests: XCTestCase {
         XCTAssertTrue(JSONSerialization.isValidJSONObject(payload))
     }
 
+    /// 育成の値を渡していれば payload に載ること。
+    /// **コーチは部屋でパワーの話をするのに、その中身を知らなかった**のがこの追加の理由。
+    func testBriefCarriesGrowthValues() {
+        let brief = CoachBrief(
+            energy: 180, level: 3, stageTitle: "ルーキー", nextStageUnmet: ["Lv.5まであと2"]
+        )
+        let growth = brief.payload["growth"] as? [String: Any]
+        XCTAssertEqual(growth?["energy"] as? Int, 180)
+        XCTAssertEqual(growth?["level"] as? Int, 3)
+        XCTAssertEqual(growth?["stage"] as? String, "ルーキー")
+        XCTAssertEqual(growth?["nextStageUnmet"] as? [String], ["Lv.5まであと2"])
+    }
+
+    /// 渡していないときは空の入れ物を送らない（LLM に空の JSON を読ませない）。
+    func testBriefOmitsGrowthWhenUnknown() {
+        XCTAssertNil(CoachBrief().payload["growth"])
+    }
+
     func testEmptyBriefIsStillValidJSON() {
         XCTAssertTrue(JSONSerialization.isValidJSONObject(CoachBrief().payload))
     }
 
     /// 人格の禁止事項は仕様そのものなので、消えていないことを固定する。
-    func testPersonaKeepsItsGuardrails() {
-        let instruction = CoachPersona.instruction
-        XCTAssertTrue(instruction.contains("責めない"), "サボりを責めない指示が消えている")
-        XCTAssertTrue(instruction.contains("医療"), "医療的な断定を避ける指示が消えている")
-        XCTAssertTrue(instruction.contains("記録に無い事実を作らない"), "作話を禁じる指示が消えている")
+    ///
+    /// **実体は Edge Function 側の `PERSONA`** なので、そのファイルを直接読む。
+    /// 以前は Swift 側の複製を見ていたが、そちらは誰からも参照されておらず、
+    /// 通っていても実際のコーチの振る舞いは何も保証していなかった。
+    func testPersonaKeepsItsGuardrails() throws {
+        let source = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // GymneeTests
+            .deletingLastPathComponent()   // リポジトリ直下
+            .appendingPathComponent("supabase/functions/coach-chat/index.ts")
+        let text = try String(contentsOf: source, encoding: .utf8)
+
+        XCTAssertTrue(text.contains("責めない"), "サボりを責めない指示が消えている")
+        XCTAssertTrue(text.contains("医療"), "医療的な断定を避ける指示が消えている")
+        XCTAssertTrue(text.contains("無い事実を作らない"), "作話を禁じる指示が消えている")
+        // 部屋でパワーの話をするのに仕組みを知らない、という状態に戻さない。
+        XCTAssertTrue(text.contains("テストステロンパワー"), "アプリの仕組みの説明が消えている")
+        XCTAssertTrue(text.contains("遠征"), "遠征の説明が消えている")
+
         XCTAssertFalse(CoachPersona.offlineFallback.isEmpty)
         XCTAssertFalse(CoachPersona.notConfigured.isEmpty)
     }

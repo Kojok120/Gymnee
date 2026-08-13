@@ -85,10 +85,10 @@ supabase functions deploy plan-workouts --project-ref "$PROD_REF"
 GKEY="$(grep '^GEMINI_API_KEY=' "$SECRETS/.env" | cut -d= -f2- | tr -d '[:space:]')"
 if [ -n "$GKEY" ]; then
   supabase secrets set --project-ref "$PROD_REF" \
-    GEMINI_API_KEY="$GKEY" GEMINI_MODEL=gemini-3.5-flash GEMINI_API_VERSION=v1
+    GEMINI_API_KEY="$GKEY" GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1
 else
   echo "  ⚠ secrets/.env に GEMINI_API_KEY が無いため未設定。AI計画を使うなら後で:"
-  echo "    supabase secrets set --project-ref $PROD_REF GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-3.5-flash GEMINI_API_VERSION=v1"
+  echo "    supabase secrets set --project-ref $PROD_REF GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1"
 fi
 
 echo "▶ 5/5 push_config 投入"

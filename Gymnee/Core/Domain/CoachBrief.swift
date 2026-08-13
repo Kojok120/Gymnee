@@ -27,6 +27,13 @@ struct CoachBrief: Equatable, Sendable {
     var restingHeartRate: Double?
     /// 今日の予定（カレンダー由来のタイトルのみ）。
     var todayEvents: [String]
+    /// 育成のいまの値。コーチは部屋でパワーの話をするのに、その中身を知らなかった。
+    /// **アプリの仕組みを聞かれたときに、具体の数字で答えられるようにする。**
+    var energy: Int?
+    var level: Int?
+    var stageTitle: String?
+    /// 次の段階までに足りないもの（`CharacterProgress.nextStage` の文言）。
+    var nextStageUnmet: [String]
     /// 今日の計画（すでにコーチが組んでいれば）。
     var todayPlanTitle: String?
 
@@ -52,7 +59,11 @@ struct CoachBrief: Equatable, Sendable {
         sleepHours: Double? = nil,
         restingHeartRate: Double? = nil,
         todayEvents: [String] = [],
-        todayPlanTitle: String? = nil
+        todayPlanTitle: String? = nil,
+        energy: Int? = nil,
+        level: Int? = nil,
+        stageTitle: String? = nil,
+        nextStageUnmet: [String] = []
     ) {
         self.weeklyDone = weeklyDone
         self.weeklyGoal = weeklyGoal
@@ -62,6 +73,10 @@ struct CoachBrief: Equatable, Sendable {
         self.recentSessions = recentSessions
         self.fatigueByMuscle = fatigueByMuscle
         self.recentRecords = recentRecords
+        self.energy = energy
+        self.level = level
+        self.stageTitle = stageTitle
+        self.nextStageUnmet = nextStageUnmet
         self.sleepHours = sleepHours
         self.restingHeartRate = restingHeartRate
         self.todayEvents = todayEvents
@@ -93,6 +108,13 @@ struct CoachBrief: Equatable, Sendable {
         if let sleepHours, sleepHours.isFinite { result["sleepHours"] = (sleepHours * 10).rounded() / 10 }
         if let restingHeartRate, restingHeartRate.isFinite { result["restingHeartRate"] = Int(restingHeartRate.rounded()) }
         if let todayPlanTitle { result["todayPlan"] = todayPlanTitle }
+        // 育成の現在値。部屋のバッジと同じ数字を渡す（コーチが違う数字を言わないように）。
+        var growth: [String: Any] = [:]
+        if let energy { growth["energy"] = energy }
+        if let level { growth["level"] = level }
+        if let stageTitle { growth["stage"] = stageTitle }
+        if !nextStageUnmet.isEmpty { growth["nextStageUnmet"] = nextStageUnmet }
+        if !growth.isEmpty { result["growth"] = growth }
         return result
     }
 }
@@ -106,27 +128,9 @@ enum CoachPersona {
     /// 表示名。
     static let name = "コーチ"
 
-    /// Edge Function に渡す振る舞いの定義。
-    /// **禁止事項をここに集約する**（サボりを責めない・医療判断をしない・強さを与えない）。
-    static let instruction = """
-    あなたは筋トレアプリ Gymnee のコーチです。ユーザーの記録だけを根拠に、短く具体的に話します。
-
-    人格:
-    - 実務的で穏やか。淡々としているが冷たくない
-    - 1〜3文で答える。前置きや相槌だけの返事はしない
-    - 敬語は使わず、親しい指導者の口調（「〜しよう」「〜してみて」）
-    - 絵文字は使わない
-
-    必ず守ること:
-    - サボりや空白期間を責めない。休むことを肯定し、軽い内容から戻す提案をする
-    - 痛み・不調を訴えられたら、その部位を避けたメニューに組み替える。診断や医療的な断定はせず、
-      強い痛みが続く場合は医療機関を勧める
-    - 渡された記録に無い事実を作らない。分からないことは「記録が足りない」と言う
-    - 数値（重量・レップ）は直近の記録から地続きの範囲で提案する。急に大きく上げない
-    - アプリ内の報酬や強さを約束しない。強くなるのは現実のトレーニングだけ
-
-    メニューを提案するときは、返答の本文とは別に、構造化された提案として返します。
-    """
+    /// コーチの振る舞い（人格・禁止事項・アプリの仕組み）は
+    /// **Edge Function 側の `PERSONA` が実体**（`supabase/functions/coach-chat/index.ts`）。
+    /// ここに複製を置くと、直しても効かないほうを直してしまう。
 
     /// LLM が使えないときの返答。黙るより、できることを示すほうが良い。
     static let offlineFallback = "いま考えがまとまらない。通信が戻ったらまた聞いて"

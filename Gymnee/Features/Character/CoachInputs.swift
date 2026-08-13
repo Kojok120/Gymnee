@@ -21,6 +21,8 @@ enum CoachInputs {
         todayEvents: [String] = [],
         sleepHours: Double? = nil,
         restingHeartRate: Double? = nil,
+        /// 育成のいまの値。渡さないとコーチはパワーやレベルの話に答えられない。
+        growth: CharacterInputs.Growth? = nil,
         asOf now: Date = .now,
         calendar: Calendar = .current
     ) -> CoachBrief {
@@ -69,7 +71,11 @@ enum CoachInputs {
             sleepHours: sleepHours,
             restingHeartRate: restingHeartRate,
             todayEvents: todayEvents,
-            todayPlanTitle: todayPlan?.title
+            todayPlanTitle: todayPlan?.title,
+            energy: growth?.energy,
+            level: growth?.level.value,
+            stageTitle: growth?.stage.title,
+            nextStageUnmet: growth?.nextStage?.unmet ?? []
         )
     }
 

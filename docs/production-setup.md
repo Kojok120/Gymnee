@@ -56,7 +56,7 @@ scripts/setup_supabase_prod.sh <PROD_REF>
 - **Auth 設定**（Management API PATCH）：Apple 有効化、Google 有効化（id/secret）、email 有効化、Resend SMTP、`uri_allow_list=gymnee://auth-callback`、OTP メール本文（6桁 `{{ .Token }}`）
 - **Edge Function**：
   - `send-push`（チェックイン通知＋いいね/応援通知）を deploy ＋ secrets（APNS_*、`APNS_HOST=api.push.apple.com`、新規 `PUSH_SHARED_SECRET`）
-  - `plan-workouts`（AIワークアウト計画）を deploy ＋ secrets（`secrets/.env` に `GEMINI_API_KEY` があれば `GEMINI_API_KEY`/`GEMINI_MODEL=gemini-3.5-flash`/`GEMINI_API_VERSION=v1`。無ければ警告して後回し）
+  - `plan-workouts`（AIワークアウト計画）を deploy ＋ secrets（`secrets/.env` に `GEMINI_API_KEY` があれば `GEMINI_API_KEY`/`GEMINI_MODEL=gemini-3.5-flash-lite`/`GEMINI_API_VERSION=v1`。無ければ警告して後回し）
 - **push_config**：prod の Function URL ＋ 新 secret を 1 行 upsert
 
 ### ★4. iOS の prod 接続先を差し替え（手動）
