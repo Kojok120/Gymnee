@@ -39,10 +39,9 @@ struct CoachChatView: View {
 
     private var mode: CoachMode { CoachMode(rawValue: modeRaw) ?? .default }
 
-    /// 無料枠の残り。有料（ダミー課金）なら実質無制限。
-    private var isSubscribed: Bool { env.subscription.isPremium }
+    /// 今日の残り回数（Gemini のコスト制御。プランによる出し分けはしない）。
     private var remaining: Int {
-        CoachQuota.remaining(sentToday: env.coach.sentToday, isSubscribed: isSubscribed)
+        CoachQuota.remaining(sentToday: env.coach.sentToday)
     }
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -234,12 +233,12 @@ struct CoachChatView: View {
     private var composer: some View {
         VStack(spacing: Theme.Spacing.xs) {
             if remaining <= 0 {
-                Text(CoachQuota.limitMessage(isSubscribed: isSubscribed))
+                Text(CoachQuota.limitMessage)
                     .font(.caption)
                     .foregroundStyle(Theme.warning)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Theme.Spacing.lg)
-            } else if remaining <= 3 && !isSubscribed {
+            } else if remaining <= 3 {
                 Text("今日はあと\(remaining)回話せる")
                     .font(.caption2)
                     .foregroundStyle(Theme.textTertiary)

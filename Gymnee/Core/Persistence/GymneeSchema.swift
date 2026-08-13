@@ -90,11 +90,22 @@ enum GymneeSchemaV7: VersionedSchema {
     }
 }
 
+/// スキーマ v8。連れているペット `PetState` を追加。
+///
+/// v6 と同じく**型の追加**で表現する。既存モデルへのプロパティ追加はチェックサム衝突を起こし、
+/// 実際にローカルデータ消失の事故になった（`CharacterStyle` のコメント参照）。
+enum GymneeSchemaV8: VersionedSchema {
+    static var versionIdentifier = Schema.Version(8, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        GymneeSchemaV7.models + [PetState.self]
+    }
+}
+
 /// 段階的マイグレーション計画（§7 データ保護）。
 /// スキーマ変更時はここに MigrationStage を追加する。
 enum GymneeMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self, GymneeSchemaV7.self]
+        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self, GymneeSchemaV7.self, GymneeSchemaV8.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -104,14 +115,15 @@ enum GymneeMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: GymneeSchemaV4.self, toVersion: GymneeSchemaV5.self),
             .lightweight(fromVersion: GymneeSchemaV5.self, toVersion: GymneeSchemaV6.self),
             .lightweight(fromVersion: GymneeSchemaV6.self, toVersion: GymneeSchemaV7.self),
+            .lightweight(fromVersion: GymneeSchemaV7.self, toVersion: GymneeSchemaV8.self),
         ]
     }
 }
 
 /// ModelContainer・Widget・テストから共通参照する単一の真実。
 enum GymneeSchema {
-    static let models = GymneeSchemaV7.models
-    static let schema = Schema(versionedSchema: GymneeSchemaV7.self)
+    static let models = GymneeSchemaV8.models
+    static let schema = Schema(versionedSchema: GymneeSchemaV8.self)
 
     /// ストア退避が起きたことを UI に伝えるフラグ（RootView が一度だけアラートを出して消す）。
     static let recoveryPendingKey = "gymnee.storeRecoveryPending"

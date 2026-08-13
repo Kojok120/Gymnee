@@ -9,9 +9,9 @@ import SwiftUI
 struct PixelArtGallery: View {
 
     /// 見たい範囲。1 画面に収めてスクショで確認できるよう、起動引数で切り替える。
-    /// `-gymneeScreen pixelart` / `pixelart-items` / `pixelart-room`
+    /// `-gymneeScreen pixelart` / `pixelart-items` / `pixelart-room` / `pixelart-pets`
     enum Section: String {
-        case character, items, room
+        case character, items, room, pets
     }
 
     var section: Section = .character
@@ -29,6 +29,8 @@ struct PixelArtGallery: View {
                     case .room:
                         furnitureSection
                         effectSection
+                    case .pets:
+                        petSection
                     }
                 }
                 .padding(Theme.Spacing.lg)
@@ -37,6 +39,37 @@ struct PixelArtGallery: View {
             .navigationTitle("ドット絵一覧")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    // MARK: - ペット
+
+    /// ペットは種類 × 向き（正面 / まばたき / 横 / 背面）。左向きは横向きの反転なので出さない。
+    private var petSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            ForEach(PetCatalog.all) { pet in
+                SectionHeader(title: pet.name)
+                LazyVGrid(columns: grid(minimum: 76), spacing: Theme.Spacing.md) {
+                    ForEach(petCells(pet.id), id: \.name) { cell in
+                        labelled(cell.name) {
+                            PixelSpriteView(
+                                sprite: cell.sprite,
+                                palette: PixelPetArt.palette(petId: pet.id),
+                                side: 64
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func petCells(_ petId: String) -> [(name: String, sprite: PixelSprite)] {
+        [
+            ("正面", PixelPetArt.sprite(petId: petId, facing: .down, blink: false)),
+            ("まばたき", PixelPetArt.sprite(petId: petId, facing: .down, blink: true)),
+            ("横", PixelPetArt.sprite(petId: petId, facing: .right, blink: false)),
+            ("背面", PixelPetArt.sprite(petId: petId, facing: .up, blink: false)),
+        ]
     }
 
     // MARK: - キャラ（体格 × 仕草）

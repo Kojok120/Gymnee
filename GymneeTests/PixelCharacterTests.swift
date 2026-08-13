@@ -36,6 +36,16 @@ final class PixelSpriteTests: XCTestCase {
         for frame in 0..<3 {
             list.append(("chest-\(frame)", PixelCharacterArt.chest(frame)))
         }
+        for pet in PetCatalog.all {
+            for facing in CharacterScene.Facing.allCases {
+                for blink in [false, true] {
+                    list.append((
+                        "pet-\(pet.id)-\(facing.rawValue)\(blink ? "-blink" : "")",
+                        PixelPetArt.sprite(petId: pet.id, facing: facing, blink: blink)
+                    ))
+                }
+            }
+        }
         for item in Expedition.items {
             list.append(("item-\(item.id)", PixelItemArt.icon(for: item)))
         }

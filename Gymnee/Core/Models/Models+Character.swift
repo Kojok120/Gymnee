@@ -105,17 +105,12 @@ extension CharacterLoadout {
         updatedAt = .now
     }
 
+    /// 1.4.1 より前のダミー購入（課金未接続の時代に「購入」を押すとタダで所持扱いになっていた）の名残。
+    /// **読み取り専用のレガシー付与として扱い、新規の書き込みは行わない**。
+    /// 実所持は StoreKit（`StoreService` / `StoreCatalog`）が正。
     var purchasedSkins: Set<String> {
         Set(purchasedSkinIds.split(separator: ",").map(String.init).filter { !$0.isEmpty })
     }
-
-    func addPurchasedSkin(_ id: String) {
-        var current = purchasedSkins
-        current.insert(id)
-        purchasedSkinIds = current.sorted().joined(separator: ",")
-        updatedAt = .now
-    }
-
 }
 
 extension ExpeditionRun {
@@ -182,7 +177,8 @@ final class CharacterStyle {
     var hairStyleId: String
     /// 選択中のアクセサリー id（`PixelHairArt.accessories`）。"none" は着けていない。
     var accessoryId: String
-    /// 購入済みの髪型・アクセサリー id（カンマ区切り。課金は未接続のダミー）。
+    /// 1.4.1 以前のダミー購入で所持扱いになった髪型・アクセサリー id（カンマ区切り）。
+    /// 読み取り専用のレガシー付与。新規の書き込みは行わない（実所持は StoreKit が正）。
     var purchasedIds: String
     var updatedAt: Date
 
@@ -202,14 +198,32 @@ final class CharacterStyle {
 }
 
 extension CharacterStyle {
+    /// 1.4.1 より前のダミー購入の名残（`CharacterLoadout.purchasedSkins` と同じ扱い）。
+    /// **読み取り専用のレガシー付与**。実所持は StoreKit が正。
     var purchased: Set<String> {
         Set(purchasedIds.split(separator: ",").map(String.init).filter { !$0.isEmpty })
     }
+}
 
-    func addPurchased(_ id: String) {
-        var current = purchased
-        current.insert(id)
-        purchasedIds = current.sorted().joined(separator: ",")
-        updatedAt = .now
+/// 連れているペット（ローカル専用モデル・ユーザーごとに 1 行）。
+///
+/// **`CharacterStyle` と同じ理由で、既存モデルに列を足さず別の型として持つ**
+/// （プロパティ追加はチェックサム衝突を起こし、実際にローカルデータ消失の事故になった。
+/// 詳細は `CharacterStyle` のコメントを参照）。
+///
+/// 所持しているかは StoreKit が正なので**ここには持たない**。保存するのは
+/// 「いま誰を連れているか」だけ。返金・失効で所持が消えたら
+/// `PetCatalog.resolve(selected:owned:)` が自動で「連れていない」に落とす。
+@Model
+final class PetState {
+    @Attribute(.unique) var userId: UUID
+    /// 連れているペット id（`PetCatalog`）。"none" は連れていない。
+    var petId: String
+    var updatedAt: Date
+
+    init(userId: UUID, petId: String = PetCatalog.noneId, updatedAt: Date = .now) {
+        self.userId = userId
+        self.petId = petId
+        self.updatedAt = updatedAt
     }
 }

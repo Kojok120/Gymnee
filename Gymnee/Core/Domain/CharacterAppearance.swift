@@ -44,9 +44,8 @@ struct CharacterSkin: Identifiable, Equatable, Sendable {
     /// 差し色（ウェア）。
     let accentHex: UInt
     /// 有料かどうか（無料スキンは最初から所持）。
+    /// 価格は持たない。表示価格は StoreKit の `displayPrice`（対応は `StoreCatalog`）。
     let isPaid: Bool
-    /// 表示価格。課金は未接続のダミーなので表示専用。
-    let priceLabel: String
 }
 
 /// スキンのカタログ。
@@ -54,10 +53,10 @@ enum SkinCatalog {
     static let defaultSkinId = "classic"
 
     static let all: [CharacterSkin] = [
-        CharacterSkin(id: "classic", name: "クラシック", bodyHex: 0xE8B48A, accentHex: 0x3A4038, isPaid: false, priceLabel: "所持済み"),
-        CharacterSkin(id: "midnight", name: "ミッドナイト", bodyHex: 0x8FA0C8, accentHex: 0x1E2333, isPaid: true, priceLabel: "¥370"),
-        CharacterSkin(id: "sunset", name: "サンセット", bodyHex: 0xF2A65A, accentHex: 0x8C3B2E, isPaid: true, priceLabel: "¥370"),
-        CharacterSkin(id: "gymnee", name: "Gymnee ライム", bodyHex: 0xC6FF3D, accentHex: 0x2F3A1B, isPaid: true, priceLabel: "¥610"),
+        CharacterSkin(id: "classic", name: "クラシック", bodyHex: 0xE8B48A, accentHex: 0x3A4038, isPaid: false),
+        CharacterSkin(id: "midnight", name: "ミッドナイト", bodyHex: 0x8FA0C8, accentHex: 0x1E2333, isPaid: true),
+        CharacterSkin(id: "sunset", name: "サンセット", bodyHex: 0xF2A65A, accentHex: 0x8C3B2E, isPaid: true),
+        CharacterSkin(id: "gymnee", name: "Gymnee ライム", bodyHex: 0xC6FF3D, accentHex: 0x2F3A1B, isPaid: true),
     ]
 
     static func skin(id: String?) -> CharacterSkin {
@@ -67,6 +66,15 @@ enum SkinCatalog {
     /// 所持しているスキン（無料スキンは常に所持）。
     static func isOwned(_ skin: CharacterSkin, purchased: Set<String>) -> Bool {
         !skin.isPaid || purchased.contains(skin.id)
+    }
+
+    /// 保存された選択から、実際に着られるスキンを取り出す。
+    ///
+    /// 返金・失効・ファミリー共有の解除で所持が消えたら既定へ落とす。
+    /// **持っていない見た目を描き続けない**（`CharacterOutfit.resolve` と同じ考え方）。
+    static func resolve(selected: String?, owned: Set<String>) -> CharacterSkin {
+        let chosen = skin(id: selected)
+        return isOwned(chosen, purchased: owned) ? chosen : skin(id: defaultSkinId)
     }
 }
 

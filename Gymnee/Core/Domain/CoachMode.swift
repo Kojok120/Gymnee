@@ -40,43 +40,32 @@ enum CoachMode: String, CaseIterable, Sendable, Identifiable {
 
     /// メニューを確定まで組むか（`suggest` は下書き止まり）。
     var decidesMenu: Bool { self == .auto }
-
-    /// 有料の対象か。決めきってもらう体験だけを課金対象にする
-    /// （提案とチャットは無料で触れないと、良さが伝わらないまま終わる）。
-    var requiresSubscription: Bool { self == .auto }
 }
 
-/// 無料枠の管理（純粋計算）。
+/// 相談回数の上限（純粋計算）。
 ///
 /// Gemini の呼び出しは 1 往復ごとに費用がかかる。青天井にすると、使われるほど赤字が増える。
 /// 「使えない」ではなく「今日はここまで」に留め、翌日また触れるようにする。
+///
+/// **これはコスト制御であって課金の話ではない**。アプリ内課金は見た目（スキン / 髪型 /
+/// アクセサリー / ペット）だけで、サブスクリプションは提供していないので、
+/// 上限をプランで出し分けることはしない。
 enum CoachQuota {
 
-    /// 無料ユーザーが 1 日に送れるメッセージ数。
-    static let freeDailyMessages = 10
-
-    /// 有料ユーザーの上限。事実上の無制限だが、暴走時の歯止めとして数値は置く。
-    static let paidDailyMessages = 200
-
-    static func limit(isSubscribed: Bool) -> Int {
-        isSubscribed ? paidDailyMessages : freeDailyMessages
-    }
+    /// 1 日に送れるメッセージ数。
+    static let dailyMessages = 10
 
     /// 今日の残り回数。
-    static func remaining(sentToday: Int, isSubscribed: Bool) -> Int {
-        max(0, limit(isSubscribed: isSubscribed) - max(0, sentToday))
+    static func remaining(sentToday: Int) -> Int {
+        max(0, dailyMessages - max(0, sentToday))
     }
 
-    static func canSend(sentToday: Int, isSubscribed: Bool) -> Bool {
-        remaining(sentToday: sentToday, isSubscribed: isSubscribed) > 0
+    static func canSend(sentToday: Int) -> Bool {
+        remaining(sentToday: sentToday) > 0
     }
 
     /// 上限に達したときの案内。行き止まりにせず、明日また来られることを伝える。
-    static func limitMessage(isSubscribed: Bool) -> String {
-        isSubscribed
-            ? "今日はたくさん話したね。また明日ゆっくり話そう"
-            : "今日の相談はここまで。明日また話そう（もっと話したいならプランの見直しもできる）"
-    }
+    static let limitMessage = "今日の相談はここまで。明日また話そう"
 
     /// 日付が変わったら数え直す。
     static func resetIfNeeded(lastSent: Date?, now: Date, calendar: Calendar = .current) -> Bool {

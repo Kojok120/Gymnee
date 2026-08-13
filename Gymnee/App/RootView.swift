@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 enum AppTab: Hashable {
-    case workout, analytics, character, social, other
+    case workout, calendar, character, social, other
 }
 
 /// アプリのルート。サインインウォールは置かず、未サインインなら**ゲスト（ローカル）で即開始**する（§5）。
@@ -16,8 +16,8 @@ struct RootView: View {
     @Environment(LocalSyncEngine.self) private var syncEngine
     @Environment(\.modelContext) private var context
     @State private var selection: AppTab = .workout
-    /// 「その他」タブのナビゲーションスタック。カレンダー/ショップを外（通知・記録キャンセル）から
-    /// 開くため、パスをルート側で持つ。
+    /// 「その他」タブのナビゲーションスタック。ショップを外（通知）から開くため、
+    /// パスをルート側で持つ。
     @State private var otherPath: [AppRoute] = []
     @AppStorage("gymnee.setupDone") private var setupDone = false
     /// ストア退避（GymneeSchema.makeContainer の復旧パス）が起きた直後の一度きりの通知。
@@ -150,7 +150,7 @@ struct RootView: View {
         case "character-tab":
             TabView(selection: .constant("character")) {
                 Tab("記録", systemImage: "dumbbell.fill", value: "record") { Color.clear }
-                Tab("分析", systemImage: "chart.bar.fill", value: "analytics") { Color.clear }
+                Tab("カレンダー", systemImage: "calendar", value: "calendar") { Color.clear }
                 Tab("育成", systemImage: "figure.strengthtraining.traditional", value: "character") {
                     CharacterRoomView(userId: userId)
                 }
@@ -160,23 +160,17 @@ struct RootView: View {
         // ドット絵の一覧。絵を足したり直したりしたとき、崩れをスクショ 1 枚で確認する用。
         // コーチとのチャット（部屋でコーチをタップしたときに出るもの）。
         case "coach": CoachChatView(userId: userId)
-        // 見た目シート（色 / 髪型 / アクセサリー）。部屋から開くのと同じもの。
-        case "appearance":
-            AppearanceSheet(
-                build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
-                stage: .challenger,
-                equipped: [:],
-                currentSkinId: SkinCatalog.defaultSkinId,
-                currentHairId: PixelHairArt.defaultStyleId,
-                currentAccessoryId: "glasses",
-                purchasedSkins: [],
-                purchasedAppearances: [],
-                onSelectSkin: { _ in }, onSelectHair: { _ in },
-                onSelectAccessory: { _ in }, onPurchase: { _ in }
-            )
+        // 見た目シート（色 / 髪型 / アクセ / ペット）。部屋から開くのと同じもの。
+        // タブ指定つきは IAP の審査用スクリーンショットを撮るために使う
+        // （`-gymneeScreen appearance-pet` など。1 商品につき 1 枚が必要）。
+        case "appearance": debugAppearanceSheet(tab: .hair)
+        case "appearance-color": debugAppearanceSheet(tab: .color)
+        case "appearance-accessory": debugAppearanceSheet(tab: .accessory)
+        case "appearance-pet": debugAppearanceSheet(tab: .pet)
         case "pixelart": PixelArtGallery(section: .character)
         case "pixelart-items": PixelArtGallery(section: .items)
         case "pixelart-room": PixelArtGallery(section: .room)
+        case "pixelart-pets": PixelArtGallery(section: .pets)
         case "other": OtherTabView(userId: userId, path: $otherPath)
         case "summary":
             // 完了サマリーの検証用：デモの最新完了ワークアウトを表示（週次はゴール達成状態）。
@@ -193,6 +187,31 @@ struct RootView: View {
             }
         default: mainTabs
         }
+    }
+
+    /// 見た目シートのハーネス。所持ゼロ・価格は控えの値で、購入できる状態の見え方を確認する。
+    @ViewBuilder
+    private func debugAppearanceSheet(tab: AppearanceSheet.Tab) -> some View {
+        AppearanceSheet(
+            build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
+            stage: .challenger,
+            equipped: [:],
+            currentSkinId: SkinCatalog.defaultSkinId,
+            currentHairId: PixelHairArt.defaultStyleId,
+            currentAccessoryId: "glasses",
+            currentPetId: PetCatalog.noneId,
+            isOwned: { _, _ in false },
+            priceText: { kind, id in
+                StoreCatalog.entry(kind: kind, contentID: id)?.fallbackPrice ?? "—"
+            },
+            isStoreReachable: true,
+            canPurchase: { _, _ in true },
+            onSelectSkin: { _ in }, onSelectHair: { _ in },
+            onSelectAccessory: { _ in }, onSelectPet: { _ in },
+            onPurchase: { _, _ in false }, onRestore: { nil },
+            onAppearReload: {},
+            initialTab: tab
+        )
     }
 
     /// composer ハーネス用：最新完了ワークアウトのフィード項目。
@@ -259,9 +278,9 @@ struct RootView: View {
                 .tabItem { Label("記録", systemImage: "dumbbell.fill") }
                 .tag(AppTab.workout)
 
-            analyticsTab
-                .tabItem { Label("分析", systemImage: "chart.bar.xaxis") }
-                .tag(AppTab.analytics)
+            CalendarHomeView()
+                .tabItem { Label("カレンダー", systemImage: "calendar") }
+                .tag(AppTab.calendar)
 
             characterTab
                 .tabItem { Label("育成", systemImage: "figure.strengthtraining.traditional") }
@@ -286,9 +305,9 @@ struct RootView: View {
                 selection = .social
             }
         }
-        // 記録のキャンセルからカレンダーへ（タブから外したので「その他」で開く）。
+        // 記録のキャンセルからカレンダーへ。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCalendar)) { _ in
-            showCalendar()
+            selection = .calendar
         }
         // 計画/予定の「開始」から記録タブへ（RecordView 側が当該ワークアウトを再開する）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { _ in
@@ -299,29 +318,13 @@ struct RootView: View {
             switch note.userInfo?["type"] as? String {
             case "reaction", "follow", "invite": selection = .social
             case "workout": selection = .workout
-            case "analytics": selection = .analytics
-            // 週次まとめはカレンダーで振り返る（カレンダーは「その他」配下）。
-            case "recap": showCalendar()
+            // 週次まとめはカレンダーで振り返る。
+            case "recap": selection = .calendar
             case "shop":
                 otherPath = [.shop]
                 selection = .other
             default: break
             }
-        }
-    }
-
-    /// カレンダーを開く（タブから外したので「その他」タブのスタックに push する）。
-    private func showCalendar() {
-        otherPath = [.calendar]
-        selection = .other
-    }
-
-    @ViewBuilder
-    private var analyticsTab: some View {
-        if let uid = auth.currentUserId {
-            NavigationStack { AnalyticsView(userId: uid).gymneeNavigationDestinations(userId: uid) }
-        } else {
-            EmptyStateView(systemImage: "chart.bar", title: "未ログイン")
         }
     }
 

@@ -169,6 +169,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.gymnee.app$(BUNDLE_ID_SUFFIX).tests
         GENERATE_INFOPLIST_FILE: "YES"
 
+# どのターゲットにも属させない（＝製品バンドルに入らない）。Xcode のナビゲータに出すだけ。
+fileGroups:
+  - Config/Gymnee.storekit
+
 schemes:
   Gymnee:
     build:
@@ -177,6 +181,9 @@ schemes:
         GymneeTests: [test]
     run:
       config: Debug
+      # シミュレータでの購入テスト用。テストアクションには紐づけない
+      # （ユニットテストは Core/Domain の純粋関数だけを対象にし、StoreKit を叩かない）。
+      storeKitConfiguration: Config/Gymnee.storekit
     test:
       config: Debug
       targets:

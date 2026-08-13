@@ -1,0 +1,150 @@
+{
+  "identifier": "AC7FE7A5",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "370",
+      "familyShareable": true,
+      "internalID": "928E9E16",
+      "localizations": [
+        {
+          "description": "キャラクターの配色をミッドナイトに変える見た目アイテムです。",
+          "displayName": "ミッドナイト",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.cosmetic.skin.midnight",
+      "referenceName": "Skin Midnight",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "370",
+      "familyShareable": true,
+      "internalID": "0EE3F9A8",
+      "localizations": [
+        {
+          "description": "キャラクターの配色をサンセットに変える見た目アイテムです。",
+          "displayName": "サンセット",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.cosmetic.skin.sunset",
+      "referenceName": "Skin Sunset",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "610",
+      "familyShareable": true,
+      "internalID": "0A726157",
+      "localizations": [
+        {
+          "description": "キャラクターの配色を Gymnee ライムに変える見た目アイテムです。",
+          "displayName": "Gymnee ライム",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.cosmetic.skin.gymnee",
+      "referenceName": "Skin Gymnee Lime",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "250",
+      "familyShareable": true,
+      "internalID": "B12DF2CC",
+      "localizations": [
+        {
+          "description": "キャラクターの髪型をポニーテールに変える見た目アイテムです。",
+          "displayName": "ポニーテール",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.cosmetic.hair.ponytail",
+      "referenceName": "Hair Ponytail",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "250",
+      "familyShareable": true,
+      "internalID": "379E6E7C",
+      "localizations": [
+        {
+          "description": "キャラクターの髪型をロングに変える見た目アイテムです。",
+          "displayName": "ロング",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.cosmetic.hair.long",
+      "referenceName": "Hair Long",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "250",
+      "familyShareable": true,
+      "internalID": "86B2B442",
+      "localizations": [
+        {
+          "description": "キャラクターにサングラスを着ける見た目アイテムです。",
+          "displayName": "サングラス",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.cosmetic.accessory.shades",
+      "referenceName": "Accessory Shades",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "250",
+      "familyShareable": true,
+      "internalID": "C05EA77C",
+      "localizations": [
+        {
+          "description": "キャラクターにイヤホンを着ける見た目アイテムです。",
+          "displayName": "イヤホン",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.cosmetic.accessory.earphones",
+      "referenceName": "Accessory Earphones",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "610",
+      "familyShareable": true,
+      "internalID": "EF46D3A1",
+      "localizations": [
+        {
+          "description": "部屋についてくるペットです。撫でると反応します。",
+          "displayName": "しばいぬ",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.pet.shiba",
+      "referenceName": "Pet Shiba",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "610",
+      "familyShareable": true,
+      "internalID": "2052E317",
+      "localizations": [
+        {
+          "description": "部屋についてくるペットです。撫でると反応します。",
+          "displayName": "とらねこ",
+          "locale": "ja"
+        }
+      ],
+      "productID": "com.gymnee.pet.tabby",
+      "referenceName": "Pet Tabby",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "6782380051",
+    "_developerTeamID": "PG5P26J3W2"
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

@@ -19,7 +19,7 @@ struct GymneeApp: App {
                 .environment(env.health)
                 .environment(env.notifications)
                 .environment(env.errors)
-                .environment(env.subscription)
+                .environment(env.store)
                 .environment(env.calendar)
                 .environment(env.googleCalendar)
                 .modelContainer(env.container)
@@ -37,10 +37,15 @@ struct GymneeApp: App {
                 // 起動時にバックエンドセッションを復元（トークン更新）→ その後の同期が認証付きで通る。
                 .task { await env.bootstrapBackend() }
                 // Premium 商品取得＋権限同期。
-                .task { await env.subscription.bootstrap() }
+                .task { await env.store.bootstrap() }
                 // アプリ復帰時に同期（リモート未設定なら no-op）。
+                // 商品の取得は起動時の 1 回きりなので、そのときオフラインだと
+                // 通信が戻ってもアプリを立ち上げ直すまで購入できない。復帰のたびに取り直す。
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { Task { await env.sync.syncNow() } }
+                    if phase == .active {
+                        Task { await env.sync.syncNow() }
+                        Task { await env.store.reloadProductsIfNeeded() }
+                    }
                 }
                 // サインイン完了時に同期（Apple サインインでトークンが入った直後）。
                 .onChange(of: env.auth.isSignedIn) { _, signedIn in

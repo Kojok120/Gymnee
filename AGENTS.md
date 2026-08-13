@@ -14,8 +14,9 @@ CLAUDE.md は `@AGENTS.md` をimportするスタブ。指示の編集は AGENTS.
 
 Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です。
 記録を起点に、ワークアウトの記録・育成・共有・購買（アフィリエイト送客）が 1 アプリで完結します。
-タブは 記録 / 分析 / 育成 / ソーシャル / その他 の 5 本（iOS の上限。超えると More に畳まれる）。
-カレンダー・プロフィール・ショップ・設定は「その他」配下に `AppRoute` の値ルートで置く。
+タブは 記録 / カレンダー / 育成 / ソーシャル / その他 の 5 本（iOS の上限。超えると More に畳まれる）。
+プロフィール・ショップ・設定は「その他」配下に `AppRoute` の値ルートで置く。
+人体図（旧「分析」タブ）は育成タブでキャラ本体をタップすると開く。
 ローカル（SwiftData）を正とする**オフラインファースト**設計で、Supabase をリモート同期・認証・ストレージ・AI 計画のバックエンドに使います。本体アプリに加え、ウィジェット（WidgetKit / Live Activity）、watchOS アプリ、App Intents（Siri）を含みます。
 
 このファイルはリポジトリ全体に共通する実装原則を定義します。配下に `AGENTS.md` が存在する場合は、その領域固有ルールもあわせて従ってください。
@@ -173,7 +174,14 @@ DEBUG 限定の検証ハーネス（製品ビルドには含まれない）:
 ```bash
 xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 # Debug ビルドの bundle id は .dev サフィックス付き（com.gymnee.app は Release）
-# name: gym / checkin / workout / logger / profile / social / shop / analytics / muscle / body / share / character
+# name（RootView.debugScreen が正）:
+#   記録系   : record（=workout）/ logger / history / calendar / body / photos
+#   育成系   : character / character-tab / coach / appearance / appearance-color /
+#              appearance-accessory / appearance-pet
+#   ドット絵 : pixelart / pixelart-items / pixelart-room / pixelart-pets
+#   分析系   : analytics（からだ＝人体図）/ muscle
+#   ソーシャル: social / friends / composer / share / summary
+#   その他   : profile / shop / other / settings
 ```
 
 ## 環境変数 / シークレット

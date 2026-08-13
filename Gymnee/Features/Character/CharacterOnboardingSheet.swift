@@ -3,7 +3,8 @@ import SwiftUI
 /// 育成タブの初回案内。
 ///
 /// この画面は説明文をほぼ持たない作りなので、**遊び方はここで一度だけ伝える**。
-/// 伝えるのは 3 つだけ: 筋トレでテストステロンパワーが貯まること、それが遠征の燃料になること、
+/// 伝えるのは 4 つだけ: 筋トレでテストステロンパワーが貯まること、それが遠征の燃料になること、
+/// 床の物は拾えること、キャラを押すとからだが見られること。
 /// そして強くなるのは現実のトレーニングだけであること。
 ///
 /// 表示は 1 回きり（`hasSeenKey`）。設定に出すほどのものではないので、再表示の導線は持たない。
@@ -45,6 +46,12 @@ struct CharacterOnboardingSheet: View {
                     accent: Color(hexF: 0xE8563F),
                     title: "床に落ちた物はなぞって拾える",
                     detail: "前の週に目標を達成していると、落ちやすくなる"
+                )
+                row(
+                    sprite: PixelCharacterArt.mirror,
+                    accent: Theme.series2,
+                    title: "キャラをタップするとからだが見られる",
+                    detail: "今週どこを鍛えたか、どこが回復したかが人体図で分かる"
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)

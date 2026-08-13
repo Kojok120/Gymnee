@@ -10,7 +10,7 @@ struct SettingsView: View {
     @Environment(HealthKitService.self) private var health
     @Environment(AppErrorCenter.self) private var errors
     @Environment(NotificationService.self) private var notifications
-    @Environment(SubscriptionService.self) private var subscription
+    @Environment(StoreService.self) private var store
     @Environment(CalendarService.self) private var calendarService
     @Environment(GoogleCalendarService.self) private var googleCalendar
     @Environment(\.modelContext) private var context
@@ -21,6 +21,8 @@ struct SettingsView: View {
     @State private var browserURL: IdentifiableURL?
     /// CSV 書き出し結果（分析画面から移設）。
     @State private var csvURL: URL?
+    @State private var isRestoring = false
+    @State private var restoreMessage: String?
     /// ユーザーIDをコピーしたことの一時表示。
     @State private var copiedUserId = false
     /// フル再取得の実行中フラグ。
@@ -129,12 +131,6 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if coachMode.requiresSubscription && !subscription.isPremium {
-                    Label("「全部おまかせ」は有料プランの機能です（現在は課金未接続のため無料で試せます）",
-                          systemImage: "sparkles")
-                        .font(.caption)
-                        .foregroundStyle(Theme.warning)
-                }
             } header: {
                 Text("AIコーチ")
             } footer: {
@@ -251,6 +247,36 @@ struct SettingsView: View {
                 Text("同期")
             } footer: {
                 Text("記録はサーバーにも保存されます。手元の表示が実際より少ないときは「サーバーから全部取り直す」を押してください。")
+            }
+
+            // 非消耗型（見た目）の復元導線。Apple は復元手段を必須にするので、
+            // 審査担当者が最初に探すこの場所に置く（レビューノートにもこのパスを書く）。
+            Section {
+                Button {
+                    Task { await restorePurchases() }
+                } label: {
+                    HStack {
+                        Label("購入を復元", systemImage: "arrow.clockwise")
+                        Spacer()
+                        if isRestoring { ProgressView() }
+                    }
+                }
+                .tint(.primary)
+                .disabled(isRestoring)
+
+                if let restoreMessage {
+                    Text(restoreMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                #if DEBUG
+                Toggle("（開発）見た目を全部解錠", isOn: Bindable(store).debugUnlockAll)
+                #endif
+            } header: {
+                Text("購入")
+            } footer: {
+                Text("購入した見た目は Apple ID に紐づきます。機種変更や再インストールのあとはここから復元してください。")
             }
 
             Section("データ") {
@@ -433,6 +459,19 @@ struct SettingsView: View {
         sync.enqueueBatch(changes)
     }
 
+    /// 購入の復元。結果を握り潰すと「復元しました」と嘘をつくことになるので、件数と失敗を出し分ける。
+    private func restorePurchases() async {
+        isRestoring = true
+        restoreMessage = nil
+        defer { isRestoring = false }
+        let outcome = await store.restore()
+        if case .failed = outcome {
+            errors.report(outcome.message)
+        } else {
+            restoreMessage = outcome.message
+        }
+    }
+
     /// ローカルデータの全削除（§7 データ削除）。
     /// **`GymneeSchema` のモデルを 1 つ残らず消す**。消し漏れがあると「全部消した」と言いながら
     /// 会話や育成データが残る（実際に 9 型が漏れていた）。モデルを足したらここにも足すこと。
@@ -458,6 +497,7 @@ struct SettingsView: View {
         try? context.delete(model: ExpeditionRun.self)
         try? context.delete(model: CharacterLoadout.self)
         try? context.delete(model: CharacterStyle.self)
+        try? context.delete(model: PetState.self)
         try? context.delete(model: CoachMessage.self)
         try? context.delete(model: RoomPickupRecord.self)
         // 差分同期の基準も捨てる。残すと「消したのに次の同期で取り直さない」状態になる。

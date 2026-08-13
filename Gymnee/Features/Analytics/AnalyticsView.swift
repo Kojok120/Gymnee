@@ -76,7 +76,7 @@ struct AnalyticsView: View {
                 .padding(Theme.Spacing.lg)
         }
         .background(Theme.bg0)
-        .navigationTitle("分析")
+        .navigationTitle("からだ")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedMuscle) { muscle in
             MuscleDetailSheet(muscle: muscle, userId: userId,

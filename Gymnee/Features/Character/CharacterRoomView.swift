@@ -14,6 +14,8 @@ struct CharacterRoomView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(StoreService.self) private var store
+    @Environment(AppErrorCenter.self) private var errors
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
 
     @Query private var completedWorkouts: [Workout]
@@ -28,6 +30,8 @@ struct CharacterRoomView: View {
     @Query private var pickups: [RoomPickupRecord]
     /// 合トレ判定用：フォロー中の人の投稿（自分以外）。
     @Query private var feedItems: [FeedItem]
+    /// 連れているペット（`CharacterStyle` と同じく別モデル）。
+    @Query private var pets: [PetState]
 
     /// 受け取り演出中の戦利品（道中の出来事つき）。
     @State private var celebrating: ClaimResult?
@@ -53,6 +57,7 @@ struct CharacterRoomView: View {
         _quests = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone })
         _pickups = Query(filter: #Predicate<RoomPickupRecord> { $0.userId == userId })
         _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId != userId })
+        _pets = Query(filter: #Predicate<PetState> { $0.userId == userId })
     }
 
     /// 受け取り結果（祝福シートに渡す）。
@@ -64,7 +69,8 @@ struct CharacterRoomView: View {
     }
 
     enum SheetRoute: String, Identifiable {
-        case status, expedition, quest, outfit, skins, collection, coach
+        /// `body` はキャラ本体をタップしたときに開く人体図（旧「分析」タブ）。
+        case status, expedition, quest, outfit, skins, collection, coach, body
         var id: String { rawValue }
     }
 
@@ -105,7 +111,20 @@ struct CharacterRoomView: View {
 
     private var loadout: CharacterLoadout? { loadouts.first }
 
-    private var skin: CharacterSkin { SkinCatalog.skin(id: loadout?.skinId) }
+    /// いま着ている見た目。**所持で解決してから描く**。
+    /// 返金・失効・ファミリー共有の解除で所持が消えたら既定へ落ちるので、
+    /// 持っていないスキンや髪型を描き続けることがない（`CharacterOutfit.resolve` と同じ考え方）。
+    private var skin: CharacterSkin {
+        SkinCatalog.resolve(selected: loadout?.skinId, owned: ownedCosmeticIds)
+    }
+
+    private var hairStyleId: String {
+        PixelHairArt.resolveStyle(selected: style?.hairStyleId, owned: ownedCosmeticIds).id
+    }
+
+    private var accessoryId: String {
+        PixelHairArt.resolveAccessory(selected: style?.accessoryId, owned: ownedCosmeticIds).id
+    }
 
     private var equipped: [Expedition.Slot: Expedition.Item] {
         CharacterOutfit.resolve(loadout: loadout?.loadout ?? [:], owned: ownedItemIds)
@@ -259,10 +278,29 @@ struct CharacterRoomView: View {
                     .transition(.opacity)
             }
 
+            if showBodyTapHint {
+                bodyTapHint
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, hudHeight + bottomInset + Theme.Spacing.lg)
+            }
+
             hud(size: size, bottomInset: bottomInset)
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
+        // 部屋の中身は Canvas でヒットテストを持たず、操作は座標タップに依存している。
+        // そのままだと VoiceOver から人体図に一切たどり着けない（分析タブを畳んだので、
+        // ここが唯一の入口）。歩き回る相手を座標で追わせず、名前つきの操作として出す。
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "からだの状態を見る") {
+            bodyTapHinted = true
+            sheet = .body
+        }
+        .accessibilityActions {
+            if activePet != nil {
+                Button("ペットを撫でる") { petReaction.fire() }
+            }
+        }
         // タップとスワイプを 1 つのジェスチャで受ける。
         // スワイプ（Swoop）は指が通った先のグッズを**連続で**拾う。指を離すまでが 1 回の Swoop。
         .gesture(
@@ -282,25 +320,80 @@ struct CharacterRoomView: View {
         )
     }
 
-    /// 画面のタップ。キャラに当たっていれば反応させ、外していればコーチに喋ってもらう。
+    /// 画面のタップ。**手前にいるものから順に**判定する（描画の重なり順と揃える）。
+    ///
+    /// ペット＝撫でると喜ぶ、自分のキャラ＝「からだ」（人体図）を開く、外れ＝コーチが喋る。
+    /// 分身をタップして自分のからだの状態を見る、という結びつきで人体図を出し、
+    /// かわいい反応（ハート・音符・きらめき）はペットの役目にした。
     private func handleSceneTap(at location: CGPoint, size: CGSize, floorTop: CGFloat, floorBottom: CGFloat) {
         let dot = max(3, (size.width / 84).rounded())
-        let pose = CharacterScene.pose(at: Date.now.timeIntervalSince(startedAt), seed: selfSeed)
-        let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(pose.position.y))).rounded())
-        let feet = CGPoint(
-            x: size.width * CGFloat(pose.position.x),
-            y: floorTop + (floorBottom - floorTop) * CGFloat(pose.position.y)
-        )
-        let side = CGFloat(PixelCharacterArt.canvasHeight) * scaled
+        let elapsed = Date.now.timeIntervalSince(startedAt)
+        let isAway = activeRun?.isInProgress(asOf: .now) ?? false
 
-        if CharacterReaction.isHit(tap: location, feet: feet, size: side) {
-            tapCount += 1
-            reactionParticle = CharacterReaction.Particle.next(count: tapCount)
-            reactedAt = .now
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        } else {
-            speak()
+        func feet(_ position: CGPoint) -> CGPoint {
+            CGPoint(
+                x: size.width * CGFloat(position.x),
+                y: floorTop + (floorBottom - floorTop) * CGFloat(position.y)
+            )
         }
+        func scaled(_ y: Double) -> CGFloat {
+            max(2, (dot * CGFloat(CharacterScene.depthScale(y))).rounded())
+        }
+
+        let charPose = CharacterScene.pose(at: elapsed, seed: selfSeed)
+        let petPose = activePet.map {
+            PetScene.pose(at: elapsed, ownerSeed: selfSeed, seed: petSeed($0.id), ownerAway: isAway)
+        }
+
+        // ペットのほうが小さく、飼い主に重なることもあるので先に見る。
+        if let petPose, activePet != nil {
+            let side = CGFloat(PixelPetArt.canvasHeight) * scaled(Double(petPose.position.y))
+            if TapReaction.isHit(tap: location, feet: feet(petPose.position), size: side,
+                                 radiusRatio: TapReaction.petHitRadiusRatio) {
+                petReaction.fire()
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                return
+            }
+        }
+
+        let side = CGFloat(PixelCharacterArt.canvasHeight) * scaled(Double(charPose.position.y))
+        if !isAway, TapReaction.isHit(tap: location, feet: feet(charPose.position), size: side) {
+            // 押せたことが分かるよう触覚だけ返し、そのままシートを開く。
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            bodyTapHinted = true
+            sheet = .body
+            return
+        }
+
+        speak()
+    }
+
+    /// からだのヒントを出すか。キャラが遠征で不在のときは押す相手がいないので出さない。
+    private var showBodyTapHint: Bool {
+        guard !bodyTapHinted, bodyHintVisible, sheet == nil else { return false }
+        return !(activeRun?.isInProgress(asOf: .now) ?? false)
+    }
+
+    /// 「キャラを押すとからだが見られる」の一度きりの案内。
+    /// 図の上に重ねる `AnalyticsView` のヒントと同じ作りにして、押し方の説明は同じ見た目で統一する。
+    private var bodyTapHint: some View {
+        Label("キャラをタップすると、からだの状態が見られる", systemImage: "hand.tap.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Theme.bg1)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.textPrimary.opacity(0.88), in: Capsule())
+            .allowsHitTesting(false)
+            .transition(.opacity)
+            .task {
+                // 気づかれないまま出し続けない。押されたら AppStorage 側で恒久的に消える。
+                try? await Task.sleep(for: .seconds(8))
+                // `.task` はビューが消えると**キャンセルされるが sleep は例外を飲む**ので、
+                // ここで確認しないと「8秒待った」と同じ扱いで消してしまう。
+                // 案内が出て数秒でシートを開いただけで、そのセッション中は二度と出なくなる。
+                guard !Task.isCancelled else { return }
+                withAnimation(.snappy) { bodyHintVisible = false }
+            }
     }
 
     /// コーチの立ち位置（歩き回らず、部屋の決まった場所にいる）。
@@ -320,10 +413,14 @@ struct CharacterRoomView: View {
     @State private var coachPhase = CoachVisit.Phase.away
     @State private var coachPhaseSince = Date.now
 
-    /// キャラをタップした時刻と、そのとき浮かべる絵。
-    @State private var reactedAt: Date?
-    @State private var reactionParticle = CharacterReaction.Particle.heart
-    @State private var tapCount = 0
+    /// ペットを撫でた反応（対象ごとに 1 つ持つ）。
+    @State private var petReaction = TapReaction.State()
+
+    /// 「キャラを押すとからだが見られる」を一度だけ伝えるヒント。
+    /// 初回案内シートは既に見た人には二度と出ないので、部屋の中でも一度だけ出して取りこぼさない。
+    @AppStorage("gymnee.character.bodyTapHinted") private var bodyTapHinted = false
+    /// 押されないまま出しっぱなしにしない（数秒で引っ込める）。
+    @State private var bodyHintVisible = true
 
     /// 拾った直後に出す告知。
     @State private var collectedToast: RoomPickup.Item?
@@ -348,28 +445,25 @@ struct CharacterRoomView: View {
             carriesPack: activeRun?.isInProgress(asOf: .now) ?? false,
             nameTag: nil,
             role: .trainee,
-            hairStyleId: style?.hairStyleId ?? PixelHairArt.defaultStyleId,
-            accessoryId: style?.accessoryId ?? "none"
+            hairStyleId: hairStyleId,
+            accessoryId: accessoryId
         )
         let partners = Array(coopPartners.prefix(3))
         let started = startedAt
 
+        let pet = activePet
         return TimelineView(.animation) { timeline in
             Canvas { context, _ in
                 let elapsed = timeline.date.timeIntervalSince(started)
 
-                // 奥にいる者から描く（手前が上に重なる）。
-                var cast: [(pose: CharacterScene.Pose, look: PixelCharacterRenderer.Look)] = []
+                // 奥にいる者から描く（手前が上に重なる）。人とペットを同じ列に混ぜて
+                // y でまとめて並べ替える。別の Canvas に分けると前後関係が壊れる。
+                var cast: [RoomActor] = []
 
                 // 自分のキャラ。
                 // 遠征に出ている間は部屋にいない（不在そのものが「遠征中」の表示）。
                 // 送り出した直後だけ、ドアへ歩いて出ていく演出を挟む。
                 var selfPose = CharacterScene.pose(at: elapsed, seed: selfSeed)
-                let reactionElapsed = reactedAt.map { timeline.date.timeIntervalSince($0) }
-                if let reactionElapsed,
-                   let reacting = CharacterReaction.pose(base: selfPose, elapsed: reactionElapsed) {
-                    selfPose = reacting
-                }
 
                 let isAway = activeRun?.isInProgress(asOf: timeline.date) ?? false
                 let departing = departedAt.flatMap {
@@ -379,10 +473,10 @@ struct CharacterRoomView: View {
                     // 出発中はグッズを抱えていく。
                     var leaving = look
                     leaving.carriesPack = true
-                    cast.append((departing, leaving))
+                    cast.append(.person(departing, leaving))
                     selfPose = departing
                 } else if !isAway {
-                    cast.append((selfPose, look))
+                    cast.append(.person(selfPose, look))
                 }
 
                 // コーチ。用事があるときだけ歩いて入ってきて、済んだら歩いて帰る。
@@ -391,7 +485,7 @@ struct CharacterRoomView: View {
                     elapsed: timeline.date.timeIntervalSince(coachPhaseSince),
                     spot: Self.coachSpot
                 ) {
-                    cast.append((
+                    cast.append(.person(
                         coachPose,
                         PixelCharacterRenderer.Look(
                             build: PixelCharacterRenderer.coachBuild,
@@ -413,22 +507,38 @@ struct CharacterRoomView: View {
                     partnerLook.equipped = [:]
                     partnerLook.carriesPack = false
                     partnerLook.nameTag = partner.name
-                    cast.append((CharacterScene.pose(at: elapsed + offset, seed: seed), partnerLook))
+                    cast.append(.person(CharacterScene.pose(at: elapsed + offset, seed: seed), partnerLook))
                 }
 
-                for member in cast.sorted(by: { $0.pose.position.y < $1.pose.position.y }) {
-                    let pose = member.pose
-                    let frame = PixelCharacterLayout.frame(for: pose)
+                // ペット。飼い主の少し後ろについて回る（遠征中はドアの近くで留守番）。
+                if let pet {
+                    var petPose = PetScene.pose(
+                        at: elapsed, ownerSeed: selfSeed,
+                        seed: petSeed(pet.id), ownerAway: isAway
+                    )
+                    if let elapsedSinceTap = petReaction.elapsed(timeline.date),
+                       let reacting = PetScene.reactingPose(base: petPose, elapsed: elapsedSinceTap) {
+                        petPose = reacting
+                    }
+                    cast.append(.pet(petPose, pet))
+                }
+
+                for member in cast.sorted(by: { $0.depth < $1.depth }) {
                     let feet = CGPoint(
-                        x: size.width * CGFloat(pose.position.x),
-                        y: floorTop + (floorBottom - floorTop) * CGFloat(pose.position.y)
+                        x: size.width * CGFloat(member.position.x),
+                        y: floorTop + (floorBottom - floorTop) * CGFloat(member.position.y)
                     )
                     // 奥行きでドットの大きさを変える。整数倍に丸めてドットの格子を崩さない。
-                    let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(pose.position.y))).rounded())
-                    PixelCharacterRenderer.draw(
-                        in: &context, look: member.look, frame: frame,
-                        facing: pose.facing, feet: feet, dot: scaled
-                    )
+                    let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(member.depth))).rounded())
+                    switch member {
+                    case .person(let pose, let look):
+                        PixelCharacterRenderer.draw(
+                            in: &context, look: look, frame: PixelCharacterLayout.frame(for: pose),
+                            facing: pose.facing, feet: feet, dot: scaled
+                        )
+                    case .pet(let pose, let pet):
+                        drawPet(in: &context, pose: pose, pet: pet, feet: feet, dot: scaled)
+                    }
                 }
 
                 // 出発中に抱えているグッズ。
@@ -450,27 +560,31 @@ struct CharacterRoomView: View {
                     )
                 }
 
-                // タップの返事。自分のキャラの頭上に、ハートや音符をふわっと浮かせる。
-                if let reactionElapsed,
-                   let progress = CharacterReaction.particleProgress(elapsed: reactionElapsed) {
-                    let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(selfPose.position.y))).rounded())
-                    let side = CGFloat(PixelCharacterArt.canvasHeight) * scaled
+                // 撫でた返事。ペットの頭上に、ハートや音符をふわっと浮かせる。
+                if let pet,
+                   let elapsedSinceTap = petReaction.elapsed(timeline.date),
+                   let progress = TapReaction.particleProgress(elapsed: elapsedSinceTap) {
+                    let petPose = PetScene.pose(
+                        at: elapsed, ownerSeed: selfSeed,
+                        seed: petSeed(pet.id), ownerAway: isAway
+                    )
+                    let scaled = max(2, (dot * CGFloat(CharacterScene.depthScale(petPose.position.y))).rounded())
+                    let side = CGFloat(PixelPetArt.canvasHeight) * scaled
                     let feet = CGPoint(
-                        x: size.width * CGFloat(selfPose.position.x),
-                        y: floorTop + (floorBottom - floorTop) * CGFloat(selfPose.position.y)
+                        x: size.width * CGFloat(petPose.position.x),
+                        y: floorTop + (floorBottom - floorTop) * CGFloat(petPose.position.y)
                     )
                     var palette = PixelPalette.neutral
-                    palette.accent = reactionParticle == .heart ? Color(hexF: 0xFF7B9C) : Theme.limeFill
-                    let sprite = reactionSprite
+                    palette.accent = petReaction.particle == .heart ? Color(hexF: 0xFF7B9C) : Theme.limeFill
                     context.drawPixels(
-                        sprite,
+                        Self.particleSprite(petReaction.particle),
                         at: CGPoint(
-                            x: (feet.x + side * 0.22).rounded(),
-                            y: (feet.y - side - side * CGFloat(CharacterReaction.particleRise(progress: progress))).rounded()
+                            x: (feet.x + side * 0.30).rounded(),
+                            y: (feet.y - side - side * CGFloat(TapReaction.particleRise(progress: progress))).rounded()
                         ),
                         dot: scaled,
                         palette: palette,
-                        opacity: CharacterReaction.particleOpacity(progress: progress)
+                        opacity: TapReaction.particleOpacity(progress: progress)
                     )
                 }
             }
@@ -480,11 +594,68 @@ struct CharacterRoomView: View {
         .frame(width: size.width, height: size.height)
     }
 
+    /// 部屋に立つもの。人とペットを 1 本の列に混ぜて、y でまとめて前後を決めるための入れ物。
+    private enum RoomActor {
+        case person(CharacterScene.Pose, PixelCharacterRenderer.Look)
+        case pet(PetScene.Pose, PetCatalog.Pet)
+
+        /// 並べ替えと拡大率に使う奥行き（0＝奥 / 1＝手前）。
+        var depth: Double {
+            switch self {
+            case .person(let pose, _): return Double(pose.position.y)
+            case .pet(let pose, _): return Double(pose.position.y)
+            }
+        }
+
+        var position: CGPoint {
+            switch self {
+            case .person(let pose, _): return pose.position
+            case .pet(let pose, _): return pose.position
+            }
+        }
+    }
+
     /// 自分のキャラの歩き方を決めるシード。人によって歩き回り方が変わる。
     private var selfSeed: UInt64 { DeterministicRandom.seed(from: userId) }
 
-    private var reactionSprite: PixelSprite {
-        switch reactionParticle {
+    /// ペット個体のシード。飼い主とずらして、まばたきや立ち位置が同期しないようにする。
+    private func petSeed(_ petId: String) -> UInt64 {
+        selfSeed &+ DeterministicRandom.seed(from: petId)
+    }
+
+    /// いま連れているペット。所持していないものは描かない（返金・失効で壊れた見た目を出さない）。
+    private var activePet: PetCatalog.Pet? {
+        PetCatalog.resolve(selected: pets.first?.petId, owned: ownedPetIds)
+    }
+
+    /// 所持しているペット。ペットにはレガシー付与が無い（1.4.1 で新設したため）ので StoreKit だけを見る。
+    private var ownedPetIds: Set<String> {
+        Set(PetCatalog.all.map(\.id).filter { isOwned(.pet, $0) })
+    }
+
+    /// ペット 1 匹を描く。歩きの弾みは整数ドットで上下させ、ドットの格子を崩さない。
+    private func drawPet(
+        in context: inout GraphicsContext,
+        pose: PetScene.Pose,
+        pet: PetCatalog.Pet,
+        feet: CGPoint,
+        dot: CGFloat
+    ) {
+        let sprite = PixelPetArt.sprite(petId: pet.id, facing: pose.facing, blink: pose.blink)
+        let origin = CGPoint(
+            x: (feet.x - CGFloat(PixelPetArt.canvasWidth) * dot / 2).rounded(),
+            y: (feet.y - CGFloat(PixelPetArt.canvasHeight) * dot - CGFloat(pose.bob) * dot).rounded()
+        )
+        context.drawPixels(
+            sprite, at: origin, dot: dot,
+            palette: PixelPetArt.palette(petId: pet.id),
+            flipped: pose.facing.isMirrored
+        )
+    }
+
+    /// 反応で浮かべる絵。
+    private static func particleSprite(_ particle: TapReaction.Particle) -> PixelSprite {
+        switch particle {
         case .heart: return PixelCharacterArt.heart
         case .note: return PixelCharacterArt.note
         case .sparkle: return PixelCharacterArt.sparkle
@@ -936,14 +1107,23 @@ struct CharacterRoomView: View {
                 stage: derived.stage,
                 equipped: equipped,
                 currentSkinId: skin.id,
-                currentHairId: style?.hairStyleId ?? PixelHairArt.defaultStyleId,
-                currentAccessoryId: style?.accessoryId ?? "none",
-                purchasedSkins: loadout?.purchasedSkins ?? [],
-                purchasedAppearances: style?.purchased ?? [],
+                currentHairId: hairStyleId,
+                currentAccessoryId: accessoryId,
+                currentPetId: pets.first?.petId ?? PetCatalog.noneId,
+                isOwned: { kind, id in isOwned(kind, id) },
+                priceText: { kind, id in priceText(kind, id) },
+                isStoreReachable: store.isStoreAvailable,
+                canPurchase: { kind, id in
+                    guard let entry = StoreCatalog.entry(kind: kind, contentID: id) else { return false }
+                    return store.isPurchasable(entry.productID)
+                },
                 onSelectSkin: { selectSkin($0) },
                 onSelectHair: { selectHair($0) },
                 onSelectAccessory: { selectAccessory($0) },
-                onPurchase: { purchaseAppearance($0) }
+                onSelectPet: { selectPet($0) },
+                onPurchase: { kind, id in await purchase(kind, id) },
+                onRestore: { await restorePurchases() },
+                onAppearReload: { await store.reloadProductsIfNeeded() }
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
@@ -951,6 +1131,16 @@ struct CharacterRoomView: View {
             QuestSheet(userId: userId) { sheet = .coach }
         case .coach:
             CoachChatView(userId: userId)
+        case .body:
+            // 自分の分身をタップして自分のからだを見る。旧「分析」タブの中身をそのまま持ってくる。
+            // AnalyticsView から開く部位詳細は自前の NavigationStack を持つ自己完結ビューなので、
+            // ここでの destination 宣言は要らない。
+            NavigationStack {
+                AnalyticsView(userId: userId)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) { Button("閉じる") { sheet = nil } }
+                    }
+            }
         }
     }
 
@@ -1207,31 +1397,84 @@ struct CharacterRoomView: View {
         try? context.save()
     }
 
-    /// 見た目の購入（スキン / 髪型 / アクセサリーを id で一括して扱う）。
-    /// **課金は未接続のダミー**で、押した時点で所持扱いにして即座に着せる。
-    private func purchaseAppearance(_ id: String) {
-        let state = ensureLoadout()
-        if let skin = SkinCatalog.all.first(where: { $0.id == id }) {
-            state.addPurchasedSkin(skin.id)
-            state.skinId = skin.id
-        } else if PixelHairArt.styles.contains(where: { $0.id == id }) {
-            let style = ensureStyle()
-            style.addPurchased(id)
-            style.hairStyleId = id
-        } else if PixelHairArt.accessories.contains(where: { $0.id == id }) {
-            let style = ensureStyle()
-            style.addPurchased(id)
-            style.accessoryId = id
-        }
+    /// 連れるペットを選ぶ（"none" で連れていない状態に戻す）。
+    private func selectPet(_ id: String) {
+        let state = ensurePetState()
+        state.petId = id
+        state.updatedAt = .now
         try? context.save()
     }
 
-    /// スキン購入。**課金は未接続のダミー**で、押した時点で所持扱いにする。
-    private func purchaseSkin(_ skin: CharacterSkin) {
-        let state = ensureLoadout()
-        state.addPurchasedSkin(skin.id)
-        state.skinId = skin.id
-        try? context.save()
+    /// ペットの保存先を必要になった時に作る。
+    private func ensurePetState() -> PetState {
+        if let existing = pets.first { return existing }
+        let created = PetState(userId: userId)
+        context.insert(created)
+        return created
+    }
+
+    // MARK: - 課金（見た目のみ・非消耗型）
+
+    /// 1.4.1 より前のダミー購入の名残。当時「購入」を押すとタダで所持扱いになっていた。
+    /// 書き込み口はもう無いので増えないが、当時のテスターから取り上げはしない。
+    /// 所持している見た目のコンテンツ id（スキン / 髪型 / アクセサリー）。
+    /// 無料のものは含まれないが、`isOwned(_:purchased:)` が無料を常に所持とみなすので問題ない。
+    private var ownedCosmeticIds: Set<String> {
+        var owned = legacyGrants
+        for entry in StoreCatalog.all where entry.kind != .pet {
+            if store.isOwned(entry.productID) { owned.insert(entry.contentID) }
+        }
+        return owned
+    }
+
+    private var legacyGrants: Set<String> {
+        (loadout?.purchasedSkins ?? []).union(style?.purchased ?? [])
+    }
+
+    /// 所持しているか。StoreKit の所持と、レガシー付与の和集合で見る。
+    private func isOwned(_ kind: StoreCatalog.Kind, _ contentID: String) -> Bool {
+        if legacyGrants.contains(contentID) { return true }
+        guard let entry = StoreCatalog.entry(kind: kind, contentID: contentID) else { return false }
+        return store.isOwned(entry.productID)
+    }
+
+    /// 表示価格。StoreKit から取れなければ控えの価格、日本以外では出さない
+    /// （円建ての控え価格を海外に見せると誤った価格提示になる）。
+    private func priceText(_ kind: StoreCatalog.Kind, _ contentID: String) -> String {
+        guard let entry = StoreCatalog.entry(kind: kind, contentID: contentID) else { return "—" }
+        if let price = store.displayPrice(for: entry.productID) { return price }
+        guard StoreCatalog.priceFallbackAllowed(regionCode: Locale.current.region?.identifier) else { return "—" }
+        return "\(entry.fallbackPrice)（参考）"
+    }
+
+    /// 見た目の購入。成功したら true（呼び出し側がそのまま着せる）。
+    private func purchase(_ kind: StoreCatalog.Kind, _ contentID: String) async -> Bool {
+        guard let entry = StoreCatalog.entry(kind: kind, contentID: contentID) else { return false }
+        switch await store.purchase(productID: entry.productID) {
+        case .purchased:
+            return true
+        case .cancelled:
+            return false
+        case .pending:
+            errors.report("購入の承認を待っています。承認されると反映されます。")
+            return false
+        case .unavailable:
+            errors.report("いまは購入できません。通信状況を確かめて、しばらくしてからお試しください。")
+            return false
+        case .failed(let reason):
+            errors.report("購入できませんでした。\(reason)")
+            return false
+        }
+    }
+
+    /// 購入の復元。結果の一言を返し、シートに出す（押しても何も出ないと成否が分からない）。
+    private func restorePurchases() async -> String? {
+        let outcome = await store.restore()
+        if case .failed = outcome {
+            errors.report(outcome.message)
+            return nil
+        }
+        return outcome.message
     }
 
     private var style: CharacterStyle? { styles.first }

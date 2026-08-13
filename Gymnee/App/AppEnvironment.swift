@@ -13,7 +13,7 @@ final class AppEnvironment {
     let health: HealthKitService
     let notifications: NotificationService
     let errors: AppErrorCenter
-    let subscription: SubscriptionService
+    let store: StoreService
     let calendar: CalendarService
     let googleCalendar: GoogleCalendarService
     let coach: CoachService
@@ -26,7 +26,7 @@ final class AppEnvironment {
         self.health = HealthKitService()
         self.notifications = NotificationService()
         self.errors = AppErrorCenter()
-        self.subscription = SubscriptionService()
+        self.store = StoreService()
         self.calendar = CalendarService()
         self.googleCalendar = GoogleCalendarService()
         self.coach = CoachService()

@@ -69,8 +69,15 @@ GymneeTests/                ドメインロジックのユニットテスト
 ## 検証ハーネス（DEBUG のみ）
 起動引数で画面ジャンプ・デモデータ投入が可能（製品ビルドには含まれない）：
 ```bash
-xcrun simctl launch <device> com.gymnee.app -gymneeDemo -gymneeScreen <name>
-# name: gym / checkin / workout / logger / profile / social / shop / analytics / body / share
+xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
+# name（RootView.debugScreen が正）:
+#   記録系   : record（=workout）/ logger / history / calendar / body / photos
+#   育成系   : character / character-tab / coach / appearance / appearance-color /
+#              appearance-accessory / appearance-pet
+#   ドット絵 : pixelart / pixelart-items / pixelart-room / pixelart-pets
+#   分析系   : analytics（からだ＝人体図）/ muscle
+#   ソーシャル: social / friends / composer / share / summary
+#   その他   : profile / shop / other / settings
 ```
 
 ## 本番化（バックエンド接続）

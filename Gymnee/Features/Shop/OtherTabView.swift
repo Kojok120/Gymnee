@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// 「その他」タブ（§5 ナビ）。プロフィール・カレンダー・ショップ・設定を大きなカードで選ぶ。
+/// 「その他」タブ（§5 ナビ）。プロフィール・ショップ・設定を大きなカードで選ぶ。
 ///
-/// タブは iOS の上限 5 本（超えると More に畳まれる）。記録 / 分析 / 育成 / ソーシャル を
-/// タブに置いた結果、カレンダーはここへ移した。外（記録のキャンセル・通知タップ）から開けるよう
+/// タブは iOS の上限 5 本（超えると More に畳まれる）。記録 / カレンダー / 育成 / ソーシャル を
+/// タブに置き、残りをここに集めている。外（在庫切れ通知のタップ）からショップを開けるよう
 /// ナビゲーションのパスは RootView が持ち、ここは受け取って使う。
 struct OtherTabView: View {
     let userId: UUID
@@ -12,9 +12,6 @@ struct OtherTabView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: Theme.Spacing.lg) {
-                NavigationLink(value: AppRoute.calendar) {
-                    card(title: "カレンダー", subtitle: "連続記録・週の目標・予定", icon: "calendar", tint: Theme.lime)
-                }
                 NavigationLink(value: AppRoute.profile) {
                     card(title: "プロフィール", subtitle: "実績・マイデータ・まとめ", icon: "person.crop.circle.fill", tint: Theme.warning)
                 }
