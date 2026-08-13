@@ -70,6 +70,7 @@ final class PetSceneTests: XCTestCase {
     }
 
     /// 歩いているときは向きが移動方向と一致する。
+    /// 飼い主と同じ `CharacterScene.facing(from:to:)` を通していることの回帰検知。
     func testFacingMatchesMovement() {
         var walked = false
         for t in stride(from: 0.0, through: 120.0, by: 0.4) {
@@ -77,6 +78,13 @@ final class PetSceneTests: XCTestCase {
             guard p.behavior == .walking else { continue }
             walked = true
             XCTAssertTrue((0..<1).contains(p.walkPhase))
+
+            // 実装と同じ「ひとつ前 → いま」で期待する向きを出す。
+            let before = pose(t - 0.25).position
+            XCTAssertEqual(
+                p.facing, CharacterScene.facing(from: before, to: p.position),
+                "時刻 \(t) で向きが移動方向と食い違う"
+            )
         }
         XCTAssertTrue(walked, "一度も歩かなかった")
     }

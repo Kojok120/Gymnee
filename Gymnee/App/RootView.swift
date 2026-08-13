@@ -208,7 +208,8 @@ struct RootView: View {
             canPurchase: { _, _ in true },
             onSelectSkin: { _ in }, onSelectHair: { _ in },
             onSelectAccessory: { _ in }, onSelectPet: { _ in },
-            onPurchase: { _, _ in false }, onRestore: {},
+            onPurchase: { _, _ in false }, onRestore: { nil },
+            onAppearReload: {},
             initialTab: tab
         )
     }

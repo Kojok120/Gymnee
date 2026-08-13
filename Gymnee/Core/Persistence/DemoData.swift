@@ -25,9 +25,23 @@ enum DebugSupport {
 }
 
 enum DemoData {
+    /// ペットを連れた状態を検証できるようにする（所持判定は DEBUG の全解錠で通る）。
+    @MainActor
+    private static func seedPetIfNeeded(_ context: ModelContext, userId: UUID) {
+        let existing = (try? context.fetchCount(
+            FetchDescriptor<PetState>(predicate: #Predicate { $0.userId == userId })
+        )) ?? 0
+        guard existing == 0 else { return }
+        context.insert(PetState(userId: userId, petId: "shiba"))
+    }
+
     /// デモワークアウトを冪等に投入する。
     @MainActor
     static func seedIfNeeded(_ context: ModelContext, userId: UUID) {
+        // ペットは**ワークアウトの有無と別に**入れる。下の guard の後ろに置くと、
+        // すでにデモを流したシミュレータではいつまでもペットが出ず検証できない。
+        seedPetIfNeeded(context, userId: userId)
+
         let existing = (try? context.fetchCount(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId }))) ?? 0
         guard existing == 0 else { return }
 
@@ -36,9 +50,6 @@ enum DemoData {
 
         // フォローのデモ。
         context.insert(Follow(followerId: userId, followeeId: UUID(), followeeDisplayName: "ゆうき", isDirty: false))
-
-        // ペットを連れた状態を検証できるようにする（所持判定は DEBUG の全解錠で通る）。
-        context.insert(PetState(userId: userId, petId: "shiba"))
 
         // ベンチプレスの履歴（強度進捗・PRタイムライン用に複数セッション）。
         // ラットプルダウンも混ぜて完了種目を3種以上にする（「よくやる種目」セクションの表示検証用）。

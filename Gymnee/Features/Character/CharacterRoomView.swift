@@ -288,6 +288,19 @@ struct CharacterRoomView: View {
         }
         .frame(width: size.width, height: size.height)
         .contentShape(Rectangle())
+        // 部屋の中身は Canvas でヒットテストを持たず、操作は座標タップに依存している。
+        // そのままだと VoiceOver から人体図に一切たどり着けない（分析タブを畳んだので、
+        // ここが唯一の入口）。歩き回る相手を座標で追わせず、名前つきの操作として出す。
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "からだの状態を見る") {
+            bodyTapHinted = true
+            sheet = .body
+        }
+        .accessibilityActions {
+            if activePet != nil {
+                Button("ペットを撫でる") { petReaction.fire() }
+            }
+        }
         // タップとスワイプを 1 つのジェスチャで受ける。
         // スワイプ（Swoop）は指が通った先のグッズを**連続で**拾う。指を離すまでが 1 回の Swoop。
         .gesture(
@@ -375,6 +388,10 @@ struct CharacterRoomView: View {
             .task {
                 // 気づかれないまま出し続けない。押されたら AppStorage 側で恒久的に消える。
                 try? await Task.sleep(for: .seconds(8))
+                // `.task` はビューが消えると**キャンセルされるが sleep は例外を飲む**ので、
+                // ここで確認しないと「8秒待った」と同じ扱いで消してしまう。
+                // 案内が出て数秒でシートを開いただけで、そのセッション中は二度と出なくなる。
+                guard !Task.isCancelled else { return }
                 withAnimation(.snappy) { bodyHintVisible = false }
             }
     }
@@ -1105,7 +1122,8 @@ struct CharacterRoomView: View {
                 onSelectAccessory: { selectAccessory($0) },
                 onSelectPet: { selectPet($0) },
                 onPurchase: { kind, id in await purchase(kind, id) },
-                onRestore: { await restorePurchases() }
+                onRestore: { await restorePurchases() },
+                onAppearReload: { await store.reloadProductsIfNeeded() }
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
@@ -1449,13 +1467,14 @@ struct CharacterRoomView: View {
         }
     }
 
-    private func restorePurchases() async {
-        switch await store.restore() {
-        case .restored, .nothingToRestore:
-            break
-        case .failed(let reason):
-            errors.report("購入を復元できませんでした。\(reason)")
+    /// 購入の復元。結果の一言を返し、シートに出す（押しても何も出ないと成否が分からない）。
+    private func restorePurchases() async -> String? {
+        let outcome = await store.restore()
+        if case .failed = outcome {
+            errors.report(outcome.message)
+            return nil
         }
+        return outcome.message
     }
 
     private var style: CharacterStyle? { styles.first }

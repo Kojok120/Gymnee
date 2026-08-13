@@ -35,7 +35,11 @@ struct AppearanceSheet: View {
     let onSelectPet: (String) -> Void
     /// 購入。成功したら true。
     let onPurchase: (StoreCatalog.Kind, String) async -> Bool
-    let onRestore: () async -> Void
+    /// 復元。画面に出す一言を返す（nil なら何も出さない）。
+    let onRestore: () async -> String?
+
+    /// 画面を開いたときの商品取り直し。
+    let onAppearReload: () async -> Void
 
     /// 最初に開くタブ。既定は髪型。DEBUG ハーネス（審査用スクリーンショットの撮影）で切り替える。
     var initialTab: Tab = .hair
@@ -45,6 +49,7 @@ struct AppearanceSheet: View {
     /// 購入処理中の product id。押している間は一覧全体を触れなくする。
     @State private var purchasing: String?
     @State private var isRestoring = false
+    @State private var restoreMessage: String?
 
     enum Tab: String, CaseIterable, Identifiable {
         case color, hair, accessory, pet
@@ -96,7 +101,7 @@ struct AppearanceSheet: View {
                         Button {
                             Task {
                                 isRestoring = true
-                                await onRestore()
+                                restoreMessage = await onRestore()
                                 isRestoring = false
                             }
                         } label: {
@@ -105,6 +110,15 @@ struct AppearanceSheet: View {
                         .buttonStyle(.gymneeSecondary)
                         .disabled(isRestoring)
                         .padding(.top, Theme.Spacing.xs)
+
+                        // 押しても何も出ないと、成功したのか失敗したのか分からない。
+                        // 設定の「購入を復元」と同じ文言を出す。
+                        if let restoreMessage {
+                            Text(restoreMessage)
+                                .font(.caption2)
+                                .foregroundStyle(Theme.textSecondary)
+                                .multilineTextAlignment(.center)
+                        }
 
                         Text("購入した見た目は Apple ID に紐づきます。")
                             .font(.caption2)
@@ -118,6 +132,8 @@ struct AppearanceSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完了") { dismiss() } } }
             .onAppear { tab = initialTab }
+            // 起動時にオフラインだと商品が空のままなので、開いたときに取り直す。
+            .task { await onAppearReload() }
         }
     }
 

@@ -464,13 +464,11 @@ struct SettingsView: View {
         isRestoring = true
         restoreMessage = nil
         defer { isRestoring = false }
-        switch await store.restore() {
-        case .restored(let count):
-            restoreMessage = "\(count)件の購入を復元しました。"
-        case .nothingToRestore:
-            restoreMessage = "復元できる購入はありませんでした。"
-        case .failed(let reason):
-            errors.report("購入を復元できませんでした。\(reason)")
+        let outcome = await store.restore()
+        if case .failed = outcome {
+            errors.report(outcome.message)
+        } else {
+            restoreMessage = outcome.message
         }
     }
 

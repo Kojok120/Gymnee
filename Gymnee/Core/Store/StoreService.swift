@@ -68,6 +68,16 @@ final class StoreService {
             .sorted { $0.price < $1.price }
     }
 
+    /// 商品が取れていなければ取り直す。
+    ///
+    /// 取得は起動時に 1 回だけなので、そのときオフラインだと再起動するまで購入できない。
+    /// 「しばらくしてからお試しください」と案内しておきながら、待っても状態が変わらないのは嘘になる。
+    /// 購入画面を開いたときに呼んで、その場で回復させる。
+    func reloadProductsIfNeeded() async {
+        guard !isStoreAvailable, !isLoading else { return }
+        await loadProducts()
+    }
+
     /// 起動時などの所持同期。空の読み取りは「持っていない」とは限らないので前回値を残す
     /// （`StoreCatalog.mergeOwned` 参照）。
     func refreshEntitlements() async {
@@ -155,7 +165,7 @@ final class StoreService {
         // 同期した直後の読み取りが答え。件数を古いキャッシュから数えない。
         let owned = await readEntitlements(keepingPreviousWhenEmpty: false)
         let count = owned.filter { StoreCatalog.entry(productID: $0) != nil }.count
-        return count > 0 ? .restored(count: count) : .nothingToRestore
+        return count > 0 ? .restored(owned: count) : .nothingToRestore
     }
 
     #if DEBUG
@@ -180,7 +190,18 @@ enum PurchaseOutcome: Equatable, Sendable {
 }
 
 enum RestoreOutcome: Equatable, Sendable {
-    case restored(count: Int)
+    /// 復元後に**所持として確認できた件数**。この操作で増えた差分ではない
+    /// （StoreKit の復元は全部を戻すもので、増分は取れない）。文言もそれに合わせる。
+    case restored(owned: Int)
     case nothingToRestore
     case failed(String)
+
+    /// 画面に出す一言。設定と見た目シートで同じ文言を使う。
+    var message: String {
+        switch self {
+        case .restored(let owned): return "\(owned)件の購入が確認できました。"
+        case .nothingToRestore: return "復元できる購入はありませんでした。"
+        case .failed(let reason): return "購入を復元できませんでした。\(reason)"
+        }
+    }
 }
