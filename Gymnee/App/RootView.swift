@@ -160,25 +160,13 @@ struct RootView: View {
         // ドット絵の一覧。絵を足したり直したりしたとき、崩れをスクショ 1 枚で確認する用。
         // コーチとのチャット（部屋でコーチをタップしたときに出るもの）。
         case "coach": CoachChatView(userId: userId)
-        // 見た目シート（色 / 髪型 / アクセサリー）。部屋から開くのと同じもの。
-        case "appearance":
-            AppearanceSheet(
-                build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
-                stage: .challenger,
-                equipped: [:],
-                currentSkinId: SkinCatalog.defaultSkinId,
-                currentHairId: PixelHairArt.defaultStyleId,
-                currentAccessoryId: "glasses",
-                currentPetId: PetCatalog.noneId,
-                isOwned: { _, _ in false },
-                priceText: { kind, id in
-                    StoreCatalog.entry(kind: kind, contentID: id)?.fallbackPrice ?? "—"
-                },
-                canPurchase: true,
-                onSelectSkin: { _ in }, onSelectHair: { _ in },
-                onSelectAccessory: { _ in }, onSelectPet: { _ in },
-                onPurchase: { _, _ in false }, onRestore: {}
-            )
+        // 見た目シート（色 / 髪型 / アクセ / ペット）。部屋から開くのと同じもの。
+        // タブ指定つきは IAP の審査用スクリーンショットを撮るために使う
+        // （`-gymneeScreen appearance-pet` など。1 商品につき 1 枚が必要）。
+        case "appearance": debugAppearanceSheet(tab: .hair)
+        case "appearance-color": debugAppearanceSheet(tab: .color)
+        case "appearance-accessory": debugAppearanceSheet(tab: .accessory)
+        case "appearance-pet": debugAppearanceSheet(tab: .pet)
         case "pixelart": PixelArtGallery(section: .character)
         case "pixelart-items": PixelArtGallery(section: .items)
         case "pixelart-room": PixelArtGallery(section: .room)
@@ -199,6 +187,29 @@ struct RootView: View {
             }
         default: mainTabs
         }
+    }
+
+    /// 見た目シートのハーネス。所持ゼロ・価格は控えの値で、購入できる状態の見え方を確認する。
+    @ViewBuilder
+    private func debugAppearanceSheet(tab: AppearanceSheet.Tab) -> some View {
+        AppearanceSheet(
+            build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
+            stage: .challenger,
+            equipped: [:],
+            currentSkinId: SkinCatalog.defaultSkinId,
+            currentHairId: PixelHairArt.defaultStyleId,
+            currentAccessoryId: "glasses",
+            currentPetId: PetCatalog.noneId,
+            isOwned: { _, _ in false },
+            priceText: { kind, id in
+                StoreCatalog.entry(kind: kind, contentID: id)?.fallbackPrice ?? "—"
+            },
+            canPurchase: true,
+            onSelectSkin: { _ in }, onSelectHair: { _ in },
+            onSelectAccessory: { _ in }, onSelectPet: { _ in },
+            onPurchase: { _, _ in false }, onRestore: {},
+            initialTab: tab
+        )
     }
 
     /// composer ハーネス用：最新完了ワークアウトのフィード項目。

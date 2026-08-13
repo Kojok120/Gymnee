@@ -34,6 +34,9 @@ struct AppearanceSheet: View {
     let onPurchase: (StoreCatalog.Kind, String) async -> Bool
     let onRestore: () async -> Void
 
+    /// 最初に開くタブ。既定は髪型。DEBUG ハーネス（審査用スクリーンショットの撮影）で切り替える。
+    var initialTab: Tab = .hair
+
     @Environment(\.dismiss) private var dismiss
     @State private var tab = Tab.hair
     /// 購入処理中の product id。押している間は一覧全体を触れなくする。
@@ -111,6 +114,7 @@ struct AppearanceSheet: View {
             .navigationTitle("見た目")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完了") { dismiss() } } }
+            .onAppear { tab = initialTab }
         }
     }
 
