@@ -160,6 +160,8 @@ struct CharacterRoomView: View {
         }
         .onAppear {
             refresh()
+            // 集計を作り直したあとで見る（差分の「後」は derived を使う）。
+            presentCelebrationIfNeeded()
             startedAt = .now
             // 用事があれば、開いてすぐコーチが歩いて入ってくる。
             updateCoachPresence()
@@ -171,7 +173,15 @@ struct CharacterRoomView: View {
         }
         .onChange(of: signature) { _, _ in
             refresh()
+            // 記録タブで完了 → 育成タブへ、の順で来ると @Query の反映が onAppear より後になる。
+            // 記録が増えたこのタイミングでも見て、取りこぼさない。
+            presentCelebrationIfNeeded()
             updateCoachPresence()
+        }
+        // タブは一度開くと生き続けるので、記録タブが鍵を書いた時点では
+        // この画面の onAppear が走らないことがある。値の変化そのものを見る。
+        .onChange(of: pendingCelebrationId) { _, _ in
+            presentCelebrationIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
             // バックグラウンドから戻ったら時間を巻き戻さない（歩いている途中から続く）。
@@ -191,6 +201,17 @@ struct CharacterRoomView: View {
         }
         .sheet(item: $celebrating) { result in
             RewardCelebrationView(result: result)
+        }
+        .sheet(item: $celebratingGain) { gain in
+            GrowthCelebrationSheet(
+                gain: gain,
+                look: PixelCharacterRenderer.Look(
+                    build: derived.build, skin: skin, equipped: equipped, stage: derived.stage,
+                    carriesPack: false, nameTag: nil, role: .trainee,
+                    hairStyleId: hairStyleId, accessoryId: accessoryId
+                ),
+                nextStage: derived.nextStage
+            )
         }
         .sheet(item: $sheet) { route in
             sheetContent(route)
@@ -415,6 +436,11 @@ struct CharacterRoomView: View {
 
     /// ペットを撫でた反応（対象ごとに 1 つ持つ）。
     @State private var petReaction = TapReaction.State()
+
+    /// 記録を終えた直後に出す「この 1 回で何が育ったか」。
+    /// 記録タブが完了ワークアウトの id をここに置き、育成タブに来たときに消費する。
+    @AppStorage(WorkoutGrowth.Pending.key) private var pendingCelebrationId = ""
+    @State private var celebratingGain: WorkoutGrowth.Gain?
 
     /// 「キャラを押すとからだが見られる」を一度だけ伝えるヒント。
     /// 初回案内シートは既に見た人には二度と出ないので、部屋の中でも一度だけ出して取りこぼさない。
@@ -1142,6 +1168,57 @@ struct CharacterRoomView: View {
                     }
             }
         }
+    }
+
+    // MARK: - 完了直後の祝い
+
+    /// 記録を終えて育成タブに来たら、その 1 回で何が育ったかを出す。
+    ///
+    /// 差分は「その回を**除いた**状態」を同じ式で組み直して取る。EXP だけ引き算すると、
+    /// 進化の条件（レベル・自己ベスト数・連続週）が絡んだときに前の段階を誤る。
+    private func presentCelebrationIfNeeded() {
+        guard !pendingCelebrationId.isEmpty else { return }
+        guard let id = UUID(uuidString: pendingCelebrationId) else {
+            pendingCelebrationId = ""
+            return
+        }
+        // 一度出したら消す。計算に失敗しても残さない（毎回開くたびに出てしまう）。
+        pendingCelebrationId = ""
+        guard let workout = completedWorkouts.first(where: { $0.id == id }) else { return }
+
+        let prCountByWorkout = CharacterInputs.prCountByWorkout(records)
+        let collectedIds = pickups.map(\.itemId)
+        let pickupBonus = RoomPickup.totalExperience(collectedItemIds: collectedIds)
+
+        let before = completedWorkouts.filter { $0.id != id }
+        let beforeSessions = CharacterInputs.sessions(from: before, prCountByWorkout: prCountByWorkout)
+        let beforeLevel = CharacterProgress.level(
+            totalExperience: CharacterProgress.totalExperience(sessions: beforeSessions, pickupBonus: pickupBonus)
+        )
+        let beforePRCount = records.filter { $0.workoutId != id }.count
+        let beforeStreak = StreakCalculator.currentWeeklyStreak(
+            activeDays: before.map { $0.completedAt ?? $0.date }, weeklyGoal: weeklyGoal
+        )
+        let beforeStage = CharacterProgress.stage(
+            level: beforeLevel.value, prCount: beforePRCount, weeklyStreakWeeks: beforeStreak.weeks
+        )
+
+        // この 1 回ぶんの入力（EXP とパワーは同じ式から取る）。
+        let sessions = CharacterInputs.sessions(from: [workout], prCountByWorkout: prCountByWorkout)
+        guard let session = sessions.first else { return }
+
+        celebratingGain = WorkoutGrowth.Gain(
+            exp: CharacterProgress.experience(for: session),
+            energy: Expedition.energyEarned(for: session),
+            levelBefore: beforeLevel,
+            levelAfter: derived.level,
+            stageBefore: beforeStage,
+            stageAfter: derived.stage,
+            muscles: WorkoutGrowth.muscleShares(
+                volumeByMuscle: CharacterInputs.volumeByMuscle(from: [workout])
+            ),
+            prCount: session.prCount
+        )
     }
 
     // MARK: - 集計

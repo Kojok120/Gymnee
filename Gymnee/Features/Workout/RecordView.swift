@@ -282,6 +282,8 @@ struct RecordContent: View {
     /// @State の値型辞書ではなく参照型に持つ（identity 不変＝ビュー更新を誘発しない）。
     @State private var centersCache = CentersCache()
     @State private var showSummary = false
+    /// サマリーを閉じたあと、育成タブで結果を出す対象。
+    @State private var celebratedWorkoutId: UUID?
     @State private var editingExercise: Exercise?
     @State private var editingSet: ExerciseSet?
     /// 編集シートの「このセットを削除」の遅延実行先。シートが完全に閉じてから削除する
@@ -420,7 +422,7 @@ struct RecordContent: View {
         // 完了サマリーはシートではなく全画面で出す。セッションの終着点であって
         // 「記録画面の上に重なった一時的なカード」ではないため（背後に記録画面が見えていると
         // まだ続けられそうに読める）。閉じると endSession でゲートに戻る。
-        .fullScreenCover(isPresented: $showSummary, onDismiss: { endSession() }) {
+        .fullScreenCover(isPresented: $showSummary, onDismiss: { finishSummary() }) {
             if let w = activeWorkout {
                 WorkoutSummaryView(
                     workout: w,
@@ -428,7 +430,12 @@ struct RecordContent: View {
                     weeklyCount: weeklyActiveDays,
                     // 投稿は明示同意（fail-closed）。コンポーザで内容を確認してから公開する。
                     postEntry: summaryPostEntry(w),
-                    onClose: { showSummary = false }
+                    onClose: {
+                        // 閉じたら育成タブで「この1回が育成にどう効いたか」を出す。
+                        // タブ切替をまたぐので、対象は保存値で渡す（切替の順序に依存させない）。
+                        celebratedWorkoutId = w.id
+                        showSummary = false
+                    }
                 )
             }
         }
@@ -1192,6 +1199,18 @@ struct RecordContent: View {
         NotificationCenter.default.post(name: .gymneeShowCalendar, object: nil)
         // タブ起点（チェックイン/計画開始）はゲートへ戻す。カレンダーからの過去編集 push は閉じる。
         if let onEnd { onEnd() } else { dismiss() }
+    }
+
+    /// 完了サマリーを閉じたあとの後始末。
+    ///
+    /// セッションを畳んでから育成タブへ送る。順番が逆だと、記録画面が畳まれる前に
+    /// タブが切り替わってしまい、戻ってきたときに記録が続いているように見える。
+    private func finishSummary() {
+        endSession()
+        guard let id = celebratedWorkoutId else { return }
+        celebratedWorkoutId = nil
+        UserDefaults.standard.set(id.uuidString, forKey: WorkoutGrowth.Pending.key)
+        NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
     }
 
     private func endSession() {
