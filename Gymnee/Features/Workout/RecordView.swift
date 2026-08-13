@@ -1152,51 +1152,26 @@ struct RecordContent: View {
         // ボタン（publishConsented）を押した時だけ。押さなければ feed_item は存在せず＝非公開。
         showSummary = true
     }
-
-    /// 完了処理の**前**の育成の状態。祝いの「前」に使う。
-    private struct GrowthSnapshot {
-        let totalExperience: Int
-        let prCount: Int
-        let streakWeeks: Int
-    }
-
     /// 完了直後の状態と控えた「前」から、祝う内容を組み立てる。
-    private func growthGain(for workout: Workout, before: GrowthSnapshot) -> WorkoutGrowth.Gain {
-        let after = growthSnapshot(for: workout)
+    /// **判定そのものは `WorkoutGrowth.gain` に置く**。ここは SwiftData から値を集めるだけ。
+    private func growthGain(for workout: Workout, before: WorkoutGrowth.Snapshot) -> WorkoutGrowth.Gain {
         let wid = workout.id
         let records = (try? context.fetch(
             FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.workoutId == wid })
         )) ?? []
-        let sessions = CharacterInputs.sessions(
-            from: [workout], prCountByWorkout: [workout.id: records.count]
-        )
-        return WorkoutGrowth.Gain(
-            // 実際に増えた分をそのまま出す。この回の式から取り直すと、自己ベストを
-            // 更新しただけの回で「前の記録から移っただけの 120」を上乗せしてしまい、
-            // 伸びたバーの幅と数字が食い違う。
-            exp: max(0, after.totalExperience - before.totalExperience),
+        let sessions = CharacterInputs.sessions(from: [workout], prCountByWorkout: [wid: records.count])
+        return WorkoutGrowth.gain(
+            before: before,
+            after: growthSnapshot(for: workout),
             energy: sessions.first.map(Expedition.energyEarned) ?? 0,
-            levelBefore: CharacterProgress.level(totalExperience: before.totalExperience),
-            levelAfter: CharacterProgress.level(totalExperience: after.totalExperience),
-            stageBefore: CharacterProgress.stage(
-                level: CharacterProgress.level(totalExperience: before.totalExperience).value,
-                prCount: before.prCount, weeklyStreakWeeks: before.streakWeeks
-            ),
-            stageAfter: CharacterProgress.stage(
-                level: CharacterProgress.level(totalExperience: after.totalExperience).value,
-                prCount: after.prCount, weeklyStreakWeeks: after.streakWeeks
-            ),
-            muscles: WorkoutGrowth.muscleShares(
-                volumeByMuscle: CharacterInputs.volumeByMuscle(from: [workout])
-            ),
+            volumeByMuscle: CharacterInputs.volumeByMuscle(from: [workout]),
             prCount: records.count
         )
     }
 
     /// 育成の状態を取る。`finish()` の先頭で呼べば「この回を含まない」状態、
     /// 完了処理のあとで呼べば「含んだ」状態になる（`completedAt` の有無で決まる）。
-    /// 呼ぶのは `finish()` の先頭だけ（`completedAt` を立てる前なので、この回はまだ数えられていない）。
-    private func growthSnapshot(for workout: Workout) -> GrowthSnapshot {
+    private func growthSnapshot(for workout: Workout) -> WorkoutGrowth.Snapshot {
         let uid = userId
         let completed = (try? context.fetch(
             FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
@@ -1213,7 +1188,7 @@ struct RecordContent: View {
         let streak = StreakCalculator.currentWeeklyStreak(
             activeDays: completed.map { $0.completedAt ?? $0.date }, weeklyGoal: weeklyGoal
         )
-        return GrowthSnapshot(
+        return WorkoutGrowth.Snapshot(
             totalExperience: CharacterProgress.totalExperience(
                 sessions: sessions,
                 pickupBonus: RoomPickup.totalExperience(collectedItemIds: pickups.map(\.itemId))

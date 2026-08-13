@@ -172,15 +172,12 @@ struct RootView: View {
             CharacterRoomView(userId: userId)
                 .onAppear {
                     // レベルアップした回の見え方を確認する用の作り物。
-                    WorkoutGrowth.Pending.save(WorkoutGrowth.Gain(
-                        exp: 186, energy: 48,
-                        levelBefore: CharacterProgress.level(totalExperience: 380),
-                        levelAfter: CharacterProgress.level(totalExperience: 566),
-                        stageBefore: .rookie, stageAfter: .rookie,
-                        muscles: [
-                            .init(muscle: .chest, volumeKg: 4200),
-                            .init(muscle: .arms, volumeKg: 1800),
-                        ],
+                    // **本番と同じ純粋関数で組み立てる**（手で並べるとレベルと次段階がずれる）。
+                    WorkoutGrowth.Pending.save(WorkoutGrowth.gain(
+                        before: .init(totalExperience: 380, prCount: 0, streakWeeks: 1),
+                        after: .init(totalExperience: 566, prCount: 1, streakWeeks: 1),
+                        energy: 48,
+                        volumeByMuscle: [.chest: 4200, .arms: 1800],
                         prCount: 1
                     ))
                     NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
