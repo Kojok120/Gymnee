@@ -174,7 +174,14 @@ DEBUG 限定の検証ハーネス（製品ビルドには含まれない）:
 ```bash
 xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 # Debug ビルドの bundle id は .dev サフィックス付き（com.gymnee.app は Release）
-# name: gym / checkin / workout / logger / profile / social / shop / analytics / muscle / body / share / character
+# name（RootView.debugScreen が正）:
+#   記録系   : record（=workout）/ logger / history / calendar / body / photos
+#   育成系   : character / character-tab / coach / appearance / appearance-color /
+#              appearance-accessory / appearance-pet
+#   ドット絵 : pixelart / pixelart-items / pixelart-room / pixelart-pets
+#   分析系   : analytics（からだ＝人体図）/ muscle
+#   ソーシャル: social / friends / composer / share / summary
+#   その他   : profile / shop / other / settings
 ```
 
 ## 環境変数 / シークレット
