@@ -698,6 +698,12 @@ struct CharacterRoomView: View {
             .allowsHitTesting(false)
             .accessibilityElement()
             .accessibilityLabel("\(drop.item.name)が落ちています。なぞって拾えます")
+            // なぞる操作は VoiceOver では出せないので、拾う操作を名前つきで置く。
+            // これが無いと「拾えます」と読み上げるだけで、実際には拾えない。
+            .accessibilityAction(named: "拾う") {
+                collect(drop)
+                endSwoop()
+            }
         }
     }
 

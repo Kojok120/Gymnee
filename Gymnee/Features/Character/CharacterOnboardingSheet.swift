@@ -33,12 +33,12 @@ struct CharacterOnboardingSheet: View {
                     sprite: PixelCharacterArt.dumbbell,
                     accent: Color(hexF: 0xC6FF3D),
                     title: "筋トレするとテストステロンパワーが貯まります",
-                    detail: "記録した分だけ増えます。アプリの中で増やす方法はありません"
+                    detail: "記録した分だけ増えます。あとは床の拾い物で少し足せるだけです"
                 )
                 row(
                     sprite: PixelItemArt.course(id: "morning-hill"),
                     accent: Theme.info,
-                    title: "パワーを使って遠征に送り出す",
+                    title: "パワーを使って遠征に送り出せます",
                     detail: "ドアから出かけて、時間が経つとおみやげを持って帰ります"
                 )
                 row(
@@ -56,7 +56,7 @@ struct CharacterOnboardingSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("強くなるのは現実のトレーニングだけです。ここでは装備と見た目しか手に入りません。")
+            Text("強くなるのは現実のトレーニングだけです。ここで手に入るのは装備と見た目、それに少しのパワーだけです。")
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .multilineTextAlignment(.center)
