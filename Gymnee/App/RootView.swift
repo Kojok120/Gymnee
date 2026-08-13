@@ -167,6 +167,24 @@ struct RootView: View {
         case "appearance-color": debugAppearanceSheet(tab: .color)
         case "appearance-accessory": debugAppearanceSheet(tab: .accessory)
         case "appearance-pet": debugAppearanceSheet(tab: .pet)
+        // 完了直後の祝い（育成タブで出るもの）。デモの最新完了ワークアウトで組み立てる。
+        case "growth":
+            CharacterRoomView(userId: userId)
+                .onAppear {
+                    // レベルアップした回の見え方を確認する用の作り物。
+                    WorkoutGrowth.Pending.save(WorkoutGrowth.Gain(
+                        exp: 186, energy: 48,
+                        levelBefore: CharacterProgress.level(totalExperience: 380),
+                        levelAfter: CharacterProgress.level(totalExperience: 566),
+                        stageBefore: .rookie, stageAfter: .rookie,
+                        muscles: [
+                            .init(muscle: .chest, volumeKg: 4200),
+                            .init(muscle: .arms, volumeKg: 1800),
+                        ],
+                        prCount: 1
+                    ))
+                    NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
+                }
         case "pixelart": PixelArtGallery(section: .character)
         case "pixelart-items": PixelArtGallery(section: .items)
         case "pixelart-room": PixelArtGallery(section: .room)
@@ -308,6 +326,10 @@ struct RootView: View {
         // 記録のキャンセルからカレンダーへ。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCalendar)) { _ in
             selection = .calendar
+        }
+        // 記録の完了サマリーを閉じたら育成タブへ。育った本人の前で、この1回の結果を出す。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCharacter)) { _ in
+            selection = .character
         }
         // 計画/予定の「開始」から記録タブへ（RecordView 側が当該ワークアウトを再開する）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { _ in

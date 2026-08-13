@@ -282,6 +282,10 @@ struct RecordContent: View {
     /// @State の値型辞書ではなく参照型に持つ（identity 不変＝ビュー更新を誘発しない）。
     @State private var centersCache = CentersCache()
     @State private var showSummary = false
+    /// サマリーを閉じたあと、育成タブで出す内容（初回完了のときだけ入る）。
+    @State private var pendingGrowth: WorkoutGrowth.Gain?
+    /// 連続週の判定に使う週の目標（育成タブと同じ値を見る）。
+    @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @State private var editingExercise: Exercise?
     @State private var editingSet: ExerciseSet?
     /// 編集シートの「このセットを削除」の遅延実行先。シートが完全に閉じてから削除する
@@ -420,7 +424,7 @@ struct RecordContent: View {
         // 完了サマリーはシートではなく全画面で出す。セッションの終着点であって
         // 「記録画面の上に重なった一時的なカード」ではないため（背後に記録画面が見えていると
         // まだ続けられそうに読める）。閉じると endSession でゲートに戻る。
-        .fullScreenCover(isPresented: $showSummary, onDismiss: { endSession() }) {
+        .fullScreenCover(isPresented: $showSummary, onDismiss: { finishSummary() }) {
             if let w = activeWorkout {
                 WorkoutSummaryView(
                     workout: w,
@@ -1080,6 +1084,12 @@ struct RecordContent: View {
 
     private func finish() {
         guard let w = activeWorkout else { return }
+        // 育成の祝いは**初回完了だけ**。カレンダーから過去の記録を開いて直しただけの回で
+        // 「この1回でこれだけ育った」と出すと、伸びていない EXP を伸びたことにしてしまう。
+        //
+        // 「前」の状態はここで控える。完了処理（PR 確定）が走るとやり直せない
+        // （自己ベストの更新は行を増やさず workoutId を付け替えるため）。
+        let growthBefore = w.completedAt == nil ? growthSnapshot(for: w) : nil
         // セット0件の種目エントリは投稿/同期前に取り除く（記録ミスで残った空種目を「セットなし」で残さない）。
         for we in Array(w.exercises) where we.sets.isEmpty { context.delete(we) }
         // 初回完了のみ時刻を確定する（編集での再完了は既存の完了時刻・総合時間を保持）。
@@ -1134,9 +1144,83 @@ struct RecordContent: View {
             try? context.save()
         }
         restTimer.stop()
+        // 初回完了のときだけ、サマリーを閉じたあとの祝いを予約する。
+        // **ここで内容を確定させる**。サマリーを開いている間に別端末の記録が同期されると
+        // 累積値が動くので、あとから差分を取り直すとその分まで今回のぶんとして数えてしまう。
+        pendingGrowth = growthBefore.map { growthGain(for: w, before: $0) }
         // 完了時に feed_item は作らない（fail-closed）。公開はサマリーの「ソーシャルに投稿」
         // ボタン（publishConsented）を押した時だけ。押さなければ feed_item は存在せず＝非公開。
         showSummary = true
+    }
+
+    /// 完了処理の**前**の育成の状態。祝いの「前」に使う。
+    private struct GrowthSnapshot {
+        let totalExperience: Int
+        let prCount: Int
+        let streakWeeks: Int
+    }
+
+    /// 完了直後の状態と控えた「前」から、祝う内容を組み立てる。
+    private func growthGain(for workout: Workout, before: GrowthSnapshot) -> WorkoutGrowth.Gain {
+        let after = growthSnapshot(for: workout)
+        let wid = workout.id
+        let records = (try? context.fetch(
+            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.workoutId == wid })
+        )) ?? []
+        let sessions = CharacterInputs.sessions(
+            from: [workout], prCountByWorkout: [workout.id: records.count]
+        )
+        return WorkoutGrowth.Gain(
+            // 実際に増えた分をそのまま出す。この回の式から取り直すと、自己ベストを
+            // 更新しただけの回で「前の記録から移っただけの 120」を上乗せしてしまい、
+            // 伸びたバーの幅と数字が食い違う。
+            exp: max(0, after.totalExperience - before.totalExperience),
+            energy: sessions.first.map(Expedition.energyEarned) ?? 0,
+            levelBefore: CharacterProgress.level(totalExperience: before.totalExperience),
+            levelAfter: CharacterProgress.level(totalExperience: after.totalExperience),
+            stageBefore: CharacterProgress.stage(
+                level: CharacterProgress.level(totalExperience: before.totalExperience).value,
+                prCount: before.prCount, weeklyStreakWeeks: before.streakWeeks
+            ),
+            stageAfter: CharacterProgress.stage(
+                level: CharacterProgress.level(totalExperience: after.totalExperience).value,
+                prCount: after.prCount, weeklyStreakWeeks: after.streakWeeks
+            ),
+            muscles: WorkoutGrowth.muscleShares(
+                volumeByMuscle: CharacterInputs.volumeByMuscle(from: [workout])
+            ),
+            prCount: records.count
+        )
+    }
+
+    /// 育成の状態を取る。`finish()` の先頭で呼べば「この回を含まない」状態、
+    /// 完了処理のあとで呼べば「含んだ」状態になる（`completedAt` の有無で決まる）。
+    /// 呼ぶのは `finish()` の先頭だけ（`completedAt` を立てる前なので、この回はまだ数えられていない）。
+    private func growthSnapshot(for workout: Workout) -> GrowthSnapshot {
+        let uid = userId
+        let completed = (try? context.fetch(
+            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
+        )) ?? []
+        let records = (try? context.fetch(
+            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == uid })
+        )) ?? []
+        let pickups = (try? context.fetch(
+            FetchDescriptor<RoomPickupRecord>(predicate: #Predicate { $0.userId == uid })
+        )) ?? []
+        let sessions = CharacterInputs.sessions(
+            from: completed, prCountByWorkout: CharacterInputs.prCountByWorkout(records)
+        )
+        let streak = StreakCalculator.currentWeeklyStreak(
+            activeDays: completed.map { $0.completedAt ?? $0.date }, weeklyGoal: weeklyGoal
+        )
+        return GrowthSnapshot(
+            totalExperience: CharacterProgress.totalExperience(
+                sessions: sessions,
+                pickupBonus: RoomPickup.totalExperience(collectedItemIds: pickups.map(\.itemId))
+            ),
+            prCount: records.count,
+            streakWeeks: streak.weeks
+        )
     }
 
     /// サマリーの「ソーシャルに投稿」: このワークアウトと当日の最大重量 PR を公開範囲付きで発行する。
@@ -1192,6 +1276,20 @@ struct RecordContent: View {
         NotificationCenter.default.post(name: .gymneeShowCalendar, object: nil)
         // タブ起点（チェックイン/計画開始）はゲートへ戻す。カレンダーからの過去編集 push は閉じる。
         if let onEnd { onEnd() } else { dismiss() }
+    }
+
+    /// 完了サマリーを閉じたあとの後始末。
+    ///
+    /// セッションを畳んでから育成タブへ送る。順番が逆だと、記録画面が畳まれる前に
+    /// タブが切り替わってしまい、戻ってきたときに記録が続いているように見える。
+    private func finishSummary() {
+        endSession()
+        // 初回完了のときだけ育成タブへ送る（過去の記録を直しただけの回では祝わない）。
+        guard let gain = pendingGrowth else { return }
+        pendingGrowth = nil
+        // 時刻は渡すこの時点で打つ（サマリーを長く開いたままでも祝いが消えない）。
+        WorkoutGrowth.Pending.save(gain)
+        NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
     }
 
     private func endSession() {

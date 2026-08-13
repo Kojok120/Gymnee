@@ -79,6 +79,8 @@ struct CharacterRoomView: View {
     /// 画面が要る値をひとまとめにして 1 回で作る。
     struct Derived {
         var level = CharacterProgress.Level(value: 1, expIntoLevel: 0, expForNextLevel: 200)
+        /// 累積 EXP。完了直後の祝いで「この1回で実際に増えた分」を出すのに使う。
+        var totalExperience = 0
         var stage = CharacterProgress.Stage.rookie
         var nextStage: CharacterProgress.NextStage?
         var stats: [CharacterProgress.Axis: Int] = [:]
@@ -160,6 +162,8 @@ struct CharacterRoomView: View {
         }
         .onAppear {
             refresh()
+            // 集計を作り直したあとで見る（差分の「後」は derived を使う）。
+            takePendingCelebration()
             startedAt = .now
             // 用事があれば、開いてすぐコーチが歩いて入ってくる。
             updateCoachPresence()
@@ -171,7 +175,15 @@ struct CharacterRoomView: View {
         }
         .onChange(of: signature) { _, _ in
             refresh()
+            // 記録タブで完了 → 育成タブへ、の順で来ると @Query の反映が onAppear より後になる。
+            // 記録が増えたこのタイミングでも見て、取りこぼさない。
+            takePendingCelebration()
             updateCoachPresence()
+        }
+        // タブは一度開くと生き続けるので、記録タブが控えを書いた時点では
+        // この画面の onAppear が走らないことがある。切替の通知でも見る。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCharacter)) { _ in
+            takePendingCelebration()
         }
         .onChange(of: scenePhase) { _, phase in
             // バックグラウンドから戻ったら時間を巻き戻さない（歩いている途中から続く）。
@@ -191,6 +203,17 @@ struct CharacterRoomView: View {
         }
         .sheet(item: $celebrating) { result in
             RewardCelebrationView(result: result)
+        }
+        .sheet(item: $celebratingGain) { gain in
+            GrowthCelebrationSheet(
+                gain: gain,
+                look: PixelCharacterRenderer.Look(
+                    build: derived.build, skin: skin, equipped: equipped, stage: derived.stage,
+                    carriesPack: false, nameTag: nil, role: .trainee,
+                    hairStyleId: hairStyleId, accessoryId: accessoryId
+                ),
+                nextStage: derived.nextStage
+            )
         }
         .sheet(item: $sheet) { route in
             sheetContent(route)
@@ -415,6 +438,10 @@ struct CharacterRoomView: View {
 
     /// ペットを撫でた反応（対象ごとに 1 つ持つ）。
     @State private var petReaction = TapReaction.State()
+
+    /// 記録を終えた直後に出す「この 1 回で何が育ったか」。
+    /// 記録タブが完了処理の前の状態を保存し、育成タブに来たときに消費する。
+    @State private var celebratingGain: WorkoutGrowth.Gain?
 
     /// 「キャラを押すとからだが見られる」を一度だけ伝えるヒント。
     /// 初回案内シートは既に見た人には二度と出ないので、部屋の中でも一度だけ出して取りこぼさない。
@@ -1144,6 +1171,24 @@ struct CharacterRoomView: View {
         }
     }
 
+    // MARK: - 完了直後の祝い
+
+    /// 記録を終えて育成タブに来たら、その 1 回で何が育ったかを出す。
+    ///
+    /// 「前」は記録タブが**完了処理の前に控えた値**をそのまま使う（`WorkoutGrowth.Pending`）。
+    /// ここで「その回を除いた状態」を組み直してはいけない。自己ベストの更新は行を増やさず
+    /// 既存の `PersonalRecord.workoutId` を今回の id に付け替えるので、除外すると
+    /// 元々あった自己ベストごと消え、起きていないレベルアップや進化を祝ってしまう。
+    /// 控えがあれば取り出して祝う。取り出したら消える（毎回開くたびには出さない）。
+    ///
+    /// 内容は記録タブが完了した時点で確定させて保存している。ここでは組み立て直さない
+    /// （`WorkoutGrowth.Pending` 参照）。**ワークアウトを見に行かないので `@Query` の
+    /// 反映を待つ必要がなく、タブ切替の直後でも取りこぼさない**。
+    private func takePendingCelebration() {
+        guard celebratingGain == nil, let pending = WorkoutGrowth.Pending.take() else { return }
+        celebratingGain = pending.gain
+    }
+
     // MARK: - 集計
 
     /// 重い集計をまとめて 1 回で作る。`@Query` の中身が変わったときだけ呼ぶ。
@@ -1156,12 +1201,11 @@ struct CharacterRoomView: View {
         let streak = StreakCalculator.currentWeeklyStreak(activeDays: activeDays, weeklyGoal: weeklyGoal)
         // 拾ったグッズの分を合流させる（元気は燃料、EXP はレアのみ）。
         let collectedIds = pickups.map(\.itemId)
-        let level = CharacterProgress.level(
-            totalExperience: CharacterProgress.totalExperience(
-                sessions: sessions,
-                pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds)
-            )
+        let totalExperience = CharacterProgress.totalExperience(
+            sessions: sessions,
+            pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds)
         )
+        let level = CharacterProgress.level(totalExperience: totalExperience)
         let stats = CharacterProgress.stats(volumeByMuscle: CharacterInputs.volumeByMuscle(from: completedWorkouts))
         let stage = CharacterProgress.stage(
             level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
@@ -1172,6 +1216,7 @@ struct CharacterRoomView: View {
 
         var next = Derived()
         next.level = level
+        next.totalExperience = totalExperience
         next.stage = stage
         next.nextStage = CharacterProgress.nextStage(
             level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks

@@ -8,6 +8,9 @@ extension Notification.Name {
     static let gymneeShowCalendar = Notification.Name("gymnee.showCalendar")
     /// 計画/予定の「開始」から、記録タブで当該ワークアウトを開く要求（userInfo: workoutId）。
     static let gymneeStartWorkout = Notification.Name("gymnee.startWorkout")
+    /// 記録の完了サマリーを閉じたあと、育成タブへ切替える要求。
+    /// 「この1回が育成にどう効いたか」は育成タブ側で出す（キャラの前で説明する）。
+    static let gymneeShowCharacter = Notification.Name("gymnee.showCharacter")
     /// 通知タップ等から目的地（タブ）へ遷移する要求（userInfo: type/feedItemId）。
     static let gymneeOpenDestination = Notification.Name("gymnee.openDestination")
     /// Watch：本体から最新スナップショットを受信した。

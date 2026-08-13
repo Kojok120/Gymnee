@@ -72,8 +72,8 @@ GymneeTests/                ドメインロジックのユニットテスト
 xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 # name（RootView.debugScreen が正）:
 #   記録系   : record（=workout）/ logger / history / calendar / body / photos
-#   育成系   : character / character-tab / coach / appearance / appearance-color /
-#              appearance-accessory / appearance-pet
+#   育成系   : character / character-tab / coach / growth（完了直後の祝い）/
+#              appearance / appearance-color / appearance-accessory / appearance-pet
 #   ドット絵 : pixelart / pixelart-items / pixelart-room / pixelart-pets
 #   分析系   : analytics（からだ＝人体図）/ muscle
 #   ソーシャル: social / friends / composer / share / summary

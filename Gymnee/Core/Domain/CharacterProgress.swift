@@ -69,7 +69,7 @@ enum CharacterProgress {
 
     // MARK: - レベル
 
-    struct Level: Equatable, Sendable {
+    struct Level: Equatable, Sendable, Codable {
         /// 現在のレベル（1 始まり）。
         var value: Int
         /// 現在のレベル内で獲得済みの EXP。
@@ -110,7 +110,7 @@ enum CharacterProgress {
 
     // MARK: - 進化段階（節目で激変する層）
 
-    enum Stage: Int, CaseIterable, Sendable, Comparable {
+    enum Stage: Int, CaseIterable, Sendable, Comparable, Codable {
         case rookie = 0, trainee, challenger, veteran, champion, legend
 
         static func < (lhs: Stage, rhs: Stage) -> Bool { lhs.rawValue < rhs.rawValue }
