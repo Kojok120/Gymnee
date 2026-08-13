@@ -204,7 +204,8 @@ struct RootView: View {
             priceText: { kind, id in
                 StoreCatalog.entry(kind: kind, contentID: id)?.fallbackPrice ?? "—"
             },
-            canPurchase: true,
+            isStoreReachable: true,
+            canPurchase: { _, _ in true },
             onSelectSkin: { _ in }, onSelectHair: { _ in },
             onSelectAccessory: { _ in }, onSelectPet: { _ in },
             onPurchase: { _, _ in false }, onRestore: {},

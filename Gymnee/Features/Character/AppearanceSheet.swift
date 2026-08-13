@@ -23,8 +23,11 @@ struct AppearanceSheet: View {
     let isOwned: (StoreCatalog.Kind, String) -> Bool
     /// 表示価格。StoreKit から取れなければ控えの価格、それも出せなければ「—」。
     let priceText: (StoreCatalog.Kind, String) -> String
-    /// 商品を取得できているか。false のときは購入ボタンを出さない（審査通過前・オフライン）。
-    let canPurchase: Bool
+    /// ストアに繋がっているか。false のときだけ「いまは購入できません」を出す。
+    let isStoreReachable: Bool
+    /// **その商品を**買えるか。審査状態やストアフロントの対応は商品ごとに違うので、
+    /// 全体の可否ではなく 1 件ずつ見る（取れていない商品のボタンを押させない）。
+    let canPurchase: (StoreCatalog.Kind, String) -> Bool
 
     let onSelectSkin: (String) -> Void
     let onSelectHair: (String) -> Void
@@ -81,7 +84,7 @@ struct AppearanceSheet: View {
                             .multilineTextAlignment(.center)
                             .padding(.top, Theme.Spacing.md)
 
-                        if !canPurchase {
+                        if !isStoreReachable {
                             Label("いまは購入できません。通信状況を確かめて、しばらくしてからお試しください。",
                                   systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption2)
@@ -315,6 +318,7 @@ struct AppearanceSheet: View {
     ) -> some View {
         let productID = StoreCatalog.entry(kind: kind, contentID: id)?.productID
         let isPurchasing = purchasing != nil && purchasing == productID
+        let buyable = productID != nil && canPurchase(kind, id)
         return HStack(spacing: Theme.Spacing.md) {
             thumbnail()
             VStack(alignment: .leading, spacing: 2) {
@@ -342,9 +346,9 @@ struct AppearanceSheet: View {
                     }
                 }
                 .buttonStyle(.gymneeSecondary)
-                // 商品が取れていない／別の購入が進行中は押させない。
-                .disabled(!canPurchase || productID == nil || purchasing != nil)
-                .opacity(canPurchase && productID != nil ? 1 : 0.45)
+                // その商品が取れていない／別の購入が進行中は押させない。
+                .disabled(!buyable || purchasing != nil)
+                .opacity(buyable ? 1 : 0.45)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

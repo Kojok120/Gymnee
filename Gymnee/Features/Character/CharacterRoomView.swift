@@ -111,7 +111,20 @@ struct CharacterRoomView: View {
 
     private var loadout: CharacterLoadout? { loadouts.first }
 
-    private var skin: CharacterSkin { SkinCatalog.skin(id: loadout?.skinId) }
+    /// いま着ている見た目。**所持で解決してから描く**。
+    /// 返金・失効・ファミリー共有の解除で所持が消えたら既定へ落ちるので、
+    /// 持っていないスキンや髪型を描き続けることがない（`CharacterOutfit.resolve` と同じ考え方）。
+    private var skin: CharacterSkin {
+        SkinCatalog.resolve(selected: loadout?.skinId, owned: ownedCosmeticIds)
+    }
+
+    private var hairStyleId: String {
+        PixelHairArt.resolveStyle(selected: style?.hairStyleId, owned: ownedCosmeticIds).id
+    }
+
+    private var accessoryId: String {
+        PixelHairArt.resolveAccessory(selected: style?.accessoryId, owned: ownedCosmeticIds).id
+    }
 
     private var equipped: [Expedition.Slot: Expedition.Item] {
         CharacterOutfit.resolve(loadout: loadout?.loadout ?? [:], owned: ownedItemIds)
@@ -415,8 +428,8 @@ struct CharacterRoomView: View {
             carriesPack: activeRun?.isInProgress(asOf: .now) ?? false,
             nameTag: nil,
             role: .trainee,
-            hairStyleId: style?.hairStyleId ?? PixelHairArt.defaultStyleId,
-            accessoryId: style?.accessoryId ?? "none"
+            hairStyleId: hairStyleId,
+            accessoryId: accessoryId
         )
         let partners = Array(coopPartners.prefix(3))
         let started = startedAt
@@ -1077,12 +1090,16 @@ struct CharacterRoomView: View {
                 stage: derived.stage,
                 equipped: equipped,
                 currentSkinId: skin.id,
-                currentHairId: style?.hairStyleId ?? PixelHairArt.defaultStyleId,
-                currentAccessoryId: style?.accessoryId ?? "none",
+                currentHairId: hairStyleId,
+                currentAccessoryId: accessoryId,
                 currentPetId: pets.first?.petId ?? PetCatalog.noneId,
                 isOwned: { kind, id in isOwned(kind, id) },
                 priceText: { kind, id in priceText(kind, id) },
-                canPurchase: store.isStoreAvailable,
+                isStoreReachable: store.isStoreAvailable,
+                canPurchase: { kind, id in
+                    guard let entry = StoreCatalog.entry(kind: kind, contentID: id) else { return false }
+                    return store.isPurchasable(entry.productID)
+                },
                 onSelectSkin: { selectSkin($0) },
                 onSelectHair: { selectHair($0) },
                 onSelectAccessory: { selectAccessory($0) },
@@ -1382,6 +1399,16 @@ struct CharacterRoomView: View {
 
     /// 1.4.1 より前のダミー購入の名残。当時「購入」を押すとタダで所持扱いになっていた。
     /// 書き込み口はもう無いので増えないが、当時のテスターから取り上げはしない。
+    /// 所持している見た目のコンテンツ id（スキン / 髪型 / アクセサリー）。
+    /// 無料のものは含まれないが、`isOwned(_:purchased:)` が無料を常に所持とみなすので問題ない。
+    private var ownedCosmeticIds: Set<String> {
+        var owned = legacyGrants
+        for entry in StoreCatalog.all where entry.kind != .pet {
+            if store.isOwned(entry.productID) { owned.insert(entry.contentID) }
+        }
+        return owned
+    }
+
     private var legacyGrants: Set<String> {
         (loadout?.purchasedSkins ?? []).union(style?.purchased ?? [])
     }

@@ -27,9 +27,16 @@ final class StoreService {
     private(set) var ownedProductIDs: Set<String> = []
     private(set) var isLoading = false
 
-    /// 商品を取得できているか。false のときは購入ボタンを出さない
-    /// （審査通過前・オフライン・ストアフロント未対応で商品が空になる）。
+    /// ストアに繋がっているか。1 つも取れていなければ「いまは購入できません」を出す。
+    /// **個々のボタンの可否はこれで決めない**（`isPurchasable(_:)` を使う）。
     var isStoreAvailable: Bool { !products.isEmpty }
+
+    /// その商品を買えるか。**商品ごとに見る**。
+    /// 審査状態やストアフロントの対応は商品ごとに違うので、1 つ取れたことを根拠に
+    /// 全部のボタンを有効にすると、取れていない商品のボタンが押せてしまい必ず失敗する。
+    func isPurchasable(_ productID: String) -> Bool {
+        product(for: productID) != nil
+    }
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
 
@@ -61,16 +68,30 @@ final class StoreService {
             .sorted { $0.price < $1.price }
     }
 
+    /// 起動時などの所持同期。空の読み取りは「持っていない」とは限らないので前回値を残す
+    /// （`StoreCatalog.mergeOwned` 参照）。
     func refreshEntitlements() async {
+        await readEntitlements(keepingPreviousWhenEmpty: true)
+    }
+
+    /// 所持を読み直す。戻り値は**猶予を効かせていない実際の読み取り結果**。
+    ///
+    /// `keepingPreviousWhenEmpty` は起動時のためのもので、明示的な復元のあとには効かせない。
+    /// `AppStore.sync()` の直後は空も正しい答え（返金・別 Apple ID）なので、
+    /// そこで前回値を残すと「復元しました」と嘘をつき、失効した見た目も所持のまま残る。
+    @discardableResult
+    private func readEntitlements(keepingPreviousWhenEmpty: Bool) async -> Set<String> {
         var owned: Set<String> = []
         for await result in Transaction.currentEntitlements {
             if case .verified(let txn) = result, txn.revocationDate == nil {
                 owned.insert(txn.productID)
             }
         }
-        // 空の読み取りは「持っていない」とは限らない（`StoreCatalog.mergeOwned` 参照）。
-        ownedProductIDs = StoreCatalog.mergeOwned(previous: ownedProductIDs, latest: owned)
+        ownedProductIDs = keepingPreviousWhenEmpty
+            ? StoreCatalog.mergeOwned(previous: ownedProductIDs, latest: owned)
+            : owned
         UserDefaults.standard.set(Array(ownedProductIDs), forKey: Self.ownedCacheKey)
+        return owned
     }
 
     /// 所持しているか。
@@ -131,8 +152,9 @@ final class StoreService {
         } catch {
             return .failed(error.localizedDescription)
         }
-        await refreshEntitlements()
-        let count = ownedProductIDs.filter { StoreCatalog.entry(productID: $0) != nil }.count
+        // 同期した直後の読み取りが答え。件数を古いキャッシュから数えない。
+        let owned = await readEntitlements(keepingPreviousWhenEmpty: false)
+        let count = owned.filter { StoreCatalog.entry(productID: $0) != nil }.count
         return count > 0 ? .restored(count: count) : .nothingToRestore
     }
 

@@ -44,12 +44,28 @@ enum LocalDataMigrator {
             }
         }
 
+        // 連れているペットも端末ローカル専用。付け替えないと、ゲストのうちに選んだペットが
+        // サインイン後に見えなくなる（所持は StoreKit が正なので消えはしないが、連れ歩かなくなる）。
+        // **ローカル専用モデルを足したらここにも足すこと。**
+        reassignLocalOnly(PetState.self, context: context) { $0.userId == old } set: { $0.userId = new }
+
         // 旧 userId のローカル Profile は孤児になるため削除（新 Profile は ensureProfile / トリガで存在）。
         if let oldProfile = try? context.fetch(FetchDescriptor<Profile>(predicate: #Predicate { $0.id == old })).first {
             context.delete(oldProfile)
         }
         try? context.save()
         sync.enqueueBatch(pending)  // ディスク書込・自動同期は 1 回だけ。
+    }
+
+    /// 端末ローカル専用モデルの付け替え。同期対象外なので再送出はしない。
+    private static func reassignLocalOnly<T: PersistentModel>(
+        _ type: T.Type,
+        context: ModelContext,
+        match: (T) -> Bool,
+        set: (T) -> Void
+    ) {
+        guard let rows = try? context.fetch(FetchDescriptor<T>()) else { return }
+        for row in rows where match(row) { set(row) }
     }
 
     private static func reassignOwned<T: PersistentModel>(

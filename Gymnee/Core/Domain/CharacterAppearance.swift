@@ -67,6 +67,15 @@ enum SkinCatalog {
     static func isOwned(_ skin: CharacterSkin, purchased: Set<String>) -> Bool {
         !skin.isPaid || purchased.contains(skin.id)
     }
+
+    /// 保存された選択から、実際に着られるスキンを取り出す。
+    ///
+    /// 返金・失効・ファミリー共有の解除で所持が消えたら既定へ落とす。
+    /// **持っていない見た目を描き続けない**（`CharacterOutfit.resolve` と同じ考え方）。
+    static func resolve(selected: String?, owned: Set<String>) -> CharacterSkin {
+        let chosen = skin(id: selected)
+        return isOwned(chosen, purchased: owned) ? chosen : skin(id: defaultSkinId)
+    }
 }
 
 /// 装備の着脱ルール。所持していない装備や、存在しない id は弾く（データが壊れても姿が壊れない）。

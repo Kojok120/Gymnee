@@ -124,6 +124,13 @@ enum PixelHairArt {
         !style.isPaid || purchased.contains(style.id)
     }
 
+    /// 保存された選択から、実際に着られる髪型を取り出す。
+    /// 返金・失効で所持が消えたら既定へ落とす（持っていない見た目を描き続けない）。
+    static func resolveStyle(selected: String?, owned: Set<String>) -> Style {
+        let chosen = style(id: selected)
+        return isOwned(chosen, purchased: owned) ? chosen : style(id: defaultStyleId)
+    }
+
     /// 髪のスプライト。向きごとに絵を変える（背面は髪しか見えないので情報量がいちばん多い）。
     static func hair(styleId: String?, facing: CharacterScene.Facing) -> PixelSprite {
         let id = style(id: styleId).id
@@ -366,6 +373,13 @@ enum PixelHairArt {
 
     static func isOwned(_ accessory: Accessory, purchased: Set<String>) -> Bool {
         !accessory.isPaid || purchased.contains(accessory.id)
+    }
+
+    /// 保存された選択から、実際に着けられるアクセサリーを取り出す。
+    /// 返金・失効で所持が消えたら「なし」に落とす。
+    static func resolveAccessory(selected: String?, owned: Set<String>) -> Accessory {
+        let chosen = accessory(id: selected)
+        return isOwned(chosen, purchased: owned) ? chosen : accessory(id: "none")
     }
 
     /// アクセサリーのスプライト。**背面では顔まわりの物を描かない**（後ろからメガネは見えない）。

@@ -158,3 +158,50 @@ final class PetCatalogTests: XCTestCase {
         XCTAssertEqual(StoreCatalog.all.filter { $0.kind == .pet }.count, PetCatalog.all.count)
     }
 }
+
+/// 見た目も**描く前に所持で解決する**。返金・失効・ファミリー共有の解除で所持が消えたら
+/// 既定へ落ちること（持っていない見た目を描き続けない）。
+final class CosmeticResolveTests: XCTestCase {
+
+    func testPaidSkinFallsBackWhenNotOwned() {
+        XCTAssertEqual(SkinCatalog.resolve(selected: "gymnee", owned: []).id, SkinCatalog.defaultSkinId)
+        XCTAssertEqual(SkinCatalog.resolve(selected: "gymnee", owned: ["gymnee"]).id, "gymnee")
+    }
+
+    /// 無料スキンは所持集合に無くても落とさない。
+    func testFreeSkinIsAlwaysWearable() {
+        XCTAssertEqual(SkinCatalog.resolve(selected: SkinCatalog.defaultSkinId, owned: []).id,
+                       SkinCatalog.defaultSkinId)
+    }
+
+    func testPaidHairFallsBackWhenNotOwned() {
+        XCTAssertEqual(PixelHairArt.resolveStyle(selected: "ponytail", owned: []).id,
+                       PixelHairArt.defaultStyleId)
+        XCTAssertEqual(PixelHairArt.resolveStyle(selected: "ponytail", owned: ["ponytail"]).id, "ponytail")
+        // 無料の髪型は落とさない。
+        XCTAssertEqual(PixelHairArt.resolveStyle(selected: "buzz", owned: []).id, "buzz")
+    }
+
+    func testPaidAccessoryFallsBackToNone() {
+        XCTAssertEqual(PixelHairArt.resolveAccessory(selected: "shades", owned: []).id, "none")
+        XCTAssertEqual(PixelHairArt.resolveAccessory(selected: "shades", owned: ["shades"]).id, "shades")
+        // 無料のメガネは落とさない。
+        XCTAssertEqual(PixelHairArt.resolveAccessory(selected: "glasses", owned: []).id, "glasses")
+    }
+
+    /// 1.4.1 以前のダミー購入（レガシー付与）も所持として通る。
+    /// 当時のテスターから取り上げない、という判断をここで固定する。
+    func testLegacyGrantsStillCountAsOwned() {
+        let legacy: Set<String> = ["gymnee", "ponytail", "shades"]
+        XCTAssertEqual(SkinCatalog.resolve(selected: "gymnee", owned: legacy).id, "gymnee")
+        XCTAssertEqual(PixelHairArt.resolveStyle(selected: "ponytail", owned: legacy).id, "ponytail")
+        XCTAssertEqual(PixelHairArt.resolveAccessory(selected: "shades", owned: legacy).id, "shades")
+    }
+
+    /// 存在しない id を保存されていても壊れない。
+    func testUnknownIdsFallBackToDefaults() {
+        XCTAssertEqual(SkinCatalog.resolve(selected: "nope", owned: []).id, SkinCatalog.defaultSkinId)
+        XCTAssertEqual(PixelHairArt.resolveStyle(selected: "nope", owned: []).id, PixelHairArt.defaultStyleId)
+        XCTAssertEqual(PixelHairArt.resolveAccessory(selected: "nope", owned: []).id, "none")
+    }
+}
