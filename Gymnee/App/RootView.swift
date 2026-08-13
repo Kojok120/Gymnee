@@ -169,10 +169,14 @@ struct RootView: View {
                 currentSkinId: SkinCatalog.defaultSkinId,
                 currentHairId: PixelHairArt.defaultStyleId,
                 currentAccessoryId: "glasses",
-                purchasedSkins: [],
-                purchasedAppearances: [],
+                isOwned: { _, _ in false },
+                priceText: { kind, id in
+                    StoreCatalog.entry(kind: kind, contentID: id)?.fallbackPrice ?? "—"
+                },
+                canPurchase: true,
                 onSelectSkin: { _ in }, onSelectHair: { _ in },
-                onSelectAccessory: { _ in }, onPurchase: { _ in }
+                onSelectAccessory: { _ in },
+                onPurchase: { _, _ in false }, onRestore: {}
             )
         case "pixelart": PixelArtGallery(section: .character)
         case "pixelart-items": PixelArtGallery(section: .items)

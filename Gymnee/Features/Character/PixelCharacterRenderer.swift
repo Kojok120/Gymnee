@@ -36,7 +36,7 @@ enum PixelCharacterRenderer {
     static let coachSkin = CharacterSkin(
         id: "coach", name: "コーチ",
         bodyHex: 0xD9A87F, accentHex: 0x2B4B7A,
-        isPaid: false, priceLabel: ""
+        isPaid: false
     )
 
     /// コーチの体格。プレイヤーの記録では変わらない。

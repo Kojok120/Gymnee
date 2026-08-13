@@ -18,13 +18,6 @@ final class CoachModeTests: XCTestCase {
         XCTAssertFalse(CoachMode.off.decidesMenu)
     }
 
-    /// 課金対象は「決めきってもらう体験」だけ。提案とチャットは無料で触れないと良さが伝わらない。
-    func testOnlyAutoRequiresSubscription() {
-        XCTAssertTrue(CoachMode.auto.requiresSubscription)
-        XCTAssertFalse(CoachMode.suggest.requiresSubscription)
-        XCTAssertFalse(CoachMode.off.requiresSubscription)
-    }
-
     func testDefaultIsSuggest() {
         XCTAssertEqual(CoachMode.default, .suggest)
     }
@@ -45,37 +38,35 @@ final class CoachModeTests: XCTestCase {
     }
 }
 
-/// 無料枠。行き止まりにせず、翌日また触れることを保証する。
+/// 相談回数の上限。行き止まりにせず、翌日また触れることを保証する。
+///
+/// サブスクリプションは提供していないので、上限をプランで出し分けることはしない
+/// （これはコスト制御であって課金の話ではない）。
 final class CoachQuotaTests: XCTestCase {
 
-    func testFreeUsersHaveASmallerLimit() {
-        XCTAssertLessThan(CoachQuota.limit(isSubscribed: false), CoachQuota.limit(isSubscribed: true))
-        XCTAssertEqual(CoachQuota.limit(isSubscribed: false), CoachQuota.freeDailyMessages)
-    }
-
     func testRemainingCountsDown() {
-        XCTAssertEqual(CoachQuota.remaining(sentToday: 0, isSubscribed: false), CoachQuota.freeDailyMessages)
-        XCTAssertEqual(CoachQuota.remaining(sentToday: 3, isSubscribed: false), CoachQuota.freeDailyMessages - 3)
+        XCTAssertEqual(CoachQuota.remaining(sentToday: 0), CoachQuota.dailyMessages)
+        XCTAssertEqual(CoachQuota.remaining(sentToday: 3), CoachQuota.dailyMessages - 3)
     }
 
     func testRemainingNeverGoesNegative() {
-        XCTAssertEqual(CoachQuota.remaining(sentToday: 9_999, isSubscribed: false), 0)
-        XCTAssertEqual(CoachQuota.remaining(sentToday: -5, isSubscribed: false), CoachQuota.freeDailyMessages)
+        XCTAssertEqual(CoachQuota.remaining(sentToday: 9_999), 0)
+        XCTAssertEqual(CoachQuota.remaining(sentToday: -5), CoachQuota.dailyMessages)
     }
 
     func testCanSendUntilLimit() {
-        XCTAssertTrue(CoachQuota.canSend(sentToday: CoachQuota.freeDailyMessages - 1, isSubscribed: false))
-        XCTAssertFalse(CoachQuota.canSend(sentToday: CoachQuota.freeDailyMessages, isSubscribed: false))
-        // 有料でも歯止めはある（暴走時の保険）。
-        XCTAssertFalse(CoachQuota.canSend(sentToday: CoachQuota.paidDailyMessages, isSubscribed: true))
+        XCTAssertTrue(CoachQuota.canSend(sentToday: CoachQuota.dailyMessages - 1))
+        XCTAssertFalse(CoachQuota.canSend(sentToday: CoachQuota.dailyMessages))
     }
 
     /// 上限に達しても行き止まりにしない（また明日、と伝える）。
-    func testLimitMessageIsNotADeadEnd() {
-        for subscribed in [true, false] {
-            let message = CoachQuota.limitMessage(isSubscribed: subscribed)
-            XCTAssertFalse(message.isEmpty)
-            XCTAssertTrue(message.contains("明日"), message)
+    /// 存在しない有料プランを示唆しないことも同時に固定する（2.1(b) の再発防止）。
+    func testLimitMessageIsNotADeadEndAndSellsNothing() {
+        let message = CoachQuota.limitMessage
+        XCTAssertFalse(message.isEmpty)
+        XCTAssertTrue(message.contains("明日"), message)
+        for word in ["プラン", "有料", "課金", "アップグレード"] {
+            XCTAssertFalse(message.contains(word), "存在しないプランを示唆している: \(message)")
         }
     }
 

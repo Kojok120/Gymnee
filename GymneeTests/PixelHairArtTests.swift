@@ -137,11 +137,14 @@ final class PixelHairArtTests: XCTestCase {
         XCTAssertEqual(style.hairStyleId, PixelHairArt.defaultStyleId)
         XCTAssertEqual(style.accessoryId, "none")
         XCTAssertTrue(style.purchased.isEmpty)
-        style.addPurchased("ponytail")
-        XCTAssertEqual(style.purchased, ["ponytail"])
-        // 二重購入で重複しない。
-        style.addPurchased("ponytail")
-        XCTAssertEqual(style.purchased, ["ponytail"])
+    }
+
+    /// `purchased` は 1.4.1 以前のダミー購入の名残で、**読み取り専用のレガシー付与**。
+    /// 書き込み口は塞いだ（実所持は StoreKit が正）ので、当時の値が読めることだけを保証する。
+    func testLegacyGrantsAreStillReadable() {
+        let style = CharacterStyle(userId: UUID(), purchasedIds: "long,ponytail")
+        XCTAssertEqual(style.purchased, ["ponytail", "long"])
+        XCTAssertTrue(CharacterStyle(userId: UUID(), purchasedIds: "").purchased.isEmpty)
     }
 
     /// 返答に JSON の断片が混ざっていたら画面に出さない（生 JSON が吹き出しに出た事故の再発防止）。

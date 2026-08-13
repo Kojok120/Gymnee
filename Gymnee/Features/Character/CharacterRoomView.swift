@@ -14,6 +14,8 @@ struct CharacterRoomView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(StoreService.self) private var store
+    @Environment(AppErrorCenter.self) private var errors
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
 
     @Query private var completedWorkouts: [Workout]
@@ -979,12 +981,14 @@ struct CharacterRoomView: View {
                 currentSkinId: skin.id,
                 currentHairId: style?.hairStyleId ?? PixelHairArt.defaultStyleId,
                 currentAccessoryId: style?.accessoryId ?? "none",
-                purchasedSkins: loadout?.purchasedSkins ?? [],
-                purchasedAppearances: style?.purchased ?? [],
+                isOwned: { kind, id in isOwned(kind, id) },
+                priceText: { kind, id in priceText(kind, id) },
+                canPurchase: store.isStoreAvailable,
                 onSelectSkin: { selectSkin($0) },
                 onSelectHair: { selectHair($0) },
                 onSelectAccessory: { selectAccessory($0) },
-                onPurchase: { purchaseAppearance($0) }
+                onPurchase: { kind, id in await purchase(kind, id) },
+                onRestore: { await restorePurchases() }
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
@@ -1258,31 +1262,57 @@ struct CharacterRoomView: View {
         try? context.save()
     }
 
-    /// 見た目の購入（スキン / 髪型 / アクセサリーを id で一括して扱う）。
-    /// **課金は未接続のダミー**で、押した時点で所持扱いにして即座に着せる。
-    private func purchaseAppearance(_ id: String) {
-        let state = ensureLoadout()
-        if let skin = SkinCatalog.all.first(where: { $0.id == id }) {
-            state.addPurchasedSkin(skin.id)
-            state.skinId = skin.id
-        } else if PixelHairArt.styles.contains(where: { $0.id == id }) {
-            let style = ensureStyle()
-            style.addPurchased(id)
-            style.hairStyleId = id
-        } else if PixelHairArt.accessories.contains(where: { $0.id == id }) {
-            let style = ensureStyle()
-            style.addPurchased(id)
-            style.accessoryId = id
-        }
-        try? context.save()
+    // MARK: - 課金（見た目のみ・非消耗型）
+
+    /// 1.4.1 より前のダミー購入の名残。当時「購入」を押すとタダで所持扱いになっていた。
+    /// 書き込み口はもう無いので増えないが、当時のテスターから取り上げはしない。
+    private var legacyGrants: Set<String> {
+        (loadout?.purchasedSkins ?? []).union(style?.purchased ?? [])
     }
 
-    /// スキン購入。**課金は未接続のダミー**で、押した時点で所持扱いにする。
-    private func purchaseSkin(_ skin: CharacterSkin) {
-        let state = ensureLoadout()
-        state.addPurchasedSkin(skin.id)
-        state.skinId = skin.id
-        try? context.save()
+    /// 所持しているか。StoreKit の所持と、レガシー付与の和集合で見る。
+    private func isOwned(_ kind: StoreCatalog.Kind, _ contentID: String) -> Bool {
+        if legacyGrants.contains(contentID) { return true }
+        guard let entry = StoreCatalog.entry(kind: kind, contentID: contentID) else { return false }
+        return store.isOwned(entry.productID)
+    }
+
+    /// 表示価格。StoreKit から取れなければ控えの価格、日本以外では出さない
+    /// （円建ての控え価格を海外に見せると誤った価格提示になる）。
+    private func priceText(_ kind: StoreCatalog.Kind, _ contentID: String) -> String {
+        guard let entry = StoreCatalog.entry(kind: kind, contentID: contentID) else { return "—" }
+        if let price = store.displayPrice(for: entry.productID) { return price }
+        guard StoreCatalog.priceFallbackAllowed(regionCode: Locale.current.region?.identifier) else { return "—" }
+        return "\(entry.fallbackPrice)（参考）"
+    }
+
+    /// 見た目の購入。成功したら true（呼び出し側がそのまま着せる）。
+    private func purchase(_ kind: StoreCatalog.Kind, _ contentID: String) async -> Bool {
+        guard let entry = StoreCatalog.entry(kind: kind, contentID: contentID) else { return false }
+        switch await store.purchase(productID: entry.productID) {
+        case .purchased:
+            return true
+        case .cancelled:
+            return false
+        case .pending:
+            errors.report("購入の承認を待っています。承認されると反映されます。")
+            return false
+        case .unavailable:
+            errors.report("いまは購入できません。通信状況を確かめて、しばらくしてからお試しください。")
+            return false
+        case .failed(let reason):
+            errors.report("購入できませんでした。\(reason)")
+            return false
+        }
+    }
+
+    private func restorePurchases() async {
+        switch await store.restore() {
+        case .restored, .nothingToRestore:
+            break
+        case .failed(let reason):
+            errors.report("購入を復元できませんでした。\(reason)")
+        }
     }
 
     private var style: CharacterStyle? { styles.first }

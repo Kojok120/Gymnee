@@ -19,7 +19,7 @@ struct GymneeApp: App {
                 .environment(env.health)
                 .environment(env.notifications)
                 .environment(env.errors)
-                .environment(env.subscription)
+                .environment(env.store)
                 .environment(env.calendar)
                 .environment(env.googleCalendar)
                 .modelContainer(env.container)
@@ -37,7 +37,7 @@ struct GymneeApp: App {
                 // 起動時にバックエンドセッションを復元（トークン更新）→ その後の同期が認証付きで通る。
                 .task { await env.bootstrapBackend() }
                 // Premium 商品取得＋権限同期。
-                .task { await env.subscription.bootstrap() }
+                .task { await env.store.bootstrap() }
                 // アプリ復帰時に同期（リモート未設定なら no-op）。
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { Task { await env.sync.syncNow() } }

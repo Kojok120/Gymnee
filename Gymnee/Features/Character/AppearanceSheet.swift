@@ -15,18 +15,27 @@ struct AppearanceSheet: View {
     let currentSkinId: String
     let currentHairId: String
     let currentAccessoryId: String
-    /// 購入済み（スキンと、髪型・アクセサリー）。
-    let purchasedSkins: Set<String>
-    let purchasedAppearances: Set<String>
+
+    /// 所持しているか。StoreKit の所持と、1.4.1 以前のダミー購入の和集合を呼び出し側が解決する。
+    /// 種別ごとに id 空間が別なので、Set を渡さずクロージャで引く。
+    let isOwned: (StoreCatalog.Kind, String) -> Bool
+    /// 表示価格。StoreKit から取れなければ控えの価格、それも出せなければ「—」。
+    let priceText: (StoreCatalog.Kind, String) -> String
+    /// 商品を取得できているか。false のときは購入ボタンを出さない（審査通過前・オフライン）。
+    let canPurchase: Bool
 
     let onSelectSkin: (String) -> Void
     let onSelectHair: (String) -> Void
     let onSelectAccessory: (String) -> Void
-    /// 購入（課金は未接続のダミー）。id を所持済みにする。
-    let onPurchase: (String) -> Void
+    /// 購入。成功したら true。
+    let onPurchase: (StoreCatalog.Kind, String) async -> Bool
+    let onRestore: () async -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var tab = Tab.hair
+    /// 購入処理中の product id。押している間は一覧全体を触れなくする。
+    @State private var purchasing: String?
+    @State private var isRestoring = false
 
     enum Tab: String, CaseIterable, Identifiable {
         case color, hair, accessory
@@ -63,11 +72,32 @@ struct AppearanceSheet: View {
                             .foregroundStyle(Theme.textTertiary)
                             .multilineTextAlignment(.center)
                             .padding(.top, Theme.Spacing.md)
-                        Label("課金は未接続。購入ボタンは動作確認用のダミーです。", systemImage: "exclamationmark.triangle.fill")
+
+                        if !canPurchase {
+                            Label("いまは購入できません。通信状況を確かめて、しばらくしてからお試しください。",
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.warning)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .gymneeCard(padding: Theme.Spacing.md)
+                        }
+
+                        Button {
+                            Task {
+                                isRestoring = true
+                                await onRestore()
+                                isRestoring = false
+                            }
+                        } label: {
+                            if isRestoring { ProgressView() } else { Text("購入を復元") }
+                        }
+                        .buttonStyle(.gymneeSecondary)
+                        .disabled(isRestoring)
+                        .padding(.top, Theme.Spacing.xs)
+
+                        Text("購入した見た目は Apple ID に紐づきます。")
                             .font(.caption2)
-                            .foregroundStyle(Theme.warning)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .gymneeCard(padding: Theme.Spacing.md)
+                            .foregroundStyle(Theme.textTertiary)
                     }
                     .padding(Theme.Spacing.lg)
                 }
@@ -123,11 +153,11 @@ struct AppearanceSheet: View {
     private var colorRows: some View {
         ForEach(SkinCatalog.all) { skin in
             row(
+                kind: .skin,
                 id: skin.id,
                 name: skin.name,
-                owned: SkinCatalog.isOwned(skin, purchased: purchasedSkins),
+                owned: !skin.isPaid || isOwned(.skin, skin.id),
                 isCurrent: skin.id == currentSkinId,
-                priceLabel: skin.priceLabel,
                 select: { onSelectSkin(skin.id) }
             ) {
                 ZStack {
@@ -141,11 +171,11 @@ struct AppearanceSheet: View {
     private var hairRows: some View {
         ForEach(PixelHairArt.styles) { style in
             row(
+                kind: .hair,
                 id: style.id,
                 name: style.name,
-                owned: PixelHairArt.isOwned(style, purchased: purchasedAppearances),
+                owned: !style.isPaid || isOwned(.hair, style.id),
                 isCurrent: style.id == currentHairId,
-                priceLabel: style.priceLabel,
                 select: { onSelectHair(style.id) }
             ) {
                 headThumbnail(hairId: style.id, accessoryId: "none")
@@ -156,11 +186,11 @@ struct AppearanceSheet: View {
     private var accessoryRows: some View {
         ForEach(PixelHairArt.accessories) { accessory in
             row(
+                kind: .accessory,
                 id: accessory.id,
                 name: accessory.name,
-                owned: PixelHairArt.isOwned(accessory, purchased: purchasedAppearances),
+                owned: !accessory.isPaid || isOwned(.accessory, accessory.id),
                 isCurrent: accessory.id == currentAccessoryId,
-                priceLabel: accessory.priceLabel,
                 select: { onSelectAccessory(accessory.id) }
             ) {
                 headThumbnail(hairId: currentHairId, accessoryId: accessory.id)
@@ -188,19 +218,21 @@ struct AppearanceSheet: View {
     }
 
     private func row<Thumb: View>(
+        kind: StoreCatalog.Kind,
         id: String,
         name: String,
         owned: Bool,
         isCurrent: Bool,
-        priceLabel: String,
         select: @escaping () -> Void,
         @ViewBuilder thumbnail: () -> Thumb
     ) -> some View {
-        HStack(spacing: Theme.Spacing.md) {
+        let productID = StoreCatalog.entry(kind: kind, contentID: id)?.productID
+        let isPurchasing = purchasing != nil && purchasing == productID
+        return HStack(spacing: Theme.Spacing.md) {
             thumbnail()
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
-                Text(owned ? (isCurrent ? "使用中" : "所持済み") : priceLabel)
+                Text(owned ? (isCurrent ? "使用中" : "所持済み") : priceText(kind, id))
                     .font(.caption)
                     .foregroundStyle(isCurrent ? Theme.lime : .secondary)
             }
@@ -210,9 +242,22 @@ struct AppearanceSheet: View {
                     .buttonStyle(.gymneeSecondary)
                     .disabled(isCurrent)
                     .opacity(isCurrent ? 0.5 : 1)
+            } else if isPurchasing {
+                ProgressView()
             } else {
-                Button("購入") { onPurchase(id) }
-                    .buttonStyle(.gymneeSecondary)
+                Button("購入") {
+                    guard let productID else { return }
+                    Task {
+                        purchasing = productID
+                        // 買えたらそのまま着せる。買ってから探させない。
+                        if await onPurchase(kind, id) { select() }
+                        purchasing = nil
+                    }
+                }
+                .buttonStyle(.gymneeSecondary)
+                // 商品が取れていない／別の購入が進行中は押させない。
+                .disabled(!canPurchase || productID == nil || purchasing != nil)
+                .opacity(canPurchase && productID != nil ? 1 : 0.45)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -103,18 +103,17 @@ enum PixelHairArt {
     struct Style: Identifiable, Equatable, Sendable {
         let id: String
         let name: String
-        /// 有料かどうか（無料の髪型は最初から所持）。
+        /// 有料かどうか（無料の髪型は最初から所持）。価格は StoreCatalog が持つ。
         let isPaid: Bool
-        let priceLabel: String
     }
 
     static let defaultStyleId = "short"
 
     static let styles: [Style] = [
-        Style(id: "short", name: "ショート", isPaid: false, priceLabel: "所持済み"),
-        Style(id: "buzz", name: "ベリーショート", isPaid: false, priceLabel: "所持済み"),
-        Style(id: "ponytail", name: "ポニーテール", isPaid: true, priceLabel: "¥250"),
-        Style(id: "long", name: "ロング", isPaid: true, priceLabel: "¥250"),
+        Style(id: "short", name: "ショート", isPaid: false),
+        Style(id: "buzz", name: "ベリーショート", isPaid: false),
+        Style(id: "ponytail", name: "ポニーテール", isPaid: true),
+        Style(id: "long", name: "ロング", isPaid: true),
     ]
 
     static func style(id: String?) -> Style {
@@ -350,15 +349,15 @@ enum PixelHairArt {
     struct Accessory: Identifiable, Equatable, Sendable {
         let id: String
         let name: String
+        /// 有料かどうか。価格は StoreCatalog が持つ。
         let isPaid: Bool
-        let priceLabel: String
     }
 
     static let accessories: [Accessory] = [
-        Accessory(id: "none", name: "なし", isPaid: false, priceLabel: "所持済み"),
-        Accessory(id: "glasses", name: "メガネ", isPaid: false, priceLabel: "所持済み"),
-        Accessory(id: "shades", name: "サングラス", isPaid: true, priceLabel: "¥250"),
-        Accessory(id: "earphones", name: "イヤホン", isPaid: true, priceLabel: "¥250"),
+        Accessory(id: "none", name: "なし", isPaid: false),
+        Accessory(id: "glasses", name: "メガネ", isPaid: false),
+        Accessory(id: "shades", name: "サングラス", isPaid: true),
+        Accessory(id: "earphones", name: "イヤホン", isPaid: true),
     ]
 
     static func accessory(id: String?) -> Accessory {

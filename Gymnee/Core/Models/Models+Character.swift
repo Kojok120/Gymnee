@@ -105,17 +105,12 @@ extension CharacterLoadout {
         updatedAt = .now
     }
 
+    /// 1.4.1 より前のダミー購入（課金未接続の時代に「購入」を押すとタダで所持扱いになっていた）の名残。
+    /// **読み取り専用のレガシー付与として扱い、新規の書き込みは行わない**。
+    /// 実所持は StoreKit（`StoreService` / `StoreCatalog`）が正。
     var purchasedSkins: Set<String> {
         Set(purchasedSkinIds.split(separator: ",").map(String.init).filter { !$0.isEmpty })
     }
-
-    func addPurchasedSkin(_ id: String) {
-        var current = purchasedSkins
-        current.insert(id)
-        purchasedSkinIds = current.sorted().joined(separator: ",")
-        updatedAt = .now
-    }
-
 }
 
 extension ExpeditionRun {
@@ -202,14 +197,9 @@ final class CharacterStyle {
 }
 
 extension CharacterStyle {
+    /// 1.4.1 より前のダミー購入の名残（`CharacterLoadout.purchasedSkins` と同じ扱い）。
+    /// **読み取り専用のレガシー付与**。実所持は StoreKit が正。
     var purchased: Set<String> {
         Set(purchasedIds.split(separator: ",").map(String.init).filter { !$0.isEmpty })
-    }
-
-    func addPurchased(_ id: String) {
-        var current = purchased
-        current.insert(id)
-        purchasedIds = current.sorted().joined(separator: ",")
-        updatedAt = .now
     }
 }
