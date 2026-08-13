@@ -47,7 +47,10 @@ final class StoreService {
             for await update in Transaction.updates {
                 if case .verified(let txn) = update {
                     await txn.finish()
-                    await self?.refreshEntitlements()
+                    // 更新が届いた＝StoreKit と繋がっているので、空の読み取りも正しい答え。
+                    // ここで猶予を効かせると、最後の 1 つを返金されたときに
+                    // 「購入を復元」を押すまで失効した商品を所持のまま描き続ける。
+                    await self?.readEntitlements(keepingPreviousWhenEmpty: false)
                 }
             }
         }
@@ -78,8 +81,11 @@ final class StoreService {
         await loadProducts()
     }
 
-    /// 起動時などの所持同期。空の読み取りは「持っていない」とは限らないので前回値を残す
-    /// （`StoreCatalog.mergeOwned` 参照）。
+    /// **起動時だけ**の所持同期。ここでの空は「オフラインで答えられなかった」かもしれないので
+    /// 前回値を残す（`StoreCatalog.mergeOwned` 参照）。
+    ///
+    /// 起動後の更新（`Transaction.updates` / 明示的な復元）では猶予を効かせない。
+    /// StoreKit と繋がっていることが分かっている場面で空を無視すると、失効を取りこぼす。
     func refreshEntitlements() async {
         await readEntitlements(keepingPreviousWhenEmpty: true)
     }
