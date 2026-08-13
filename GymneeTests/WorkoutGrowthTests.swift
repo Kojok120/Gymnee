@@ -136,10 +136,39 @@ final class WorkoutGrowthTests: XCTestCase {
         XCTAssertNil(WorkoutGrowth.nextStageHint(nil))
     }
 
-    // MARK: - 受け渡しの鍵
+    // MARK: - 受け渡し
 
     /// 保存キーは記録タブと育成タブで共有する。変えると祝いが出なくなる。
     func testPendingKeyIsFrozen() {
         XCTAssertEqual(WorkoutGrowth.Pending.key, "gymnee.character.pendingCelebration")
+    }
+
+    /// 控えた値がそのまま戻ること。**取り出したら消える**（毎回開くたびに祝わない）。
+    func testPendingRoundTripsAndIsConsumedOnce() {
+        let defaults = UserDefaults(suiteName: "WorkoutGrowthTests.pending")!
+        defaults.removePersistentDomain(forName: "WorkoutGrowthTests.pending")
+
+        let pending = WorkoutGrowth.Pending(
+            workoutId: UUID(), totalExperienceBefore: 1234, prCountBefore: 5, streakWeeksBefore: 3
+        )
+        pending.save(to: defaults)
+
+        XCTAssertEqual(WorkoutGrowth.Pending.take(from: defaults), pending)
+        XCTAssertNil(WorkoutGrowth.Pending.take(from: defaults), "2 回目も取れてしまうと毎回祝ってしまう")
+    }
+
+    func testPendingIsNilWhenNothingSaved() {
+        let defaults = UserDefaults(suiteName: "WorkoutGrowthTests.empty")!
+        defaults.removePersistentDomain(forName: "WorkoutGrowthTests.empty")
+        XCTAssertNil(WorkoutGrowth.Pending.take(from: defaults))
+    }
+
+    /// 壊れた値が入っていても落とさず、消して次に持ち越さない。
+    func testPendingIgnoresBrokenData() {
+        let defaults = UserDefaults(suiteName: "WorkoutGrowthTests.broken")!
+        defaults.removePersistentDomain(forName: "WorkoutGrowthTests.broken")
+        defaults.set(Data("not json".utf8), forKey: WorkoutGrowth.Pending.key)
+        XCTAssertNil(WorkoutGrowth.Pending.take(from: defaults))
+        XCTAssertNil(defaults.data(forKey: WorkoutGrowth.Pending.key), "壊れた値が残ると毎回失敗し続ける")
     }
 }

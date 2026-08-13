@@ -172,7 +172,12 @@ struct RootView: View {
             if let w = latestCompletedWorkout(userId: userId) {
                 CharacterRoomView(userId: userId)
                     .onAppear {
-                        UserDefaults.standard.set(w.id.uuidString, forKey: WorkoutGrowth.Pending.key)
+                        // 「前」は少し戻した値を入れて、レベルが上がった見え方を確認できるようにする。
+                        WorkoutGrowth.Pending(
+                            workoutId: w.id, totalExperienceBefore: 0,
+                            prCountBefore: 0, streakWeeksBefore: 0
+                        ).save()
+                        NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
                     }
             }
         case "pixelart": PixelArtGallery(section: .character)

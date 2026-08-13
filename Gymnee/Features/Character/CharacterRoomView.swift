@@ -79,6 +79,8 @@ struct CharacterRoomView: View {
     /// 画面が要る値をひとまとめにして 1 回で作る。
     struct Derived {
         var level = CharacterProgress.Level(value: 1, expIntoLevel: 0, expForNextLevel: 200)
+        /// 累積 EXP。完了直後の祝いで「この1回で実際に増えた分」を出すのに使う。
+        var totalExperience = 0
         var stage = CharacterProgress.Stage.rookie
         var nextStage: CharacterProgress.NextStage?
         var stats: [CharacterProgress.Axis: Int] = [:]
@@ -161,7 +163,7 @@ struct CharacterRoomView: View {
         .onAppear {
             refresh()
             // 集計を作り直したあとで見る（差分の「後」は derived を使う）。
-            presentCelebrationIfNeeded()
+            takePendingCelebration()
             startedAt = .now
             // 用事があれば、開いてすぐコーチが歩いて入ってくる。
             updateCoachPresence()
@@ -175,13 +177,13 @@ struct CharacterRoomView: View {
             refresh()
             // 記録タブで完了 → 育成タブへ、の順で来ると @Query の反映が onAppear より後になる。
             // 記録が増えたこのタイミングでも見て、取りこぼさない。
-            presentCelebrationIfNeeded()
+            takePendingCelebration()
             updateCoachPresence()
         }
-        // タブは一度開くと生き続けるので、記録タブが鍵を書いた時点では
-        // この画面の onAppear が走らないことがある。値の変化そのものを見る。
-        .onChange(of: pendingCelebrationId) { _, _ in
-            presentCelebrationIfNeeded()
+        // タブは一度開くと生き続けるので、記録タブが控えを書いた時点では
+        // この画面の onAppear が走らないことがある。切替の通知でも見る。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCharacter)) { _ in
+            takePendingCelebration()
         }
         .onChange(of: scenePhase) { _, phase in
             // バックグラウンドから戻ったら時間を巻き戻さない（歩いている途中から続く）。
@@ -438,8 +440,7 @@ struct CharacterRoomView: View {
     @State private var petReaction = TapReaction.State()
 
     /// 記録を終えた直後に出す「この 1 回で何が育ったか」。
-    /// 記録タブが完了ワークアウトの id をここに置き、育成タブに来たときに消費する。
-    @AppStorage(WorkoutGrowth.Pending.key) private var pendingCelebrationId = ""
+    /// 記録タブが完了処理の前の状態を保存し、育成タブに来たときに消費する。
     @State private var celebratingGain: WorkoutGrowth.Gain?
 
     /// 「キャラを押すとからだが見られる」を一度だけ伝えるヒント。
@@ -1174,41 +1175,36 @@ struct CharacterRoomView: View {
 
     /// 記録を終えて育成タブに来たら、その 1 回で何が育ったかを出す。
     ///
-    /// 差分は「その回を**除いた**状態」を同じ式で組み直して取る。EXP だけ引き算すると、
-    /// 進化の条件（レベル・自己ベスト数・連続週）が絡んだときに前の段階を誤る。
-    private func presentCelebrationIfNeeded() {
-        guard !pendingCelebrationId.isEmpty else { return }
-        guard let id = UUID(uuidString: pendingCelebrationId) else {
-            pendingCelebrationId = ""
-            return
-        }
-        // 一度出したら消す。計算に失敗しても残さない（毎回開くたびに出てしまう）。
-        pendingCelebrationId = ""
-        guard let workout = completedWorkouts.first(where: { $0.id == id }) else { return }
+    /// 「前」は記録タブが**完了処理の前に控えた値**をそのまま使う（`WorkoutGrowth.Pending`）。
+    /// ここで「その回を除いた状態」を組み直してはいけない。自己ベストの更新は行を増やさず
+    /// 既存の `PersonalRecord.workoutId` を今回の id に付け替えるので、除外すると
+    /// 元々あった自己ベストごと消え、起きていないレベルアップや進化を祝ってしまう。
+    /// 控えがあれば取り出して祝う。取り出したら消える（毎回開くたびには出さない）。
+    private func takePendingCelebration() {
+        guard celebratingGain == nil, let pending = WorkoutGrowth.Pending.take() else { return }
+        presentCelebration(pending)
+    }
 
-        let prCountByWorkout = CharacterInputs.prCountByWorkout(records)
-        let collectedIds = pickups.map(\.itemId)
-        let pickupBonus = RoomPickup.totalExperience(collectedItemIds: collectedIds)
+    private func presentCelebration(_ pending: WorkoutGrowth.Pending) {
+        guard let workout = completedWorkouts.first(where: { $0.id == pending.workoutId }) else { return }
 
-        let before = completedWorkouts.filter { $0.id != id }
-        let beforeSessions = CharacterInputs.sessions(from: before, prCountByWorkout: prCountByWorkout)
-        let beforeLevel = CharacterProgress.level(
-            totalExperience: CharacterProgress.totalExperience(sessions: beforeSessions, pickupBonus: pickupBonus)
-        )
-        let beforePRCount = records.filter { $0.workoutId != id }.count
-        let beforeStreak = StreakCalculator.currentWeeklyStreak(
-            activeDays: before.map { $0.completedAt ?? $0.date }, weeklyGoal: weeklyGoal
-        )
+        let beforeLevel = CharacterProgress.level(totalExperience: pending.totalExperienceBefore)
         let beforeStage = CharacterProgress.stage(
-            level: beforeLevel.value, prCount: beforePRCount, weeklyStreakWeeks: beforeStreak.weeks
+            level: beforeLevel.value,
+            prCount: pending.prCountBefore,
+            weeklyStreakWeeks: pending.streakWeeksBefore
         )
 
-        // この 1 回ぶんの入力（EXP とパワーは同じ式から取る）。
-        let sessions = CharacterInputs.sessions(from: [workout], prCountByWorkout: prCountByWorkout)
+        let sessions = CharacterInputs.sessions(
+            from: [workout], prCountByWorkout: CharacterInputs.prCountByWorkout(records)
+        )
         guard let session = sessions.first else { return }
 
         celebratingGain = WorkoutGrowth.Gain(
-            exp: CharacterProgress.experience(for: session),
+            // 実際に増えた分をそのまま出す。この回の式から取り直すと、自己ベストを
+            // 更新しただけの回で「前の記録から移っただけの 120」を上乗せしてしまい、
+            // 伸びたバーの幅と数字が食い違う。
+            exp: max(0, derived.totalExperience - pending.totalExperienceBefore),
             energy: Expedition.energyEarned(for: session),
             levelBefore: beforeLevel,
             levelAfter: derived.level,
@@ -1233,12 +1229,11 @@ struct CharacterRoomView: View {
         let streak = StreakCalculator.currentWeeklyStreak(activeDays: activeDays, weeklyGoal: weeklyGoal)
         // 拾ったグッズの分を合流させる（元気は燃料、EXP はレアのみ）。
         let collectedIds = pickups.map(\.itemId)
-        let level = CharacterProgress.level(
-            totalExperience: CharacterProgress.totalExperience(
-                sessions: sessions,
-                pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds)
-            )
+        let totalExperience = CharacterProgress.totalExperience(
+            sessions: sessions,
+            pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds)
         )
+        let level = CharacterProgress.level(totalExperience: totalExperience)
         let stats = CharacterProgress.stats(volumeByMuscle: CharacterInputs.volumeByMuscle(from: completedWorkouts))
         let stage = CharacterProgress.stage(
             level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
@@ -1249,6 +1244,7 @@ struct CharacterRoomView: View {
 
         var next = Derived()
         next.level = level
+        next.totalExperience = totalExperience
         next.stage = stage
         next.nextStage = CharacterProgress.nextStage(
             level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
