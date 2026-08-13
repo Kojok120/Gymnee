@@ -12,20 +12,21 @@ enum WorkoutGrowth {
     /// 完了サマリーを閉じてから育成タブで祝うまでの受け渡し。
     /// タブ切替をまたぐので、通知ではなく保存値で渡す（切替の順序に依存させない）。
     ///
-    /// **「前」の状態は完了処理の前に控える**。あとから「この回を除いた状態」を組み直しても
-    /// 前には戻らない。自己ベストの更新は行を増やさず既存の `PersonalRecord.workoutId` を
-    /// 今回の id に付け替えるので、除外すると元々あった自己ベストごと消えてしまい、
-    /// 実際には起きていないレベルアップや進化を祝ってしまう。
+    /// **祝う内容は完了した時点で確定させて丸ごと持つ**。育成タブ側で組み立て直さない。
+    /// - 「前」はあとから復元できない。自己ベストの更新は行を増やさず既存の
+    ///   `PersonalRecord.workoutId` を今回の id に付け替えるので、除外して組み直すと
+    ///   元々あった自己ベストごと消えてしまう。
+    /// - 「後」も、サマリーを開いている間に別端末の記録が同期されると動く。
+    ///   それを今回のぶんとして数えないよう、完了直後の値で固定する。
+    /// - 対象のワークアウトを見に行かないので、`@Query` の反映を待たずに出せる。
     struct Pending: Codable, Equatable, Sendable {
-        let workoutId: UUID
-        /// 完了処理の前の累積 EXP。
-        let totalExperienceBefore: Int
-        /// 完了処理の前の自己ベスト件数。
-        let prCountBefore: Int
-        /// 完了処理の前の連続週。
-        let streakWeeksBefore: Int
+        let savedAt: Date
+        let gain: Gain
 
         static let key = "gymnee.character.pendingCelebration"
+
+        /// これより古い控えは出さない。落ちたあとに何日も前の記録を祝われても意味がない。
+        static let maxAge: TimeInterval = 60 * 60
 
         func save(to defaults: UserDefaults = .standard) {
             guard let data = try? JSONEncoder().encode(self) else { return }
@@ -33,22 +34,26 @@ enum WorkoutGrowth {
         }
 
         /// 読み出して消す。取り出せたら一度きり（毎回開くたびに祝わない）。
-        static func take(from defaults: UserDefaults = .standard) -> Pending? {
+        /// 壊れた値・古い値はここで捨て、次に持ち越さない。
+        static func take(from defaults: UserDefaults = .standard, now: Date = .now) -> Pending? {
             defer { defaults.removeObject(forKey: key) }
-            guard let data = defaults.data(forKey: key) else { return nil }
-            return try? JSONDecoder().decode(Pending.self, from: data)
+            guard let data = defaults.data(forKey: key),
+                  let pending = try? JSONDecoder().decode(Pending.self, from: data),
+                  now.timeIntervalSince(pending.savedAt) < maxAge
+            else { return nil }
+            return pending
         }
     }
 
     /// 1 回で伸びた部位（多い順に並べて出す）。
-    struct MuscleShare: Equatable, Sendable {
+    struct MuscleShare: Equatable, Sendable, Codable {
         let muscle: MuscleGroup
         let volumeKg: Double
     }
 
-    /// この 1 回で育成がどう動いたか。
+    /// この 1 回で育成がどう動いたか。**完了した時点で確定する**（あとから組み直さない）。
     /// `sheet(item:)` に渡すので Identifiable にする（同じ内容なら同じシート）。
-    struct Gain: Equatable, Sendable, Identifiable {
+    struct Gain: Equatable, Sendable, Codable, Identifiable {
         var id: String { "\(exp)-\(levelAfter.value)-\(stageAfter.rawValue)-\(prCount)" }
 
         /// この 1 回で得た EXP。

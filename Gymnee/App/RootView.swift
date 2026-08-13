@@ -169,17 +169,22 @@ struct RootView: View {
         case "appearance-pet": debugAppearanceSheet(tab: .pet)
         // 完了直後の祝い（育成タブで出るもの）。デモの最新完了ワークアウトで組み立てる。
         case "growth":
-            if let w = latestCompletedWorkout(userId: userId) {
-                CharacterRoomView(userId: userId)
-                    .onAppear {
-                        // 「前」は少し戻した値を入れて、レベルが上がった見え方を確認できるようにする。
-                        WorkoutGrowth.Pending(
-                            workoutId: w.id, totalExperienceBefore: 0,
-                            prCountBefore: 0, streakWeeksBefore: 0
-                        ).save()
-                        NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
-                    }
-            }
+            CharacterRoomView(userId: userId)
+                .onAppear {
+                    // レベルアップした回の見え方を確認する用の作り物。
+                    WorkoutGrowth.Pending(savedAt: .now, gain: WorkoutGrowth.Gain(
+                        exp: 186, energy: 48,
+                        levelBefore: CharacterProgress.level(totalExperience: 380),
+                        levelAfter: CharacterProgress.level(totalExperience: 566),
+                        stageBefore: .rookie, stageAfter: .rookie,
+                        muscles: [
+                            .init(muscle: .chest, volumeKg: 4200),
+                            .init(muscle: .arms, volumeKg: 1800),
+                        ],
+                        prCount: 1
+                    )).save()
+                    NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
+                }
         case "pixelart": PixelArtGallery(section: .character)
         case "pixelart-items": PixelArtGallery(section: .items)
         case "pixelart-room": PixelArtGallery(section: .room)

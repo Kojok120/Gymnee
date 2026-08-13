@@ -1145,13 +1145,10 @@ struct RecordContent: View {
         }
         restTimer.stop()
         // 初回完了のときだけ、サマリーを閉じたあとの祝いを予約する。
-        pendingGrowth = growthBefore.map {
-            WorkoutGrowth.Pending(
-                workoutId: w.id,
-                totalExperienceBefore: $0.totalExperience,
-                prCountBefore: $0.prCount,
-                streakWeeksBefore: $0.streakWeeks
-            )
+        // **ここで内容を確定させる**。サマリーを開いている間に別端末の記録が同期されると
+        // 累積値が動くので、あとから差分を取り直すとその分まで今回のぶんとして数えてしまう。
+        pendingGrowth = growthBefore.map { before in
+            WorkoutGrowth.Pending(savedAt: .now, gain: growthGain(for: w, before: before))
         }
         // 完了時に feed_item は作らない（fail-closed）。公開はサマリーの「ソーシャルに投稿」
         // ボタン（publishConsented）を押した時だけ。押さなければ feed_item は存在せず＝非公開。
@@ -1165,7 +1162,41 @@ struct RecordContent: View {
         let streakWeeks: Int
     }
 
-    /// いま完了しようとしているワークアウトを**含まない**状態を取る。
+    /// 完了直後の状態と控えた「前」から、祝う内容を組み立てる。
+    private func growthGain(for workout: Workout, before: GrowthSnapshot) -> WorkoutGrowth.Gain {
+        let after = growthSnapshot(for: workout)
+        let wid = workout.id
+        let records = (try? context.fetch(
+            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.workoutId == wid })
+        )) ?? []
+        let sessions = CharacterInputs.sessions(
+            from: [workout], prCountByWorkout: [workout.id: records.count]
+        )
+        return WorkoutGrowth.Gain(
+            // 実際に増えた分をそのまま出す。この回の式から取り直すと、自己ベストを
+            // 更新しただけの回で「前の記録から移っただけの 120」を上乗せしてしまい、
+            // 伸びたバーの幅と数字が食い違う。
+            exp: max(0, after.totalExperience - before.totalExperience),
+            energy: sessions.first.map(Expedition.energyEarned) ?? 0,
+            levelBefore: CharacterProgress.level(totalExperience: before.totalExperience),
+            levelAfter: CharacterProgress.level(totalExperience: after.totalExperience),
+            stageBefore: CharacterProgress.stage(
+                level: CharacterProgress.level(totalExperience: before.totalExperience).value,
+                prCount: before.prCount, weeklyStreakWeeks: before.streakWeeks
+            ),
+            stageAfter: CharacterProgress.stage(
+                level: CharacterProgress.level(totalExperience: after.totalExperience).value,
+                prCount: after.prCount, weeklyStreakWeeks: after.streakWeeks
+            ),
+            muscles: WorkoutGrowth.muscleShares(
+                volumeByMuscle: CharacterInputs.volumeByMuscle(from: [workout])
+            ),
+            prCount: records.count
+        )
+    }
+
+    /// 育成の状態を取る。`finish()` の先頭で呼べば「この回を含まない」状態、
+    /// 完了処理のあとで呼べば「含んだ」状態になる（`completedAt` の有無で決まる）。
     /// 呼ぶのは `finish()` の先頭だけ（`completedAt` を立てる前なので、この回はまだ数えられていない）。
     private func growthSnapshot(for workout: Workout) -> GrowthSnapshot {
         let uid = userId

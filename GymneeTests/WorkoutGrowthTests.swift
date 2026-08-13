@@ -143,14 +143,12 @@ final class WorkoutGrowthTests: XCTestCase {
         XCTAssertEqual(WorkoutGrowth.Pending.key, "gymnee.character.pendingCelebration")
     }
 
-    /// 控えた値がそのまま戻ること。**取り出したら消える**（毎回開くたびに祝わない）。
+    /// 控えた内容がそのまま戻ること。**取り出したら消える**（毎回開くたびに祝わない）。
     func testPendingRoundTripsAndIsConsumedOnce() {
         let defaults = UserDefaults(suiteName: "WorkoutGrowthTests.pending")!
         defaults.removePersistentDomain(forName: "WorkoutGrowthTests.pending")
 
-        let pending = WorkoutGrowth.Pending(
-            workoutId: UUID(), totalExperienceBefore: 1234, prCountBefore: 5, streakWeeksBefore: 3
-        )
+        let pending = WorkoutGrowth.Pending(savedAt: .now, gain: gain(exp: 186, prCount: 1))
         pending.save(to: defaults)
 
         XCTAssertEqual(WorkoutGrowth.Pending.take(from: defaults), pending)
@@ -170,5 +168,21 @@ final class WorkoutGrowthTests: XCTestCase {
         defaults.set(Data("not json".utf8), forKey: WorkoutGrowth.Pending.key)
         XCTAssertNil(WorkoutGrowth.Pending.take(from: defaults))
         XCTAssertNil(defaults.data(forKey: WorkoutGrowth.Pending.key), "壊れた値が残ると毎回失敗し続ける")
+    }
+
+    /// 古い控えは出さない。落ちたあとに何日も前の記録を祝われても意味がない。
+    func testStalePendingIsDropped() {
+        let defaults = UserDefaults(suiteName: "WorkoutGrowthTests.stale")!
+        defaults.removePersistentDomain(forName: "WorkoutGrowthTests.stale")
+
+        let saved = Date(timeIntervalSince1970: 1_800_000_000)
+        WorkoutGrowth.Pending(savedAt: saved, gain: gain()).save(to: defaults)
+
+        let tooLate = saved.addingTimeInterval(WorkoutGrowth.Pending.maxAge + 1)
+        XCTAssertNil(WorkoutGrowth.Pending.take(from: defaults, now: tooLate))
+
+        WorkoutGrowth.Pending(savedAt: saved, gain: gain()).save(to: defaults)
+        let inTime = saved.addingTimeInterval(WorkoutGrowth.Pending.maxAge - 1)
+        XCTAssertNotNil(WorkoutGrowth.Pending.take(from: defaults, now: inTime))
     }
 }

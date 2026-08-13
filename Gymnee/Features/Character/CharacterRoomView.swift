@@ -1180,41 +1180,13 @@ struct CharacterRoomView: View {
     /// 既存の `PersonalRecord.workoutId` を今回の id に付け替えるので、除外すると
     /// 元々あった自己ベストごと消え、起きていないレベルアップや進化を祝ってしまう。
     /// 控えがあれば取り出して祝う。取り出したら消える（毎回開くたびには出さない）。
+    ///
+    /// 内容は記録タブが完了した時点で確定させて保存している。ここでは組み立て直さない
+    /// （`WorkoutGrowth.Pending` 参照）。**ワークアウトを見に行かないので `@Query` の
+    /// 反映を待つ必要がなく、タブ切替の直後でも取りこぼさない**。
     private func takePendingCelebration() {
         guard celebratingGain == nil, let pending = WorkoutGrowth.Pending.take() else { return }
-        presentCelebration(pending)
-    }
-
-    private func presentCelebration(_ pending: WorkoutGrowth.Pending) {
-        guard let workout = completedWorkouts.first(where: { $0.id == pending.workoutId }) else { return }
-
-        let beforeLevel = CharacterProgress.level(totalExperience: pending.totalExperienceBefore)
-        let beforeStage = CharacterProgress.stage(
-            level: beforeLevel.value,
-            prCount: pending.prCountBefore,
-            weeklyStreakWeeks: pending.streakWeeksBefore
-        )
-
-        let sessions = CharacterInputs.sessions(
-            from: [workout], prCountByWorkout: CharacterInputs.prCountByWorkout(records)
-        )
-        guard let session = sessions.first else { return }
-
-        celebratingGain = WorkoutGrowth.Gain(
-            // 実際に増えた分をそのまま出す。この回の式から取り直すと、自己ベストを
-            // 更新しただけの回で「前の記録から移っただけの 120」を上乗せしてしまい、
-            // 伸びたバーの幅と数字が食い違う。
-            exp: max(0, derived.totalExperience - pending.totalExperienceBefore),
-            energy: Expedition.energyEarned(for: session),
-            levelBefore: beforeLevel,
-            levelAfter: derived.level,
-            stageBefore: beforeStage,
-            stageAfter: derived.stage,
-            muscles: WorkoutGrowth.muscleShares(
-                volumeByMuscle: CharacterInputs.volumeByMuscle(from: [workout])
-            ),
-            prCount: session.prCount
-        )
+        celebratingGain = pending.gain
     }
 
     // MARK: - 集計
