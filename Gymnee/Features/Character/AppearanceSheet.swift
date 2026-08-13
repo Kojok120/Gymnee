@@ -83,12 +83,6 @@ struct AppearanceSheet: View {
                         case .accessory: accessoryRows
                         case .pet: petRows
                         }
-                        Text("売るのは見た目だけです。強さは現実のトレーニングでしか手に入りません。")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.textTertiary)
-                            .multilineTextAlignment(.center)
-                            .padding(.top, Theme.Spacing.md)
-
                         if !isStoreReachable {
                             Label("いまは購入できません。通信状況を確かめて、しばらくしてからお試しください。",
                                   systemImage: "exclamationmark.triangle.fill")
@@ -283,11 +277,6 @@ struct AppearanceSheet: View {
                     petThumbnail(pet.id)
                 }
             }
-            Text("ペットは見た目だけです。強さにも遠征の結果にも影響しません。")
-                .font(.caption2)
-                .foregroundStyle(Theme.textTertiary)
-                .multilineTextAlignment(.center)
-                .padding(.top, Theme.Spacing.xs)
         }
     }
 
