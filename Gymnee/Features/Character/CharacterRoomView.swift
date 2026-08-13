@@ -64,7 +64,8 @@ struct CharacterRoomView: View {
     }
 
     enum SheetRoute: String, Identifiable {
-        case status, expedition, quest, outfit, skins, collection, coach
+        /// `body` はキャラ本体をタップしたときに開く人体図（旧「分析」タブ）。
+        case status, expedition, quest, outfit, skins, collection, coach, body
         var id: String { rawValue }
     }
 
@@ -259,6 +260,12 @@ struct CharacterRoomView: View {
                     .transition(.opacity)
             }
 
+            if showBodyTapHint {
+                bodyTapHint
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, hudHeight + bottomInset + Theme.Spacing.lg)
+            }
+
             hud(size: size, bottomInset: bottomInset)
         }
         .frame(width: size.width, height: size.height)
@@ -282,7 +289,11 @@ struct CharacterRoomView: View {
         )
     }
 
-    /// 画面のタップ。キャラに当たっていれば反応させ、外していればコーチに喋ってもらう。
+    /// 画面のタップ。自分のキャラに当たっていれば「からだ」（人体図）を開き、
+    /// 外していればコーチに喋ってもらう。
+    ///
+    /// 分身をタップして自分のからだの状態を見る、という結びつきで人体図を出す。
+    /// かわいい反応（ハート・音符・きらめき）はペットの役目に移した。
     private func handleSceneTap(at location: CGPoint, size: CGSize, floorTop: CGFloat, floorBottom: CGFloat) {
         let dot = max(3, (size.width / 84).rounded())
         let pose = CharacterScene.pose(at: Date.now.timeIntervalSince(startedAt), seed: selfSeed)
@@ -294,13 +305,37 @@ struct CharacterRoomView: View {
         let side = CGFloat(PixelCharacterArt.canvasHeight) * scaled
 
         if CharacterReaction.isHit(tap: location, feet: feet, size: side) {
-            tapCount += 1
-            reactionParticle = CharacterReaction.Particle.next(count: tapCount)
-            reactedAt = .now
+            // 押せたことが分かるよう触覚だけ返し、そのままシートを開く。
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            bodyTapHinted = true
+            sheet = .body
         } else {
             speak()
         }
+    }
+
+    /// からだのヒントを出すか。キャラが遠征で不在のときは押す相手がいないので出さない。
+    private var showBodyTapHint: Bool {
+        guard !bodyTapHinted, bodyHintVisible, sheet == nil else { return false }
+        return !(activeRun?.isInProgress(asOf: .now) ?? false)
+    }
+
+    /// 「キャラを押すとからだが見られる」の一度きりの案内。
+    /// 図の上に重ねる `AnalyticsView` のヒントと同じ作りにして、押し方の説明は同じ見た目で統一する。
+    private var bodyTapHint: some View {
+        Label("キャラをタップすると、からだの状態が見られる", systemImage: "hand.tap.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Theme.bg1)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.textPrimary.opacity(0.88), in: Capsule())
+            .allowsHitTesting(false)
+            .transition(.opacity)
+            .task {
+                // 気づかれないまま出し続けない。押されたら AppStorage 側で恒久的に消える。
+                try? await Task.sleep(for: .seconds(8))
+                withAnimation(.snappy) { bodyHintVisible = false }
+            }
     }
 
     /// コーチの立ち位置（歩き回らず、部屋の決まった場所にいる）。
@@ -320,10 +355,16 @@ struct CharacterRoomView: View {
     @State private var coachPhase = CoachVisit.Phase.away
     @State private var coachPhaseSince = Date.now
 
-    /// キャラをタップした時刻と、そのとき浮かべる絵。
+    /// ペットをタップした時刻と、そのとき浮かべる絵。
     @State private var reactedAt: Date?
     @State private var reactionParticle = CharacterReaction.Particle.heart
     @State private var tapCount = 0
+
+    /// 「キャラを押すとからだが見られる」を一度だけ伝えるヒント。
+    /// 初回案内シートは既に見た人には二度と出ないので、部屋の中でも一度だけ出して取りこぼさない。
+    @AppStorage("gymnee.character.bodyTapHinted") private var bodyTapHinted = false
+    /// 押されないまま出しっぱなしにしない（数秒で引っ込める）。
+    @State private var bodyHintVisible = true
 
     /// 拾った直後に出す告知。
     @State private var collectedToast: RoomPickup.Item?
@@ -951,6 +992,16 @@ struct CharacterRoomView: View {
             QuestSheet(userId: userId) { sheet = .coach }
         case .coach:
             CoachChatView(userId: userId)
+        case .body:
+            // 自分の分身をタップして自分のからだを見る。旧「分析」タブの中身をそのまま持ってくる。
+            // AnalyticsView から開く部位詳細は自前の NavigationStack を持つ自己完結ビューなので、
+            // ここでの destination 宣言は要らない。
+            NavigationStack {
+                AnalyticsView(userId: userId)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) { Button("閉じる") { sheet = nil } }
+                    }
+            }
         }
     }
 

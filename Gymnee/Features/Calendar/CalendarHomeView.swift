@@ -2,8 +2,8 @@ import SwiftUI
 import SwiftData
 
 /// カレンダーホーム（§6.2）。月/週表示・記録マーカー・連続記録・週次ゴール。
-/// 単体で開く場合の入口（DEBUG ハーネス）。タブからは外れ、通常は「その他」から
-/// `AppRoute.calendar` で push される（その場合の器は OtherTabView の NavigationStack）。
+/// 「カレンダー」タブの器。自前で NavigationStack と destination 宣言を持つので、
+/// タブ直下にも DEBUG ハーネスにもそのまま置ける。
 struct CalendarHomeView: View {
     @Environment(AuthService.self) private var auth
 
