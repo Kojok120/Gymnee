@@ -1028,7 +1028,10 @@ struct CharacterRoomView: View {
 
     private var actionBar: some View {
         HStack(spacing: Theme.Spacing.md) {
-            sceneButton("ステータス", "chart.bar.fill", route: .status)
+            // ステータスは左上の Lv バッジが同じシートを開くので、ここには置かない。
+            // 空いた枠は「からだ」（人体図）に充てる。キャラ本体のタップだけだと、
+            // 押せることに気づかないと一生たどり着けない。
+            sceneButton("ボディ", "figure.stand", route: .body)
             sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
             sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
             sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
