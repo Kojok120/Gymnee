@@ -150,6 +150,13 @@ extension Color {
     }
 }
 
+extension Theme {
+    /// バンドルしているドットフォントの PostScript 名。
+    /// ここを間違えても SwiftUI は黙ってシステムフォントで描くので、
+    /// 名前は一箇所に置き、`ThemeFontTests` で実際に解決できることを検証する。
+    static let pixelFontName = "DotGothic16-Regular"
+}
+
 // MARK: - Typography (数値は SF Pro Rounded + monospacedDigit)
 
 extension Font {
@@ -160,6 +167,18 @@ extension Font {
     static let numS = Font.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit()
     /// 大数値の上に置く小ラベル（大文字・字間広め）。
     static let overline = Font.system(size: 11, weight: .semibold, design: .rounded)
+
+    /// ドット絵の世界の中の文字（キャラのことば・置き手紙）。DotGothic16 / SIL OFL 1.1。
+    ///
+    /// **16pt を既定にする**。この書体は 16 ドットの升目で描かれているので、
+    /// 16pt なら 1 ドットが 2x 機で 2px・3x 機で 3px の整数になり、輪郭がにじまない。
+    /// 中途半端な大きさにすると等倍にならず、ドット絵の中でここだけぼやける。
+    ///
+    /// 用途はキャラのことばに限る。ボタン・タブ・一覧など iOS の UI に使うと
+    /// 可読性が落ちるうえ、OS の外観から浮く。
+    static func pixel(size: CGFloat = 16, relativeTo style: Font.TextStyle = .body) -> Font {
+        .custom(Theme.pixelFontName, size: size, relativeTo: style)
+    }
 }
 
 // MARK: - Motion (物理ベースの spring プリセット)

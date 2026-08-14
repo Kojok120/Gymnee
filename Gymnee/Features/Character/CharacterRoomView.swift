@@ -837,12 +837,11 @@ struct CharacterRoomView: View {
     private func letterNoteOverlay(_ text: String) -> some View {
         VStack(spacing: Theme.Spacing.md) {
             PixelSpriteView(sprite: PixelCharacterArt.letter, palette: .neutral, side: 60)
-            // 手書きの手紙に見せる。日本語で手書き感が出る既定フォントは明朝体なので serif を使う
-            // （Chalkboard 等の手書き欧文フォントは日本語グリフを持たず、結局ゴシックに落ちる）。
+            // 部屋がドット絵なので、そこに置かれた手紙の字もドットで描く。
+            // 大きさは 16pt 固定（Font.pixel の説明どおり、等倍にならないとにじむ）。
             Text(text)
-                .font(.system(size: 16, design: .serif))
-                .tracking(0.5)
-                .lineSpacing(4)
+                .font(.pixel())
+                .lineSpacing(6)
                 .foregroundStyle(Theme.textPrimary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1522,8 +1521,9 @@ private struct SpeechBubble: View {
 
     var body: some View {
         Button(action: onTap) {
+            // キャラのことばも手紙と同じドット書体で揃える（同じ世界の中の文字なので）。
             Text(text)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.pixel())
                 .foregroundStyle(Theme.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Theme.Spacing.lg)
