@@ -31,6 +31,8 @@ struct SettingsView: View {
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
+    // トレ開始の配信（既定オフ）。居場所と行動を実時間で明かすので、明示的にオンにした人だけ。
+    @AppStorage(LiveSessionService.shareKey) private var shareLiveStart = false
     // 記録のレスト既定秒数（RestTimer が参照）。
     @AppStorage("gymnee.restSeconds") private var restSeconds: Int = 90
     // レスト終了チャイム（RestChime が参照。サイレントスイッチでも鳴る）。
@@ -307,6 +309,14 @@ struct SettingsView: View {
                         Label("共有: \(csvURL.lastPathComponent)", systemImage: "doc")
                     }
                 }
+            }
+
+            Section {
+                Toggle("トレーニング開始をフォロワーに知らせる", isOn: $shareLiveStart)
+            } header: {
+                Text("応援")
+            } footer: {
+                Text("オンにすると、記録を始めたときにフォロワーへ「トレーニングを始めました」と通知が届き、応援を送ってもらえます。応援は記録画面に表示されます。オフのあいだは誰にも知らされません。")
             }
 
             Section {

@@ -11,6 +11,8 @@ extension Notification.Name {
     /// 記録の完了サマリーを閉じたあと、育成タブへ切替える要求。
     /// 「この1回が育成にどう効いたか」は育成タブ側で出す（キャラの前で説明する）。
     static let gymneeShowCharacter = Notification.Name("gymnee.showCharacter")
+    /// 応援が届いた（userInfo: name/kind）。記録画面が受けて帯に足す。
+    static let gymneeCheerReceived = Notification.Name("gymnee.cheerReceived")
     /// 通知タップ等から目的地（タブ）へ遷移する要求（userInfo: type/feedItemId）。
     static let gymneeOpenDestination = Notification.Name("gymnee.openDestination")
     /// Watch：本体から最新スナップショットを受信した。

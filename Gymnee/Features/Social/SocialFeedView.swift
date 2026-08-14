@@ -113,6 +113,8 @@ private struct SocialContent: View {
     @Query private var blocks: [Block]
     @Query private var profiles: [Profile]
     /// 自分＋フォロー中の他人の feed_items（サーバーから RLS 経由で取り込む）。
+    @Environment(LiveSessionService.self) private var live
+    @Environment(\.scenePhase) private var scenePhase
     @Query private var feedItems: [FeedItem]
     @Query private var allReactions: [PostReaction]
     @Query private var allComments: [Comment]
@@ -130,6 +132,10 @@ private struct SocialContent: View {
     /// ダブルタップいいね時のハート演出対象（feed_item id）。
     @State private var burstId: UUID?
     @State private var feedEntries: [FeedEntry] = []
+    /// いまトレーニング中のフォロー相手。サーバが正なので都度取り直す。
+    @State private var liveFriends: [LiveSessionService.LiveFriend] = []
+    /// 押した直後に見た目を確定させるための記録（送信の往復を待たせない）。
+    @State private var cheered: Set<String> = []
 
     init(userId: UUID) {
         self.userId = userId
@@ -274,6 +280,59 @@ private struct SocialContent: View {
     }
 
     // フレンド/ランキングと容器(List)を統一してタブ切替の描画を滑らかに。重い構築はメモ化(feedEntries)。
+    /// いまトレーニング中のフォロー相手。**その場で応援できる**ことがこの列の目的なので、
+    /// プロフィールへは飛ばさずスタンプだけ置く。
+    @ViewBuilder
+    private var liveSection: some View {
+        if !liveFriends.isEmpty {
+            Section {
+                ForEach(liveFriends) { friend in
+                    HStack(spacing: Theme.Spacing.md) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(friend.name)さんがトレーニング中")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.textPrimary)
+                                .lineLimit(1)
+                            Text(LiveSessionCopy.elapsed(from: friend.startedAt))
+                                .font(.caption2)
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        Spacer(minLength: 0)
+                        ForEach(LiveSessionCopy.cheerKinds, id: \.self) { kind in
+                            Button {
+                                cheered.insert(cheerKey(friend, kind))
+                                Task { await live.cheer(sessionId: friend.sessionId, kind: kind) }
+                            } label: {
+                                Text(LiveSessionCopy.emoji(kind))
+                                    .font(.title3)
+                                    .frame(width: 40, height: 36)
+                                    .background(
+                                        cheered.contains(cheerKey(friend, kind)) ? Theme.limeFill.opacity(0.25) : Theme.bg2,
+                                        in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(cheered.contains(cheerKey(friend, kind)))
+                            .accessibilityLabel("\(friend.name)さんを\(LiveSessionCopy.label(kind))で応援する")
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+            } header: {
+                Text("いまトレーニング中")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+
+    /// 押した直後に見た目を確定させるための鍵（送信の往復を待たせない）。
+    private func cheerKey(_ friend: LiveSessionService.LiveFriend, _ kind: String) -> String {
+        "\(friend.sessionId.uuidString)-\(kind)"
+    }
+
     private var feed: some View {
         // リアクション/コメントは内容変更（種別変更=件数不変）でも即反映する必要があるため、
         // 件数キーのキャッシュは使わず描画時に直接導出する（feedEntries のような重い構築のみメモ化）。
@@ -285,6 +344,7 @@ private struct SocialContent: View {
         let blocked = blockedIds
         let visibleEntries = feedEntries.filter { $0.authorId.map { !blocked.contains($0) } ?? true }
         return List {
+            liveSection
             ForEach(visibleEntries) { entry in
                 feedRow(entry, reactions: reactionsByItem[entry.id] ?? [], commentCount: commentsByItem[entry.id]?.count ?? 0)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
@@ -294,7 +354,15 @@ private struct SocialContent: View {
             }
         }
         .listStyle(.plain)
-        .refreshable { await refreshFeed() }
+        .refreshable {
+            await refreshFeed()
+            liveFriends = await live.liveFriends()
+        }
+        .task { liveFriends = await live.liveFriends() }
+        // 通知から来たときは開いた瞬間に最新を出す（誰が今トレ中かは数分で変わる）。
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { liveFriends = await live.liveFriends() } }
+        }
         .background(Theme.groupedBackground)
         .overlay {
             if visibleEntries.isEmpty {
