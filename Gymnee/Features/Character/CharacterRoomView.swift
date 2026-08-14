@@ -269,7 +269,7 @@ struct CharacterRoomView: View {
             // 「あと1回で今週の目標」と言うのは筋が通らないので、ふきだしはコーチの頭上に置く。
             // コーチが立っている間だけふきだしを出す。歩いている最中に喋らせると読めない。
             if coachPhase == .present, let line = chatter {
-                SpeechBubble(text: line.text) { openCoach() }
+                SpeechBubble(text: line.text) { follow(line) }
                     .frame(maxWidth: size.width * 0.64, alignment: .leading)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.leading, size.width * Self.coachSpot.x)
@@ -1270,6 +1270,22 @@ struct CharacterRoomView: View {
 
     private func openCoach() {
         sheet = .coach
+    }
+
+    /// ふきだしのタップ先。**セリフの用事に従う**。
+    ///
+    /// `CharacterChatter.Line` は最初から用事（記録をはじめる / 遠征 / 受け取り）を持っていたのに、
+    /// ここが無視して常にコーチとの会話を開いていた。「どこか行ってきていい？」を押しても
+    /// 遠征に行けず会話が開く、という食い違いはこれが原因。用事が無いひとことだけ会話へ送る。
+    private func follow(_ line: CharacterChatter.Line) {
+        switch line.action {
+        case .startWorkout:
+            NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil)
+        case .expedition, .claim:
+            sheet = .expedition
+        case nil:
+            openCoach()
+        }
     }
 
     // MARK: - セリフ
