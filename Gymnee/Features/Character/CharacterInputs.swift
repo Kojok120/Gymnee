@@ -40,6 +40,52 @@ enum CharacterInputs {
     }
 
     /// 完了済みワークアウトの部位別累積ボリューム（ステータス算出の入力）。
+    /// 育成の現在値。**部屋とコーチで同じ式を使う**ための入口。
+    /// 別々に組むと、コーチが部屋と違う数字を喋る。
+    struct Growth: Equatable, Sendable {
+        let totalExperience: Int
+        let level: CharacterProgress.Level
+        let stage: CharacterProgress.Stage
+        let nextStage: CharacterProgress.NextStage?
+        let energy: Int
+        let streakWeeks: Int
+    }
+
+    static func growth(
+        completedWorkouts: [Workout],
+        records: [PersonalRecord],
+        pickups: [RoomPickupRecord],
+        runs: [ExpeditionRun],
+        weeklyGoal: Int
+    ) -> Growth {
+        let sessions = sessions(from: completedWorkouts, prCountByWorkout: prCountByWorkout(records))
+        let collectedIds = pickups.map(\.itemId)
+        let totalExperience = CharacterProgress.totalExperience(
+            sessions: sessions,
+            pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds)
+        )
+        let level = CharacterProgress.level(totalExperience: totalExperience)
+        let streak = StreakCalculator.currentWeeklyStreak(
+            activeDays: completedWorkouts.map { $0.completedAt ?? $0.date }, weeklyGoal: weeklyGoal
+        )
+        return Growth(
+            totalExperience: totalExperience,
+            level: level,
+            stage: CharacterProgress.stage(
+                level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
+            ),
+            nextStage: CharacterProgress.nextStage(
+                level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
+            ),
+            energy: Expedition.availableEnergy(
+                sessions: sessions,
+                spent: runs.reduce(0) { $0 + $1.energySpent },
+                bonus: RoomPickup.totalEnergy(collectedItemIds: collectedIds)
+            ),
+            streakWeeks: streak.weeks
+        )
+    }
+
     static func volumeByMuscle(from workouts: [Workout]) -> [MuscleGroup: Double] {
         var result: [MuscleGroup: Double] = [:]
         for workout in workouts where workout.completedAt != nil {

@@ -1164,37 +1164,27 @@ struct CharacterRoomView: View {
             prCountByWorkout: CharacterInputs.prCountByWorkout(records)
         )
         let activeDays = completedWorkouts.map { $0.completedAt ?? $0.date }
-        let streak = StreakCalculator.currentWeeklyStreak(activeDays: activeDays, weeklyGoal: weeklyGoal)
-        // 拾ったグッズの分を合流させる（元気は燃料、EXP はレアのみ）。
-        let collectedIds = pickups.map(\.itemId)
-        let totalExperience = CharacterProgress.totalExperience(
-            sessions: sessions,
-            pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds)
+        // レベル・段階・元気は**コーチと同じ式**で出す（別々に組むと数字が食い違う）。
+        let growth = CharacterInputs.growth(
+            completedWorkouts: completedWorkouts, records: records,
+            pickups: pickups, runs: runs, weeklyGoal: weeklyGoal
         )
-        let level = CharacterProgress.level(totalExperience: totalExperience)
+        let level = growth.level
+        let stage = growth.stage
         let stats = CharacterProgress.stats(volumeByMuscle: CharacterInputs.volumeByMuscle(from: completedWorkouts))
-        let stage = CharacterProgress.stage(
-            level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
-        )
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: .now)
         let lastWorkout = activeDays.max()
 
         var next = Derived()
         next.level = level
-        next.totalExperience = totalExperience
+        next.totalExperience = growth.totalExperience
         next.stage = stage
-        next.nextStage = CharacterProgress.nextStage(
-            level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
-        )
+        next.nextStage = growth.nextStage
         next.stats = stats
         next.build = CharacterBuild.make(from: CharacterAppearance.make(stats: stats, stage: stage))
-        next.energy = Expedition.availableEnergy(
-            sessions: sessions,
-            spent: runs.reduce(0) { $0 + $1.energySpent },
-            bonus: RoomPickup.totalEnergy(collectedItemIds: collectedIds)
-        )
-        next.streakWeeks = streak.weeks
+        next.energy = growth.energy
+        next.streakWeeks = growth.streakWeeks
         next.sessionCount = sessions.count
         next.weeklyDone = activeDays.filter {
             calendar.isDate($0, equalTo: .now, toGranularity: .weekOfYear)
