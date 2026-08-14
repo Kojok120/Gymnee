@@ -168,14 +168,14 @@ extension Font {
     /// 大数値の上に置く小ラベル（大文字・字間広め）。
     static let overline = Font.system(size: 11, weight: .semibold, design: .rounded)
 
-    /// ドット絵の世界の中の文字（キャラのことば・置き手紙）。DotGothic16 / SIL OFL 1.1。
+    /// ドット絵の世界の中の文字。DotGothic16 / SIL OFL 1.1。
     ///
-    /// **16pt を既定にする**。この書体は 16 ドットの升目で描かれているので、
-    /// 16pt なら 1 ドットが 2x 機で 2px・3x 機で 3px の整数になり、輪郭がにじまない。
-    /// 中途半端な大きさにすると等倍にならず、ドット絵の中でここだけぼやける。
+    /// 大きいほどドットの粒が揃って見え、小さくすると粒がつぶれて可読性が落ちる。
+    /// **11pt を下限の目安**にする（それ未満は実機で潰れる）。
     ///
-    /// 用途はキャラのことばに限る。ボタン・タブ・一覧など iOS の UI に使うと
-    /// 可読性が落ちるうえ、OS の外観から浮く。
+    /// 用途は育成タブの部屋の中に限る。そこから開くシート（クエスト・着替え・戦利品など）や
+    /// タブバーは iOS の UI なのでシステムフォントのままにする。ドット書体を一覧や
+    /// フォームに広げると読みづらく、OS の外観からも浮く。
     static func pixel(size: CGFloat = 16, relativeTo style: Font.TextStyle = .body) -> Font {
         .custom(Theme.pixelFontName, size: size, relativeTo: style)
     }
