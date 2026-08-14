@@ -154,7 +154,7 @@ extension Theme {
     /// バンドルしているドットフォントの PostScript 名。
     /// ここを間違えても SwiftUI は黙ってシステムフォントで描くので、
     /// 名前は一箇所に置き、`ThemeFontTests` で実際に解決できることを検証する。
-    static let pixelFontName = "DotGothic16-Regular"
+    static let pixelFontName = "PixelMplus10-Regular"
 }
 
 // MARK: - Typography (数値は SF Pro Rounded + monospacedDigit)
@@ -168,7 +168,7 @@ extension Font {
     /// 大数値の上に置く小ラベル（大文字・字間広め）。
     static let overline = Font.system(size: 11, weight: .semibold, design: .rounded)
 
-    /// ドット絵の世界の中の文字。DotGothic16 / SIL OFL 1.1。
+    /// ドット絵の世界の中の文字。PixelMplus10（10 ドットの升目で描かれた和文）/ M+ FONT LICENSE。
     ///
     /// 大きいほどドットの粒が揃って見え、小さくすると粒がつぶれて可読性が落ちる。
     /// **11pt を下限の目安**にする（それ未満は実機で潰れる）。

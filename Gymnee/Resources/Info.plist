@@ -70,7 +70,7 @@
 	<string>$(SUPABASE_KEY)</string>
 	<key>UIAppFonts</key>
 	<array>
-		<string>DotGothic16-Regular.ttf</string>
+		<string>PixelMplus10-Regular.ttf</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

@@ -18,9 +18,9 @@ final class ThemeFontTests: XCTestCase {
 
     /// 同梱されているファイル自体が読める。
     func testPixelFontFileIsBundled() {
-        let url = Bundle(for: Self.self).url(forResource: "DotGothic16-Regular", withExtension: "ttf")
-            ?? Bundle.main.url(forResource: "DotGothic16-Regular", withExtension: "ttf")
-        XCTAssertNotNil(url, "DotGothic16-Regular.ttf が同梱されていない")
+        let url = Bundle(for: Self.self).url(forResource: "PixelMplus10-Regular", withExtension: "ttf")
+            ?? Bundle.main.url(forResource: "PixelMplus10-Regular", withExtension: "ttf")
+        XCTAssertNotNil(url, "PixelMplus10-Regular.ttf が同梱されていない")
     }
 
     /// 日本語（手紙・ふきだしで実際に出る文字）がフォント側にある。
