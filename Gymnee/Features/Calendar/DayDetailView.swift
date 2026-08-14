@@ -5,9 +5,9 @@ import SwiftData
 struct DayDetailView: View {
     let userId: UUID
     let date: Date
-    /// ワークアウト編集を開く。pushed view 上では navigationDestination が無効(iOS26.5)なため、
-    /// ロガーへの遷移はルート(CalendarHomeContent)側に委ねる。
-    var onEditWorkout: (Workout) -> Void = { _ in }
+    /// 属しているスタック。ロガーへの遷移をここから積む。
+    /// destination の宣言はルート(CalendarHomeView)側にあり、この画面では宣言しない(iOS26.5)。
+    @Binding var path: NavigationPath
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
@@ -29,10 +29,10 @@ struct DayDetailView: View {
         calendar.startOfDay(for: date) > calendar.startOfDay(for: .now)
     }
 
-    init(userId: UUID, date: Date, onEditWorkout: @escaping (Workout) -> Void = { _ in }) {
+    init(userId: UUID, date: Date, path: Binding<NavigationPath>) {
         self.userId = userId
         self.date = date
-        self.onEditWorkout = onEditWorkout
+        _path = path
         let start = Calendar.current.startOfDay(for: date)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
         _workouts = Query(
@@ -152,7 +152,7 @@ struct DayDetailView: View {
         let workout = Workout(userId: userId, date: noon, name: "ワークアウト")
         context.insert(workout)
         try? context.save()
-        onEditWorkout(workout)
+        path.append(CalendarRoute.logger(workout))
     }
 
     /// 計画を開始＝実記録に変えて記録タブで開く（過去ワークアウトの編集はカレンダー内のまま）。

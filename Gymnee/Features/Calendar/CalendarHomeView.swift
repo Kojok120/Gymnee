@@ -4,15 +4,40 @@ import SwiftData
 /// カレンダーホーム（§6.2）。月/週表示・記録マーカー・連続記録・週次ゴール。
 /// 「カレンダー」タブの器。自前で NavigationStack と destination 宣言を持つので、
 /// タブ直下にも DEBUG ハーネスにもそのまま置ける。
+/// カレンダータブの中だけで使う値ルート。
+///
+/// 全タブ共通の `AppRoute` と**型を分けて**おくと、同じ NavigationStack に
+/// `navigationDestination(for:)` を 2 つ並べられる（SwiftUI は型ごとに解決する）。
+/// 日別詳細とロガーは userId とパスが要るので、共通ルートには入れずここに置く。
+enum CalendarRoute: Hashable {
+    case day(Date)
+    case logger(Workout)
+}
+
 struct CalendarHomeView: View {
     @Environment(AuthService.self) private var auth
 
+    /// スタックは**この 1 本だけ**にする。
+    /// 以前は日別詳細とロガーを `navigationDestination(item:)` で出していたが、
+    /// item ベースは「その画面がスタックの一番上にある」ことを前提に動くので、
+    /// 日別詳細の中から値ベースでワークアウト詳細を push すると
+    /// 日別詳細がもう一度積まれ、戻るとワークアウト詳細が現れる、という壊れ方をした。
+    @State private var path = NavigationPath()
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             if let uid = auth.currentUserId {
-                CalendarHomeContent(userId: uid)
+                CalendarHomeContent(userId: uid, path: $path)
                     // AppRoute の destination は NavigationStack ルート側で宣言する（§AppRoute）。
                     .gymneeNavigationDestinations(userId: uid)
+                    .navigationDestination(for: CalendarRoute.self) { route in
+                        switch route {
+                        case .day(let date):
+                            DayDetailView(userId: uid, date: date, path: $path)
+                        case .logger(let workout):
+                            RecordContent(userId: uid, resuming: workout)
+                        }
+                    }
             } else {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
@@ -22,6 +47,7 @@ struct CalendarHomeView: View {
 
 struct CalendarHomeContent: View {
     let userId: UUID
+    @Binding var path: NavigationPath
 
     @Environment(\.modelContext) private var context
     @Environment(NotificationService.self) private var notifications
@@ -30,22 +56,15 @@ struct CalendarHomeContent: View {
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
 
     @State private var anchor = Date.now
-    @State private var selectedDate: SelectedDay?
-    @State private var editingWorkout: Workout?
     @State private var showPlanner = false
     @State private var showNotifPrePrompt = false
     @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
-    /// navigationDestination(item:) は Identifiable を要求するため Date をラップする。
-    private struct SelectedDay: Identifiable, Hashable {
-        let date: Date
-        var id: Date { date }
-    }
-
     private let calendar = Calendar.current
 
-    init(userId: UUID) {
+    init(userId: UUID, path: Binding<NavigationPath>) {
         self.userId = userId
+        _path = path
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date)
         _planned = Query(filter: #Predicate<PlannedWorkout> { $0.userId == userId && !$0.isDone }, sort: \PlannedWorkout.date)
     }
@@ -81,16 +100,8 @@ struct CalendarHomeContent: View {
         } message: {
             Text("連続記録の途切れ予告・フレンドの活動・今週のまとめをお届けします。")
         }
-        // AppRoute の destination はこのビューを載せる NavigationStack のルート側で宣言する
-        // （CalendarHomeView / OtherTabView）。push 先の子リンクから解決できなくなるため、
-        // ここ（push されうるビュー）では宣言しない（iOS 26.5 の挙動）。
-        .navigationDestination(item: $selectedDate) { selection in
-            DayDetailView(userId: userId, date: selection.date, onEditWorkout: { editingWorkout = $0 })
-        }
-        // ロガーへの遷移はルートで宣言（pushed view 上の navigationDestination は 26.5 で無効のため）。
-        .navigationDestination(item: $editingWorkout) { workout in
-            RecordContent(userId: userId, resuming: workout)
-        }
+        // destination はすべて NavigationStack のルート側（CalendarHomeView）で宣言する。
+        // push されうるビューの上に置くと子リンクから解決できない（iOS 26.5 の挙動）。
         .task(id: activeWorkoutCount) { syncPlatform() }
     }
 
@@ -237,7 +248,7 @@ struct CalendarHomeContent: View {
         let isToday = calendar.isDateInToday(date)
         let inMonth = calendar.isDate(date, equalTo: anchor, toGranularity: .month)
         return Button {
-            selectedDate = SelectedDay(date: start)
+            path.append(CalendarRoute.day(start))
         } label: {
             VStack(spacing: 4) {
                 Text("\(calendar.component(.day, from: date))")
