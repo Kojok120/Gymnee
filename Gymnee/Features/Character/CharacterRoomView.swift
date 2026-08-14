@@ -837,17 +837,15 @@ struct CharacterRoomView: View {
     private func letterNoteOverlay(_ text: String) -> some View {
         VStack(spacing: Theme.Spacing.md) {
             PixelSpriteView(sprite: PixelCharacterArt.letter, palette: .neutral, side: 60)
-            // 手書きの手紙に見せる。日本語で手書き感が出る既定フォントは明朝体なので serif を使う
-            // （Chalkboard 等の手書き欧文フォントは日本語グリフを持たず、結局ゴシックに落ちる）。
+            // 部屋がドット絵なので、そこに置かれた手紙の字もドットで描く。
             Text(text)
-                .font(.system(size: 16, design: .serif))
-                .tracking(0.5)
-                .lineSpacing(4)
+                .font(.pixel())
+                .lineSpacing(6)
                 .foregroundStyle(Theme.textPrimary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             Text("タップして閉じる")
-                .font(.caption2)
+                .font(.pixel(size: 11, relativeTo: .caption2))
                 .foregroundStyle(Theme.textTertiary)
         }
         .padding(Theme.Spacing.xl)
@@ -946,12 +944,12 @@ struct CharacterRoomView: View {
                     Image(systemName: derived.stage.symbol)
                         .font(.caption.bold())
                     Text(derived.stage.title)
-                        .font(.subheadline.weight(.bold))
+                        .font(.pixel(size: 13, relativeTo: .subheadline))
                 }
                 .foregroundStyle(Self.hudAccent)
 
                 Text("Lv.\(derived.level.value)")
-                    .font(.numS)
+                    .font(.pixel())
                     .foregroundStyle(.white)
 
                 // EXP バー。
@@ -978,7 +976,7 @@ struct CharacterRoomView: View {
                     .font(.caption)
                     .foregroundStyle(Self.hudAccent)
                 Text("\(derived.energy)")
-                    .font(.numS)
+                    .font(.pixel())
                     .foregroundStyle(.white)
             }
             .padding(.horizontal, Theme.Spacing.md)
@@ -1032,7 +1030,7 @@ struct CharacterRoomView: View {
                     }
                 }
                 Text(title)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.pixel(size: 11, relativeTo: .caption2))
                     .foregroundStyle(disabled ? Color.white.opacity(0.4) : .white.opacity(0.9))
                     .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
             }
@@ -1052,12 +1050,12 @@ struct CharacterRoomView: View {
             )
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.name)
-                    .font(.caption.bold())
+                    .font(.pixel(size: 13, relativeTo: .caption))
                     .foregroundStyle(.white)
                 Text(item.experience > 0
                      ? "テストステロンパワー +\(item.energy) / EXP +\(item.experience)"
                      : "テストステロンパワー +\(item.energy)")
-                    .font(.caption2.monospacedDigit())
+                    .font(.pixel(size: 11, relativeTo: .caption2))
                     .foregroundStyle(Self.hudAccent)
             }
         }
@@ -1522,8 +1520,9 @@ private struct SpeechBubble: View {
 
     var body: some View {
         Button(action: onTap) {
+            // キャラのことばも手紙と同じドット書体で揃える（同じ世界の中の文字なので）。
             Text(text)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(.pixel())
                 .foregroundStyle(Theme.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Theme.Spacing.lg)

@@ -150,6 +150,13 @@ extension Color {
     }
 }
 
+extension Theme {
+    /// バンドルしているドットフォントの PostScript 名。
+    /// ここを間違えても SwiftUI は黙ってシステムフォントで描くので、
+    /// 名前は一箇所に置き、`ThemeFontTests` で実際に解決できることを検証する。
+    static let pixelFontName = "PixelMplus10-Regular"
+}
+
 // MARK: - Typography (数値は SF Pro Rounded + monospacedDigit)
 
 extension Font {
@@ -160,6 +167,18 @@ extension Font {
     static let numS = Font.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit()
     /// 大数値の上に置く小ラベル（大文字・字間広め）。
     static let overline = Font.system(size: 11, weight: .semibold, design: .rounded)
+
+    /// ドット絵の世界の中の文字。PixelMplus10（10 ドットの升目で描かれた和文）/ M+ FONT LICENSE。
+    ///
+    /// 大きいほどドットの粒が揃って見え、小さくすると粒がつぶれて可読性が落ちる。
+    /// **11pt を下限の目安**にする（それ未満は実機で潰れる）。
+    ///
+    /// 用途は育成タブの部屋の中に限る。そこから開くシート（クエスト・着替え・戦利品など）や
+    /// タブバーは iOS の UI なのでシステムフォントのままにする。ドット書体を一覧や
+    /// フォームに広げると読みづらく、OS の外観からも浮く。
+    static func pixel(size: CGFloat = 16, relativeTo style: Font.TextStyle = .body) -> Font {
+        .custom(Theme.pixelFontName, size: size, relativeTo: style)
+    }
 }
 
 // MARK: - Motion (物理ベースの spring プリセット)
