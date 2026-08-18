@@ -37,6 +37,7 @@ Gymnee は筋トレ記録アプリ (オフラインファースト / SwiftData �
 | 期間内来店 | `supabase.engagement.visitsInWindow` | 9 | チェックイン利用 |
 | PR 達成 | `supabase.features.personalRecordsInWindow` | 28 | 自己ベスト更新の頻度 |
 | プッシュ到達母数 | `supabase.features.pushReachableUsers` | 3 | device_tokens 登録者。通知施策の母数 |
+| 通知到達率 | `supabase.features.pushReachableRate` | 30% (3/10、2026-08-18) | device_tokens 登録者 / profiles。通知許諾導線の主要指標 |
 | 身体記録 / 写真 / サプリ | `body/progress/supplyLogsInWindow` | 0 / 0 / 0 | 未利用。導線を要検討 (収益導線=supply) |
 
 ## 全体活動数字の扱い(誤読注意)

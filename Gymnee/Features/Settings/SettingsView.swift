@@ -31,8 +31,6 @@ struct SettingsView: View {
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
-    // トレ開始の配信（既定オフ）。居場所と行動を実時間で明かすので、明示的にオンにした人だけ。
-    @AppStorage(LiveSessionService.shareKey) private var shareLiveStart = false
     // 記録のレスト既定秒数（RestTimer が参照）。
     @AppStorage("gymnee.restSeconds") private var restSeconds: Int = 90
     // レスト終了チャイム（RestChime が参照。サイレントスイッチでも鳴る）。
@@ -41,11 +39,12 @@ struct SettingsView: View {
     @AppStorage(CoachMode.storageKey) private var coachModeRaw = CoachMode.default.rawValue
     // 通知の種類別 ON/OFF。ローカル通知はこの @AppStorage を NotificationService が参照。
     @AppStorage(NotificationService.PrefKey.coach) private var notifCoach = true
-    @AppStorage(NotificationService.PrefKey.streak) private var notifStreak = true
+    @AppStorage(NotificationService.PrefKey.reengagement) private var notifReengagement = true
     @AppStorage(NotificationService.PrefKey.planned) private var notifPlanned = true
     @AppStorage(NotificationService.PrefKey.weeklyRecap) private var notifWeeklyRecap = true
-    // プッシュ通知（いいね/コメント）は profiles 列が真実の情報源。
+    // プッシュ通知は profiles 列が真実の情報源。
     @Query private var profiles: [Profile]
+    @Query private var profileNotificationSettings: [ProfileNotificationSettings]
 
     var body: some View {
         Form {
@@ -128,6 +127,11 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: coachModeRaw) { _, rawValue in
+                    if (CoachMode(rawValue: rawValue) ?? .default) == .off {
+                        notifications.cancelCoachNotices()
+                    }
+                }
 
                 Text(coachMode.detail)
                     .font(.caption)
@@ -163,24 +167,30 @@ struct SettingsView: View {
                         .disabled(myProfile == nil)
                     Toggle("コメント", isOn: pushBinding(\.notifyComments))
                         .disabled(myProfile == nil)
+                    Toggle("フォロー中の投稿", isOn: profileNotificationBinding(\.notifyPost, defaultValue: true))
+                        .disabled(myProfile == nil)
+                    Toggle("フォロー中の人のトレーニング開始", isOn: profileNotificationBinding(\.notifyLiveStart, defaultValue: true))
+                        .disabled(myProfile == nil)
                     Toggle("コーチの声かけ", isOn: $notifCoach)
                         .onChange(of: notifCoach) { _, on in
                             if !on { notifications.cancelCoachNotices() }
                         }
                         .disabled(coachMode == .off)
-                    Toggle("連続記録の途切れ予告", isOn: $notifStreak)
-                        .onChange(of: notifStreak) { _, on in if !on { notifications.cancelStreakReminder() } }
+                    Toggle("再開のリマインド", isOn: $notifReengagement)
+                        .onChange(of: notifReengagement) { _, on in if !on { notifications.cancelReengagementReminders() } }
                     Toggle("予定ワークアウト", isOn: $notifPlanned)
                         .onChange(of: notifPlanned) { _, on in if !on { notifications.cancelPlannedReminders() } }
                     Toggle("今週のまとめ", isOn: $notifWeeklyRecap)
                         .onChange(of: notifWeeklyRecap) { _, on in if !on { notifications.cancelWeeklyRecap() } }
                 }
                 .disabled(!notifAuthorized)
+                Toggle("トレーニング開始をフォロワーに知らせる", isOn: profileNotificationBinding(\.shareLiveStart, defaultValue: false))
+                    .disabled(myProfile == nil)
             } header: {
                 Text("通知")
             } footer: {
                 Text(notifAuthorized
-                     ? "受け取りたい通知の種類を選べます。"
+                     ? "受け取りたい通知の種類と、フォロワーへの開始通知を選べます。"
                      : "通知をオンにすると、種類ごとに受け取り設定ができます。")
             }
             .task { await notifications.refreshStatus() }
@@ -312,14 +322,6 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("トレーニング開始をフォロワーに知らせる", isOn: $shareLiveStart)
-            } header: {
-                Text("応援")
-            } footer: {
-                Text("オンにすると、記録を始めたときにフォロワーへ「トレーニングを始めました」と通知が届き、応援を送ってもらえます。応援は記録画面に表示されます。オフのあいだは誰にも知らされません。")
-            }
-
-            Section {
                 CalendarLinkRows()
             } header: {
                 Text("カレンダー連携")
@@ -430,6 +432,11 @@ struct SettingsView: View {
         return profiles.first { $0.id == uid }
     }
 
+    private var myProfileNotificationSettings: ProfileNotificationSettings? {
+        guard let uid = auth.currentUserId else { return nil }
+        return profileNotificationSettings.first { $0.userId == uid }
+    }
+
     /// プッシュ通知トグル（profiles 列を直接読み書き＋同期キューへ）。
     private func pushBinding(_ keyPath: ReferenceWritableKeyPath<Profile, Bool>) -> Binding<Bool> {
         Binding(
@@ -441,6 +448,32 @@ struct SettingsView: View {
                 p.isDirty = true
                 try? context.save()
                 sync.enqueue(PendingChange(entity: "profiles", recordId: p.id, operation: .upsert, updatedAt: p.updatedAt))
+            }
+        )
+    }
+
+    /// profiles 同期ペイロードへ統合する追加通知設定のバインディング。
+    private func profileNotificationBinding(
+        _ keyPath: ReferenceWritableKeyPath<ProfileNotificationSettings, Bool>,
+        defaultValue: Bool
+    ) -> Binding<Bool> {
+        Binding(
+            get: { myProfileNotificationSettings?[keyPath: keyPath] ?? defaultValue },
+            set: { newValue in
+                guard let profile = myProfile, let uid = auth.currentUserId else { return }
+                let settings: ProfileNotificationSettings
+                if let existing = myProfileNotificationSettings {
+                    settings = existing
+                } else {
+                    let created = ProfileNotificationSettings(userId: uid)
+                    context.insert(created)
+                    settings = created
+                }
+                settings[keyPath: keyPath] = newValue
+                profile.updatedAt = .now
+                profile.isDirty = true
+                try? context.save()
+                sync.enqueue(PendingChange(entity: "profiles", recordId: profile.id, operation: .upsert, updatedAt: profile.updatedAt))
             }
         )
     }
@@ -508,6 +541,7 @@ struct SettingsView: View {
         try? context.delete(model: CharacterLoadout.self)
         try? context.delete(model: CharacterStyle.self)
         try? context.delete(model: PetState.self)
+        try? context.delete(model: ProfileNotificationSettings.self)
         try? context.delete(model: CoachMessage.self)
         try? context.delete(model: RoomPickupRecord.self)
         // 差分同期の基準も捨てる。残すと「消したのに次の同期で取り直さない」状態になる。

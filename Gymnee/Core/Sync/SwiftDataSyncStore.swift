@@ -249,8 +249,12 @@ final class SwiftDataSyncStore: SyncBackingStore {
 
     // MARK: - profiles
     private func encodeProfile(_ m: Profile) -> [String: Any] {
-        ["id": lower(m.id), "display_name": m.displayName, "avatar_url": opt(m.avatarURL),
+        let settings = fetchProfileNotificationSettings(m.id)
+        return ["id": lower(m.id), "display_name": m.displayName, "avatar_url": opt(m.avatarURL),
          "bio": opt(m.bio), "notify_likes": m.notifyLikes, "notify_comments": m.notifyComments,
+         "share_live_start": settings?.shareLiveStart ?? false,
+         "notify_live_start": settings?.notifyLiveStart ?? true,
+         "notify_post": settings?.notifyPost ?? true,
          "created_at": iso(m.createdAt), "updated_at": iso(m.updatedAt)]
     }
     private func applyProfile(_ row: [String: Any]) {
@@ -266,6 +270,16 @@ final class SwiftDataSyncStore: SyncBackingStore {
         m.createdAt = date(row["created_at"]) ?? m.createdAt
         m.updatedAt = date(row["updated_at"]) ?? m.updatedAt
         m.isDirty = false
+
+        let shareLiveStart = bool(row["share_live_start"])
+        let notifyLiveStart = bool(row["notify_live_start"])
+        let notifyPost = bool(row["notify_post"])
+        if shareLiveStart != nil || notifyLiveStart != nil || notifyPost != nil {
+            let settings = fetchProfileNotificationSettings(id) ?? insert(ProfileNotificationSettings(userId: id))
+            settings.shareLiveStart = shareLiveStart ?? settings.shareLiveStart
+            settings.notifyLiveStart = notifyLiveStart ?? settings.notifyLiveStart
+            settings.notifyPost = notifyPost ?? settings.notifyPost
+        }
     }
 
     // MARK: - workouts
@@ -736,6 +750,9 @@ final class SwiftDataSyncStore: SyncBackingStore {
     // MARK: - 取得ヘルパ（id で 1 件。apply 中は fetchMemo 経由）
     @discardableResult private func insert<T: PersistentModel>(_ model: T) -> T { context.insert(model); return model }
     private func fetchProfile(_ id: UUID) -> Profile? { memoized("profiles", id) { first(FetchDescriptor<Profile>(predicate: #Predicate { $0.id == id })) } }
+    private func fetchProfileNotificationSettings(_ userId: UUID) -> ProfileNotificationSettings? {
+        first(FetchDescriptor<ProfileNotificationSettings>(predicate: #Predicate { $0.userId == userId }))
+    }
     private func fetchWorkout(_ id: UUID) -> Workout? { memoized("workouts", id) { first(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id })) } }
     private func fetchExercise(_ id: UUID) -> Exercise? { memoized("exercises", id) { first(FetchDescriptor<Exercise>(predicate: #Predicate { $0.id == id })) } }
     private func fetchWorkoutExercise(_ id: UUID) -> WorkoutExercise? { memoized("workout_exercises", id) { first(FetchDescriptor<WorkoutExercise>(predicate: #Predicate { $0.id == id })) } }

@@ -124,7 +124,17 @@ Deno.serve(async (req) => {
     return new Response("forbidden", { status: 403 });
   }
 
-  let payload: { event?: string; visitId?: string; reactionId?: string; commentId?: string; followId?: string; reportId?: string };
+  let payload: {
+    event?: string;
+    visitId?: string;
+    reactionId?: string;
+    commentId?: string;
+    followId?: string;
+    reportId?: string;
+    postId?: string;
+    sessionId?: string;
+    cheerId?: string;
+  };
   try {
     payload = await req.json();
   } catch {
@@ -207,6 +217,45 @@ Deno.serve(async (req) => {
       `${name}さんがトレーニングを始めました！`,
       "応援しましょう！",
       { type: "live_start", sessionId },
+    );
+    return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
+  // --- 新規投稿 → フォロワーへ通知 ---
+  // 通知内容から公開範囲・本文・種目を推測できないよう、文面は常に共通にする。
+  // service role は RLS を迂回するため、ここで可視性とフォロー関係を明示的に再検証する。
+  if (event === "post") {
+    const postId = payload.postId;
+    if (!postId) return new Response("missing postId", { status: 400 });
+    const { data: item } = await db
+      .from("feed_items").select("user_id, visibility").eq("id", postId).single();
+    if (!item) return new Response(JSON.stringify({ sent: 0, reason: "post not found" }), { status: 200 });
+    if (item.visibility === "private") {
+      return new Response(JSON.stringify({ sent: 0, reason: "private" }), { status: 200 });
+    }
+
+    const authorId = item.user_id as string;
+    const { data: followers } = await db
+      .from("follows").select("follower_id").eq("followee_id", authorId);
+    const followerIds = (followers ?? []).map((row: { follower_id: string }) => row.follower_id);
+    if (followerIds.length === 0) {
+      return new Response(JSON.stringify({ sent: 0, reason: "no followers" }), { status: 200 });
+    }
+    const { data: preferences } = await db
+      .from("profiles").select("id, notify_post").in("id", followerIds);
+    // 設定行がまだ無い相手は既定オン。明示的にオフにした人だけ外す。
+    const muted = new Set(
+      (preferences ?? [])
+        .filter((row: { notify_post?: boolean | null }) => row.notify_post === false)
+        .map((row: { id: string }) => row.id),
+    );
+    const targets = followerIds.filter((id: string) => !muted.has(id));
+    const sent = await pushToUsers(
+      db,
+      targets,
+      "Gymnee",
+      "フィードに新しい投稿があります。",
+      { type: "post", feedItemId: postId },
     );
     return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
   }

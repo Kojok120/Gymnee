@@ -16,7 +16,9 @@ struct CharacterRoomView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(StoreService.self) private var store
     @Environment(AppErrorCenter.self) private var errors
+    @Environment(NotificationService.self) private var notifications
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
+    @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
     @Query private var completedWorkouts: [Workout]
     @Query private var records: [PersonalRecord]
@@ -36,6 +38,7 @@ struct CharacterRoomView: View {
     /// 受け取り演出中の戦利品（道中の出来事つき）。
     @State private var celebrating: ClaimResult?
     @State private var sheet: SheetRoute?
+    @State private var showNotifPrePrompt = false
     /// キャラのひとこと。タップ or 一定時間で切り替わる。
     @State private var chatter: CharacterChatter.Line?
     /// シーンの再生開始時刻。画面を離れている間はアニメーションを進めない。
@@ -204,7 +207,7 @@ struct CharacterRoomView: View {
         .sheet(item: $celebrating) { result in
             RewardCelebrationView(result: result)
         }
-        .sheet(item: $celebratingGain) { gain in
+        .sheet(item: $celebratingGain, onDismiss: presentNotificationPrePromptIfNeeded) { gain in
             GrowthCelebrationSheet(
                 gain: gain,
                 look: PixelCharacterRenderer.Look(
@@ -221,6 +224,17 @@ struct CharacterRoomView: View {
         }
         .sheet(isPresented: $showOnboarding) {
             CharacterOnboardingSheet()
+        }
+        .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
+            Button("オンにする") {
+                notifPrePrompted = true
+                Task { await notifications.requestAuthorization() }
+            }
+            Button("あとで", role: .cancel) {
+                notifPrePrompted = true
+            }
+        } message: {
+            Text("トレーニングを続けるためのリマインドや、フレンドからの反応をお届けします。")
         }
     }
 
@@ -1151,6 +1165,16 @@ struct CharacterRoomView: View {
     private func takePendingCelebration() {
         guard celebratingGain == nil, let pending = WorkoutGrowth.Pending.take() else { return }
         celebratingGain = pending.gain
+    }
+
+    /// 記録を完了した価値を見せ切ってから、通知の許諾を尋ねる。
+    /// 拒否済みの再有効化は、既存どおり設定画面からだけ行う。
+    private func presentNotificationPrePromptIfNeeded() {
+        #if DEBUG
+        guard !DebugSupport.demoRequested else { return }
+        #endif
+        guard notifications.status == .notDetermined, !notifPrePrompted else { return }
+        showNotifPrePrompt = true
     }
 
     // MARK: - 集計

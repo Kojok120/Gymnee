@@ -262,9 +262,11 @@ struct RecordContent: View {
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AppErrorCenter.self) private var errors
     @Environment(LiveSessionService.self) private var live
+    @Environment(NotificationService.self) private var notifications
 
     @Query private var todayPlanned: [PlannedWorkout]
     @Query(sort: \Exercise.name) private var allExercises: [Exercise]
+    @Query private var profileNotificationSettings: [ProfileNotificationSettings]
 
     @State private var restTimer = RestTimer()
     @State private var activeWorkout: Workout?
@@ -288,6 +290,7 @@ struct RecordContent: View {
     @State private var pendingGrowth: WorkoutGrowth.Gain?
     /// 連続週の判定に使う週の目標（育成タブと同じ値を見る）。
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
+    @AppStorage(CoachMode.storageKey) private var coachModeRaw = CoachMode.default.rawValue
     @State private var editingExercise: Exercise?
     @State private var editingSet: ExerciseSet?
     /// 編集シートの「このセットを削除」の遅延実行先。シートが完全に閉じてから削除する
@@ -943,8 +946,13 @@ struct RecordContent: View {
         try? context.save()   // 下書き(completedAt=nil)。サーバー同期は完了時のみ。
         activeWorkout = w
         // トレ開始をフォロワーに知らせる（設定がオンのときだけ）。失敗しても記録は妨げない。
-        Task { await live.start() }
+        Task { await live.start(isSharing: shouldShareLiveStart) }
         return w
+    }
+
+    private var shouldShareLiveStart: Bool {
+        (profileNotificationSettings.first { $0.userId == userId })?.shareLiveStart
+            ?? UserDefaults.standard.bool(forKey: LiveSessionService.legacyShareKey)
     }
 
     /// 届いた応援。**消さずに積み上げる**（あとから全部読める）。
@@ -1132,6 +1140,7 @@ struct RecordContent: View {
 
     private func finish() {
         guard let w = activeWorkout else { return }
+        let isFirstCompletion = w.completedAt == nil
         // 育成の祝いは**初回完了だけ**。カレンダーから過去の記録を開いて直しただけの回で
         // 「この1回でこれだけ育った」と出すと、伸びていない EXP を伸びたことにしてしまう。
         //
@@ -1192,6 +1201,16 @@ struct RecordContent: View {
             try? context.save()
         }
         restTimer.stop()
+        // 記録できた日は、予約済みの再開リマインドをすべて不要にする。
+        notifications.cancelReengagementReminders()
+        // コーチ表示を選んだ人にだけ、初回完了の節目を返す。アプリ内の成長演出とは別に、
+        // ユーザーが通知を許可している場合だけバナーとしても届く。
+        if isFirstCompletion, (CoachMode(rawValue: coachModeRaw) ?? .default).showsCoach {
+            notifications.notifyCoachPraise(
+                workoutName: w.name,
+                streakWeeks: growthSnapshot(for: w).streakWeeks
+            )
+        }
         // 初回完了のときだけ、サマリーを閉じたあとの祝いを予約する。
         // **ここで内容を確定させる**。サマリーを開いている間に別端末の記録が同期されると
         // 累積値が動くので、あとから差分を取り直すとその分まで今回のぶんとして数えてしまう。

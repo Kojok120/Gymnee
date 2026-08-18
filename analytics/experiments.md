@@ -32,4 +32,16 @@ Gymnee のグロース実験を PDCA で管理する台帳。`growth-strategist`
 
 ## 進行中・完了した実験
 
-(まだ実験はありません。`/growth-report` → `/growth-experiment` で第 1 ボトルネックから起票します)
+### EXP-20260818-notification-permission-after-workout
+- status: proposed
+- ボトルネック: 通知の到達母数
+- 仮説: 記録完了後の成長祝いを見せた直後に通知許諾を尋ねれば、カレンダー画面に依存するより許諾率が上がる。利用者が通知の価値を体験した直後だから。
+- 変更内容: Gymnee/Features/Character/CharacterRoomView.swift で成長祝いの終了後にプリパーミッションを表示し、Gymnee/Features/Calendar/CalendarHomeView.swift の表示を撤去。scripts/analytics/pull-supabase.mjs に到達率を追加。
+- 主要成功指標: supabase.features.pushReachableRate
+- baseline: 30% (3/10、2026-08-18 の Issue #109 調査)
+- 目標: 60%以上 (少なくとも 6/10)
+- 計測窓: リリース後30日または対象10人のどちらか早い方
+- ガードレール: supabase.activation.activatedWorkout と supabase.retention.returnedAfterDay0 を悪化させない
+- 工数: S
+- ICE: Impact=8 / Confidence=7 / Ease=8 (合計 23)
+- result: (completed 時に追記)
