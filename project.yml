@@ -94,6 +94,10 @@ targets:
         # Google サインイン（カレンダー連携）。Google Cloud の iOS OAuth クライアント設定。
         GIDClientID: "$(GOOGLE_IOS_CLIENT_ID)"
         CFBundleURLTypes:
+          # Supabase Auth の OAuth PKCE 復帰先。未登録だと ASWebAuthenticationSession が
+          # gymnee://auth-callback をアプリへ返せず、ブラウザだけが残る。
+          - CFBundleURLSchemes:
+              - gymnee
           - CFBundleURLSchemes:
               - "$(GOOGLE_REVERSED_CLIENT_ID)"
         # Instagram ストーリーズ直接共有（canOpenURL 判定に必要）。
