@@ -13,7 +13,8 @@ final class LiveSessionService {
     /// 配信するか（送る側の設定）。**既定はオフ**。
     /// トレ中であることを知らせるのは居場所と行動を実時間で明かすことなので、
     /// 明示的にオンにした人だけが流れる。
-    static let shareKey = "gymnee.live.share"
+    /// v9 への移行で profiles 同期設定へ引き上げる前の保存キー。
+    static let legacyShareKey = "gymnee.live.share"
 
     /// いま配信しているセッション。記録中だけ入る。
     private(set) var currentSessionId: UUID?
@@ -42,11 +43,9 @@ final class LiveSessionService {
 
     func configure(client: SupabaseClient) { self.client = client }
 
-    private var shares: Bool { UserDefaults.standard.bool(forKey: Self.shareKey) }
-
     /// 記録を始めたことを配信する。設定がオフ・未サインインなら何もしない。
-    func start() async {
-        guard shares, currentSessionId == nil, let client else { return }
+    func start(isSharing: Bool) async {
+        guard isSharing, currentSessionId == nil, let client else { return }
         guard await client.isAuthenticated else { return }
         cheers = []
         currentSessionId = try? await client.startLiveSession()

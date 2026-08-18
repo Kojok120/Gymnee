@@ -12,7 +12,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     enum PrefKey {
         static let likes = "gymnee.notif.likes"
         static let friendCheckin = "gymnee.notif.friendCheckin"
-        static let streak = "gymnee.notif.streak"
+        /// 旧ストリーク通知と同じ保存キーを引き継ぐ。オフにした利用者へ再通知しないため。
+        static let reengagement = "gymnee.notif.streak"
         static let planned = "gymnee.notif.planned"
         static let weeklyRecap = "gymnee.notif.weeklyRecap"
         /// AI コーチの声かけ（朝の予告・完了後の称賛）。
@@ -87,17 +88,32 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         schedule(id: id, title: "今週のまとめ📊", body: "今週のトレーニングを振り返ってみよう。", trigger: trigger, userInfo: ["type": "recap"])
     }
 
-    /// 連続記録の途切れ予告。今日の 20:00 に「まだ記録していない」場合の催促を予約。
-    func scheduleStreakReminder(streak: Int, hasRecordedToday: Bool) {
-        let id = "gymnee.streakRisk"
-        center.removePendingNotificationRequests(withIdentifiers: [id])
-        guard prefEnabled(PrefKey.streak) else { return }
-        guard streak > 0, !hasRecordedToday else { return }
-        var comps = Calendar.current.dateComponents([.year, .month, .day], from: .now)
-        comps.hour = 20; comps.minute = 0
-        guard let fireDate = Calendar.current.date(from: comps), fireDate > .now else { return }
-        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-        schedule(id: id, title: "連続\(streak)日が途切れそう🔥", body: "今日も記録して連続を伸ばそう！", trigger: trigger, userInfo: ["type": "workout"])
+    /// 最終記録から3日空いたときの再開リマインド。連続記録を失う不安ではなく、
+    /// 無理なく戻れる入口を渡す。複数日ぶんを予約し、完了時は接頭辞で一括解除する。
+    func scheduleReengagementReminders(lastCompletedAt: Date?, calendar: Calendar = .current) {
+        Task { @MainActor in
+            await removePendingNotifications(prefix: "gymnee.reengagement.")
+            center.removePendingNotificationRequests(withIdentifiers: ["gymnee.streakRisk"])
+            guard prefEnabled(PrefKey.reengagement) else { return }
+            for date in ReengagementReminder.scheduledDates(
+                lastCompletedAt: lastCompletedAt,
+                now: .now,
+                calendar: calendar
+            ) {
+                let id = "gymnee.reengagement.\(ReengagementReminder.identifierDate(date, calendar: calendar))"
+                var comps = calendar.dateComponents([.year, .month, .day], from: date)
+                comps.hour = ReengagementReminder.hour
+                comps.minute = 0
+                let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+                schedule(
+                    id: id,
+                    title: "また一歩だけ動いてみよう",
+                    body: "短いトレーニングから、無理のないペースで再開できます。",
+                    trigger: trigger,
+                    userInfo: ["type": "workout"]
+                )
+            }
+        }
     }
 
     /// 予定ワークアウトのリマインド（当日朝 8:00）。
@@ -124,40 +140,44 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     /// コーチの声かけは **1 日 2 回まで**（朝の予告 + 完了後の称賛）。
     /// 「関係」を作るのが目的なので、鳴らしすぎると逆に切られる。
     enum CoachNotice {
-        static let morningId = "gymnee.coach.morning"
+        static let morningPrefix = "gymnee.coach.morning."
         static let morningHour = 7
     }
 
     /// 朝の予告。今日のメニューがあればその名前を、無ければ今週の残りを伝える。
     /// **サボりを責めない**（週次ストリークの思想に合わせる）。
-    func scheduleCoachMorning(planTitle: String?, weeklyRemaining: Int) {
-        let id = CoachNotice.morningId
-        center.removePendingNotificationRequests(withIdentifiers: [id])
-        guard prefEnabled(PrefKey.coach) else { return }
+    func scheduleCoachMorning(planTitle: String?, weeklyRemaining: Int, calendar: Calendar = .current) {
+        Task { @MainActor in
+            await removePendingNotifications(prefix: CoachNotice.morningPrefix)
+            guard prefEnabled(PrefKey.coach) else { return }
 
-        let body: String
-        if let planTitle {
-            body = "今日は「\(planTitle)」。いつもの時間にどう？"
-        } else if weeklyRemaining > 0 {
-            body = "今週はあと\(weeklyRemaining)回。無理のない日に入れよう"
-        } else {
-            body = "今週の目標はもう達成してる。今日は休んでもいい"
-        }
+            let body: String
+            if let planTitle {
+                body = "今日は「\(planTitle)」。いつもの時間にどう？"
+            } else if weeklyRemaining > 0 {
+                body = "今週はあと\(weeklyRemaining)回。無理のない日に入れよう"
+            } else {
+                body = "今週の目標はもう達成してる。今日は休んでもいい"
+            }
 
-        var comps = Calendar.current.dateComponents([.year, .month, .day], from: .now)
-        comps.hour = CoachNotice.morningHour
-        comps.minute = 0
-        // 今日の分が過ぎていれば明日に回す（過去に予約しても鳴らない）。
-        if let today = Calendar.current.date(from: comps), today <= .now {
-            comps = Calendar.current.dateComponents(
-                [.year, .month, .day],
-                from: Calendar.current.date(byAdding: .day, value: 1, to: .now) ?? .now
-            )
-            comps.hour = CoachNotice.morningHour
-            comps.minute = 0
+            let today = calendar.startOfDay(for: .now)
+            var firstDay = today
+            var firstComponents = calendar.dateComponents([.year, .month, .day], from: firstDay)
+            firstComponents.hour = CoachNotice.morningHour
+            firstComponents.minute = 0
+            if let firstFireDate = calendar.date(from: firstComponents), firstFireDate <= .now {
+                firstDay = calendar.date(byAdding: .day, value: 1, to: firstDay) ?? firstDay
+            }
+            for offset in 0..<ReengagementReminder.horizonDays {
+                guard let date = calendar.date(byAdding: .day, value: offset, to: firstDay) else { continue }
+                var comps = calendar.dateComponents([.year, .month, .day], from: date)
+                comps.hour = CoachNotice.morningHour
+                comps.minute = 0
+                let id = CoachNotice.morningPrefix + ReengagementReminder.identifierDate(date, calendar: calendar)
+                let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+                schedule(id: id, title: "コーチから", body: body, trigger: trigger, userInfo: ["type": "coach"])
+            }
         }
-        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-        schedule(id: id, title: "コーチから", body: body, trigger: trigger, userInfo: ["type": "coach"])
     }
 
     /// 記録を終えた直後の称賛。予約ではなく即時に出す。
@@ -170,13 +190,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func cancelCoachNotices() {
-        center.removePendingNotificationRequests(withIdentifiers: [CoachNotice.morningId])
+        Task { @MainActor in await removePendingNotifications(prefix: CoachNotice.morningPrefix) }
     }
 
     // MARK: - 種類別トグルOFF時の即時キャンセル（設定画面から呼ぶ）
 
-    func cancelStreakReminder() {
-        center.removePendingNotificationRequests(withIdentifiers: ["gymnee.streakRisk"])
+    func cancelReengagementReminders() {
+        Task { @MainActor in
+            await removePendingNotifications(prefix: "gymnee.reengagement.")
+            // v9より前に予約済みのストリーク通知も、この移行中に確実に消す。
+            center.removePendingNotificationRequests(withIdentifiers: ["gymnee.streakRisk"])
+        }
     }
     func cancelWeeklyRecap() {
         center.removePendingNotificationRequests(withIdentifiers: ["gymnee.weeklyRecap"])
@@ -203,6 +227,14 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         content.sound = .default
         content.userInfo = userInfo
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+
+    private func removePendingNotifications(prefix: String) async {
+        let ids = await center.pendingNotificationRequests()
+            .map(\.identifier)
+            .filter { $0.hasPrefix(prefix) }
+        guard !ids.isEmpty else { return }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
     }
 
     // MARK: - UNUserNotificationCenterDelegate

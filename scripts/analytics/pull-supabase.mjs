@@ -176,7 +176,15 @@ select json_build_object(
     'progressPhotosInWindow',  (select count(*) from public.progress_photos pp,  params where pp.date       >= params.since),
     'supplyLogsInWindow',      (select count(*) from public.supply_logs sl,      params where sl.date       >= params.since),
     'routinesTotal',           (select count(*) from public.routines),
-    'pushReachableUsers',      (select count(distinct user_id) from public.device_tokens)
+    'pushReachableUsers',      (select count(distinct user_id) from public.device_tokens),
+    'pushReachableRate',       coalesce((
+                                 select round(
+                                   100.0 * count(distinct dt.user_id)
+                                   / nullif((select count(*) from public.profiles), 0),
+                                   1
+                                 )
+                                 from public.device_tokens dt
+                               ), 0)
   )
 ) as result;`;
 }

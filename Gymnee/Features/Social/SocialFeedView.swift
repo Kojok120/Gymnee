@@ -13,6 +13,8 @@ struct SocialFeedView: View {
     /// 値ベース遷移用のパス（フレンド画面・招待者プロフィールの自動 push にも使う）。
     @State private var path = NavigationPath()
     @State private var didAutoOpenFriends = false
+    /// 投稿通知をタップしたときに、同期後に該当の詳細を開くための保留ID。
+    @State private var requestedPostId: UUID?
     /// ガイドライン同意ゲート（SocialContent と同一キー）。未同意の間は List が描画されず
     /// navigationDestination が未登録のため、招待の消費（push）は同意後まで保留する。
     @AppStorage("gymnee.social.agreedGuidelines") private var agreedGuidelines = false
@@ -24,7 +26,7 @@ struct SocialFeedView: View {
                 // フォロー・応援・コメント・公開投稿は本人性のあるアカウント限定（RLS 0031 とも整合）。
                 signInPrompt
             } else if let uid = auth.currentUserId {
-                SocialContent(userId: uid)
+                SocialContent(userId: uid, requestedPostId: $requestedPostId)
                     .onAppear {
                         // 検証ハーネス: 一度だけフレンド画面を自動 push（戻り時の再 push を防ぐ）。
                         if openFriends && !didAutoOpenFriends {
@@ -46,6 +48,13 @@ struct SocialFeedView: View {
             } else {
                 EmptyStateView(systemImage: "person.2", title: "未ログイン")
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
+            guard note.userInfo?["type"] as? String == "post",
+                  let rawId = note.userInfo?["feedItemId"] as? String,
+                  let postId = UUID(uuidString: rawId)
+            else { return }
+            requestedPostId = postId
         }
     }
 
@@ -102,6 +111,7 @@ struct UserRef: Hashable {
 
 private struct SocialContent: View {
     let userId: UUID
+    @Binding var requestedPostId: UUID?
 
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
@@ -137,8 +147,9 @@ private struct SocialContent: View {
     /// 押した直後に見た目を確定させるための記録（送信の往復を待たせない）。
     @State private var cheered: Set<String> = []
 
-    init(userId: UUID) {
+    init(userId: UUID, requestedPostId: Binding<UUID?>) {
         self.userId = userId
+        _requestedPostId = requestedPostId
         _prs = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId }, sort: \PersonalRecord.achievedAt, order: .reverse)
         _workouts = Query(filter: #Predicate<Workout> { $0.userId == userId }, sort: \Workout.date, order: .reverse)
         // 自分が follower か followee の両方を取得（相互判定のため）。
@@ -210,6 +221,10 @@ private struct SocialContent: View {
         .sheet(item: $reportTarget) { t in
             ReportSheet(reporterId: userId, reportedUserId: t.id, reportedDisplayName: t.displayName,
                         contextType: t.contextType, contextId: t.contextId)
+        }
+        .task(id: requestedPostId) {
+            guard let requestedPostId else { return }
+            await openRequestedPost(requestedPostId)
         }
     }
 
@@ -441,6 +456,14 @@ private struct SocialContent: View {
 
     /// シングルタップ：全投稿で統一の詳細を開く（種別別リッチ詳細＋リアクションした人＋コメント）。
     private func openEntry(_ entry: FeedEntry) {
+        postDetail = entry
+    }
+
+    /// 通知からの投稿を、最新のRLS対象を取り込んでから開く。
+    private func openRequestedPost(_ id: UUID) async {
+        await refreshFeed()
+        defer { requestedPostId = nil }
+        guard let entry = feedEntries.first(where: { $0.id == id }) else { return }
         postDetail = entry
     }
 

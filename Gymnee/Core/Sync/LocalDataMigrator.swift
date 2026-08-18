@@ -46,8 +46,35 @@ enum LocalDataMigrator {
 
         // 連れているペットも端末ローカル専用。付け替えないと、ゲストのうちに選んだペットが
         // サインイン後に見えなくなる（所持は StoreKit が正なので消えはしないが、連れ歩かなくなる）。
-        // **ローカル専用モデルを足したらここにも足すこと。**
         reassignLocalOnly(PetState.self, context: context) { $0.userId == old } set: { $0.userId = new }
+
+        // 通知設定は profiles の同期ペイロードへ載る。新アカウントに既存設定があればそれを尊重し、
+        // 無ければゲスト中の設定を引き継いでプロフィールを再送出する。
+        let oldSettings = (try? context.fetch(
+            FetchDescriptor<ProfileNotificationSettings>(predicate: #Predicate { $0.userId == old })
+        )) ?? []
+        if !oldSettings.isEmpty {
+            let hasNewSettings = (try? context.fetch(
+                FetchDescriptor<ProfileNotificationSettings>(predicate: #Predicate { $0.userId == new })
+            ).first) != nil
+            if hasNewSettings {
+                for settings in oldSettings { context.delete(settings) }
+            } else {
+                for settings in oldSettings { settings.userId = new }
+                if let newProfile = try? context.fetch(
+                    FetchDescriptor<Profile>(predicate: #Predicate { $0.id == new })
+                ).first {
+                    newProfile.updatedAt = .now
+                    newProfile.isDirty = true
+                    pending.append(PendingChange(
+                        entity: "profiles",
+                        recordId: newProfile.id,
+                        operation: .upsert,
+                        updatedAt: newProfile.updatedAt
+                    ))
+                }
+            }
+        }
 
         // 旧 userId のローカル Profile は孤児になるため削除（新 Profile は ensureProfile / トリガで存在）。
         if let oldProfile = try? context.fetch(FetchDescriptor<Profile>(predicate: #Predicate { $0.id == old })).first {

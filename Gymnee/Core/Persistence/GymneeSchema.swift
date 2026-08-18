@@ -101,11 +101,20 @@ enum GymneeSchemaV8: VersionedSchema {
     }
 }
 
+/// スキーマ v9。profiles と同期する通知・ライブ配信設定を別モデルとして追加。
+/// 既存 Profile の保存プロパティを変更せず、軽量移行で既存ストアを保護する。
+enum GymneeSchemaV9: VersionedSchema {
+    static var versionIdentifier = Schema.Version(9, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        GymneeSchemaV8.models + [ProfileNotificationSettings.self]
+    }
+}
+
 /// 段階的マイグレーション計画（§7 データ保護）。
 /// スキーマ変更時はここに MigrationStage を追加する。
 enum GymneeMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self, GymneeSchemaV7.self, GymneeSchemaV8.self]
+        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self, GymneeSchemaV7.self, GymneeSchemaV8.self, GymneeSchemaV9.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -116,14 +125,15 @@ enum GymneeMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: GymneeSchemaV5.self, toVersion: GymneeSchemaV6.self),
             .lightweight(fromVersion: GymneeSchemaV6.self, toVersion: GymneeSchemaV7.self),
             .lightweight(fromVersion: GymneeSchemaV7.self, toVersion: GymneeSchemaV8.self),
+            .lightweight(fromVersion: GymneeSchemaV8.self, toVersion: GymneeSchemaV9.self),
         ]
     }
 }
 
 /// ModelContainer・Widget・テストから共通参照する単一の真実。
 enum GymneeSchema {
-    static let models = GymneeSchemaV8.models
-    static let schema = Schema(versionedSchema: GymneeSchemaV8.self)
+    static let models = GymneeSchemaV9.models
+    static let schema = Schema(versionedSchema: GymneeSchemaV9.self)
 
     /// ストア退避が起きたことを UI に伝えるフラグ（RootView が一度だけアラートを出して消す）。
     static let recoveryPendingKey = "gymnee.storeRecoveryPending"

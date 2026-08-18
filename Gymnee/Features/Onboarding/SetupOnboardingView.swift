@@ -17,7 +17,7 @@ struct SetupOnboardingView: View {
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
     // 通知の種類別 ON/OFF（設定画面と共有）。オンボーディングのトグルはこれらをまとめて切り替える。
-    @AppStorage(NotificationService.PrefKey.streak) private var notifStreak = true
+    @AppStorage(NotificationService.PrefKey.reengagement) private var notifReengagement = true
     @AppStorage(NotificationService.PrefKey.planned) private var notifPlanned = true
     @AppStorage(NotificationService.PrefKey.weeklyRecap) private var notifWeeklyRecap = true
     @State private var name = ""
@@ -83,7 +83,7 @@ struct SetupOnboardingView: View {
                         Label("通知を受け取る", systemImage: "bell.fill")
                     }
                 } footer: {
-                    Text("連続記録の途切れ予告・フレンドの活動・今週のまとめをお届けします。種類ごとのオン/オフはあとから「その他 > 設定」で変更できます。")
+                    Text("トレーニングを続けるためのリマインドや、フレンドからの反応をお届けします。種類ごとのオン/オフはあとから「その他 > 設定」で変更できます。")
                 }
             }
             .navigationTitle("はじめに")
@@ -142,11 +142,11 @@ struct SetupOnboardingView: View {
                 notifRequested = on
                 if on {
                     notifPrePrompted = true
-                    notifStreak = true; notifPlanned = true; notifWeeklyRecap = true
+                    notifReengagement = true; notifPlanned = true; notifWeeklyRecap = true
                     Task { await notifications.requestAuthorization() }
                 } else {
-                    notifStreak = false; notifPlanned = false; notifWeeklyRecap = false
-                    notifications.cancelStreakReminder()
+                    notifReengagement = false; notifPlanned = false; notifWeeklyRecap = false
+                    notifications.cancelReengagementReminders()
                     notifications.cancelPlannedReminders()
                     notifications.cancelWeeklyRecap()
                 }

@@ -24,12 +24,10 @@ enum PlatformSync {
         scheduleReminders(workouts: workouts, notifications: notifications, calendar: calendar)
     }
 
-    /// 連続記録の途切れ予告・週次まとめ・予定ワークアウトの通知を予約し直す。
+    /// 再開のきっかけ・週次まとめ・予定ワークアウトの通知を予約し直す。
     static func scheduleReminders(workouts: [Workout], notifications: NotificationService, calendar: Calendar = .current) {
-        let activeDays = workouts.filter { $0.completedAt != nil }.map { $0.completedAt ?? $0.date }
-        let streak = StreakCalculator.currentStreak(activeDays: activeDays, calendar: calendar)
-        let activeToday = activeDays.contains { calendar.isDateInToday($0) }
-        notifications.scheduleStreakReminder(streak: streak, hasRecordedToday: activeToday)
+        let lastCompletedAt = workouts.compactMap(\.completedAt).max()
+        notifications.scheduleReengagementReminders(lastCompletedAt: lastCompletedAt, calendar: calendar)
         notifications.scheduleWeeklyRecap()
 
         let today = calendar.startOfDay(for: .now)
@@ -57,7 +55,8 @@ enum PlatformSync {
         let done = activeDays.filter { calendar.isDate($0, equalTo: .now, toGranularity: .weekOfYear) }.count
         notifications.scheduleCoachMorning(
             planTitle: todayPlanTitle,
-            weeklyRemaining: max(0, weeklyGoal - done)
+            weeklyRemaining: max(0, weeklyGoal - done),
+            calendar: calendar
         )
     }
 }

@@ -57,8 +57,6 @@ struct CalendarHomeContent: View {
 
     @State private var anchor = Date.now
     @State private var showPlanner = false
-    @State private var showNotifPrePrompt = false
-    @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
     private let calendar = Calendar.current
 
@@ -94,30 +92,14 @@ struct CalendarHomeContent: View {
                     .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { showPlanner = false } } }
             }
         }
-        .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
-            Button("オンにする") { notifPrePrompted = true; Task { await notifications.requestAuthorization() } }
-            Button("あとで", role: .cancel) { notifPrePrompted = true }
-        } message: {
-            Text("連続記録の途切れ予告・フレンドの活動・今週のまとめをお届けします。")
-        }
         // destination はすべて NavigationStack のルート側（CalendarHomeView）で宣言する。
         // push されうるビューの上に置くと子リンクから解決できない（iOS 26.5 の挙動）。
         .task(id: activeWorkoutCount) { syncPlatform() }
     }
 
     /// Widget スナップショット更新＋通知予約（§6.10）。
-    /// 実処理は `PlatformSync`（画面に依存しない）に置き、ここは通知許諾のプリパーミッション UI だけ持つ。
+    /// 実処理は PlatformSync に置き、画面からも予約を更新する。
     private func syncPlatform() {
-        // プリパーミッション：いきなりOSダイアログを出さず、価値説明の後に許諾を取る。
-        // 拒否済み(.denied)では何も出さない（再有効化は設定画面から）。
-        #if DEBUG
-        let allowPrompt = !DebugSupport.demoRequested
-        #else
-        let allowPrompt = true
-        #endif
-        if allowPrompt, notifications.status == .notDetermined, !notifPrePrompted {
-            showNotifPrePrompt = true
-        }
         PlatformSync.run(userId: userId, context: context, workouts: workouts,
                          notifications: notifications, calendar: calendar)
     }

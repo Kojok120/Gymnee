@@ -20,6 +20,8 @@ struct RootView: View {
     /// パスをルート側で持つ。
     @State private var otherPath: [AppRoute] = []
     @AppStorage("gymnee.setupDone") private var setupDone = false
+    @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
+    @AppStorage(CoachMode.storageKey) private var coachModeRaw = CoachMode.default.rawValue
     /// ストア退避（GymneeSchema.makeContainer の復旧パス）が起きた直後の一度きりの通知。
     @AppStorage(GymneeSchema.recoveryPendingKey) private var storeRecoveryPending = false
     #if DEBUG
@@ -71,11 +73,24 @@ struct RootView: View {
             }
     }
 
-    /// 起動時の Widget スナップショット更新＋通知予約。許諾ダイアログはここでは出さない
-    /// （プリパーミッションはカレンダー画面が担当する）。
+    /// 起動時の Widget スナップショット更新＋通知予約。許諾ダイアログはここでは出さない。
     private func syncPlatformOnLaunch() {
         guard let uid = auth.currentUserId else { return }
+        ProfileNotificationSettingsMigration.migrateLegacyLiveShare(userId: uid, context: context, sync: syncEngine)
         PlatformSync.run(userId: uid, context: context, notifications: notifications)
+        let workouts = (try? context.fetch(
+            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid })
+        )) ?? []
+        let todayPlanTitle = workouts.first {
+            $0.isPlanned && $0.completedAt == nil && Calendar.current.isDateInToday($0.date)
+        }?.name
+        PlatformSync.scheduleCoachMorning(
+            workouts: workouts,
+            todayPlanTitle: todayPlanTitle,
+            weeklyGoal: weeklyGoal,
+            mode: CoachMode(rawValue: coachModeRaw) ?? .default,
+            notifications: notifications
+        )
     }
 
     /// 未サインインならゲスト（ローカル）セッションを自動開始する。
@@ -335,7 +350,7 @@ struct RootView: View {
         // 通知タップのルーティング（type に応じて該当タブへ）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
-            case "reaction", "follow", "invite", "live_start": selection = .social
+            case "reaction", "follow", "invite", "live_start", "post": selection = .social
             case "workout": selection = .workout
             // 週次まとめはカレンダーで振り返る。
             case "recap": selection = .calendar
