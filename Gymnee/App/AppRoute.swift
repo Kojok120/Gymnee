@@ -16,6 +16,10 @@ enum AppRoute: Hashable {
     case settings
     /// ブロック中のユーザー一覧（設定から）。遷移先 init が @Query を作るため必ず値ベースで開く。
     case blockedUsers(UUID)
+    /// 記録一覧（履歴）。この先の詳細も値ベースで push するため、入口も値ベースに揃える
+    /// （クロージャ型 push の上に値ベース push を混在させると、iOS 26 で値ルートが
+    /// クロージャ push の下へ積まれ、詳細が一覧の裏に隠れる）。
+    case history
     case workoutDetail(Workout)
     case exerciseDetail(Exercise)
 }
@@ -34,6 +38,7 @@ extension View {
                     .navigationTitle("ショップ").navigationBarTitleDisplayMode(.inline)
             case .settings: SettingsView()
             case .blockedUsers(let uid): BlockedUsersView(currentUserId: uid)
+            case .history: HistoryView(userId: userId)
             case .workoutDetail(let workout): WorkoutDetailView(workout: workout)
             case .exerciseDetail(let exercise): ExerciseDetailView(exercise: exercise, userId: userId)
             }
