@@ -17,6 +17,10 @@ struct RecordView: View {
     @Environment(LocalSyncEngine.self) private var sync
     /// タブから入った時は「記録を開始する」ゲートを挟む。
     @State private var gateOpen = false
+    /// 記録タブの値ベース遷移スタック（記録一覧→詳細）。値ベース push はリンク消滅で
+    /// 自動 pop しないため、記録開始（下書き再開含む）でルートが RecordContent に切替わる時は
+    /// 明示的にクリアする（一覧がロガーの上に残るのを防ぐ）。
+    @State private var path: [AppRoute] = []
     /// 計画/予定の「開始」から渡された、記録タブで再開するワークアウト（nil＝新規ライブ記録）。
     @State private var resumeTarget: Workout?
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
@@ -45,7 +49,7 @@ struct RecordView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             if let uid = auth.currentUserId {
                 Group {
                     if gateOpen {
@@ -74,6 +78,9 @@ struct RecordView: View {
             // 通知の id は古い/不正な値で他ユーザーの下書きを指し得るため、現在ユーザー所有に限定する。
             let found = (try? context.fetch(FetchDescriptor<Workout>(predicate: #Predicate { $0.id == id && $0.userId == uid }))) ?? []
             if let w = found.first {
+                // 記録一覧の下書き行など push 先から届いた場合、値ベース push は
+                // リンク消滅で自動 pop しないため、ルート切替の前にスタックを畳む。
+                path.removeAll()
                 resumeTarget = w
                 gateOpen = true
             }
@@ -123,13 +130,11 @@ private struct StartGateView: View {
                             gateTile(title: "記録を開始", caption: "今すぐ始める",
                                      icon: "play.fill", primary: true, action: onStart)
                             // 補助導線は全幅の行カード（テキストリンクだと見落とされ押しづらいため）。
-                            // 履歴リンクは単発クロージャ型：RecordContent が push 経由(カレンダー編集/
-                            // ワークアウト詳細)で開かれても pushed view 上の navigationDestination(for:) に
-                            // 依存せず確実に遷移する（iOS 26.5 で子リンクが解決されない問題の回避。
-                            // List/ForEach 内ではないのでハングもしない）。
-                            NavigationLink {
-                                HistoryView(userId: userId)
-                            } label: {
+                            // 履歴リンクは値ベース：この先（記録一覧→詳細）も値ベース push のため
+                            // 入口も揃える。クロージャ型で push すると、その上の値ベース push が
+                            // クロージャ push の下へ積まれ、詳細が一覧の裏に隠れる（iOS 26 の混在バグ。
+                            // destination はスタックルートの gymneeNavigationDestinations で解決）。
+                            NavigationLink(value: AppRoute.history) {
                                 gateRowLabel(title: "これまでの記録を見る", icon: "list.bullet.rectangle")
                             }
                             .buttonStyle(PressableButtonStyle())

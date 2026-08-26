@@ -143,7 +143,7 @@ struct RootView: View {
         case "muscle":
             // 人体図の部位タップ先（種目のベスト一覧）の検証用。デモで最も記録が多い部位を開く。
             debugMuscleSheet(userId: userId)
-        case "history": NavigationStack { HistoryView(userId: userId) }
+        case "history": NavigationStack { HistoryView(userId: userId).gymneeNavigationDestinations(userId: userId) }
         case "body": NavigationStack { BodyMetricsView(userId: userId) }
         case "photos": NavigationStack { ProgressPhotosView(userId: userId) }
         case "composer":

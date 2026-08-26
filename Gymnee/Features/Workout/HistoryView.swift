@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// 記録一覧（トレーニング履歴）。上部セグメントで「日付ごと / 種目ごと」を切替える。
-/// 分析タブ先頭・記録タブの開始ゲートの2箇所から push される前提のため、
+/// 記録タブの開始ゲートから `AppRoute.history` で push される前提のため、
 /// 自前の `NavigationStack` は持たない（ホスト側スタックに乗る）。
 struct HistoryView: View {
     let userId: UUID
