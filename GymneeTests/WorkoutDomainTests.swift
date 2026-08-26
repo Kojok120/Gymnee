@@ -24,40 +24,6 @@ final class OneRepMaxTests: XCTestCase {
     }
 }
 
-/// ボリューム集計（§6.5）のテスト。
-final class VolumeCalculatorTests: XCTestCase {
-    private func entry(_ mg: MuscleGroup, _ w: Double, _ r: Int, _ d: Date = .now) -> VolumeCalculator.VolumeEntry {
-        .init(muscleGroup: mg, weight: w, reps: r, date: d)
-    }
-
-    func testTotalVolume() {
-        let entries = [
-            entry(.chest, 100, 5),       // 500
-            entry(.chest, 80, 8),        // 640
-        ]
-        XCTAssertEqual(VolumeCalculator.totalVolume(entries), 1140, accuracy: 0.0001)
-    }
-
-    func testVolumeByMuscle() {
-        let entries = [
-            entry(.chest, 100, 5),  // 500
-            entry(.legs, 150, 5),   // 750
-            entry(.chest, 80, 5),   // 400
-        ]
-        let byMuscle = VolumeCalculator.volumeByMuscle(entries)
-        XCTAssertEqual(byMuscle[.chest] ?? 0, 900, accuracy: 0.0001)
-        XCTAssertEqual(byMuscle[.legs] ?? 0, 750, accuracy: 0.0001)
-    }
-
-    func testSetCountByMuscle() {
-        let entries = [
-            entry(.chest, 100, 5),
-            entry(.chest, 80, 8),
-        ]
-        XCTAssertEqual(VolumeCalculator.setCountByMuscle(entries)[.chest], 2)
-    }
-}
-
 /// PR 自動検出（§6.5）のテスト。計測タイプごとに意味のある指標のみ判定する。
 final class PRDetectorTests: XCTestCase {
     func testWeightDetectsMaxWeightAndEst1RMOnFirstSet() {

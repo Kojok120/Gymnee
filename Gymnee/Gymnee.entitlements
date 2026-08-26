@@ -4,7 +4,7 @@
   Gymnee 本体の Capability。Developer Portal / Automatic Signing 側でも同 Capability を有効化すること。
   - applesignin: Sign in with Apple（§6.1 必須）
   - application-groups: Widget / Watch とのデータ共有（§6.10、group.com.gymnee.app）
-  - healthkit: 体重・体組成の読込／ワークアウト書き戻し（§6.9）
+  - healthkit: 体重・体組成・睡眠・HRV の読込／体重の書き戻し（§6.9）
   ※ Push(APNs) を使う段階で aps-environment を追加する。
 -->
 <plist version="1.0">

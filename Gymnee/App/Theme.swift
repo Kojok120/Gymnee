@@ -69,12 +69,10 @@ enum Theme {
     static let info = Color(light: 0x0AA3D9, dark: 0x4ECBFF)      // 有酸素/心拍
     static let series2 = Color(light: 0x7C4DFF, dark: 0xB388FF)   // ボリューム第2系列
 
-    // MARK: - Legacy aliases (既存 90 ファイルとの後方互換。撤去しない)
+    // MARK: - Legacy aliases (既存ファイルとの後方互換。実使用のあるものだけ残す)
 
-    static let accent = lime
     static let energy = lime
     static let deep = Color(light: 0x16190F, dark: 0x0B0D0C)
-    static let cardBackground = bg1
     static let groupedBackground = bg0
 
     // MARK: - Gradients
@@ -89,12 +87,6 @@ enum Theme {
         colors: [Color(hexF: 0x8FD400), Color(hexF: 0xC6FF3D), Color(hexF: 0xD8FF6B), Color(hexF: 0x8FD400)],
         center: .center
     )
-    /// オンボーディング等のヒーロー背景。
-    static let heroBackground = LinearGradient(
-        colors: [Color(hexF: 0x0B0D0C), Color(hexF: 0x141A12), Color(hexF: 0x1E2A12)],
-        startPoint: .top, endPoint: .bottom
-    )
-
     // MARK: - Spacing
 
     enum Spacing {
@@ -161,7 +153,6 @@ extension Theme {
 
 extension Font {
     /// ヒーロー数値（タイマー・主要メトリクス）。
-    static let numXL = Font.system(size: 48, weight: .bold, design: .rounded).monospacedDigit()
     static let numL = Font.system(size: 32, weight: .bold, design: .rounded).monospacedDigit()
     static let numM = Font.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit()
     static let numS = Font.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit()

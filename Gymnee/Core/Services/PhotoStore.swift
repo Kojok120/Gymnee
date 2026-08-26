@@ -48,13 +48,6 @@ enum PhotoStore {
         return UIImage(cgImage: cg)
     }
 
-    /// Data をダウンサンプルして保存（取り込みフロー用）。失敗時 nil。
-    @discardableResult
-    static func saveDownsampled(data: Data, maxPixel: CGFloat = 1280, quality: CGFloat = 0.8) -> String? {
-        guard let image = downsample(data: data, maxPixel: maxPixel) else { return nil }
-        return save(image, quality: quality)
-    }
-
     /// リモートから取得したバイト列を、指定ファイル名でローカルに書き戻す（再インストール後の復元用）。
     @discardableResult
     static func writeData(_ data: Data, as filename: String) -> UIImage? {

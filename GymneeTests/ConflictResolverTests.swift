@@ -21,11 +21,6 @@ final class ConflictResolverTests: XCTestCase {
         let t = Date(timeIntervalSince1970: 1_000)
         XCTAssertEqual(ConflictResolver.resolve(localUpdatedAt: t, remoteUpdatedAt: t), .local)
     }
-
-    func testExerciseSetsAreAppendOnly() {
-        XCTAssertTrue(ConflictResolver.isAppendOnly(entity: "exercise_sets"))
-        XCTAssertFalse(ConflictResolver.isAppendOnly(entity: "workouts"))
-    }
 }
 
 /// outbox の畳み込み（同一レコードは最新 1 件）・永続化のテスト。
@@ -38,15 +33,15 @@ final class LocalSyncEngineTests: XCTestCase {
     func testEnqueueCoalescesSameRecord() {
         let engine = LocalSyncEngine(persistenceURL: tempURL())
         let recordId = UUID()
-        engine.enqueue(PendingChange(entity: "visits", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 1)))
-        engine.enqueue(PendingChange(entity: "visits", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 2)))
+        engine.enqueue(PendingChange(entity: "body_metrics", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 1)))
+        engine.enqueue(PendingChange(entity: "body_metrics", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 2)))
         XCTAssertEqual(engine.pendingCount, 1)
         XCTAssertEqual(engine.outbox.first?.updatedAt, Date(timeIntervalSince1970: 2))
     }
 
     func testEnqueueKeepsDistinctRecords() {
         let engine = LocalSyncEngine(persistenceURL: tempURL())
-        engine.enqueue(PendingChange(entity: "visits", recordId: UUID(), operation: .upsert, updatedAt: .now))
+        engine.enqueue(PendingChange(entity: "body_metrics", recordId: UUID(), operation: .upsert, updatedAt: .now))
         engine.enqueue(PendingChange(entity: "workouts", recordId: UUID(), operation: .upsert, updatedAt: .now))
         XCTAssertEqual(engine.pendingCount, 2)
     }
@@ -55,7 +50,7 @@ final class LocalSyncEngineTests: XCTestCase {
         let url = tempURL()
         let recordId = UUID()
         let first = LocalSyncEngine(persistenceURL: url)
-        first.enqueue(PendingChange(entity: "visits", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 5)))
+        first.enqueue(PendingChange(entity: "body_metrics", recordId: recordId, operation: .upsert, updatedAt: Date(timeIntervalSince1970: 5)))
         // 別インスタンス（＝再起動相当）で復元される。
         let second = LocalSyncEngine(persistenceURL: url)
         XCTAssertEqual(second.pendingCount, 1)

@@ -2,7 +2,7 @@ import Foundation
 import HealthKit
 import Observation
 
-/// HealthKit 連携（§6.9）。体重・体組成の読込、ワークアウトの書き戻し。最小権限・用途明示。
+/// HealthKit 連携（§6.9）。体重・体組成・睡眠・HRV の読込と、体重の書き戻し。最小権限・用途明示。
 /// 許諾なし／非対応端末でも縮退動作（呼び出しは安全に no-op）。
 /// ※ 実機での動作には HealthKit エンタイトルメント＋ Capability の付与が必要（有償アカウント整備後）。
 @MainActor
@@ -23,10 +23,11 @@ final class HealthKitService {
         return set
     }
 
+    /// 書き込むのは体重だけ（`saveBodyMass`）。ワークアウトの書き戻しは実装しておらず、
+    /// 使わない権限は要求しない（最小権限）。
     private var writeTypes: Set<HKSampleType> {
         var set = Set<HKSampleType>()
         if let bm = HKObjectType.quantityType(forIdentifier: .bodyMass) { set.insert(bm) }
-        set.insert(HKObjectType.workoutType())
         return set
     }
 
@@ -104,30 +105,5 @@ final class HealthKitService {
         let quantity = HKQuantity(unit: .gramUnit(with: .kilo), doubleValue: kg)
         let sample = HKQuantitySample(type: type, quantity: quantity, start: date, end: date)
         try? await store.save(sample)
-    }
-
-    /// ワークアウトをヘルスケアへ書き戻す（種別・時間、§6.9）。
-    func saveWorkout(start: Date, end: Date, activeEnergyKcal: Double? = nil) async {
-        guard isAvailable, isAuthorized else { return }
-        let builder = HKWorkoutBuilder(healthStore: store, configuration: {
-            let c = HKWorkoutConfiguration()
-            c.activityType = .traditionalStrengthTraining
-            return c
-        }(), device: .local())
-        do {
-            try await builder.beginCollection(at: start)
-            if let activeEnergyKcal, let energyType = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
-                let sample = HKQuantitySample(
-                    type: energyType,
-                    quantity: HKQuantity(unit: .kilocalorie(), doubleValue: activeEnergyKcal),
-                    start: start, end: end
-                )
-                try await builder.addSamples([sample])
-            }
-            try await builder.endCollection(at: end)
-            _ = try await builder.finishWorkout()
-        } catch {
-            // 失敗は無視（縮退）。
-        }
     }
 }

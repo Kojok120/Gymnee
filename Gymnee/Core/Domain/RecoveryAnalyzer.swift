@@ -49,19 +49,4 @@ enum RecoveryAnalyzer {
         }
     }
 
-    /// 次にやる候補（回復済みのうち、最も長く休んでいる順。未訓練は最優先）。
-    static func recommendedNext(from statuses: [MuscleStatus]) -> [MuscleGroup] {
-        statuses
-            .filter(\.isRecovered)
-            .sorted { lhs, rhs in
-                // 未訓練（hoursSince=nil）を最優先、その後は休養時間が長い順。
-                switch (lhs.hoursSince, rhs.hoursSince) {
-                case (nil, nil): return false
-                case (nil, _): return true
-                case (_, nil): return false
-                case let (l?, r?): return l > r
-                }
-            }
-            .map(\.muscle)
-    }
 }

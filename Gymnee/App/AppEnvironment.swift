@@ -40,7 +40,8 @@ final class AppEnvironment {
         configureRemoteSyncIfAvailable()
     }
 
-    /// `Supabase.plist` があればリモート同期を有効化する。無ければローカルのみで継続（オフラインファースト）。
+    /// `SupabaseConfig`（xcconfig → Info.plist 経由）が読めればリモート同期を有効化する。
+    /// 読めなければローカルのみで継続（オフラインファースト）。
     private func configureRemoteSyncIfAvailable() {
         guard let config = SupabaseConfig.load() else { return }
         let client = SupabaseClient(config: config)

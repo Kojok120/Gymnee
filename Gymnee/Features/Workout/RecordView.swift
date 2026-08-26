@@ -198,11 +198,6 @@ private struct StartGateView: View {
         .contentShape(Rectangle())
     }
 
-    private func gateRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { gateRowLabel(title: title, icon: icon) }
-            .buttonStyle(PressableButtonStyle())
-    }
-
     /// 中断中の記録1件を再開/破棄するカード（開始日時＋内容の一部を表示）。
     private func resumeCard(_ draft: Workout) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {

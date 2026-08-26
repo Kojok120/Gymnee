@@ -17,7 +17,7 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 タブは 記録 / カレンダー / 育成 / ソーシャル / その他 の 5 本（iOS の上限。超えると More に畳まれる）。
 プロフィール・ショップ・設定は「その他」配下に `AppRoute` の値ルートで置く。
 人体図（旧「分析」タブ）は育成タブでキャラ本体をタップすると開く。
-ローカル（SwiftData）を正とする**オフラインファースト**設計で、Supabase をリモート同期・認証・ストレージ・AI 計画のバックエンドに使います。本体アプリに加え、ウィジェット（WidgetKit / Live Activity）、watchOS アプリ、App Intents（Siri）を含みます。
+ローカル（SwiftData）を正とする**オフラインファースト**設計で、Supabase をリモート同期・認証・ストレージ・AI 計画のバックエンドに使います。本体アプリに加え、ウィジェット（WidgetKit / Live Activity）と watchOS アプリを含みます。
 
 このファイルはリポジトリ全体に共通する実装原則を定義します。配下に `AGENTS.md` が存在する場合は、その領域固有ルールもあわせて従ってください。
 
@@ -29,7 +29,7 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 - **プロジェクト生成**: XcodeGen（`project.yml` から `.xcodeproj` を生成。`.xcodeproj` は生成物で gitignore 済み）
 - **バックエンド**: Supabase（PostgREST / GoTrue 認証 / Storage / Edge Functions）。外部 SDK を足さず `SupabaseClient`（URLSession の薄い自前クライアント・依存ゼロ）で叩く
 - **認証**: Sign in with Apple / メール OTP / Google OAuth（PKCE）。トークンは Keychain
-- **iOS 機能**: WidgetKit + Live Activity（ActivityKit）、App Intents（Siri）、HealthKit、CoreLocation（ジオフェンス自動チェックイン）、WatchConnectivity、APNs
+- **iOS 機能**: WidgetKit + Live Activity（ActivityKit）、HealthKit、EventKit（カレンダー連携）、StoreKit 2、WatchConnectivity、APNs
 - **AI**: Supabase Edge Function（`plan-workouts` → Gemini）でワークアウト計画を生成
 - **CI/CD**: GitHub Actions（`ci.yml` でビルド/テスト、`testflight.yml` で `main` push → TestFlight 配信）
 
@@ -48,7 +48,7 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 
 - **SwiftData がローカルの正**。同期は `SyncEngine` / `LocalSyncEngine`（outbox にためる）で抽象化し、コンフリクトは last-write-wins（`ConflictResolver`）で解く
 - **DI は `AppEnvironment`**（`@MainActor @Observable`）に各サービス（auth / sync / location / health / notifications / subscription / calendar 等）を集約し `.environment(...)` で注入する。サービスを View 内で直接 new しない
-- **ドメインロジックは純粋関数として `Gymnee/Core/Domain/` に置く**（`OneRepMax` / `PRDetector` / `VolumeCalculator` / `PlateCalculator` / `StreakCalculator` / `RecoveryAnalyzer` / `ConflictResolver` 等）。新しいビジネスルールはここに切り出してユニットテストを書く
+- **ドメインロジックは純粋関数として `Gymnee/Core/Domain/` に置く**（`OneRepMax` / `PRDetector` / `WeeklyMuscleLoad` / `PlateCalculator` / `StreakCalculator` / `RecoveryAnalyzer` / `ConflictResolver` 等）。新しいビジネスルールはここに切り出してユニットテストを書く
 - 本体 / Widget / Watch の共有コードは `Shared/` `SharedActivity/` `SharedConnectivity/` に置く
 
 ### Supabase（自前 REST クライアント）
@@ -123,7 +123,7 @@ Gymnee/
 │   ├── Sync/               SupabaseClient / SyncEngine / SyncStore
 │   ├── Auth/               AuthService / Keychain
 │   ├── Domain/             純粋ドメインロジック（ユニットテスト対象）
-│   ├── Location / Health / Services / Intents / Subscription
+│   ├── Health / Services / Store
 └── Features/*              機能ごとの画面・ViewModel・UI
 Shared/                     App Group 共有スナップショット（app/widget/watch 共通）
 SharedActivity/             Live Activity 属性（ActivityKit）
