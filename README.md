@@ -31,16 +31,16 @@ xcodebuild -project Gymnee.xcodeproj -scheme Gymnee \
 - 検証：iPhone 16 Pro シミュレータでダーク/ライト両対応・ドメインユニットテスト 49 本 green。
 
 ## アーキテクチャ
-- **オフラインファースト**：SwiftData をローカルの正とし、同期は `SyncEngine` で抽象化（`LocalSyncEngine` は outbox に積むだけの no-op）。コンフリクトは last-write-wins（`ConflictResolver`、§9-7）。
-- **認証**：`AuthProviding` 抽象 + `MockAuthProvider`（ローカル）。Sign in with Apple は同 protocol で後差し込み。
-- **DI**：`AppEnvironment` に各サービス（auth/sync/location/health）を集約し `.environment` で注入。
+- **オフラインファースト**：SwiftData をローカルの正とし、`LocalSyncEngine` が outbox に変更を積んで Supabase へ送出する。コンフリクトは last-write-wins（`ConflictResolver`、§9-7）。
+- **認証**：`AuthProviding` 抽象 + `MockAuthProvider`（ローカル識別の永続化）。Supabase Auth 経由の Sign in with Apple / メール OTP / Google OAuth は `AuthService` が担う。
+- **DI**：`AppEnvironment` に各サービス（auth/sync/health/notifications/store/calendar 等）を集約し `.environment` で注入。
 - **ドメインロジック**（純粋・ユニットテスト対象、`Gymnee/Core/Domain/`）：
-  `OneRepMax`・`PRDetector`・`VolumeCalculator`・`PlateCalculator`・`StreakCalculator`・`RecoveryAnalyzer`・`SupplyAnalyzer`、`ConflictResolver`。
+  `OneRepMax`・`PRDetector`・`WeeklyMuscleLoad`・`PlateCalculator`・`StreakCalculator`・`RecoveryAnalyzer`・`SupplyAnalyzer`、`ConflictResolver`。
 
 ### ディレクトリ
 ```
 project.yml                 XcodeGen 定義（app / widgets / watch / tests）
-Gymnee/  App, Core(Models/Persistence/Sync/Auth/Domain/Location/Health/Services/Intents/Commerce), Features/*
+Gymnee/  App, Core(Models/Persistence/Sync/Auth/Domain/Health/Services/Store), Features/*
 Shared/                     App Group 共有スナップショット（app/widget/watch 共通）
 SharedActivity/             Live Activity 属性（app/widget 共通・ActivityKit）
 GymneeWidgets/              WidgetKit 拡張（ウィジェット + Live Activity）

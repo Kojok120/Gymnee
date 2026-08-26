@@ -1346,21 +1346,6 @@ struct CharacterRoomView: View {
         withAnimation(.bouncy) { chatter = currentLine() }
     }
 
-    private func perform(_ action: CharacterChatter.Line.Action?) {
-        switch action {
-        case .startWorkout:
-            NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil)
-        case .expedition:
-            sheet = .expedition
-        case .claim:
-            if let run = activeRun { claim(run) }
-        case nil:
-            break
-        }
-        // 用事に応じたので、コーチはいったん引き上げる。
-        dismissCoach()
-    }
-
     /// 遠征に送り出す。元気は `ExpeditionRun.energySpent` の合計として引かれる。
     private func start(_ course: Expedition.Course) {
         guard activeRun == nil,

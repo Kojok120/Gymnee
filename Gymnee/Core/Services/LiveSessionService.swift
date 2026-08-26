@@ -38,7 +38,7 @@ final class LiveSessionService {
         }
     }
 
-    /// リモート未設定（`Supabase.plist` 無し）なら nil のまま＝配信も応援もしない。
+    /// リモート未設定（`SupabaseConfig` が解決できない）なら nil のまま＝配信も応援もしない。
     private var client: SupabaseClient?
 
     func configure(client: SupabaseClient) { self.client = client }

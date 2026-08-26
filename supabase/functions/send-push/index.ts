@@ -1,6 +1,6 @@
-// フレンドのチェックイン通知を APNs 経由で送る Edge Function（§6.10 / §6.11）。
-// DB トリガー `notify_friend_checkin` から { event, visitId } を受け取り、
-// 訪問者のフォロワー全員の device_tokens へ「〇〇さんがジムに行きました」を送信する。
+// ソーシャル通知を APNs 経由で送る Edge Function（§6.10 / §6.11）。
+// 各 DB トリガーから { event, <対象id> } を受け取り、対象ユーザーの device_tokens へ送信する。
+// event: reaction / comment / follow / report / post / live_start / cheer
 //
 // 必要なシークレット（`supabase secrets set ...`）:
 //   APNS_KEY            … AuthKey_XXXX.p8 の中身全文（-----BEGIN PRIVATE KEY----- を含む。改行は実改行/\n どちらでも可）
@@ -126,7 +126,6 @@ Deno.serve(async (req) => {
 
   let payload: {
     event?: string;
-    visitId?: string;
     reactionId?: string;
     commentId?: string;
     followId?: string;
@@ -142,7 +141,9 @@ Deno.serve(async (req) => {
   }
 
   const db = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-  const event = payload.event ?? "friend_checkin";
+  // 既定値は置かない。event 無しの呼び出しは末尾の unknown event で 400 にする
+  // （かつてチェックイン通知が既定だった名残で、event 省略が黙って死んだ分岐へ落ちていた）。
+  const event = payload.event ?? "";
 
   // --- いいね → 投稿者へ通知 ---
   if (event === "reaction") {
@@ -401,46 +402,6 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ sent: 1 }), { headers: { "content-type": "application/json" } });
   }
 
-  // --- フレンドのチェックイン → フォロワーへ通知（既定） ---
-  const visitId = payload.visitId;
-  if (!visitId) return new Response("missing visitId", { status: 400 });
-
-  const { data: visit } = await db
-    .from("visits").select("user_id, gym_id").eq("id", visitId).single();
-  if (!visit) return new Response(JSON.stringify({ sent: 0, reason: "visit not found" }), { status: 200 });
-
-  const visitorId = visit.user_id as string;
-  const [{ data: profile }, gymRes] = await Promise.all([
-    db.from("profiles").select("display_name").eq("id", visitorId).single(),
-    visit.gym_id
-      ? db.from("gyms").select("name").eq("id", visit.gym_id).single()
-      : Promise.resolve({ data: null }),
-  ]);
-  const visitorName = profile?.display_name ?? "フレンド";
-  const gymName = (gymRes.data as { name?: string } | null)?.name;
-
-  // notify=true のフォロワーにのみ送る（フレンドごとの通知ON/OFF設定を尊重）。
-  const { data: followers } = await db
-    .from("follows").select("follower_id").eq("followee_id", visitorId).eq("notify", true);
-  let followerIds = (followers ?? []).map((r: { follower_id: string }) => r.follower_id);
-
-  // 受信者側の「フレンドのチェックイン通知」設定（profiles.notify_friend_checkin）を尊重。
-  // 列が無い/未取得の場合は既定で送る。
-  if (followerIds.length > 0) {
-    const { data: prefs } = await db
-      .from("profiles").select("id, notify_friend_checkin").in("id", followerIds);
-    const muted = new Set(
-      (prefs ?? [])
-        .filter((p: { notify_friend_checkin?: boolean }) => p.notify_friend_checkin === false)
-        .map((p: { id: string }) => p.id),
-    );
-    followerIds = followerIds.filter((id: string) => !muted.has(id));
-  }
-
-  const title = `${visitorName}さんがジムに行きました`;
-  const message = gymName ? `${gymName} にチェックイン💪` : "チェックインしました💪";
-  const sent = await pushToUsers(db, followerIds, title, message, {
-    type: "friend_checkin", visitorId,
-  });
-  return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  // 未知のイベントは黙って握り潰さず 400 で返す（トリガー追加時の取りこぼしを表面化させる）。
+  return new Response(`unknown event: ${event}`, { status: 400 });
 });

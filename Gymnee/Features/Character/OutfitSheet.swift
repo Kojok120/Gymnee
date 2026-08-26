@@ -86,11 +86,4 @@ struct OutfitSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func rarityColor(_ rarity: Expedition.Rarity) -> Color {
-        switch rarity {
-        case .common: return Theme.textSecondary
-        case .rare: return Theme.info
-        case .epic: return Theme.warning
-        }
-    }
 }

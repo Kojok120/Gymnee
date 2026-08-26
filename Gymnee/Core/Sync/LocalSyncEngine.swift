@@ -4,12 +4,13 @@ import Observation
 /// ローカル優先の同期エンジン（§3）。outbox に変更を積みファイルへ永続化する。
 ///
 /// **リモート未設定時はローカルのみ**（push/pull は no-op）でオフラインファーストを維持する。
-/// `Supabase.plist` が存在し `configureRemote(_:)` が呼ばれると、push() で outbox を Supabase へ送出し、
-/// pull() でリモート差分を取り込む。SwiftData 行 ⇄ JSON の変換は `SyncBackingStore` 実装に委ねる
+/// Supabase 接続情報（`SupabaseConfig`）が揃って `configureRemote(_:)` が呼ばれると、
+/// push() で outbox を Supabase へ送出し、pull() でリモート差分を取り込む。
+/// SwiftData 行 ⇄ JSON の変換は `SyncBackingStore` 実装に委ねる
 /// （アプリ層が SwiftData にアクセスして担う＝この層は永続化方式に非依存）。
 @MainActor
 @Observable
-final class LocalSyncEngine: SyncEngine {
+final class LocalSyncEngine {
     private(set) var outbox: [PendingChange]
     private let url: URL
 

@@ -186,29 +186,11 @@ enum LoadMode: String, Codable, CaseIterable, Sendable {
         case .assisted: return "補助"
         }
     }
-    /// 重量軸の入力を持つか（自重のみは reps だけ）。
-    var hasLoadInput: Bool { self != .none }
-    /// 入力値（正の大きさ）の符号表現。荷重=＋, 補助=−, 自重=空。
-    var signPrefix: String {
-        switch self {
-        case .none: return ""
-        case .weighted: return "＋"
-        case .assisted: return "−"
-        }
-    }
     /// 記録カード等の重量軸ラベル。加重/補助は一本軸（−補助 / 0自重 / ＋加重）を示す。
     var loadAxisLabel: String {
         switch self {
         case .none: return "自重"
         case .weighted, .assisted: return "補助− · 自重 · 加重＋"
-        }
-    }
-    /// セットの加重大きさ(magnitude≥0)を表示用テキストに。荷重「＋20kg」/ 補助「補助20kg」/ 自重「自重」。
-    func loadText(_ magnitude: Double) -> String {
-        switch self {
-        case .none: return "自重"
-        case .weighted: return magnitude > 0 ? String(format: "＋%gkg", magnitude) : "自重"
-        case .assisted: return magnitude > 0 ? String(format: "補助%gkg", magnitude) : "自重"
         }
     }
 }
@@ -232,11 +214,6 @@ enum MeasurementType: String, Codable, CaseIterable, Sendable {
         case .cardio: return "有酸素"
         }
     }
-
-    /// 重量（加重）軸を持つか。time / cardio は false。
-    var hasWeightAxis: Bool { self == .weight || self == .bodyweight }
-    /// reps 軸を持つか。time / cardio は false（秒・距離/時間で記録）。
-    var hasRepsAxis: Bool { self == .weight || self == .bodyweight }
 }
 
 /// 投稿へのリアクション種別（§6.11 ゲーミフィケーション）。いいねのみ。
