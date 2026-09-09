@@ -31,7 +31,7 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 - **認証**: Sign in with Apple / メール OTP / Google OAuth（PKCE）。トークンは Keychain
 - **iOS 機能**: WidgetKit + Live Activity（ActivityKit）、HealthKit、EventKit（カレンダー連携）、StoreKit 2、WatchConnectivity、APNs
 - **AI**: Supabase Edge Function（`plan-workouts` → Gemini）でワークアウト計画を生成
-- **CI/CD**: GitHub Actions（`ci.yml` でビルド/テスト、`testflight.yml` で `main` push → TestFlight 配信）
+- **CI/CD**: GitHub Actions（`ci.yml` でビルド/テスト、`testflight.yml` は手動起動（`gh workflow run testflight.yml --ref main`）で TestFlight 配信。ビルド番号は run number + 200）
 
 ## 公式ベストプラクティス
 
@@ -103,12 +103,12 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 ## レビュー方針
 
 - 通常の PR はコードレビューと静的確認（ビルド / テスト）を行う
-- `main` への PR は **TestFlight 配信に直結**するため、本番反映の安全性を基準に重要度を判定する（セキュリティ事故、データ破損、クラッシュ誘発、互換性破壊、リリース阻害を `Critical` / `Major` として扱う）
+- `main` への PR は **次の TestFlight / App Store 配信にそのまま載る**ため、本番反映の安全性を基準に重要度を判定する（セキュリティ事故、データ破損、クラッシュ誘発、互換性破壊、リリース阻害を `Critical` / `Major` として扱う）
 
 ## Git 運用
 
 - 作業は `feature/*`（または `fix/*` / `chore/*`）ブランチで行い、PR で `main` にマージする（`dev` ブランチ運用は無し）
-- `main` への push は `testflight.yml` により TestFlight へ自動配信される。`main` に直接 push せず PR を通す
+- TestFlight 配信は `main` マージ後に `testflight.yml` を手動起動する（2026-07 の CI 整理で自動配信は廃止）。`main` に直接 push せず PR を通す。承認済み版と同じ `MARKETING_VERSION` ではアップロードが弾かれる（altool 90186/90062）ので、配信前に `project.yml` の版を上げる。粒度は変更の大きさで決める（小さい改善=パッチ、機能追加=マイナー）
 - ブランチ整理が必要になったら `/sync-clean`（ユーザーコマンド）で `main` を origin に同期し、それ以外のローカルブランチを削除する
 
 ## 主要ディレクトリ
