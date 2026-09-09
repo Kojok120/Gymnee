@@ -70,9 +70,14 @@ struct AddExerciseView: View {
         }
     }
 
-    /// 既定の片側/両側を器具から推定（ダンベル/ケトルベル＝片側）。
+    /// 既定の片側/両側を器具から推定（ダンベル/ケトルベル＝片側、マシン/ケーブル＝区別なし、他＝両側）。
+    /// プリセットの割当（SeedData）と同じ既定にし、マシン/ケーブルに「両側」ラベルが付かないようにする。
     private static func defaultWeightMode(for eq: EquipmentType) -> WeightMode {
-        (eq == .dumbbell || eq == .kettlebell) ? .perSide : .both
+        switch eq {
+        case .dumbbell, .kettlebell: return .perSide
+        case .machine, .cable: return .none
+        case .barbell, .bodyweight, .other: return .both
+        }
     }
 
     private var typeSection: some View {
