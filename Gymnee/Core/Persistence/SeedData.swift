@@ -8,7 +8,8 @@ enum SeedData {
     /// （次回起動時に一度だけ整備処理が走る）。
     /// v3: 懸垂・ディップスを assisted（補助が多数派。符号付き一本軸で加重も記録可）に変更。
     /// v4: シットアップ/クランチ/レッグレイズを hasAngle=true（角度あり）に（issue #44）。
-    private static let presetVersion = 4
+    /// v5: プリセットを 43→96 件に拡充（issue #114。サーバーマスタは migration 0039）。
+    private static let presetVersion = 5
     private static let presetVersionKey = "gymnee.seed.presetVersion"
 
     /// プリセット種目の決定的id用 namespace（固定値。変更すると全idが変わるので不変にする）。
@@ -176,58 +177,116 @@ enum SeedData {
         // 胸
         .init(name: "ベンチプレス", muscle: .chest, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "インクラインベンチプレス", muscle: .chest, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "デクラインベンチプレス", muscle: .chest, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "ダンベルプレス", muscle: .chest, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "インクラインダンベルプレス", muscle: .chest, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "ダンベルフライ", muscle: .chest, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        // ダンベル1本を両手で持つ種目は片側/両側の区別なし（none）。
+        .init(name: "ダンベルプルオーバー", muscle: .chest, equipment: .dumbbell, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "チェストプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "インクラインチェストプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "デクラインチェストプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "ペックフライ", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        // ケーブルの片側種目（左右別スタックを片手ずつ）は perSide＝1.25kg 刻み（issue #114）。
+        .init(name: "ケーブルクロスオーバー", muscle: .chest, equipment: .cable, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "スミスマシンベンチプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "スミスマシンインクラインベンチプレス", muscle: .chest, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "腕立て伏せ", muscle: .chest, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // ディップス/懸垂は補助（アシストマシン）利用が多数派のため assisted 既定。
         // 重量軸は符号付き一本軸（−補助/0自重/＋加重）なので、加重ベルト派もそのまま記録できる。
         .init(name: "ディップス", muscle: .chest, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .assisted),
         // 背中
         .init(name: "デッドリフト", muscle: .back, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "ベントオーバーロウ", muscle: .back, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "ワンハンドロウ", muscle: .back, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        // Tバー/ハイロウ/ローロウはプレートロード式マシン（ハイロウ/ローロウは片腕ずつのアイソラテラル）。
+        .init(name: "Tバーロウ", muscle: .back, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ハイロウ", muscle: .back, equipment: .machine, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "ローロウ", muscle: .back, equipment: .machine, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "ラットプルダウン", muscle: .back, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "シーテッドロウ", muscle: .back, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ケーブルプルオーバー", muscle: .back, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "バーベルシュラッグ", muscle: .back, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "ダンベルシュラッグ", muscle: .back, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "懸垂", muscle: .back, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .assisted),
+        // プレートを抱えて加重することが多いので weighted（0=自重、＋=プレート）。
+        .init(name: "バックエクステンション", muscle: .back, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .weighted),
         // 脚
         .init(name: "スクワット", muscle: .legs, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "フロントスクワット", muscle: .legs, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "スミスマシンスクワット", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "ゴブレットスクワット", muscle: .legs, equipment: .dumbbell, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ブルガリアンスクワット", muscle: .legs, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "ランジ", muscle: .legs, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "レッグプレス", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ハックスクワット", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "レッグエクステンション", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "レッグカール", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "ルーマニアンデッドリフト", muscle: .legs, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "カーフレイズ", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ヒップアダクション", muscle: .legs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         // 肩
         .init(name: "ショルダープレス", muscle: .shoulders, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "ダンベルショルダープレス", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "バーベルショルダープレス", muscle: .shoulders, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "スミスマシンショルダープレス", muscle: .shoulders, equipment: .machine, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "アーノルドプレス", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "サイドレイズ", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "ケーブルサイドレイズ", muscle: .shoulders, equipment: .cable, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "マシンサイドレイズ", muscle: .shoulders, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "フロントレイズ", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "ケーブルフロントレイズ", muscle: .shoulders, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "リアレイズ", muscle: .shoulders, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "リアデルトフライ", muscle: .shoulders, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "フェイスプル", muscle: .shoulders, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "アップライトロウ", muscle: .shoulders, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         // 腕
         .init(name: "バーベルカール", muscle: .arms, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "プリーチャーカール", muscle: .arms, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         .init(name: "ダンベルカール", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "インクラインダンベルカール", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "コンセントレーションカール", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
         .init(name: "ハンマーカール", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "マシンアームカール", muscle: .arms, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ケーブルカール", muscle: .arms, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "トライセプスプレスダウン", muscle: .arms, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "スカルクラッシャー", muscle: .arms, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "キックバック", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "オーバーヘッドエクステンション", muscle: .arms, equipment: .dumbbell, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ナローベンチプレス", muscle: .arms, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         // 腹（クランチ/シットアップ/レッグレイズはベンチ角度を変えて記録できる＝角度あり）
         .init(name: "クランチ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none, hasAngle: true),
         .init(name: "シットアップ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none, hasAngle: true),
         .init(name: "レッグレイズ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none, hasAngle: true),
+        .init(name: "ハンギングレッグレイズ", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        .init(name: "ロシアンツイスト", muscle: .abs, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         .init(name: "ケーブルクランチ", muscle: .abs, equipment: .cable, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "アブドミナルクランチ", muscle: .abs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "トーソローテーション", muscle: .abs, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "アブローラー", muscle: .abs, equipment: .other, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // 体幹
         .init(name: "プランク", muscle: .core, equipment: .bodyweight, measurement: .time, weightMode: .none, loadMode: .none),
+        .init(name: "サイドプランク", muscle: .core, equipment: .bodyweight, measurement: .time, weightMode: .none, loadMode: .none),
         // 臀部
         .init(name: "ヒップスラスト", muscle: .glutes, equipment: .barbell, measurement: .weight, weightMode: .none, loadMode: .none),
+        .init(name: "ヒップアブダクション", muscle: .glutes, equipment: .machine, measurement: .weight, weightMode: .none, loadMode: .none),
+        // 片脚ずつアンクルストラップで引く＝片側（1.25kg 刻み）。
+        .init(name: "ケーブルキックバック", muscle: .glutes, equipment: .cable, measurement: .weight, weightMode: .perSide, loadMode: .none),
+        .init(name: "ヒップリフト", muscle: .glutes, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         // 全身
         .init(name: "バーピー", muscle: .fullBody, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
+        .init(name: "マウンテンクライマー", muscle: .fullBody, equipment: .bodyweight, measurement: .bodyweight, weightMode: .none, loadMode: .none),
         .init(name: "ケトルベルスイング", muscle: .fullBody, equipment: .kettlebell, measurement: .weight, weightMode: .none, loadMode: .none),
         .init(name: "クリーン&ジャーク", muscle: .fullBody, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
+        .init(name: "パワークリーン", muscle: .fullBody, equipment: .barbell, measurement: .weight, weightMode: .both, loadMode: .none),
         // 有酸素（距離km ＋ 時間分）
         .init(name: "ウォーキング", muscle: .cardio, equipment: .other, measurement: .cardio, weightMode: .none, loadMode: .none),
         .init(name: "ランニング", muscle: .cardio, equipment: .other, measurement: .cardio, weightMode: .none, loadMode: .none),
         .init(name: "バイシクル", muscle: .cardio, equipment: .other, measurement: .cardio, weightMode: .none, loadMode: .none),
+        .init(name: "クロストレーナー", muscle: .cardio, equipment: .machine, measurement: .cardio, weightMode: .none, loadMode: .none),
+        .init(name: "ステアクライマー", muscle: .cardio, equipment: .machine, measurement: .cardio, weightMode: .none, loadMode: .none),
+        .init(name: "ローイングマシン", muscle: .cardio, equipment: .machine, measurement: .cardio, weightMode: .none, loadMode: .none),
+        .init(name: "水泳", muscle: .cardio, equipment: .other, measurement: .cardio, weightMode: .none, loadMode: .none),
     ]
 
     // MARK: - Products

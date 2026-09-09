@@ -52,35 +52,21 @@ enum RecordSlots {
         return set.sorted()
     }
 
-    /// 重量刻み。プリセットは種目別レビュー値（ExerciseDefaults）、無ければ器具既定。
-    /// ダンベルはレイズ/カール系の推奨値が2〜5kg域のため1kg刻み（1kg刻みラックの実態にも一致）。
+    /// 重量刻み。プリセットは種目別レビュー値（ExerciseDefaults）、無ければ器具×数え方の既定
+    /// （ExerciseDefaults.fallbackStep。ケーブル片側=1.25kg、ダンベル=1kg など）。
     static func weightStep(_ exercise: Exercise) -> Double {
         if let entry = ExerciseDefaults.entry(for: exercise.name) { return entry.weightStep }
-        switch exercise.equipment {
-        case .machine, .cable: return 5
-        case .kettlebell: return 4
-        case .dumbbell: return 1
-        default: return 2.5
-        }
+        return ExerciseDefaults.fallbackStep(equipment: exercise.equipment, weightMode: exercise.weightMode)
     }
 
     /// 履歴が無いときの既定重量（ルーラーの初期中央）。
-    /// プリセットは種目別レビュー値（ExerciseDefaults）、無ければ器具既定。
-    /// 自重系は符号付き（補助スタイルの種目は補助側 −10 から始める）。
+    /// プリセットは種目別レビュー値（ExerciseDefaults）、無ければ器具既定（ExerciseDefaults.fallbackStartWeight）。
     static func defaultWeight(_ exercise: Exercise) -> Double {
         if let entry = ExerciseDefaults.entry(for: exercise.name) { return entry.startWeight }
-        if exercise.measurementType == .bodyweight {
-            return exercise.loadMode == .assisted ? -10 : 0
-        }
-        switch exercise.equipment {
-        case .barbell: return 20
-        case .dumbbell: return 5
-        case .machine: return 10
-        case .cable: return 10
-        case .kettlebell: return 8
-        case .bodyweight: return 0
-        case .other: return 10
-        }
+        return ExerciseDefaults.fallbackStartWeight(
+            equipment: exercise.equipment, weightMode: exercise.weightMode,
+            measurementType: exercise.measurementType, loadMode: exercise.loadMode
+        )
     }
 
     /// ルーラーの値列（純関数）。center を必ず含む等差列、lowerBound 未満は除外。
