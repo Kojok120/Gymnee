@@ -166,15 +166,14 @@ struct CharacterRoomView: View {
         .onAppear {
             refresh()
             // 集計を作り直したあとで見る（差分の「後」は derived を使う）。
-            takePendingCelebration()
+            // 遊び方はこの部屋では説明されないので、初回だけ案内を出す。
+            // 祝いと重なることがあるので、出す順番は RoomIntro に任せる（issue #120）。
+            let needsOnboarding = !hasSeenOnboarding
+            hasSeenOnboarding = true
+            takePendingCelebration(needsOnboarding: needsOnboarding)
             startedAt = .now
             // 用事があれば、開いてすぐコーチが歩いて入ってくる。
             updateCoachPresence()
-            // 遊び方はこの部屋では説明されないので、初回だけ案内を出す。
-            if !hasSeenOnboarding {
-                showOnboarding = true
-                hasSeenOnboarding = true
-            }
         }
         .onChange(of: signature) { _, _ in
             refresh()
@@ -207,7 +206,7 @@ struct CharacterRoomView: View {
         .sheet(item: $celebrating) { result in
             RewardCelebrationView(result: result)
         }
-        .sheet(item: $celebratingGain, onDismiss: presentNotificationPrePromptIfNeeded) { gain in
+        .sheet(item: $celebratingGain, onDismiss: presentNextIntro) { gain in
             GrowthCelebrationSheet(
                 gain: gain,
                 look: PixelCharacterRenderer.Look(
@@ -222,7 +221,7 @@ struct CharacterRoomView: View {
         .sheet(item: $sheet) { route in
             sheetContent(route)
         }
-        .sheet(isPresented: $showOnboarding) {
+        .sheet(isPresented: $showOnboarding, onDismiss: presentNextIntro) {
             CharacterOnboardingSheet()
         }
         .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
@@ -419,6 +418,10 @@ struct CharacterRoomView: View {
     /// 記録を終えた直後に出す「この 1 回で何が育ったか」。
     /// 記録タブが完了処理の前の状態を保存し、育成タブに来たときに消費する。
     @State private var celebratingGain: WorkoutGrowth.Gain?
+    /// 出す順番を待っている祝い（控えから取り出したが、まだ出していない分）。
+    @State private var pendingGain: WorkoutGrowth.Gain?
+    /// 育成タブを開いた直後の案内の待ち行列（祝い → 遊び方 → 通知の確認。issue #120）。
+    @State private var introQueue: [RoomIntro.Step] = []
 
     /// 拾った直後に出す告知。
     @State private var collectedToast: RoomPickup.Item?
@@ -1162,9 +1165,38 @@ struct CharacterRoomView: View {
     /// 内容は記録タブが完了した時点で確定させて保存している。ここでは組み立て直さない
     /// （`WorkoutGrowth.Pending` 参照）。**ワークアウトを見に行かないので `@Query` の
     /// 反映を待つ必要がなく、タブ切替の直後でも取りこぼさない**。
-    private func takePendingCelebration() {
-        guard celebratingGain == nil, let pending = WorkoutGrowth.Pending.take() else { return }
-        celebratingGain = pending.gain
+    private func takePendingCelebration(needsOnboarding: Bool = false) {
+        var gain: WorkoutGrowth.Gain?
+        if celebratingGain == nil, pendingGain == nil {
+            gain = WorkoutGrowth.Pending.take()?.gain
+        }
+        let steps = RoomIntro.steps(hasCelebration: gain != nil, needsOnboarding: needsOnboarding)
+        guard !steps.isEmpty else { return }
+        if let gain { pendingGain = gain }
+        introQueue = RoomIntro.enqueue(steps, into: introQueue)
+        // 何か出ている間は待つ（閉じた時の onDismiss で次を出す）。
+        if celebratingGain == nil, !showOnboarding, !showNotifPrePrompt {
+            presentNextIntro()
+        }
+    }
+
+    /// 案内の待ち行列から次の1つを出す。シートの onDismiss からも呼ぶ。
+    private func presentNextIntro() {
+        guard !introQueue.isEmpty else { return }
+        let step = introQueue.removeFirst()
+        switch step {
+        case .celebration:
+            if let gain = pendingGain {
+                pendingGain = nil
+                celebratingGain = gain
+            } else {
+                presentNextIntro()
+            }
+        case .onboarding:
+            showOnboarding = true
+        case .notificationPrompt:
+            presentNotificationPrePromptIfNeeded()
+        }
     }
 
     /// 記録を完了した価値を見せ切ってから、通知の許諾を尋ねる。

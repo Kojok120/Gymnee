@@ -51,4 +51,26 @@ final class InviteLinkTests: XCTestCase {
         let url = URL(string: "com.googleusercontent.apps.123:/oauth2redirect?code=abc")!
         XCTAssertNil(InviteLink.userId(from: url))
     }
+
+    // MARK: - カスタムスキーム（招待ページの「アプリで開く」。issue #122）
+
+    func testParseAcceptsAppScheme() {
+        let url = URL(string: "gymnee://invite?u=\(userId.uuidString.lowercased())")!
+        XCTAssertEqual(InviteLink.userId(from: url), userId)
+    }
+
+    func testParseRejectsAuthCallbackOnAppScheme() {
+        // Supabase OAuth のコールバック（gymnee://auth-callback）を招待と誤認しない。
+        XCTAssertNil(InviteLink.userId(from: URL(string: "gymnee://auth-callback?u=\(userId.uuidString)")!))
+        XCTAssertNil(InviteLink.userId(from: URL(string: "gymnee://invite/extra?u=\(userId.uuidString)")!))
+        XCTAssertNil(InviteLink.userId(from: URL(string: "gymnee://invite")!))
+    }
+
+    // MARK: - 招待カードの表示判定
+
+    func testPromptInviteWhileFollowingFew() {
+        XCTAssertTrue(InviteLink.shouldPromptInvite(followingCount: 0))
+        XCTAssertTrue(InviteLink.shouldPromptInvite(followingCount: InviteLink.promptBelowFollowing - 1))
+        XCTAssertFalse(InviteLink.shouldPromptInvite(followingCount: InviteLink.promptBelowFollowing))
+    }
 }

@@ -350,8 +350,9 @@ struct RootView: View {
         // 通知タップのルーティング（type に応じて該当タブへ）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
             switch note.userInfo?["type"] as? String {
-            case "reaction", "follow", "invite", "live_start", "post": selection = .social
-            case "workout": selection = .workout
+            case "reaction", "comment", "follow", "invite", "live_start", "post": selection = .social
+            // トレーニング中の応援は記録画面の帯に並ぶので、記録タブへ戻す（issue #120）。
+            case "workout", "cheer": selection = .workout
             // 週次まとめはカレンダーで振り返る。
             case "recap": selection = .calendar
             case "shop":

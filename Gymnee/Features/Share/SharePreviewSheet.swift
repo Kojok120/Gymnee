@@ -11,6 +11,7 @@ struct SharePreviewSheet: View {
     var photo: UIImage?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(AuthService.self) private var auth
     @State private var rendered: UIImage?
     @State private var message: String?
 
@@ -43,10 +44,18 @@ struct SharePreviewSheet: View {
         }
     }
 
+    /// 画像に添える本文。サインイン済みなら招待リンクを付け、見た人がそのまま始められるようにする
+    /// （issue #122）。ゲストは招待を受け取れる自分のプロフィールが無いので付けない。
+    private var inviteMessage: Text? {
+        guard auth.isPermanentAccount, let uid = auth.currentUserId else { return nil }
+        return Text("\(InviteLink.shareMessage)\n\(InviteLink.url(for: uid).absoluteString)")
+    }
+
     @ViewBuilder private var actions: some View {
         if let rendered {
             VStack(spacing: Theme.Spacing.md) {
                 ShareLink(item: Image(uiImage: rendered),
+                          message: inviteMessage,
                           preview: SharePreview("Gymnee", image: Image(uiImage: rendered))) {
                     Label("共有", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity).padding(.vertical, Theme.Spacing.sm)
