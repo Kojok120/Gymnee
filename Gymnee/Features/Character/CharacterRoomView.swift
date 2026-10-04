@@ -1024,7 +1024,7 @@ struct CharacterRoomView: View {
             sceneButton("ボディ", "figure.stand", route: .body)
             sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
             // 週ボス（issue #128）。倒したのに宝箱を開けていないときだけ印を点ける。
-            sceneButton("ボス", "flame.fill", route: .boss, badge: party.status?.hasUnclaimedChest ?? false)
+            sceneButton("ボス", "flame.fill", route: .boss, badge: party.hasUnclaimedChest)
             sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
             sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
             sceneButton("見た目", "paintpalette.fill", route: .skins)

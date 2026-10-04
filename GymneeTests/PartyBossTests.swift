@@ -57,6 +57,46 @@ final class PartyBossTests: XCTestCase {
         XCTAssertTrue(status.canInvite)
     }
 
+    // MARK: - 複数パーティ（issue #130）
+
+    private func member(_ id: UUID, _ name: String) -> PartyBoss.Member {
+        .init(id: id, displayName: name, avatarURL: nil, weeklyGoal: 3, hits: 0)
+    }
+
+    private func status(name: String?, members: [PartyBoss.Member]) -> PartyBoss.Status {
+        .init(partyId: UUID(), name: name, weekStart: .now, bossId: "sloth_slime", hp: 3, damage: 0,
+              defeated: false, claimed: false, members: members)
+    }
+
+    func testTitleUsesNameOrOtherMembers() {
+        let me = UUID()
+        XCTAssertEqual(status(name: "ジム仲間", members: [member(me, "自分")]).title(for: me), "ジム仲間")
+        XCTAssertEqual(status(name: nil, members: [member(me, "自分")]).title(for: me), "ソロ")
+        XCTAssertEqual(status(name: nil, members: [member(me, "自分"), member(UUID(), "けん")]).title(for: me), "けんと")
+        let many = [member(me, "自分"), member(UUID(), "けん"), member(UUID(), "さき"), member(UUID(), "はる")]
+        XCTAssertEqual(status(name: nil, members: many).title(for: me), "けん・さき ほか1人と")
+    }
+
+    func testParsesMyPartiesArray() throws {
+        let json = """
+        [{"party_id":"43938a10-512a-473f-94d2-b8c4a43a934b","name":"職場","week_start":"2026-10-04T15:00:00+00:00","boss_id":"junk_kraken","hp":3,"damage":1,"defeated":false,"claimed":false,"members":[]},
+         {"party_id":"broken"},
+         {"party_id":"53938a10-512a-473f-94d2-b8c4a43a934b","name":null,"week_start":"2026-10-04T15:00:00+00:00","boss_id":"junk_kraken","hp":3,"damage":3,"defeated":true,"claimed":false,"members":[]}]
+        """
+        let statuses = PartyBoss.statuses(fromJSON: try JSONSerialization.jsonObject(with: Data(json.utf8)))
+        XCTAssertEqual(statuses.count, 2, "読めない要素は落とす")
+        XCTAssertEqual(statuses.first?.name, "職場")
+        XCTAssertNil(statuses.last?.name)
+        XCTAssertTrue(statuses.last?.hasUnclaimedChest ?? false)
+        XCTAssertEqual(PartyBoss.statuses(fromJSON: NSNull()).count, 0)
+    }
+
+    func testNormalizedName() {
+        XCTAssertEqual(PartyBoss.normalizedName("  ジム  "), "ジム")
+        XCTAssertNil(PartyBoss.normalizedName("   "))
+        XCTAssertEqual(PartyBoss.normalizedName(String(repeating: "あ", count: 30))?.count, PartyBoss.maxNameLength)
+    }
+
     func testNoPartyOrBrokenJSONIsNil() {
         XCTAssertNil(PartyBoss.status(fromJSON: NSNull()))
         XCTAssertNil(PartyBoss.status(fromJSON: ["party_id": "x"]))
