@@ -1215,12 +1215,12 @@ struct CharacterRoomView: View {
     private func refresh() {
         let sessions = CharacterInputs.sessions(
             from: completedWorkouts,
-            prCountByWorkout: CharacterInputs.prCountByWorkout(records)
+            prCountByWorkout: CharacterInputs.prHistory(from: completedWorkouts).byWorkout
         )
         let activeDays = completedWorkouts.map { $0.completedAt ?? $0.date }
         // レベル・段階・元気は**コーチと同じ式**で出す（別々に組むと数字が食い違う）。
         let growth = CharacterInputs.growth(
-            completedWorkouts: completedWorkouts, records: records,
+            completedWorkouts: completedWorkouts,
             pickups: pickups, runs: runs, weeklyGoal: weeklyGoal
         )
         let level = growth.level

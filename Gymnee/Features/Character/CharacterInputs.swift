@@ -53,12 +53,12 @@ enum CharacterInputs {
 
     static func growth(
         completedWorkouts: [Workout],
-        records: [PersonalRecord],
         pickups: [RoomPickupRecord],
         runs: [ExpeditionRun],
         weeklyGoal: Int
     ) -> Growth {
-        let sessions = sessions(from: completedWorkouts, prCountByWorkout: prCountByWorkout(records))
+        let prs = prHistory(from: completedWorkouts)
+        let sessions = sessions(from: completedWorkouts, prCountByWorkout: prs.byWorkout)
         let collectedIds = pickups.map(\.itemId)
         let totalExperience = CharacterProgress.totalExperience(
             sessions: sessions,
@@ -72,10 +72,10 @@ enum CharacterInputs {
             totalExperience: totalExperience,
             level: level,
             stage: CharacterProgress.stage(
-                level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
+                level: level.value, prCount: prs.total, weeklyStreakWeeks: streak.weeks
             ),
             nextStage: CharacterProgress.nextStage(
-                level: level.value, prCount: records.count, weeklyStreakWeeks: streak.weeks
+                level: level.value, prCount: prs.total, weeklyStreakWeeks: streak.weeks
             ),
             energy: Expedition.availableEnergy(
                 sessions: sessions,
@@ -101,13 +101,29 @@ enum CharacterInputs {
         return result
     }
 
-    /// PR をワークアウト単位の件数に畳む（セッション EXP のボーナス入力）。
-    static func prCountByWorkout(_ records: [PersonalRecord]) -> [UUID: Int] {
-        var result: [UUID: Int] = [:]
-        for record in records {
-            guard let id = record.workoutId else { continue }
-            result[id, default: 0] += 1
-        }
-        return result
+    /// 自己ベスト更新の履歴（セッション EXP のボーナスと進化条件の入力）。
+    /// 保存済みの `PersonalRecord` は最新値の上書きで履歴を持たないため、記録から導き直す（`PRHistory`）。
+    static func prHistory(from workouts: [Workout]) -> PRHistory.Result {
+        PRHistory.replay(workouts.compactMap { workout in
+            guard let done = workout.completedAt else { return nil }
+            let sets = workout.exercises
+                .sorted { $0.orderIndex < $1.orderIndex }
+                .flatMap { we -> [PRHistory.SetInput] in
+                    guard let exercise = we.exercise else { return [] }
+                    return we.sets
+                        .sorted { $0.setIndex < $1.setIndex }
+                        .map {
+                            PRHistory.SetInput(
+                                exerciseId: exercise.id,
+                                measurementType: exercise.measurementType,
+                                loadMode: exercise.loadMode,
+                                weight: $0.weight,
+                                reps: $0.reps,
+                                durationSeconds: $0.durationSeconds
+                            )
+                        }
+                }
+            return PRHistory.WorkoutInput(id: workout.id, completedAt: done, sets: sets)
+        })
     }
 }
