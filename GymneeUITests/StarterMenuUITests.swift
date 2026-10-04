@@ -2,9 +2,11 @@ import XCTest
 
 /// はじめてのメニュー（issue #119）の通し確認。
 /// 新規インストール相当の状態（ワークアウト0件）で、初期設定 → 開始ゲートのメニュー選択 →
-/// 記録画面の計画タブに種目カードが並ぶ、までを検証する。各段階のスクリーンショットを添付する。
+/// 記録画面の計画タブに種目カードが並ぶ → 1セット記録して完了 → 育成タブで祝い・遊び方・
+/// 通知の確認が順に出る（issue #120）、までを検証する。各段階のスクリーンショットを添付する。
 ///
-/// 前提: 実行前にシミュレータからアプリを削除しておく（`xcrun simctl uninstall <id> com.gymnee.app.dev` 等）。
+/// 前提: 実行前にシミュレータを初期化しておく（`xcrun simctl erase <id>`）。アプリの削除だけでは
+/// UserDefaults のキャッシュが残り、初期設定や遊び方の説明が「表示済み」扱いになる。
 /// 既に完了ワークアウトがある状態ではメニュー自体が出ないため、このテストはスキップする。
 final class StarterMenuUITests: XCTestCase {
 
@@ -43,6 +45,35 @@ final class StarterMenuUITests: XCTestCase {
         XCTAssertTrue(firstExercise.waitForExistence(timeout: 10), "計画タブに種目カードが並ばない")
         XCTAssertTrue(firstExercise.isHittable, "種目カードが前面に出ていない")
         attach(app, "2-record-plan-tab")
+
+        // 回数の中央（種目名のすぐ下の行）をタップして1セット記録する。
+        firstExercise.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: 0, dy: 47)).tap()
+        XCTAssertFalse(app.staticTexts["記録するとここに溜まります"].waitForExistence(timeout: 2),
+                       "1セット記録できていない")
+
+        // 完了 → サマリーを閉じる → 育成タブ。
+        app.buttons["完了"].tap()
+        app.alerts.buttons["完了する"].tap()
+        let close = app.buttons["閉じる"]
+        XCTAssertTrue(close.waitForExistence(timeout: 10), "完了サマリーが出ない")
+        close.tap()
+
+        // 初回完了 → 初めての育成タブ: 祝い → 遊び方 → 通知の確認 の順に、どれも欠けずに出る（#120）。
+        let like = app.buttons["いいね"]
+        XCTAssertTrue(like.waitForExistence(timeout: 10), "成長の祝いが出ない")
+        attach(app, "3-growth-celebration")
+        like.tap()
+
+        let howToPlay = app.buttons["はじめる"]
+        XCTAssertTrue(howToPlay.waitForExistence(timeout: 10), "遊び方の説明が出ない")
+        attach(app, "4-character-onboarding")
+        howToPlay.tap()
+
+        let notifAlert = app.alerts["通知をオンにしますか？"]
+        XCTAssertTrue(notifAlert.waitForExistence(timeout: 10), "通知の確認が出ない")
+        attach(app, "5-notification-prompt")
+        notifAlert.buttons["あとで"].tap()
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {
