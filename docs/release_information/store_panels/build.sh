@@ -18,7 +18,7 @@ MAGICK="/opt/homebrew/bin/magick"
 TMP="$(mktemp -d)"
 
 # パネル順とファイル名（App Store の表示順 = ファイル名順を想定）
-NAMES=(01-record 02-character 03-ai-plan 04-home-calendar 05-body 06-social 07-achievements 08-share)
+NAMES=(01-character 02-record 03-ai-plan 04-home-calendar 05-body 06-social 07-achievements 08-share)
 
 # レンダラーは Playwright 同梱の Chromium（初回のみ `npx -y playwright install chromium`）。
 # Chrome.app のバイナリ直接起動は、本体 Chrome が起動中だと競合してハングするため使わない。
@@ -62,4 +62,4 @@ for name in "${NAMES[@]}"; do
   [ "$s65" = "1284x2778" ] || { echo "NG 6.5: $name = $s65"; fail=1; }
 done
 rm -rf "$TMP"
-[ "$fail" -eq 0 ] && echo "OK: 7 panels x 2 sizes generated" || exit 1
+[ "$fail" -eq 0 ] && echo "OK: ${#NAMES[@]} panels x 2 sizes generated" || exit 1
