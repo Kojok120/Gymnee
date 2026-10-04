@@ -133,6 +133,9 @@ Deno.serve(async (req) => {
     postId?: string;
     sessionId?: string;
     cheerId?: string;
+    partyId?: string;
+    bossId?: string;
+    defeatedBy?: string;
   };
   try {
     payload = await req.json();
@@ -178,6 +181,42 @@ Deno.serve(async (req) => {
     const sent = await pushToUsers(db, [authorId], title, message, {
       type: "reaction", feedItemId: reaction.feed_item_id,
     });
+    return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
+  // --- 週ボス撃破 → パーティのメンバーへ通知（issue #128） ---
+  // 撃破の判定（この1回で HP が 0 になったか）は DB トリガー側で済ませてある。
+  // service role は RLS を通らないので、送り先はここでパーティの所属から引き直す。
+  if (event === "boss_defeated") {
+    const partyId = payload.partyId;
+    const defeatedBy = payload.defeatedBy;
+    if (!partyId || !defeatedBy) return new Response("missing partyId/defeatedBy", { status: 400 });
+    const { data: members } = await db.from("party_members").select("user_id").eq("party_id", partyId);
+    const memberIds = (members ?? []).map((m) => m.user_id as string);
+    if (!memberIds.includes(defeatedBy)) {
+      return new Response(JSON.stringify({ sent: 0, reason: "not a member" }), { status: 200 });
+    }
+    // 倒した本人はアプリの中で見ているので送らない。1人パーティなら誰にも送らない。
+    const others = memberIds.filter((id) => id !== defeatedBy);
+    if (others.length === 0) return new Response(JSON.stringify({ sent: 0, reason: "solo" }), { status: 200 });
+    const [{ data: prefs }, { data: profile }] = await Promise.all([
+      db.from("profiles").select("id, notify_party").in("id", others),
+      db.from("profiles").select("display_name").eq("id", defeatedBy).single(),
+    ]);
+    const muted = new Set((prefs ?? []).filter((p) => p.notify_party === false).map((p) => p.id as string));
+    const targets = others.filter((id) => !muted.has(id));
+    const bossNames: Record<string, string> = {
+      sloth_slime: "サボリスライム",
+      couch_golem: "ソファゴーレム",
+      snooze_dragon: "ネボウドラゴン",
+      junk_kraken: "ジャンククラーケン",
+    };
+    const bossName = bossNames[payload.bossId ?? ""] ?? "今週のボス";
+    const name = profile?.display_name ?? "メンバー";
+    const sent = await pushToUsers(
+      db, targets, `${bossName}を倒しました！`, `${name}さんの一撃でとどめ。宝箱を開けましょう`,
+      { type: "boss", partyId },
+    );
     return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
   }
 

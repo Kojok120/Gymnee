@@ -21,6 +21,7 @@ struct GymneeApp: App {
                 .environment(env.errors)
                 .environment(env.store)
                 .environment(env.live)
+                .environment(env.party)
                 .environment(env.calendar)
                 .environment(env.googleCalendar)
                 .modelContainer(env.container)
@@ -28,6 +29,14 @@ struct GymneeApp: App {
                 // フレンド招待の Universal Link（https://gymnee.app/invite/?u=...）を処理。
                 .onOpenURL { url in
                     if env.googleCalendar.handleURL(url) { return }
+                    // 週ボスのパーティ招待。参加は育成タブのボス画面で確認してから行う（issue #128）。
+                    if let partyId = PartyInviteLink.partyId(from: url) {
+                        UserDefaults.standard.set(partyId.uuidString, forKey: PartyInviteLink.pendingDefaultsKey)
+                        NotificationCenter.default.post(
+                            name: .gymneeOpenDestination, object: nil, userInfo: ["type": "party_invite"]
+                        )
+                        return
+                    }
                     guard let inviter = InviteLink.userId(from: url) else { return }
                     // 未サインインでも後で拾えるよう保留し、ソーシャルタブへの遷移を要求する。
                     UserDefaults.standard.set(inviter.uuidString, forKey: InviteLink.pendingDefaultsKey)

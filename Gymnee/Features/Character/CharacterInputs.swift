@@ -55,6 +55,7 @@ enum CharacterInputs {
         completedWorkouts: [Workout],
         pickups: [RoomPickupRecord],
         runs: [ExpeditionRun],
+        bossRewardEnergy: Int = 0,
         weeklyGoal: Int
     ) -> Growth {
         let prs = prHistory(from: completedWorkouts)
@@ -80,7 +81,8 @@ enum CharacterInputs {
             energy: Expedition.availableEnergy(
                 sessions: sessions,
                 spent: runs.reduce(0) { $0 + $1.energySpent },
-                bonus: RoomPickup.totalEnergy(collectedItemIds: collectedIds)
+                // 週ボスの宝箱のパワー（サーバーが正。PartyService が端末に控える）。
+                bonus: RoomPickup.totalEnergy(collectedItemIds: collectedIds) + max(0, bossRewardEnergy)
             ),
             streakWeeks: streak.weeks
         )

@@ -15,6 +15,7 @@ final class AppEnvironment {
     let errors: AppErrorCenter
     let store: StoreService
     let live: LiveSessionService
+    let party: PartyService
     let calendar: CalendarService
     let googleCalendar: GoogleCalendarService
     let coach: CoachService
@@ -29,6 +30,7 @@ final class AppEnvironment {
         self.errors = AppErrorCenter()
         self.store = StoreService()
         self.live = LiveSessionService()
+        self.party = PartyService()
         self.calendar = CalendarService()
         self.googleCalendar = GoogleCalendarService()
         self.coach = CoachService()
@@ -50,6 +52,7 @@ final class AppEnvironment {
         auth.configureSupabase(client)
         coach.configure(client: client, sync: sync)
         live.configure(client: client)
+        party.configure(client: client)
         backfillExercisesIfNeeded()
         pushDirtyOwnProfileIfNeeded()
         // APNs トークン取得時に Supabase の device_tokens へ登録（要サインイン＝best-effort）。

@@ -189,6 +189,34 @@ select json_build_object(
 ) as result;`;
 }
 
+// 週ボス（issue #128・0040_party_boss.sql）。テーブルが未作成の環境でも本体の収集を壊さないよう、
+// 別クエリにして失敗したら null で返す。
+function buildPartySql(windowDays) {
+    const days = Math.max(1, Math.floor(Number(windowDays) || 30));
+    return `
+with params as (select now() - interval '${days} days' as since)
+select json_build_object(
+  'partiesTotal',          (select count(*) from public.parties),
+  'multiMemberParties',    (select count(*) from (select party_id from public.party_members group by party_id having count(*) >= 2) p),
+  'membersInMultiParties', (select count(*) from public.party_members m
+                             where (select count(*) from public.party_members x where x.party_id = m.party_id) >= 2),
+  'defeatsInWindow',       (select count(*) from public.party_defeats d, params where d.defeated_at >= params.since),
+  'rewardsClaimedInWindow',(select count(*) from public.party_boss_rewards r, params where r.claimed_at >= params.since)
+) as result;`;
+}
+
+async function pullParty(ref, token, windowDays) {
+    try {
+        const rows = await runQuery(ref, token, buildPartySql(windowDays));
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        let result = row?.result ?? row;
+        if (typeof result === 'string') { try { result = JSON.parse(result); } catch { /* keep string */ } }
+        return result;
+    } catch {
+        return null;
+    }
+}
+
 export async function pullSupabase(opts = {}) {
     const windowDays = opts.windowDays ?? 30;
     const ref = resolveProjectRef();
@@ -211,7 +239,8 @@ export async function pullSupabase(opts = {}) {
         const row = Array.isArray(rows) ? rows[0] : rows;
         let result = row?.result ?? row;
         if (typeof result === 'string') { try { result = JSON.parse(result); } catch { /* keep string */ } }
-        return { configured: true, projectRef: ref, windowDays, ...result };
+        const party = await pullParty(ref, token, windowDays);
+        return { configured: true, projectRef: ref, windowDays, ...result, party };
     } catch (err) {
         return { configured: false, projectRef: ref, windowDays, error: err.message };
     }

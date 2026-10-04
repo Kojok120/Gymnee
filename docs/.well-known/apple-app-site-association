@@ -5,7 +5,9 @@
         "appIDs": ["PG5P26J3W2.com.gymnee.app"],
         "components": [
           { "/": "/invite", "?": { "u": "?*" }, "comment": "フレンド招待リンク（末尾スラッシュ無し・招待者id必須）" },
-          { "/": "/invite/", "?": { "u": "?*" }, "comment": "フレンド招待リンク（id無しの素の /invite/ はWebガイドに任せる）" }
+          { "/": "/invite/", "?": { "u": "?*" }, "comment": "フレンド招待リンク（id無しの素の /invite/ はWebガイドに任せる）" },
+          { "/": "/party", "?": { "p": "?*" }, "comment": "週ボスのパーティ招待（パーティid必須）" },
+          { "/": "/party/", "?": { "p": "?*" }, "comment": "週ボスのパーティ招待（id無しの素の /party/ はWebガイドに任せる）" }
         ]
       }
     ]
