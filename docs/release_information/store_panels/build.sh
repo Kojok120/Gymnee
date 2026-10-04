@@ -18,7 +18,7 @@ MAGICK="/opt/homebrew/bin/magick"
 TMP="$(mktemp -d)"
 
 # パネル順とファイル名（App Store の表示順 = ファイル名順を想定）
-NAMES=(01-character 02-record 03-ai-plan 04-home-calendar 05-body 06-social 07-achievements 08-share)
+NAMES=(01-character 02-record 03-boss 04-ai-plan 05-home-calendar 06-body 07-social 08-share)
 
 # レンダラーは Playwright 同梱の Chromium（初回のみ `npx -y playwright install chromium`）。
 # Chrome.app のバイナリ直接起動は、本体 Chrome が起動中だと競合してハングするため使わない。
