@@ -59,7 +59,17 @@ struct RecordView: View {
                         StartGateView(
                             userId: uid,
                             resumables: resumableDrafts(for: uid),
+                            starterMenus: StarterMenu.shouldOffer(
+                                completedWorkoutCount: StarterPlanner.completedWorkoutCount(userId: uid, context: context)
+                            ) ? StarterMenu.menus : [],
                             onStart: { resumeTarget = nil; gateOpen = true },
+                            onStartMenu: { menu in
+                                // 今日の計画として保存してから開く。記録画面は計画タブを先頭に、
+                                // 重量・レップ入りのカードで開く（issue #119）。
+                                StarterPlanner.apply(menu, userId: uid, context: context)
+                                resumeTarget = nil
+                                gateOpen = true
+                            },
                             onResume: { draft in resumeTarget = draft; gateOpen = true },
                             onDiscard: { draft in discardDraft(draft) }
                         )
@@ -93,7 +103,10 @@ private struct StartGateView: View {
     let userId: UUID
     /// 自動保存された中断中の下書き（あれば1件ずつカードで再開/破棄導線を出す）。
     var resumables: [Workout] = []
+    /// はじめてのメニュー（完了したワークアウトが無い人にだけ渡る。空なら出さない）。
+    var starterMenus: [StarterMenu.Menu] = []
     let onStart: () -> Void
+    var onStartMenu: (StarterMenu.Menu) -> Void = { _ in }
     var onResume: (Workout) -> Void = { _ in }
     var onDiscard: (Workout) -> Void = { _ in }
 
@@ -125,10 +138,21 @@ private struct StartGateView: View {
                                 .foregroundStyle(Theme.textPrimary)
                             Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
+                        if !starterMenus.isEmpty {
+                            starterSection
+                        }
                         VStack(spacing: Theme.Spacing.md) {
                             // 入口は「記録を開始」の単一 CTA（チェックイン廃止後は記録が唯一の活動単位）。
-                            gateTile(title: "記録を開始", caption: "今すぐ始める",
-                                     icon: "play.fill", primary: true, action: onStart)
+                            // 初回（はじめてのメニューを出す時）はメニューが主役なので、こちらは自分で選ぶ導線に下げる。
+                            if starterMenus.isEmpty {
+                                gateTile(title: "記録を開始", caption: "今すぐ始める",
+                                         icon: "play.fill", primary: true, action: onStart)
+                            } else {
+                                Button(action: onStart) {
+                                    gateRowLabel(title: "自分で種目を選んで始める", icon: "play")
+                                }
+                                .buttonStyle(PressableButtonStyle())
+                            }
                             // 補助導線は全幅の行カード（テキストリンクだと見落とされ押しづらいため）。
                             // 履歴リンクは値ベース：この先（記録一覧→詳細）も値ベース push のため
                             // 入口も揃える。クロージャ型で push すると、その上の値ベース push が
@@ -151,6 +175,46 @@ private struct StartGateView: View {
         }
         // 記録タブは起動直後のトップ＝アプリの顔。ナビバーは隠し、中央のブランドヒーローに任せる。
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// はじめてのメニュー（初回のみ）。選ぶと今日の計画になり、そのまま記録が始まる。
+    private var starterSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("はじめてのメニュー").font(.headline).foregroundStyle(Theme.textPrimary)
+                Text("選ぶと種目と重量が入った状態で始まります。重量はあとから変えられます。")
+                    .font(.caption).foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.Spacing.sm),
+                                GridItem(.flexible(), spacing: Theme.Spacing.sm)],
+                      spacing: Theme.Spacing.sm) {
+                ForEach(starterMenus) { menu in
+                    Button { onStartMenu(menu) } label: { starterCard(menu) }
+                        .buttonStyle(PressableButtonStyle())
+                        .accessibilityLabel("\(menu.title)、\(menu.caption)で始める")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func starterCard(_ menu: StarterMenu.Menu) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Image(systemName: menu.icon)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Theme.lime)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(menu.title).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
+                Text(menu.caption).font(.caption2).foregroundStyle(Theme.textTertiary)
+            }
+            .lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Theme.Spacing.md)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(Theme.bg3, lineWidth: 1))
+        .contentShape(Rectangle())
     }
 
     /// 入口タイル（チェックイン/記録を開始）。大きな面で押しやすく、押下で沈み込む。

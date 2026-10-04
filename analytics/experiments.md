@@ -33,7 +33,7 @@ Gymnee のグロース実験を PDCA で管理する台帳。`growth-strategist`
 ## 進行中・完了した実験
 
 ### EXP-20260818-notification-permission-after-workout
-- status: proposed
+- status: running (#110 で実装、1.5.1 で配信。2026-10-04 に台帳を実態へ更新。新規ユーザーが来ていないため計測は母数待ち)
 - ボトルネック: 通知の到達母数
 - 仮説: 記録完了後の成長祝いを見せた直後に通知許諾を尋ねれば、カレンダー画面に依存するより許諾率が上がる。利用者が通知の価値を体験した直後だから。
 - 変更内容: Gymnee/Features/Character/CharacterRoomView.swift で成長祝いの終了後にプリパーミッションを表示し、Gymnee/Features/Calendar/CalendarHomeView.swift の表示を撤去。scripts/analytics/pull-supabase.mjs に到達率を追加。
@@ -44,4 +44,18 @@ Gymnee のグロース実験を PDCA で管理する台帳。`growth-strategist`
 - ガードレール: supabase.activation.activatedWorkout と supabase.retention.returnedAfterDay0 を悪化させない
 - 工数: S
 - ICE: Impact=8 / Confidence=7 / Ease=8 (合計 23)
+- result: (completed 時に追記)
+
+### EXP-20261004-starter-menu
+- status: running (#119)
+- ボトルネック: 活性化 (初回ワークアウト記録)
+- 仮説: 完了ワークアウトが0件の人に、開始ゲートで「はじめてのメニュー」(全身/上半身/下半身/家で器具なし)を出す。選ぶと今日の計画として重量・レップ入りのカードが並ぶようにすれば、初回記録への到達が増える。白紙の記録画面から種目と重量を自分で決める負担が、初回の離脱要因だから。
+- 変更内容: Gymnee/Core/Domain/StarterMenu.swift、Gymnee/Features/Planning/StarterPlanner.swift、Gymnee/Features/Workout/RecordView.swift (StartGateView)
+- 主要成功指標: supabase.activation.activatedWorkout / cohortSize
+- baseline: 3/7 (43%、2026-07-23)。直近30日コホートは 0 人 (2026-09-28)
+- 目標: 新規コホートで 60% 以上 (流入が戻ってから判定)
+- 計測窓: 1.6.0 配信後、新規登録 10 人到達まで
+- ガードレール: supabase.retention.d7Retained を悪化させない
+- 工数: S
+- ICE: Impact=8 / Confidence=6 / Ease=8 (合計 22)
 - result: (completed 時に追記)
