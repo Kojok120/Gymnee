@@ -360,6 +360,14 @@ private struct SocialContent: View {
         let visibleEntries = feedEntries.filter { $0.authorId.map { !blocked.contains($0) } ?? true }
         return List {
             liveSection
+            // フォロー中が少ない間は、フィードの先頭で招待を後押しする（issue #122）。
+            // フィードが空のときは下の空状態に任せる（招待カードと二重に出さない）。
+            if !visibleEntries.isEmpty, InviteLink.shouldPromptInvite(followingCount: following.count) {
+                inviteCard
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
             ForEach(visibleEntries) { entry in
                 feedRow(entry, reactions: reactionsByItem[entry.id] ?? [], commentCount: commentsByItem[entry.id]?.count ?? 0)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
@@ -384,6 +392,11 @@ private struct SocialContent: View {
                 VStack(spacing: Theme.Spacing.md) {
                     EmptyStateView(systemImage: "square.stack.3d.up", title: "フィードは空です",
                                    message: "フレンドを見つけると、活動が時系列で並びます。")
+                    ShareLink(item: InviteLink.url(for: userId), message: Text(InviteLink.shareMessage)) {
+                        Label("友達を招待", systemImage: "paperplane")
+                            .font(.subheadline.bold())
+                    }
+                    .buttonStyle(.bordered)
                     // 遷移は値ベースに統一（クロージャ型は pushed view 上で解決されないことがある）。
                     NavigationLink(value: SocialRoute.friends) {
                         Label("フレンドを探す", systemImage: "person.badge.plus")
@@ -413,6 +426,29 @@ private struct SocialContent: View {
         } message: {
             Text("投稿だけでなく記録そのものが消えます。カレンダーや分析からも無くなり、元に戻せません。投稿を取り下げるだけなら「公開範囲」を非公開にしてください。")
         }
+    }
+
+    /// 招待カード。リンクは自分の id 入りで、受け取った人が開くと自分のプロフィール
+    /// （フォローボタン付き）に直行する。アプリが無い人には招待ページが開く。
+    private var inviteCard: some View {
+        HStack(alignment: .center, spacing: Theme.Spacing.md) {
+            Image(systemName: "person.2.wave.2")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Theme.lime)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("一緒に続ける友達を呼ぶ").font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
+                Text("記録が届き合うと、応援し合えます。")
+                    .font(.caption).foregroundStyle(Theme.textSecondary)
+            }
+            Spacer(minLength: 0)
+            ShareLink(item: InviteLink.url(for: userId), message: Text(InviteLink.shareMessage)) {
+                Text("招待").font(.subheadline.bold())
+            }
+            .buttonStyle(.borderedProminent).prominentLime()
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 
     private var deleteConfirmBinding: Binding<Bool> {

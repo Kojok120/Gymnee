@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gymnee への招待 — 一緒にトレーニングを記録しよう</title>
-<meta name="description" content="友達があなたを Gymnee に招待しています。ジムを変えても記録が1本につながる筋トレアプリ。アプリを入手して、フレンドとモチベーションを共有しましょう。">
+<meta name="description" content="友達があなたを Gymnee に招待しています。セットの記録はタップするだけ、続けるほどキャラが育つ筋トレ記録アプリ。アプリを入手して、フレンドとモチベーションを共有しましょう。">
 <meta property="og:title" content="Gymneeで一緒にトレーニングを記録しよう">
 <meta property="og:description" content="友達があなたを Gymnee に招待しています。アプリを入手して、フレンドとモチベーションを共有しましょう。">
 <meta property="og:image" content="../assets/gymnee-icon.png">
@@ -39,6 +39,10 @@ p{margin-top:14px;color:var(--muted);font-size:.95rem}
   background:var(--lime);color:var(--bg0);box-shadow:var(--glow);transition:.18s;
 }
 .btn:hover{background:var(--lime-bright);transform:translateY(-2px)}
+.btn.ghost{background:transparent;color:var(--lime);border:1px solid var(--lime);box-shadow:none;margin-top:10px}
+.btn.ghost:hover{background:rgba(199,255,61,.08)}
+.next{margin-top:26px}
+.next .step{margin-top:0;font-size:.85rem}
 .note{margin-top:22px;font-size:.8rem;color:var(--muted);border-top:1px solid var(--line);padding-top:18px}
 </style>
 </head>
@@ -46,9 +50,23 @@ p{margin-top:14px;color:var(--muted);font-size:.95rem}
 <main>
   <img class="icon" src="../assets/gymnee-icon.png" alt="Gymnee">
   <h1>友達があなたを<br><span class="lime">Gymnee</span> に招待しています</h1>
-  <p>ジムを変えても、記録は続く。チェックインは写真を一枚撮るだけの筋トレ記録アプリです。アプリを入手して、フレンドとモチベーションを共有しましょう。</p>
-  <a class="btn" href="../">アプリを入手する</a>
+  <p>セットの記録はタップするだけ。続けるほどキャラが育つ筋トレ記録アプリです。友達とフォローし合うと、トレーニングの記録が届き合い、その場で応援できます。</p>
+  <a class="btn" href="https://apps.apple.com/jp/app/id6782380051">App Store で入手する</a>
+  <div class="next" id="open-app" hidden>
+    <p class="step">インストールが終わったら</p>
+    <a class="btn ghost" id="open-app-link" href="#">Gymnee で開いて友達をフォロー</a>
+  </div>
   <p class="note">すでに Gymnee をお使いの場合は、届いた招待リンクをもう一度タップすると、アプリで招待した友達のプロフィールが開きます。</p>
 </main>
+<script>
+  // 招待者の id（?u=）が正しい形のときだけ「アプリで開く」を出す。
+  // 同じドメインのページ内リンクでは Universal Link が発火しないため、カスタムスキームで開く。
+  (function () {
+    var u = new URLSearchParams(location.search).get("u") || "";
+    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(u)) return;
+    document.getElementById("open-app-link").href = "gymnee://invite?u=" + u.toLowerCase();
+    document.getElementById("open-app").hidden = false;
+  })();
+</script>
 </body>
 </html>

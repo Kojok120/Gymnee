@@ -108,6 +108,7 @@ struct AddFriendView: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: Theme.Spacing.xs, trailing: 0))
             }
+            inviteSection
             switch tab {
             case .search: searchSection
             case .following: followingSection
@@ -143,11 +144,15 @@ struct AddFriendView: View {
         } else if didSearch && !searching && !query.trimmingCharacters(in: .whitespaces).isEmpty {
             Section { Text("該当するユーザーが見つかりませんでした。").foregroundStyle(.secondary) }
         }
-        // コールドスタート対策：知り合いを Gymnee に招待する導線。
-        // 招待リンク（Universal Link）は自分の id 入りで、アプリ所持者が開くと
-        // 自分のプロフィール（フォローボタン付き）に直行する。未所持者にはガイドページが開く。
+    }
+
+    /// コールドスタート対策：知り合いを Gymnee に招待する導線。
+    /// 招待リンク（Universal Link）は自分の id 入りで、アプリ所持者が開くと
+    /// 自分のプロフィール（フォローボタン付き）に直行する。未所持者にはガイドページが開く。
+    /// 検索タブの下だけにあると見つからないため、どのタブでも上部に出す（issue #122）。
+    private var inviteSection: some View {
         Section {
-            ShareLink(item: InviteLink.url(for: userId), message: Text("Gymneeで一緒にトレーニングを記録しよう！")) {
+            ShareLink(item: InviteLink.url(for: userId), message: Text(InviteLink.shareMessage)) {
                 Label("友達を招待", systemImage: "person.badge.plus")
             }
         } footer: {
