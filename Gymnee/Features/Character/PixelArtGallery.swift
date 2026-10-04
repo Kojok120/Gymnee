@@ -31,6 +31,7 @@ struct PixelArtGallery: View {
                         effectSection
                     case .pets:
                         petSection
+                        bossSection
                     }
                 }
                 .padding(Theme.Spacing.lg)
@@ -57,6 +58,24 @@ struct PixelArtGallery: View {
                                 side: 64
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /// 週ボス（issue #128）。ペットと同じ 16 x 16。
+    private var bossSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            SectionHeader(title: "週ボス")
+            LazyVGrid(columns: grid(minimum: 76), spacing: Theme.Spacing.md) {
+                ForEach(PartyBoss.catalog) { boss in
+                    labelled(boss.name) {
+                        PixelSpriteView(
+                            sprite: PixelBossArt.sprite(bossId: boss.id),
+                            palette: PixelBossArt.palette(bossId: boss.id),
+                            side: 64
+                        )
                     }
                 }
             }

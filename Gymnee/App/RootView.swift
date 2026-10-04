@@ -10,6 +10,7 @@ enum AppTab: Hashable {
 /// ソーシャル/AI計画/設定のバックエンド必須導線（BackendSignInButtons 等）から後付けする。
 /// 起動直後は「記録」タブ（記録開始の入口）を表示する。
 struct RootView: View {
+    @Environment(PartyService.self) private var party
     @Environment(AuthService.self) private var auth
     @Environment(AppErrorCenter.self) private var errors
     @Environment(NotificationService.self) private var notifications
@@ -160,6 +161,9 @@ struct RootView: View {
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()
         case "character": CharacterRoomView(userId: userId)
+        case "boss", "boss-defeated":
+            PartyBossSheet(userId: userId)
+                .onAppear { party.loadDemo(userId: userId, defeated: name == "boss-defeated") }
         // タブバー込みのレイアウト検証用。単体表示では safe area にタブバーが乗らず、
         // ボタンとタブバーの重なり（実機で発覚した不具合）を再現できないため。
         case "character-tab":
@@ -353,6 +357,12 @@ struct RootView: View {
             case "reaction", "comment", "follow", "invite", "live_start", "post": selection = .social
             // トレーニング中の応援は記録画面の帯に並ぶので、記録タブへ戻す（issue #120）。
             case "workout", "cheer": selection = .workout
+            // 週ボスの撃破・パーティ招待は育成タブのボス画面で受ける（issue #128）。
+            case "boss", "party_invite":
+                if note.userInfo?["type"] as? String == "boss" {
+                    UserDefaults.standard.set(true, forKey: CharacterRoomView.openBossRequestKey)
+                }
+                selection = .character
             // 週次まとめはカレンダーで振り返る。
             case "recap": selection = .calendar
             case "shop":

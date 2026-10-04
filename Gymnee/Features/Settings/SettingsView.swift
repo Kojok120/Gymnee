@@ -30,6 +30,7 @@ struct SettingsView: View {
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     @AppStorage("gymnee.avatarFilename") private var avatarFilename = ""
     @AppStorage("gymnee.avatarURL") private var avatarURLString = ""
+    @Environment(PartyService.self) private var party
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal: Int = 3
     // 記録のレスト既定秒数（RestTimer が参照）。
     @AppStorage("gymnee.restSeconds") private var restSeconds: Int = 90
@@ -109,6 +110,10 @@ struct SettingsView: View {
             Section {
                 Stepper(value: $weeklyGoal, in: 1...7) {
                     LabeledContent("週のワークアウト目標", value: "\(weeklyGoal) 日")
+                }
+                // 週ボスの HP はパーティ全員の週目標の合計。変えたらパーティにも写す（issue #128）。
+                .onChange(of: weeklyGoal) { _, goal in
+                    Task { await party.syncWeeklyGoal(goal) }
                 }
                 Stepper(value: $restSeconds, in: 30...300, step: 5) {
                     LabeledContent("レストタイマー", value: "\(restSeconds) 秒")

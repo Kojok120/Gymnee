@@ -568,6 +568,60 @@ actor SupabaseClient {
         try await send(request)
     }
 
+    // MARK: - 週ボス（パーティ）
+
+    /// 週ボスの状況・報酬はサーバーが正（0040_party_boss.sql）。ダメージの集計も撃破の検証もサーバーで行い、
+    /// クライアントは RPC で読むだけ。テーブルへの直接の書き込みは RLS で塞いである。
+
+    /// 自分のパーティを返す（無ければ1人パーティを作る）。週目標も写す。
+    func ensureMyParty(weeklyGoal: Int) async throws -> UUID? {
+        let data = try await rpc("ensure_my_party", ["p_weekly_goal": weeklyGoal])
+        return (try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) as? String).flatMap(UUID.init(uuidString:))
+    }
+
+    /// 招待されたパーティに入る（今のパーティからは抜ける）。満員・存在しないときは例外。
+    func joinParty(_ partyId: UUID, weeklyGoal: Int) async throws {
+        _ = try await rpc("join_party", ["p_party_id": partyId.uuidString.lowercased(), "p_weekly_goal": weeklyGoal])
+    }
+
+    func leaveParty() async throws {
+        _ = try await rpc("leave_party", [:])
+    }
+
+    /// 設定で週目標を変えたとき、パーティに入っていれば写す。
+    func setPartyWeeklyGoal(_ weeklyGoal: Int) async throws {
+        _ = try await rpc("set_party_weekly_goal", ["p_weekly_goal": weeklyGoal])
+    }
+
+    /// 今週の状況（`party_status` の JSON。パーティが無ければ nil）。
+    func partyStatus() async throws -> Any? {
+        let data = try await rpc("party_status", [:])
+        let object = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+        return object is NSNull ? nil : object
+    }
+
+    /// 宝箱を開ける。撃破していない・期限外なら例外。受け取り済みなら同じ結果を返す。
+    func claimBossReward(weekStart: Date) async throws -> Any? {
+        let data = try await rpc("claim_boss_reward", ["p_week_start": ISO8601DateFormatter.supabase.string(from: weekStart)])
+        return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+    }
+
+    /// 受け取った報酬（自分の分だけ。RLS が絞る）。
+    func bossRewards() async throws -> [[String: Any]] {
+        var request = restRequest(path: "party_boss_rewards", query: "select=week_start,boss_id,energy&order=week_start.asc")
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+    }
+
+    private func rpc(_ name: String, _ params: [String: Any]) async throws -> Data {
+        var request = restRequest(path: "rpc/\(name)")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: params)
+        return try await send(request)
+    }
+
     // MARK: - Request building
 
     private func restRequest(path: String, query: String? = nil) -> URLRequest {

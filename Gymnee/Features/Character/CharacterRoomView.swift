@@ -17,6 +17,7 @@ struct CharacterRoomView: View {
     @Environment(StoreService.self) private var store
     @Environment(AppErrorCenter.self) private var errors
     @Environment(NotificationService.self) private var notifications
+    @Environment(PartyService.self) private var party
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
@@ -73,7 +74,7 @@ struct CharacterRoomView: View {
 
     enum SheetRoute: String, Identifiable {
         /// `body` はキャラ本体をタップしたときに開く人体図（旧「分析」タブ）。
-        case status, expedition, quest, outfit, skins, collection, coach, body
+        case status, expedition, quest, outfit, skins, collection, coach, body, boss
         var id: String { rawValue }
     }
 
@@ -174,6 +175,9 @@ struct CharacterRoomView: View {
             startedAt = .now
             // 用事があれば、開いてすぐコーチが歩いて入ってくる。
             updateCoachPresence()
+            openBossIfRequested()
+            // 週ボスの状況（宝箱の印と、遠征に使えるパワー）。パーティはここでは作らない。
+            Task { await party.refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false) }
         }
         .onChange(of: signature) { _, _ in
             refresh()
@@ -187,6 +191,15 @@ struct CharacterRoomView: View {
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCharacter)) { _ in
             takePendingCelebration()
         }
+        // 撃破の通知・パーティ招待のリンクから来たとき（RootView がこのタブへ切り替えた直後）。
+        .onReceive(NotificationCenter.default.publisher(for: .gymneeOpenDestination)) { note in
+            let type = note.userInfo?["type"] as? String
+            // RootView と受け取る順番が決まらないので、撃破の通知はここでも依頼を立ててから見る。
+            if type == "boss" { UserDefaults.standard.set(true, forKey: Self.openBossRequestKey) }
+            if type == "boss" || type == "party_invite" { openBossIfRequested() }
+        }
+        // 宝箱のパワーは @Query の外から来るので、変わったら集計し直す。
+        .onChange(of: party.rewardEnergy) { _, _ in refresh() }
         .onChange(of: scenePhase) { _, phase in
             // バックグラウンドから戻ったら時間を巻き戻さない（歩いている途中から続く）。
             if phase == .active {
@@ -1010,6 +1023,8 @@ struct CharacterRoomView: View {
             // 押せることに気づかないと一生たどり着けない。
             sceneButton("ボディ", "figure.stand", route: .body)
             sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
+            // 週ボス（issue #128）。倒したのに宝箱を開けていないときだけ印を点ける。
+            sceneButton("ボス", "flame.fill", route: .boss, badge: party.status?.hasUnclaimedChest ?? false)
             sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
             sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
             sceneButton("見た目", "paintpalette.fill", route: .skins)
@@ -1135,6 +1150,8 @@ struct CharacterRoomView: View {
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
+        case .boss:
+            PartyBossSheet(userId: userId)
         case .quest:
             QuestSheet(userId: userId) { sheet = .coach }
         case .coach:
@@ -1199,6 +1216,21 @@ struct CharacterRoomView: View {
         }
     }
 
+    /// 撃破通知・招待リンクで「ボスを開いて」と頼まれていたら開く（タブがまだ無かった間の分も拾う）。
+    private func openBossIfRequested() {
+        let defaults = UserDefaults.standard
+        let requested = defaults.bool(forKey: Self.openBossRequestKey)
+            || defaults.string(forKey: PartyInviteLink.pendingDefaultsKey) != nil
+        guard requested else { return }
+        defaults.removeObject(forKey: Self.openBossRequestKey)
+        // 祝い・遊び方の案内を出している最中なら、それが終わってから開く（シートは1枚ずつ）。
+        guard celebratingGain == nil, !showOnboarding, introQueue.isEmpty else { return }
+        sheet = .boss
+    }
+
+    /// 撃破通知から「ボス画面を開く」を持ち越すキー（RootView が立て、ここで消す）。
+    static let openBossRequestKey = "gymnee.party.openBossRequested"
+
     /// 記録を完了した価値を見せ切ってから、通知の許諾を尋ねる。
     /// 拒否済みの再有効化は、既存どおり設定画面からだけ行う。
     private func presentNotificationPrePromptIfNeeded() {
@@ -1221,7 +1253,7 @@ struct CharacterRoomView: View {
         // レベル・段階・元気は**コーチと同じ式**で出す（別々に組むと数字が食い違う）。
         let growth = CharacterInputs.growth(
             completedWorkouts: completedWorkouts,
-            pickups: pickups, runs: runs, weeklyGoal: weeklyGoal
+            pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy, weeklyGoal: weeklyGoal
         )
         let level = growth.level
         let stage = growth.stage

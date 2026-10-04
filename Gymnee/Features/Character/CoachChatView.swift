@@ -8,6 +8,7 @@ import SwiftData
 struct CoachChatView: View {
     let userId: UUID
 
+    @Environment(PartyService.self) private var party
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(AppEnvironment.self) private var env
@@ -320,7 +321,7 @@ struct CoachChatView: View {
             todayPlan: todayPlan,
             growth: CharacterInputs.growth(
                 completedWorkouts: workouts,
-                pickups: pickups, runs: runs, weeklyGoal: weeklyGoal
+                pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy, weeklyGoal: weeklyGoal
             )
         )
     }

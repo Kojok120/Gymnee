@@ -46,6 +46,9 @@ final class PixelSpriteTests: XCTestCase {
                 }
             }
         }
+        for boss in PartyBoss.catalog {
+            list.append(("boss-\(boss.id)", PixelBossArt.sprite(bossId: boss.id)))
+        }
         for item in Expedition.items {
             list.append(("item-\(item.id)", PixelItemArt.icon(for: item)))
         }

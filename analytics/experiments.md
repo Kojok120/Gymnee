@@ -59,3 +59,17 @@ Gymnee のグロース実験を PDCA で管理する台帳。`growth-strategist`
 - 工数: S
 - ICE: Impact=8 / Confidence=6 / Ease=8 (合計 22)
 - result: (completed 時に追記)
+
+### EXP-20261005-weekly-party-boss
+- status: running (#128)
+- ボトルネック: 習慣化 (週3記録) と D7 継続
+- 仮説: 友達と同じボスを週ごとに回数で削る協力目標があれば、自分の週目標を落としにくくなり、週3記録の人が増える。週の山場があり、仲間の進み具合が見えるから(Pikmin Bloom の週次共同チャレンジ、STEP UP 試験の協力・競争の効果)。
+- 変更内容: supabase/migrations/0040_party_boss.sql、Gymnee/Core/Domain/PartyBoss.swift、Gymnee/Core/Services/PartyService.swift、Gymnee/Features/Character/PartyBossSheet.swift
+- 主要成功指標: supabase.retention.habitWeek3plus。補助: supabase.party.multiMemberParties / defeatsInWindow / rewardsClaimedInWindow
+- baseline: habitWeek3plus 2 (2026-09-28)。パーティは 0
+- 目標: 2人以上のパーティ 2 組、habitWeek3plus 2→4
+- 計測窓: 1.6.0 配信後 4 週
+- ガードレール: supabase.retention.d7Retained を悪化させない。通知の解除(notify_party=false)が増えすぎない
+- 工数: L
+- ICE: Impact=7 / Confidence=5 / Ease=4 (合計 16)
+- result: (completed 時に追記)

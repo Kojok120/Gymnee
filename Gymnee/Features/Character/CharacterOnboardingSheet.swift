@@ -36,6 +36,12 @@ struct CharacterOnboardingSheet: View {
                     detail: "記録した分だけ増えます。あとは床の拾い物で少し足せるだけです"
                 )
                 row(
+                    sprite: PixelBossArt.slime,
+                    accent: Color(hexF: 0x8BC34A),
+                    title: "毎週のボスを友達と倒します",
+                    detail: "トレーニング1回が1撃。下の「ボス」から、1人でも友達とでも挑めます"
+                )
+                row(
                     sprite: PixelItemArt.course(id: "morning-hill"),
                     accent: Theme.info,
                     title: "パワーを使って遠征に送り出せます",
@@ -56,7 +62,7 @@ struct CharacterOnboardingSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("強くなるのは現実のトレーニングだけです。ここで手に入るのは装備と見た目、それに少しのパワーだけです。")
+            Text("強くなるのは現実のトレーニングだけです。ここで手に入るのは装備と見た目、トロフィー、それに少しのパワーだけです。")
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .multilineTextAlignment(.center)
