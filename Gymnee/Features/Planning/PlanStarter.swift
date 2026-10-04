@@ -10,8 +10,8 @@ enum PlanStarter {
         let workout = Workout(userId: userId, date: .now, name: plan.title)
         context.insert(workout)
 
-        if let json = plan.detailJSON, let data = json.data(using: .utf8),
-           let exs = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data), !exs.isEmpty {
+        let exs = PlanDetail.decode(plan.detailJSON)
+        if !exs.isEmpty {
             // AI が組んだ種目＋セット＋重量/レップ。
             for (i, pe) in exs.enumerated() {
                 let exercise = findOrCreateExercise(name: pe.name, muscleGroup: pe.muscleGroup, userId: userId, context: context)

@@ -163,10 +163,8 @@ struct DayDetailView: View {
     }
 
     private func planExerciseCount(_ plan: PlannedWorkout) -> Int? {
-        guard let json = plan.detailJSON, let data = json.data(using: .utf8),
-              let exs = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data), !exs.isEmpty
-        else { return nil }
-        return exs.count
+        let exs = PlanDetail.decode(plan.detailJSON)
+        return exs.isEmpty ? nil : exs.count
     }
 
     /// 「保存」押下時のみ永続化。下書き選択をクリアしてシートを閉じる。

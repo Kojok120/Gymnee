@@ -189,14 +189,24 @@ final class CoachService {
             context.delete(plan)
         }
 
-        let detail = try? JSONSerialization.data(withJSONObject: exercises)
+        // 計画の detailJSON は `weight` キーに統一して書く（読み手は PlanDetail。issue #121）。
+        let detailItems = exercises.compactMap { e -> PlanDetail.Exercise? in
+            guard let name = e["name"] as? String, !name.isEmpty else { return nil }
+            return PlanDetail.Exercise(
+                name: name,
+                muscleGroup: e["muscleGroup"] as? String,
+                sets: Self.intValue(e["sets"]) ?? 1,
+                reps: Self.intValue(e["reps"]) ?? 1,
+                weight: Self.doubleValue(e["weightKg"]) ?? Self.doubleValue(e["weight"]) ?? 0
+            )
+        }
         let planned = PlannedWorkout(
             userId: userId,
             date: today,
             title: title,
             note: nil
         )
-        planned.detailJSON = detail.flatMap { String(data: $0, encoding: .utf8) }
+        planned.detailJSON = PlanDetail.encode(detailItems)
         context.insert(planned)
 
         message.isApplied = true
@@ -205,5 +215,17 @@ final class CoachService {
         try? context.save()
         enqueue(message) // 取り込み済みの印もサーバーへ（別端末で二度提案を適用させない）
         return planned
+    }
+
+    /// JSONSerialization の数値（NSNumber）を整数へ。非有限値は欠損扱い。
+    private static func intValue(_ any: Any?) -> Int? {
+        guard let d = doubleValue(any), abs(d) < 1_000_000 else { return nil }
+        return Int(d.rounded())
+    }
+
+    private static func doubleValue(_ any: Any?) -> Double? {
+        guard let n = any as? NSNumber else { return nil }
+        let d = n.doubleValue
+        return d.isFinite ? d : nil
     }
 }

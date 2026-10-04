@@ -860,11 +860,8 @@ struct RecordContent: View {
     /// 計画タブ：`detailJSON` の PlanExercise を計画の並び順のままカードにする。
     /// 重量/レップは計画値をカードの初期中央値に入れて、そのままタップで記録できるようにする。
     private var planCardSpecs: [CardSpec] {
-        guard let plan = todayPlan,
-              let json = plan.detailJSON, let data = json.data(using: .utf8),
-              let items = try? JSONDecoder().decode([SupabaseClient.PlanExercise].self, from: data)
-        else { return [] }
-        return items.compactMap { item in
+        guard let plan = todayPlan else { return [] }
+        return PlanDetail.decode(plan.detailJSON).compactMap { item in
             guard let ex = allExercises.first(where: { $0.name == item.name }) else { return nil }
             let c = RecordSlots.Centers(weight: max(0, item.weight), reps: max(1, item.reps), duration: 0)
             return CardSpec(exercise: ex, explicit: c)
