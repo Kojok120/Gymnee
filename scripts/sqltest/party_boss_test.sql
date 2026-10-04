@@ -1,8 +1,8 @@
--- 0040_party_boss の検証シナリオ。失敗すると assert で止まる（ON_ERROR_STOP）。
+-- 週ボス（0040 + 0041 複数パーティ）の検証シナリオ。失敗すると assert で止まる（ON_ERROR_STOP）。
 grant usage on schema public, auth, net to authenticated;
 grant select on all tables in schema public to authenticated;
 grant execute on function auth.uid() to authenticated;
-insert into auth.users select ('00000000-0000-0000-0000-00000000000'||i)::uuid from generate_series(1,8) i;
+insert into auth.users select ('00000000-0000-0000-0000-00000000000'||i)::uuid from generate_series(1,9) i;
 insert into public.profiles(id, display_name) select id, 'U'||right(id::text,1) from auth.users;
 
 create function pg_temp.as_user(n int) returns void language sql as $$
@@ -13,71 +13,96 @@ create function pg_temp.complete(n int) returns void language sql as $$
 $$;
 
 do $$
-declare pid uuid; pid_c uuid; s json; calls int; r json; failed boolean;
+declare p1 uuid; p2 uuid; px uuid; s json; r json; failed boolean; arr json;
 begin
-  -- 1. A がパーティを作り、B が参加。C は別の1人パーティ
-  perform pg_temp.as_user(1); pid := public.ensure_my_party(3);
-  perform pg_temp.as_user(2); assert public.join_party(pid, 2) = pid, 'B が参加できない';
-  perform pg_temp.as_user(3); pid_c := public.ensure_my_party(3);
-  assert pid_c <> pid, 'C は別パーティのはず';
+  -- 1. A の初回は1人パーティができる。2回目の ensure は増やさない
+  perform pg_temp.as_user(1); p1 := public.ensure_my_party(3);
+  assert public.ensure_my_party(3) = p1, 'ensure が2つ目を作った';
+  -- 2. A が別グループ用に2つ目を作る（名前つき）。B は p1、C は p2 に参加
+  p2 := public.create_party(3, '  職場  ');
+  assert (select name from public.parties where id = p2) = '職場', '名前の前後空白を落とす';
+  perform pg_temp.as_user(2); assert public.join_party(p1, 2) = p1;
+  perform pg_temp.as_user(3); perform public.join_party(p2, 1);
+  -- B は自分の1人パーティを持っていても、参加で抜けない
+  perform pg_temp.as_user(2); px := public.create_party(3);
+  perform public.join_party(p1, 2);
+  assert (select count(*) from public.party_members where user_id = '00000000-0000-0000-0000-000000000002') = 2, '参加で既存パーティを抜けた';
 
-  -- 2. A が5回完了しても上限は 3+1=4。HP は 3+2=5 なので倒れない
+  -- 3. A の1回のワークアウトは p1 と p2 の両方に1撃
+  perform pg_temp.as_user(1); perform pg_temp.complete(1);
+  arr := public.my_parties();
+  assert json_array_length(arr) = 2, 'A の全パーティが返らない';
+  assert ((arr->0)->>'damage')::int = 1 and ((arr->1)->>'damage')::int = 1, '両方に1撃入らない: '||arr;
+  assert (arr->1)->>'name' = '職場';
+
+  -- 4. p2（A:3 + C:1 = HP4）: A がもう3回で A の上限4に達し撃破 → 通知1回
+  perform pg_temp.complete(1); perform pg_temp.complete(1);
+  assert (select count(*) from net.calls) = 0, 'まだ撃破していない';
+  perform pg_temp.complete(1);
+  s := public.party_status(p2);
+  assert (s->>'defeated')::bool, 'p2 が撃破されていない: '||s;
+  assert (select count(*) from net.calls where body->>'partyId' = p2::text) = 1, 'p2 の撃破通知が1回でない';
+  -- p1（A:3 + B:2 = HP5）は A の上限4で、まだ倒れない
+  assert not (public.party_status(p1)->>'defeated')::bool, 'p1 は B の1撃が要る';
+  perform pg_temp.as_user(2); perform pg_temp.complete(2);
+  assert (public.party_status(p1)->>'defeated')::bool, 'p1 が撃破されていない';
+  assert (select count(*) from net.calls) = 2, '撃破通知の合計が2でない';
+  -- B の1撃は B の1人パーティ px（HP3）には撃破にならない
+  assert not (public.party_status(px)->>'defeated')::bool;
+
+  -- 5. 宝箱はパーティごと。A は p1 と p2 の2つ。二重受け取りは不可
   perform pg_temp.as_user(1);
-  for i in 1..5 loop perform pg_temp.complete(1); end loop;
-  s := public.party_status();
-  assert (s->>'hp')::int = 5 and (s->>'damage')::int = 4 and not (s->>'defeated')::bool, '上限・HP の計算が違う: '||s;
-  assert (select count(*) from net.calls) = 0, 'まだ通知しない';
-
-  -- 3. B の1撃で撃破。通知はちょうど1回、B の2撃目・A の追加では鳴らない
-  perform pg_temp.complete(2);
-  assert (select count(*) from net.calls where body->>'event' = 'boss_defeated') = 1, '撃破通知が1回でない';
-  perform pg_temp.complete(2); perform pg_temp.complete(1);
-  assert (select count(*) from net.calls) = 1, '撃破後に再通知した';
-  s := public.party_status();
-  assert (s->>'defeated')::bool and not (s->>'claimed')::bool, '撃破済み・未受け取りのはず';
-
-  -- 4. 報酬: A が受け取る。二度目は同じ結果で行は増えない
-  r := public.claim_boss_reward(now());
-  assert (r->>'energy')::int = 60, '報酬が違う';
-  perform public.claim_boss_reward(now());
-  assert (select count(*) from public.party_boss_rewards) = 1, '二重に受け取れた';
-  assert (public.party_status()->>'claimed')::bool, '受け取り済みにならない';
-
-  -- 5. 期限外の週・撃破していない C は受け取れない
-  failed := false; begin perform public.claim_boss_reward(now() - interval '21 days'); exception when others then failed := true; end;
+  r := public.claim_boss_reward(p1, now()); assert (r->>'energy')::int = 60;
+  perform public.claim_boss_reward(p2, now());
+  perform public.claim_boss_reward(p2, now());
+  assert (select count(*) from public.party_boss_rewards where user_id = '00000000-0000-0000-0000-000000000001') = 2, 'パーティごとに1つでない';
+  assert (public.party_status(p1)->>'claimed')::bool;
+  -- 撃破していない px は B でも受け取れない。メンバーでない D は p1 を受け取れない
+  perform pg_temp.as_user(2);
+  failed := false; begin perform public.claim_boss_reward(px, now()); exception when others then failed := true; end;
+  assert failed, '未撃破のパーティで受け取れた';
+  perform pg_temp.as_user(4);
+  failed := false; begin perform public.claim_boss_reward(p1, now()); exception when others then failed := true; end;
+  assert failed, 'メンバーでないのに受け取れた';
+  assert public.party_status(p1) is null, 'メンバーでないのに状況が見えた';
+  failed := false; begin perform public.claim_boss_reward(p1, now() - interval '21 days'); exception when others then failed := true; end;
   assert failed, '期限外の週を受け取れた';
-  perform pg_temp.as_user(3);
-  failed := false; begin perform public.claim_boss_reward(now()); exception when others then failed := true; end;
-  assert failed, '撃破していないのに受け取れた';
 
-  -- 6. 撃破後に D が参加して HP が増えても、その週は撃破済みのまま。D も受け取れる
-  perform pg_temp.as_user(4); perform public.join_party(pid, 7);
-  s := public.party_status();
+  -- 6. 撃破後に D が p1 に入って HP が増えても撃破済みのまま。D も受け取れる
+  perform public.join_party(p1, 7);
+  s := public.party_status(p1);
   assert (s->>'hp')::int = 12 and (s->>'defeated')::bool, '撃破後の参加で撃破が取り消された: '||s;
-  assert (public.claim_boss_reward(now())->>'energy')::int = 60, 'D が受け取れない';
+  assert (public.claim_boss_reward(p1, now())->>'energy')::int = 60;
 
-  -- 7. 満員: A・B・D に E・F が入って5人、H（8）は拒否
-  perform pg_temp.as_user(5); perform public.join_party(pid, 3);
-  perform pg_temp.as_user(6); perform public.join_party(pid, 3);
-  perform pg_temp.as_user(8);
-  failed := false; begin perform public.join_party(pid, 3); exception when others then failed := true; end;
+  -- 7. 1パーティ5人まで: p1 は A,B,D + E,F で満員、G は拒否
+  perform pg_temp.as_user(5); perform public.join_party(p1, 3);
+  perform pg_temp.as_user(6); perform public.join_party(p1, 3);
+  perform pg_temp.as_user(7);
+  failed := false; begin perform public.join_party(p1, 3); exception when others then failed := true; end;
   assert failed, '6人目が入れた';
-  assert not exists (select 1 from public.party_members where user_id = '00000000-0000-0000-0000-000000000008'), '拒否された人が残った';
 
-  -- 8. 脱退すると空のパーティは消える。目標の写し
-  perform pg_temp.as_user(3); perform public.leave_party();
-  assert not exists (select 1 from public.parties where id = pid_c), '空のパーティが残った';
-  perform pg_temp.as_user(4); perform public.set_party_weekly_goal(9);
-  assert (select weekly_goal from public.party_members where user_id = '00000000-0000-0000-0000-000000000004') = 7, '目標が 1〜7 に丸められない';
+  -- 8. 1人5パーティまで: H が5つ作ると6つ目は作れず、参加もできない
+  perform pg_temp.as_user(8);
+  for i in 1..5 loop perform public.create_party(3); end loop;
+  failed := false; begin perform public.create_party(3); exception when others then failed := true; end;
+  assert failed, '6つ目のパーティを作れた';
+  failed := false; begin perform public.join_party(p2, 3); exception when others then failed := true; end;
+  assert failed, '上限を超えて参加できた';
 
-  -- 9. 1人パーティの撃破は記録するが通知しない。下書き → 完了の UPDATE 経路も数える
-  perform pg_temp.as_user(7); pid_c := public.ensure_my_party(1);
-  delete from net.calls;
-  insert into public.workouts(id, user_id, completed_at) values ('11111111-1111-1111-1111-111111111111','00000000-0000-0000-0000-000000000007', null);
-  update public.workouts set completed_at = now() where id = '11111111-1111-1111-1111-111111111111';
-  update public.workouts set completed_at = now() where id = '11111111-1111-1111-1111-111111111111';
-  assert (select count(*) from net.calls) = 0, '1人パーティで通知した';
-  assert exists (select 1 from public.party_defeats where party_id = pid_c), '1人パーティの撃破が記録されない';
+  -- 9. 名前の変更（メンバーのみ）・脱退（空なら消える、報酬は残る）・週目標は全所属に写す
+  perform pg_temp.as_user(3); perform public.rename_party(p2, 'ジム');
+  assert (select name from public.parties where id = p2) = 'ジム';
+  perform public.rename_party(p2, '   ');
+  assert (select name from public.parties where id = p2) is null, '空白だけの名前は未設定に戻す';
+  perform pg_temp.as_user(9);
+  failed := false; begin perform public.rename_party(p2, 'x'); exception when others then failed := true; end;
+  assert failed, 'メンバーでないのに名前を変えられた';
+  perform pg_temp.as_user(3); perform public.leave_party(p2);
+  perform pg_temp.as_user(1); perform public.leave_party(p2);
+  assert not exists (select 1 from public.parties where id = p2), '空のパーティが残った';
+  assert exists (select 1 from public.party_boss_rewards where party_id is null), 'パーティが消えて報酬も消えた';
+  perform public.set_party_weekly_goal(9);
+  assert (select bool_and(weekly_goal = 7) from public.party_members where user_id = '00000000-0000-0000-0000-000000000001'), '目標が全所属に写らない';
 
   -- 10. 週の境界とボスの並び（アプリの PartyBoss と同じ値）
   assert public.party_week_start('2026-10-05 00:30+09') = '2026-10-05 00:00+09', '月曜の境界';
@@ -89,12 +114,13 @@ begin
   raise notice 'party_boss_test: ALL PASSED';
 end $$;
 
--- 11. RLS と権限（authenticated として）
-select pg_temp.as_user(8);
+-- 11. RLS と権限（authenticated として。I は1つもパーティに入っていない）
+select pg_temp.as_user(9);
 set role authenticated;
 do $$ begin
   assert (select count(*) from public.party_members) = 0, '他人のパーティが見えた';
   assert (select count(*) from public.party_boss_rewards) = 0, '他人の報酬が見えた';
+  assert (select count(*) from public.parties) = 0, '他人のパーティ名が見えた';
 end $$;
 do $$ declare failed boolean := false; begin
   begin perform public.party_member_hits('00000000-0000-0000-0000-000000000001', now()); exception when insufficient_privilege then failed := true; end;

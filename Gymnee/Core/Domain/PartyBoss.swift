@@ -27,6 +27,10 @@ enum PartyBoss {
     static let rewardEnergy = 60
     /// 1パーティの上限人数。サーバーの `join_party` と揃える。
     static let maxMembers = 5
+    /// 1人が入れるパーティの上限。サーバーの `party_max_per_user` と揃える（issue #130）。
+    static let maxPartiesPerUser = 5
+    /// パーティ名の上限（サーバーの `parties_name_length` と揃える）。
+    static let maxNameLength = 20
 
     // MARK: - 週
 
@@ -76,8 +80,10 @@ enum PartyBoss {
         var damage: Int { PartyBoss.cappedDamage(hits: hits, weeklyGoal: weeklyGoal) }
     }
 
-    struct Status: Equatable, Sendable {
+    struct Status: Identifiable, Equatable, Sendable {
         let partyId: UUID
+        /// メンバーが付けた名前（未設定は nil。表示は `title(for:)`）。
+        let name: String?
         let weekStart: Date
         let bossId: String
         let hp: Int
@@ -86,7 +92,17 @@ enum PartyBoss {
         let claimed: Bool
         let members: [Member]
 
+        var id: UUID { partyId }
         var boss: Boss? { PartyBoss.boss(id: bossId) }
+
+        /// 画面に出す名前。名前が無ければ、自分以外のメンバー名を並べる（1人ならソロ）。
+        func title(for userId: UUID) -> String {
+            if let name, !name.isEmpty { return name }
+            let others = members.filter { $0.id != userId }.map(\.displayName)
+            guard !others.isEmpty else { return "ソロ" }
+            let head = others.prefix(2).joined(separator: "・")
+            return others.count > 2 ? "\(head) ほか\(others.count - 2)人と" : "\(head)と"
+        }
         var remainingHP: Int { max(0, hp - damage) }
         var canInvite: Bool { members.count < PartyBoss.maxMembers }
         /// 宝箱を開けられる（倒したのにまだ受け取っていない）。育成タブのボタンのバッジにも使う。
@@ -117,6 +133,7 @@ enum PartyBoss {
         }
         return Status(
             partyId: partyId,
+            name: (row["name"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             weekStart: weekStart,
             bossId: bossId,
             hp: (row["hp"] as? NSNumber)?.intValue ?? 0,
@@ -125,6 +142,18 @@ enum PartyBoss {
             claimed: (row["claimed"] as? Bool) ?? false,
             members: members
         )
+    }
+
+    /// `my_parties` RPC の JSON（パーティの状況の配列）を読む。読めない要素は落とす。
+    static func statuses(fromJSON object: Any?) -> [Status] {
+        (object as? [Any] ?? []).compactMap(status(fromJSON:))
+    }
+
+    /// パーティ名の入力を整える（前後の空白を落とし、上限で切る）。空なら nil（未設定に戻す）。
+    static func normalizedName(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(maxNameLength))
     }
 
     // MARK: - 報酬と図鑑

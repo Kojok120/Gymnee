@@ -579,13 +579,26 @@ actor SupabaseClient {
         return (try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) as? String).flatMap(UUID.init(uuidString:))
     }
 
-    /// 招待されたパーティに入る（今のパーティからは抜ける）。満員・存在しないときは例外。
+    /// 新しいパーティを作る（別のグループ用）。上限（1人5つ）を超えるときは例外。
+    func createParty(weeklyGoal: Int, name: String?) async throws -> UUID? {
+        var params: [String: Any] = ["p_weekly_goal": weeklyGoal]
+        if let name { params["p_name"] = name }
+        let data = try await rpc("create_party", params)
+        return (try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) as? String).flatMap(UUID.init(uuidString:))
+    }
+
+    /// 招待されたパーティに入る（今のパーティはそのまま）。満員・上限超過・存在しないときは例外。
     func joinParty(_ partyId: UUID, weeklyGoal: Int) async throws {
         _ = try await rpc("join_party", ["p_party_id": partyId.uuidString.lowercased(), "p_weekly_goal": weeklyGoal])
     }
 
-    func leaveParty() async throws {
-        _ = try await rpc("leave_party", [:])
+    func leaveParty(_ partyId: UUID) async throws {
+        _ = try await rpc("leave_party", ["p_party_id": partyId.uuidString.lowercased()])
+    }
+
+    /// パーティの名前を変える。nil で未設定（メンバー名で表示）に戻す。
+    func renameParty(_ partyId: UUID, name: String?) async throws {
+        _ = try await rpc("rename_party", ["p_party_id": partyId.uuidString.lowercased(), "p_name": name ?? ""])
     }
 
     /// 設定で週目標を変えたとき、パーティに入っていれば写す。
@@ -593,16 +606,18 @@ actor SupabaseClient {
         _ = try await rpc("set_party_weekly_goal", ["p_weekly_goal": weeklyGoal])
     }
 
-    /// 今週の状況（`party_status` の JSON。パーティが無ければ nil）。
-    func partyStatus() async throws -> Any? {
-        let data = try await rpc("party_status", [:])
-        let object = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
-        return object is NSNull ? nil : object
+    /// 自分の全パーティの今週の状況（`my_parties` の JSON 配列。入った順）。
+    func myParties() async throws -> Any? {
+        let data = try await rpc("my_parties", [:])
+        return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
     }
 
-    /// 宝箱を開ける。撃破していない・期限外なら例外。受け取り済みなら同じ結果を返す。
-    func claimBossReward(weekStart: Date) async throws -> Any? {
-        let data = try await rpc("claim_boss_reward", ["p_week_start": ISO8601DateFormatter.supabase.string(from: weekStart)])
+    /// 宝箱を開ける（パーティ×週）。撃破していない・期限外なら例外。受け取り済みなら同じ結果を返す。
+    func claimBossReward(partyId: UUID, weekStart: Date) async throws -> Any? {
+        let data = try await rpc("claim_boss_reward", [
+            "p_party_id": partyId.uuidString.lowercased(),
+            "p_week_start": ISO8601DateFormatter.supabase.string(from: weekStart),
+        ])
         return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
     }
 

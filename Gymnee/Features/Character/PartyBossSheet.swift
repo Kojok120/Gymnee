@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 友達と倒す「週ボス」（issue #128）。
+/// 友達と倒す「週ボス」（issue #128。複数パーティは #130）。
 ///
 /// 毎週月曜に新しいボスが来る。HP はパーティ全員の週目標の合計で、トレーニング1回が1撃。
 /// 1人が削れるのは「自分の目標 + 1」まで。倒せば全員が宝箱（トロフィーとパワー）を開けられ、
@@ -20,6 +20,11 @@ struct PartyBossSheet: View {
     @State private var openedReward: PartyBoss.Reward?
     @State private var isClaiming = false
     @State private var confirmLeave = false
+    /// 新しいパーティ／名前の変更の入力（どちらも空なら名前なし＝メンバー名で表示）。
+    @State private var showCreate = false
+    @State private var renameTarget: PartyBoss.Status?
+    @State private var nameDraft = ""
+    @State private var createMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -30,6 +35,12 @@ struct PartyBossSheet: View {
                     } else {
                         if let pendingPartyId, pendingPartyId != party.status?.partyId {
                             inviteCard(pendingPartyId)
+                        }
+                        if !party.statuses.isEmpty {
+                            partyPicker
+                        }
+                        if let createMessage {
+                            Text(createMessage).font(.caption.bold()).foregroundStyle(Theme.warning)
                         }
                         if let status = party.status {
                             bossCard(status)
@@ -52,20 +63,48 @@ struct PartyBossSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("完了") { dismiss() } }
-                if (party.status?.members.count ?? 0) > 1 {
+                if let status = party.status {
                     ToolbarItem(placement: .topBarLeading) {
                         Menu {
-                            Button("パーティを抜ける", role: .destructive) { confirmLeave = true }
+                            Button("名前を変える", systemImage: "pencil") {
+                                nameDraft = status.name ?? ""
+                                renameTarget = status
+                            }
+                            // 1人パーティしか無いなら、抜けても同じものが作り直されるだけなので出さない。
+                            if party.statuses.count > 1 || status.members.count > 1 {
+                                Button("このパーティを抜ける", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                                    confirmLeave = true
+                                }
+                            }
                         } label: { Image(systemName: "ellipsis.circle") }
                     }
                 }
             }
-            .confirmationDialog("パーティを抜けますか？", isPresented: $confirmLeave, titleVisibility: .visible) {
+            .confirmationDialog("このパーティを抜けますか？", isPresented: $confirmLeave, titleVisibility: .visible) {
                 Button("抜ける", role: .destructive) {
-                    Task { await party.leave(userId: userId, weeklyGoal: weeklyGoal) }
+                    guard let id = party.status?.partyId else { return }
+                    Task { await party.leave(id, userId: userId, weeklyGoal: weeklyGoal) }
                 }
             } message: {
-                Text("抜けたあとは1人で週ボスと戦います。受け取った宝箱とトロフィーはそのまま残ります。")
+                Text("ほかのパーティはそのままです。受け取った宝箱とトロフィーも残ります。")
+            }
+            .alert("新しいパーティ", isPresented: $showCreate) {
+                TextField("名前（例: ジム仲間）", text: $nameDraft)
+                Button("作る") { Task { await createParty() } }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("別のグループで週ボスに挑めます。名前は空でもかまいません（メンバー名で表示します）。")
+            }
+            .alert("パーティの名前", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
+                TextField("名前", text: $nameDraft)
+                Button("保存") {
+                    guard let target = renameTarget else { return }
+                    let name = PartyBoss.normalizedName(nameDraft)
+                    Task { await party.rename(target.partyId, name: name, userId: userId, weeklyGoal: weeklyGoal) }
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("メンバー全員の画面に出ます。空にするとメンバー名で表示します。")
             }
             .sheet(item: $openedReward) { reward in
                 RewardReveal(reward: reward)
@@ -139,10 +178,7 @@ struct PartyBossSheet: View {
     }
 
     private var joinWarning: String {
-        let others = (party.status?.members.count ?? 1) - 1
-        return others > 0
-            ? "参加すると、いまのパーティ（ほか\(others)人）からは抜けます。"
-            : "参加すると、友達と同じボスを一緒に削ります。"
+        "参加しても、いまのパーティはそのままです。トレーニング1回が、入っているすべてのパーティのボスに1撃ずつ入ります。"
     }
 
     private func join(_ partyId: UUID) async {
@@ -153,6 +189,8 @@ struct PartyBossSheet: View {
             clearPendingInvite()
         case .failure(.full):
             joinMessage = "このパーティは満員です（最大\(PartyBoss.maxMembers)人）。"
+        case .failure(.tooMany):
+            joinMessage = "入れるパーティは\(PartyBoss.maxPartiesPerUser)つまでです。どれかを抜けてから参加してください。"
         case .failure(.notFound):
             joinMessage = "このパーティは見つかりませんでした。招待した人に、新しいリンクを送ってもらってください。"
             clearPendingInvite()
@@ -164,6 +202,56 @@ struct PartyBossSheet: View {
     private func clearPendingInvite() {
         UserDefaults.standard.removeObject(forKey: PartyInviteLink.pendingDefaultsKey)
         pendingPartyId = nil
+    }
+
+    // MARK: - パーティの切り替え
+
+    /// 入っているパーティ（最大5つ）を横に並べる。宝箱が残っているパーティには印を付ける。
+    private var partyPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+                ForEach(party.statuses) { status in
+                    let selected = status.partyId == party.status?.partyId
+                    Button { party.selectedPartyId = status.partyId } label: {
+                        HStack(spacing: 6) {
+                            Text(status.title(for: userId)).lineLimit(1)
+                            if status.hasUnclaimedChest {
+                                Circle().fill(Theme.lime).frame(width: 7, height: 7)
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .foregroundStyle(selected ? Theme.onLime : Theme.textPrimary)
+                        .background(selected ? Theme.limeFill : Theme.bg1, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if party.canCreateParty {
+                    Button {
+                        nameDraft = ""
+                        createMessage = nil
+                        showCreate = true
+                    } label: {
+                        Label("新しいパーティ", systemImage: "plus")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.sm)
+                            .foregroundStyle(Theme.textSecondary)
+                            .overlay(Capsule().strokeBorder(Theme.bg3, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func createParty() async {
+        switch await party.create(name: PartyBoss.normalizedName(nameDraft), userId: userId, weeklyGoal: weeklyGoal) {
+        case .success: createMessage = nil
+        case .failure(.tooMany): createMessage = "入れるパーティは\(PartyBoss.maxPartiesPerUser)つまでです。"
+        case .failure: createMessage = "作れませんでした。通信できるところで、もう一度お試しください。"
+        }
     }
 
     // MARK: - ボス
@@ -204,7 +292,7 @@ struct PartyBossSheet: View {
                 Button {
                     Task {
                         isClaiming = true
-                        openedReward = await party.claim(userId: userId, weeklyGoal: weeklyGoal)
+                        openedReward = await party.claim(status.partyId, userId: userId, weeklyGoal: weeklyGoal)
                         isClaiming = false
                     }
                 } label: {
@@ -236,7 +324,9 @@ struct PartyBossSheet: View {
 
     private func membersCard(_ status: PartyBoss.Status) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            SectionHeader(title: status.members.count > 1 ? "パーティ（\(status.members.count)人）" : "ソロで挑戦中")
+            SectionHeader(title: status.members.count > 1
+                          ? "\(status.title(for: userId))（\(status.members.count)人）"
+                          : "ソロで挑戦中")
             ForEach(status.members) { member in
                 HStack(spacing: Theme.Spacing.md) {
                     AvatarView(urlString: member.avatarURL, size: 32)
@@ -280,7 +370,7 @@ struct PartyBossSheet: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            Text("あと\(PartyBoss.maxMembers - status.members.count)人まで誘えます。人数が増えるとボスの HP も増えます。")
+            Text("このパーティには、あと\(PartyBoss.maxMembers - status.members.count)人誘えます。人数が増えるとボスの HP も増えます。")
                 .font(.caption2).foregroundStyle(Theme.textTertiary)
         }
     }
@@ -324,7 +414,7 @@ struct PartyBossSheet: View {
     }()
 
     private var rulesNote: some View {
-        Text("トレーニングを1回記録するごとに1撃。HP はパーティ全員の週目標の合計で、1人が削れるのは目標＋1回までです。月曜 0時にボスが入れ替わり、倒せなかったボスは逃げるだけです。")
+        Text("トレーニングを1回記録するごとに、入っているすべてのパーティのボスに1撃。HP はパーティ全員の週目標の合計で、1人が削れるのは目標＋1回までです。パーティは\(PartyBoss.maxPartiesPerUser)つまで入れます。月曜 0時にボスが入れ替わり、倒せなかったボスは逃げるだけです。")
             .font(.caption2).foregroundStyle(Theme.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
     }

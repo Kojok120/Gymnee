@@ -199,9 +199,10 @@ Deno.serve(async (req) => {
     // 倒した本人はアプリの中で見ているので送らない。1人パーティなら誰にも送らない。
     const others = memberIds.filter((id) => id !== defeatedBy);
     if (others.length === 0) return new Response(JSON.stringify({ sent: 0, reason: "solo" }), { status: 200 });
-    const [{ data: prefs }, { data: profile }] = await Promise.all([
+    const [{ data: prefs }, { data: profile }, { data: party }] = await Promise.all([
       db.from("profiles").select("id, notify_party").in("id", others),
       db.from("profiles").select("display_name").eq("id", defeatedBy).single(),
+      db.from("parties").select("name").eq("id", partyId).single(),
     ]);
     const muted = new Set((prefs ?? []).filter((p) => p.notify_party === false).map((p) => p.id as string));
     const targets = others.filter((id) => !muted.has(id));
@@ -213,8 +214,11 @@ Deno.serve(async (req) => {
     };
     const bossName = bossNames[payload.bossId ?? ""] ?? "今週のボス";
     const name = profile?.display_name ?? "メンバー";
+    // 複数のパーティに入れるので、どのパーティの撃破かを題名に入れる（名前が無ければ省く）。
+    const partyName = (party?.name as string | null) ?? null;
+    const title = partyName ? `${partyName}で${bossName}を倒しました！` : `${bossName}を倒しました！`;
     const sent = await pushToUsers(
-      db, targets, `${bossName}を倒しました！`, `${name}さんの一撃でとどめ。宝箱を開けましょう`,
+      db, targets, title, `${name}さんの一撃でとどめ。宝箱を開けましょう`,
       { type: "boss", partyId },
     );
     return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
