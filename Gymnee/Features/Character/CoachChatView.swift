@@ -319,7 +319,7 @@ struct CoachChatView: View {
             ).weeks,
             todayPlan: todayPlan,
             growth: CharacterInputs.growth(
-                completedWorkouts: workouts, records: records,
+                completedWorkouts: workouts,
                 pickups: pickups, runs: runs, weeklyGoal: weeklyGoal
             )
         )

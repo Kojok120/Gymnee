@@ -185,18 +185,15 @@ enum FeedPublisher {
             FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
         )) ?? []
         guard !completed.isEmpty else { return (nil, nil) }
-        let records = (try? context.fetch(
-            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == uid })
-        )) ?? []
-        let sessions = CharacterInputs.sessions(from: completed,
-                                                prCountByWorkout: CharacterInputs.prCountByWorkout(records))
+        let prs = CharacterInputs.prHistory(from: completed)
+        let sessions = CharacterInputs.sessions(from: completed, prCountByWorkout: prs.byWorkout)
         guard !sessions.isEmpty else { return (nil, nil) }
         let level = CharacterProgress.level(totalExperience: CharacterProgress.totalExperience(sessions: sessions))
         let goal = UserDefaults.standard.object(forKey: "gymnee.weeklyGoal") as? Int ?? 3
         let weeks = StreakCalculator.currentWeeklyStreak(
             activeDays: completed.map { $0.completedAt ?? $0.date }, weeklyGoal: goal
         ).weeks
-        let stage = CharacterProgress.stage(level: level.value, prCount: records.count, weeklyStreakWeeks: weeks)
+        let stage = CharacterProgress.stage(level: level.value, prCount: prs.total, weeklyStreakWeeks: weeks)
         return (level.value, stage.title)
     }
 

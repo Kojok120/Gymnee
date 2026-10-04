@@ -1207,7 +1207,7 @@ struct RecordContent: View {
         //
         // 「前」の状態はここで控える。完了処理（PR 確定）が走るとやり直せない
         // （自己ベストの更新は行を増やさず workoutId を付け替えるため）。
-        let growthBefore = w.completedAt == nil ? growthSnapshot(for: w) : nil
+        let growthBefore = w.completedAt == nil ? growthSnapshot(for: w).snapshot : nil
         // セット0件の種目エントリは投稿/同期前に取り除く（記録ミスで残った空種目を「セットなし」で残さない）。
         for we in Array(w.exercises) where we.sets.isEmpty { context.delete(we) }
         // 初回完了のみ時刻を確定する（編集での再完了は既存の完了時刻・総合時間を保持）。
@@ -1269,7 +1269,7 @@ struct RecordContent: View {
         if isFirstCompletion, (CoachMode(rawValue: coachModeRaw) ?? .default).showsCoach {
             notifications.notifyCoachPraise(
                 workoutName: w.name,
-                streakWeeks: growthSnapshot(for: w).streakWeeks
+                streakWeeks: growthSnapshot(for: w).snapshot.streakWeeks
             )
         }
         // 初回完了のときだけ、サマリーを閉じたあとの祝いを予約する。
@@ -1283,47 +1283,41 @@ struct RecordContent: View {
     /// 完了直後の状態と控えた「前」から、祝う内容を組み立てる。
     /// **判定そのものは `WorkoutGrowth.gain` に置く**。ここは SwiftData から値を集めるだけ。
     private func growthGain(for workout: Workout, before: WorkoutGrowth.Snapshot) -> WorkoutGrowth.Gain {
-        let wid = workout.id
-        let records = (try? context.fetch(
-            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.workoutId == wid })
-        )) ?? []
-        let sessions = CharacterInputs.sessions(from: [workout], prCountByWorkout: [wid: records.count])
+        let after = growthSnapshot(for: workout)
+        let sessions = CharacterInputs.sessions(from: [workout])
         return WorkoutGrowth.gain(
             before: before,
-            after: growthSnapshot(for: workout),
+            after: after.snapshot,
             energy: sessions.first.map(Expedition.energyEarned) ?? 0,
             volumeByMuscle: CharacterInputs.volumeByMuscle(from: [workout]),
-            prCount: records.count
+            prCount: after.prUpdatesByWorkout[workout.id] ?? 0
         )
     }
 
     /// 育成の状態を取る。`finish()` の先頭で呼べば「この回を含まない」状態、
     /// 完了処理のあとで呼べば「含んだ」状態になる（`completedAt` の有無で決まる）。
-    private func growthSnapshot(for workout: Workout) -> WorkoutGrowth.Snapshot {
+    private func growthSnapshot(for workout: Workout) -> (snapshot: WorkoutGrowth.Snapshot, prUpdatesByWorkout: [UUID: Int]) {
         let uid = userId
         let completed = (try? context.fetch(
             FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
         )) ?? []
-        let records = (try? context.fetch(
-            FetchDescriptor<PersonalRecord>(predicate: #Predicate { $0.userId == uid })
-        )) ?? []
+        let prs = CharacterInputs.prHistory(from: completed)
         let pickups = (try? context.fetch(
             FetchDescriptor<RoomPickupRecord>(predicate: #Predicate { $0.userId == uid })
         )) ?? []
-        let sessions = CharacterInputs.sessions(
-            from: completed, prCountByWorkout: CharacterInputs.prCountByWorkout(records)
-        )
+        let sessions = CharacterInputs.sessions(from: completed, prCountByWorkout: prs.byWorkout)
         let streak = StreakCalculator.currentWeeklyStreak(
             activeDays: completed.map { $0.completedAt ?? $0.date }, weeklyGoal: weeklyGoal
         )
-        return WorkoutGrowth.Snapshot(
+        let snapshot = WorkoutGrowth.Snapshot(
             totalExperience: CharacterProgress.totalExperience(
                 sessions: sessions,
                 pickupBonus: RoomPickup.totalExperience(collectedItemIds: pickups.map(\.itemId))
             ),
-            prCount: records.count,
+            prCount: prs.total,
             streakWeeks: streak.weeks
         )
+        return (snapshot, prs.byWorkout)
     }
 
     /// サマリーの「ソーシャルに投稿」: このワークアウトと当日の最大重量 PR を公開範囲付きで発行する。
