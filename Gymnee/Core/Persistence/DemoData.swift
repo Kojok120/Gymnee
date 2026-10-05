@@ -35,12 +35,62 @@ enum DemoData {
         context.insert(PetState(userId: userId, petId: "shiba"))
     }
 
+    /// 友達の投稿と応援（ストア画像のフィード撮影用。issue #135）。ワークアウトの有無と別に入れる。
+    @MainActor
+    private static func seedFriendFeedIfNeeded(_ context: ModelContext, userId: UUID) {
+        let others = (try? context.fetchCount(
+            FetchDescriptor<FeedItem>(predicate: #Predicate { $0.userId != userId })
+        )) ?? 0
+        guard others == 0 else { return }
+        // ソーシャルのガイドライン同意を済ませた状態にする（フィードが出る）。
+        UserDefaults.standard.set(true, forKey: "gymnee.social.agreedGuidelines")
+        let now = Date.now
+        let friends: [(UUID, String)] = [
+            (UUID(uuidString: "D0000000-0000-0000-0000-000000000001")!, "けんたろう"),
+            (UUID(uuidString: "D0000000-0000-0000-0000-000000000002")!, "さき"),
+            (UUID(uuidString: "D0000000-0000-0000-0000-000000000003")!, "はるか"),
+        ]
+        for (id, name) in friends {
+            context.insert(Follow(followerId: userId, followeeId: id, followeeDisplayName: name, isDirty: false))
+            context.insert(Profile(id: id, displayName: name))
+        }
+        func workout(_ friend: Int, _ title: String, minutesAgo: Double, sets: Int, volume: Int,
+                     muscles: [MuscleGroup], level: Int, stage: String, caption: String?) -> FeedItem {
+            let stats = FeedItemStats(exercises: 3, sets: sets, volume: volume, minutes: 55, prCount: 0,
+                                      muscles: muscles.map(\.rawValue), caption: caption,
+                                      characterLevel: level, characterStage: stage)
+            return FeedItem(userId: friends[friend].0, authorDisplayName: friends[friend].1, type: .workout,
+                            refId: UUID(), summary: title, statsJSON: stats.encodedJSON(),
+                            createdAt: now.addingTimeInterval(-minutesAgo * 60), isDirty: false)
+        }
+        let items = [
+            workout(0, "脚の日", minutesAgo: 25, sets: 16, volume: 6820, muscles: [.legs, .glutes],
+                    level: 18, stage: "チャレンジャー", caption: "ボスに1撃入れた！"),
+            FeedItem(userId: friends[1].0, authorDisplayName: friends[1].1, type: .pr, refId: UUID(),
+                     summary: "ベンチプレス 自己ベスト更新",
+                     statsJSON: FeedItemPRStats(exercise: "ベンチプレス",
+                                                items: [.init(type: PRType.maxWeight.rawValue, value: 45)]).encodedJSON(),
+                     createdAt: now.addingTimeInterval(-90 * 60), isDirty: false),
+            workout(2, "背中・二頭", minutesAgo: 180, sets: 14, volume: 4310, muscles: [.back, .arms],
+                    level: 9, stage: "トレーニー", caption: "あと2回でボス撃破"),
+        ]
+        for item in items {
+            context.insert(item)
+            // 自分と友達からの応援。
+            context.insert(PostReaction(userId: userId, feedItemId: item.id, kind: .fire, isDirty: false))
+            context.insert(PostReaction(userId: friends[(friends.firstIndex { $0.0 == item.userId }! + 1) % 3].0,
+                                        feedItemId: item.id, kind: .strong, isDirty: false))
+        }
+        try? context.save()
+    }
+
     /// デモワークアウトを冪等に投入する。
     @MainActor
     static func seedIfNeeded(_ context: ModelContext, userId: UUID) {
         // ペットは**ワークアウトの有無と別に**入れる。下の guard の後ろに置くと、
         // すでにデモを流したシミュレータではいつまでもペットが出ず検証できない。
         seedPetIfNeeded(context, userId: userId)
+        seedFriendFeedIfNeeded(context, userId: userId)
 
         let existing = (try? context.fetchCount(FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == userId }))) ?? 0
         guard existing == 0 else { return }

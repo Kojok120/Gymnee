@@ -161,6 +161,9 @@ struct RootView: View {
         case "workout", "record": RecordView()
         case "calendar": CalendarHomeView()
         case "character": CharacterRoomView(userId: userId)
+        case "promo-sheet-0": PromoArtSheet(page: 0)
+        case "promo-sheet-1": PromoArtSheet(page: 1)
+        case "promo-sheet-2": PromoArtSheet(page: 2)
         case "boss", "boss-defeated":
             PartyBossSheet(userId: userId)
                 .onAppear { party.loadDemo(userId: userId, defeated: name == "boss-defeated") }

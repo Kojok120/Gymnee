@@ -21,7 +21,7 @@ struct SocialFeedView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            if sync.isRemoteEnabled && !auth.isPermanentAccount {
+            if sync.isRemoteEnabled && !auth.isPermanentAccount && !Self.isDemo {
                 // ゲスト（未サインイン・匿名セッション含む）にはフィードの代わりにサインイン促しを出す。
                 // フォロー・応援・コメント・公開投稿は本人性のあるアカウント限定（RLS 0031 とも整合）。
                 signInPrompt
@@ -56,6 +56,15 @@ struct SocialFeedView: View {
             else { return }
             requestedPostId = postId
         }
+    }
+
+    /// DEBUG のデモ（ストア画像の撮影）では、サインインを求めずにフィードを出す。
+    private static var isDemo: Bool {
+        #if DEBUG
+        return DebugSupport.demoRequested
+        #else
+        return false
+        #endif
     }
 
     /// ゲスト向けのサインイン促し（フレンド機能の入口で初めてサインインを求める）。
