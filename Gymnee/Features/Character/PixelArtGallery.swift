@@ -69,16 +69,19 @@ struct PixelArtGallery: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             SectionHeader(title: "週ボス")
             LazyVGrid(columns: grid(minimum: 76), spacing: Theme.Spacing.md) {
-                ForEach(PartyBoss.catalog) { boss in
-                    labelled(boss.name) {
-                        PixelSpriteView(
-                            sprite: PixelBossArt.sprite(bossId: boss.id),
-                            palette: PixelBossArt.palette(bossId: boss.id),
-                            side: 64
-                        )
+                // ボス × ランク。入れ子の ForEach だとランクの id が重なって2体目以降が消えるので、組で並べる。
+                ForEach(bossCells, id: \.id) { cell in
+                    labelled("\(cell.boss.name) \(cell.tier.label)") {
+                        BossSpriteView(bossId: cell.boss.id, tier: cell.tier, side: 56)
                     }
                 }
             }
+        }
+    }
+
+    private var bossCells: [(id: String, boss: PartyBoss.Boss, tier: PartyBoss.Tier)] {
+        PartyBoss.catalog.flatMap { boss in
+            PartyBoss.Tier.allCases.map { (id: "\(boss.id)-\($0.rawValue)", boss: boss, tier: $0) }
         }
     }
 

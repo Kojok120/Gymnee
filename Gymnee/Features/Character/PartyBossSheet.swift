@@ -45,6 +45,7 @@ struct PartyBossSheet: View {
                         if let status = party.status {
                             bossCard(status)
                             membersCard(status)
+                            voteCard(status)
                             if status.canInvite { inviteShare(status) }
                         } else if party.isLoading {
                             ProgressView().frame(maxWidth: .infinity, minHeight: 200)
@@ -259,8 +260,7 @@ struct PartyBossSheet: View {
     private func bossCard(_ status: PartyBoss.Status) -> some View {
         VStack(spacing: Theme.Spacing.md) {
             ZStack {
-                PixelSpriteView(sprite: PixelBossArt.sprite(bossId: status.bossId),
-                                palette: PixelBossArt.palette(bossId: status.bossId), side: 144)
+                BossSpriteView(bossId: status.bossId, tier: status.tier, side: 144)
                     .opacity(status.defeated ? 0.35 : 1)
                     .rotationEffect(.degrees(status.defeated ? -8 : 0))
                 if status.defeated {
@@ -271,9 +271,12 @@ struct PartyBossSheet: View {
                 }
             }
             VStack(spacing: 2) {
-                Text(status.boss?.name ?? "今週のボス")
-                    .font(.pixel(size: 20, relativeTo: .title3))
-                    .foregroundStyle(Theme.textPrimary)
+                HStack(spacing: Theme.Spacing.sm) {
+                    BossTierBadge(tier: status.tier)
+                    Text(status.boss?.name ?? "今週のボス")
+                        .font(.pixel(size: 20, relativeTo: .title3))
+                        .foregroundStyle(Theme.textPrimary)
+                }
                 if let flavor = status.boss?.flavor {
                     Text(flavor).font(.caption).foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -281,8 +284,12 @@ struct PartyBossSheet: View {
             }
             hpBar(status)
             HStack {
-                Text("HP \(status.remainingHP) / \(status.hp)")
-                    .font(.caption.monospacedDigit().bold()).foregroundStyle(Theme.textPrimary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("HP \(status.remainingHP) / \(status.hp)")
+                        .font(.caption.monospacedDigit().bold()).foregroundStyle(Theme.textPrimary)
+                    Text("倒すと EXP +\(status.rewardExp)")
+                        .font(.caption2).foregroundStyle(Theme.textTertiary)
+                }
                 Spacer()
                 Text(status.defeated ? "来週の月曜に次のボスが来ます"
                      : "あと\(PartyBoss.daysLeft(in: status.weekStart, now: .now))日で逃げます")
@@ -375,6 +382,49 @@ struct PartyBossSheet: View {
         }
     }
 
+    // MARK: - 翌週のランクの投票（issue #133）
+
+    private func voteCard(_ status: PartyBoss.Status) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            SectionHeader(title: "来週のボスの強さ")
+            Text("日曜 23:59 に締め切り。多数決で決まり、同票なら弱い方、票が無ければ中くらいです。")
+                .font(.caption2).foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Theme.Spacing.sm) {
+                ForEach(PartyBoss.Tier.allCases) { tier in
+                    let mine = status.myNextVote == tier
+                    Button {
+                        Task { await party.vote(tier, partyId: status.partyId, userId: userId, weeklyGoal: weeklyGoal) }
+                    } label: {
+                        VStack(spacing: 4) {
+                            BossSpriteView(bossId: PartyBoss.bossId(forWeekStart: nextWeekStart(status)),
+                                           tier: tier, side: 52)
+                            BossTierBadge(tier: tier)
+                            Text("EXP +\(tier.rewardExp)").font(.caption2.monospacedDigit()).foregroundStyle(Theme.textSecondary)
+                            Text(tier.hpRule).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+                                .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.8)
+                            Text("\(status.nextVotes[tier] ?? 0)票")
+                                .font(.caption.monospacedDigit().bold())
+                                .foregroundStyle(mine ? Theme.lime : Theme.textPrimary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .background(Theme.bg2, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                            .strokeBorder(mine ? Theme.lime : .clear, lineWidth: 2))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(tier.label)に投票。いま\(status.nextVotes[tier] ?? 0)票\(mine ? "、あなたの票" : "")")
+                }
+            }
+        }
+        .gymneeCard()
+    }
+
+    private func nextWeekStart(_ status: PartyBoss.Status) -> Date {
+        PartyBoss.calendar.date(byAdding: .day, value: 7, to: status.weekStart) ?? status.weekStart
+    }
+
     // MARK: - 図鑑
 
     private var trophyCard: some View {
@@ -432,13 +482,19 @@ private struct RewardReveal: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.lg) {
             Spacer()
-            PixelSpriteView(sprite: PixelBossArt.sprite(bossId: reward.bossId),
-                            palette: PixelBossArt.palette(bossId: reward.bossId), side: 120)
-            Text("\(PartyBoss.boss(id: reward.bossId)?.name ?? "ボス")のトロフィー")
-                .font(.pixel(size: 20, relativeTo: .title3)).foregroundStyle(Theme.textPrimary)
+            BossSpriteView(bossId: reward.bossId, tier: reward.tier, side: 120)
+            HStack(spacing: Theme.Spacing.sm) {
+                BossTierBadge(tier: reward.tier)
+                Text("\(PartyBoss.boss(id: reward.bossId)?.name ?? "ボス")のトロフィー")
+                    .font(.pixel(size: 20, relativeTo: .title3)).foregroundStyle(Theme.textPrimary)
+            }
+            if reward.exp > 0 {
+                Label("EXP +\(reward.exp)", systemImage: "sparkles")
+                    .font(.headline).foregroundStyle(Theme.lime)
+            }
             Label("テストステロンパワー +\(reward.energy)", systemImage: "bolt.heart.fill")
                 .font(.headline).foregroundStyle(Theme.lime)
-            Text("図鑑に記録しました。パワーは遠征に使えます。")
+            Text("図鑑に記録しました。EXP はキャラの成長に、パワーは遠征に使えます。")
                 .font(.caption).foregroundStyle(Theme.textSecondary)
             Spacer()
             Button("いいね") { dismiss() }

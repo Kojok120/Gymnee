@@ -621,9 +621,14 @@ actor SupabaseClient {
         return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
     }
 
+    /// 翌週のボスのランクに投票する（日曜 23:59 JST まで何度でも変えられる）。
+    func voteBossTier(partyId: UUID, tier: String) async throws {
+        _ = try await rpc("vote_boss_tier", ["p_party_id": partyId.uuidString.lowercased(), "p_tier": tier])
+    }
+
     /// 受け取った報酬（自分の分だけ。RLS が絞る）。
     func bossRewards() async throws -> [[String: Any]] {
-        var request = restRequest(path: "party_boss_rewards", query: "select=week_start,boss_id,energy&order=week_start.asc")
+        var request = restRequest(path: "party_boss_rewards", query: "select=week_start,boss_id,energy,tier,exp&order=week_start.asc")
         request.httpMethod = "GET"
         let data = try await send(request)
         return ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []

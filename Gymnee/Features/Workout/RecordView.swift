@@ -319,6 +319,7 @@ struct RecordContent: View {
     /// 完了時にタブのゲートへ戻すコールバック（タブ起点のみ）。nil＝従来の待機リセット。
     var onEnd: (() -> Void)?
 
+    @Environment(PartyService.self) private var party
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -1312,7 +1313,8 @@ struct RecordContent: View {
         let snapshot = WorkoutGrowth.Snapshot(
             totalExperience: CharacterProgress.totalExperience(
                 sessions: sessions,
-                pickupBonus: RoomPickup.totalExperience(collectedItemIds: pickups.map(\.itemId))
+                // 週ボスの宝箱の EXP も育成タブと同じく足す（祝いの「前」と「後」でレベルを揃える）。
+                pickupBonus: RoomPickup.totalExperience(collectedItemIds: pickups.map(\.itemId)) + party.rewardExp
             ),
             prCount: prs.total,
             streakWeeks: streak.weeks

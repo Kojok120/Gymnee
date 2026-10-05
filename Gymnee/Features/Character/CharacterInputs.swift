@@ -56,6 +56,7 @@ enum CharacterInputs {
         pickups: [RoomPickupRecord],
         runs: [ExpeditionRun],
         bossRewardEnergy: Int = 0,
+        bossRewardExp: Int = 0,
         weeklyGoal: Int
     ) -> Growth {
         let prs = prHistory(from: completedWorkouts)
@@ -63,7 +64,8 @@ enum CharacterInputs {
         let collectedIds = pickups.map(\.itemId)
         let totalExperience = CharacterProgress.totalExperience(
             sessions: sessions,
-            pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds)
+            // 週ボスの宝箱の EXP（issue #133。サーバーが正で PartyService が端末に控える）。
+            pickupBonus: RoomPickup.totalExperience(collectedItemIds: collectedIds) + max(0, bossRewardExp)
         )
         let level = CharacterProgress.level(totalExperience: totalExperience)
         let streak = StreakCalculator.currentWeeklyStreak(

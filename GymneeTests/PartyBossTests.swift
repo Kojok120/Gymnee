@@ -97,6 +97,63 @@ final class PartyBossTests: XCTestCase {
         XCTAssertEqual(PartyBoss.normalizedName(String(repeating: "あ", count: 30))?.count, PartyBoss.maxNameLength)
     }
 
+    // MARK: - ランク（issue #133）
+
+    func testTierHPMatchesServer() {
+        // scripts/sqltest/party_boss_test.sql の 12 と同じ値（目標 3・2・2）。
+        let goals = [3, 2, 2]
+        XCTAssertEqual(PartyBoss.Tier.weak.hp(goals: goals), 5)
+        XCTAssertEqual(PartyBoss.Tier.medium.hp(goals: goals), 7)
+        XCTAssertEqual(PartyBoss.Tier.strong.hp(goals: goals), 10)
+        XCTAssertEqual(PartyBoss.Tier.weak.hp(goals: [1]), 1, "最低1")
+        XCTAssertEqual(PartyBoss.Tier.strong.hp(goals: []), 0)
+        XCTAssertEqual(PartyBoss.Tier.allCases.map(\.rewardExp), [100, 200, 400])
+    }
+
+    func testParsesTierAndVotes() throws {
+        let json = """
+        {"party_id":"43938a10-512a-473f-94d2-b8c4a43a934b","name":null,"week_start":"2026-10-04T15:00:00+00:00",
+         "boss_id":"junk_kraken","tier":"strong","reward_exp":400,"hp":10,"damage":3,"defeated":false,"claimed":false,
+         "next_votes":{"weak":1,"medium":0,"strong":2},"my_next_vote":"weak","members":[]}
+        """
+        let status = try XCTUnwrap(PartyBoss.status(fromJSON: try JSONSerialization.jsonObject(with: Data(json.utf8))))
+        XCTAssertEqual(status.tier, .strong)
+        XCTAssertEqual(status.rewardExp, 400)
+        XCTAssertEqual(status.nextVotes, [.weak: 1, .medium: 0, .strong: 2])
+        XCTAssertEqual(status.myNextVote, .weak)
+    }
+
+    func testOldServerResponseDefaultsToMedium() throws {
+        // 0042 より前のサーバー（tier を返さない）でも読める。
+        let json = """
+        {"party_id":"43938a10-512a-473f-94d2-b8c4a43a934b","week_start":"2026-10-04T15:00:00+00:00","boss_id":"junk_kraken",
+         "hp":7,"damage":0,"defeated":false,"claimed":false,"members":[]}
+        """
+        let status = try XCTUnwrap(PartyBoss.status(fromJSON: try JSONSerialization.jsonObject(with: Data(json.utf8))))
+        XCTAssertEqual(status.tier, .medium)
+        XCTAssertNil(status.myNextVote)
+        XCTAssertEqual(status.nextVotes[.strong], 0)
+    }
+
+    func testRewardExpAndVoteDeadline() {
+        let week = jst("2026-10-05T00:00:00+09:00")
+        let rewards = [
+            PartyBoss.Reward(weekStart: week, bossId: "junk_kraken", energy: 60, tier: .strong, exp: 400),
+            PartyBoss.Reward(weekStart: week, bossId: "sloth_slime", energy: 60),
+        ]
+        XCTAssertEqual(PartyBoss.totalExp(from: rewards), 400, "0042 より前の報酬は EXP 0")
+        XCTAssertEqual(PartyBoss.voteDeadline(forWeekStart: week), jst("2026-10-11T23:59:59+09:00"))
+    }
+
+    func testStrongSpriteHasCrownAndSameWidth() {
+        for boss in PartyBoss.catalog {
+            let strong = PixelBossArt.sprite(bossId: boss.id, tier: .strong)
+            let base = PixelBossArt.sprite(bossId: boss.id, tier: .medium)
+            XCTAssertEqual(strong.width, base.width)
+            XCTAssertGreaterThan(strong.height, base.height - 4, "王冠の分だけ背が高い（空き行は詰める）")
+        }
+    }
+
     func testNoPartyOrBrokenJSONIsNil() {
         XCTAssertNil(PartyBoss.status(fromJSON: NSNull()))
         XCTAssertNil(PartyBoss.status(fromJSON: ["party_id": "x"]))

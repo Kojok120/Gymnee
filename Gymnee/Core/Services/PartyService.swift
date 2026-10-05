@@ -41,6 +41,8 @@ final class PartyService {
 
     /// 受け取った報酬のパワー合計（遠征の残高に上乗せする）。
     var rewardEnergy: Int { PartyBoss.totalEnergy(from: rewards) }
+    /// 受け取った報酬の EXP 合計（キャラの成長に上乗せする。issue #133）。
+    var rewardExp: Int { PartyBoss.totalExp(from: rewards) }
 
     /// 状況を取り直す。`createIfNeeded` はボス画面を開いたとき（1つも無ければ1人パーティを作る）だけ true。
     /// 育成タブのバッジのために読むだけのときは、パーティを勝手に作らない。
@@ -122,6 +124,13 @@ final class PartyService {
         return reward
     }
 
+    /// 翌週のボスのランクに投票する（日曜 23:59 JST まで変えられる）。
+    func vote(_ tier: PartyBoss.Tier, partyId: UUID, userId: UUID, weeklyGoal: Int) async {
+        guard let client, await client.isAuthenticated else { return }
+        try? await client.voteBossTier(partyId: partyId, tier: tier.rawValue)
+        await refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false)
+    }
+
     /// 設定で週目標を変えたとき、全パーティの HP に反映する（入っていなければ何もしない）。
     func syncWeeklyGoal(_ weeklyGoal: Int) async {
         guard let client, await client.isAuthenticated else { return }
@@ -140,20 +149,26 @@ final class PartyService {
     /// 画面確認用のデモ状態（`-gymneeScreen boss` / `boss-defeated`）。サーバー無しで描画を確かめる。
     func loadDemo(userId: UUID, defeated: Bool) {
         let weekStart = PartyBoss.weekStart(for: .now)
-        func party(_ name: String?, _ members: [PartyBoss.Member], defeated: Bool) -> PartyBoss.Status {
-            let hp = members.reduce(0) { $0 + $1.weeklyGoal }
-            return PartyBoss.Status(
+        func party(_ name: String?, _ members: [PartyBoss.Member], defeated: Bool,
+                   tier: PartyBoss.Tier = .medium) -> PartyBoss.Status {
+            let hp = tier.hp(goals: members.map(\.weeklyGoal))
+            var status = PartyBoss.Status(
                 partyId: UUID(), name: name, weekStart: weekStart, bossId: PartyBoss.bossId(forWeekStart: weekStart),
                 hp: hp, damage: min(hp, members.reduce(0) { $0 + $1.damage }),
                 defeated: defeated, claimed: false, members: members
             )
+            status.tier = tier
+            status.rewardExp = tier.rewardExp
+            status.nextVotes = [.weak: 0, .medium: 1, .strong: 1]
+            status.myNextVote = .strong
+            return status
         }
         statuses = [
             party("ジム仲間", [
                 PartyBoss.Member(id: userId, displayName: "こうじ", avatarURL: nil, weeklyGoal: 3, hits: defeated ? 4 : 2),
-                PartyBoss.Member(id: UUID(), displayName: "けんたろう", avatarURL: nil, weeklyGoal: 2, hits: defeated ? 2 : 1),
-                PartyBoss.Member(id: UUID(), displayName: "さき", avatarURL: nil, weeklyGoal: 4, hits: defeated ? 4 : 1),
-            ], defeated: defeated),
+                PartyBoss.Member(id: UUID(), displayName: "けんたろう", avatarURL: nil, weeklyGoal: 2, hits: defeated ? 3 : 1),
+                PartyBoss.Member(id: UUID(), displayName: "さき", avatarURL: nil, weeklyGoal: 4, hits: defeated ? 5 : 1),
+            ], defeated: defeated, tier: defeated ? .strong : .weak),
             party(nil, [
                 PartyBoss.Member(id: userId, displayName: "こうじ", avatarURL: nil, weeklyGoal: 3, hits: defeated ? 4 : 2),
                 PartyBoss.Member(id: UUID(), displayName: "はるか", avatarURL: nil, weeklyGoal: 2, hits: 2),
@@ -161,7 +176,7 @@ final class PartyService {
         ]
         selectedPartyId = statuses.first?.partyId
         rewards = [
-            PartyBoss.Reward(weekStart: weekStart.addingTimeInterval(-604_800), bossId: "snooze_dragon", energy: 60),
+            PartyBoss.Reward(weekStart: weekStart.addingTimeInterval(-604_800), bossId: "snooze_dragon", energy: 60, tier: .strong, exp: 400),
             PartyBoss.Reward(weekStart: weekStart.addingTimeInterval(-3 * 604_800), bossId: "sloth_slime", energy: 60),
             PartyBoss.Reward(weekStart: weekStart.addingTimeInterval(-7 * 604_800), bossId: "sloth_slime", energy: 60),
         ]
@@ -180,13 +195,16 @@ final class PartyService {
         rewards = rows.compactMap { row in
             guard let ts = row["week_start"] as? Double, let bossId = row["boss_id"] as? String else { return nil }
             return PartyBoss.Reward(weekStart: Date(timeIntervalSince1970: ts), bossId: bossId,
-                                    energy: row["energy"] as? Int ?? 0)
+                                    energy: row["energy"] as? Int ?? 0,
+                                    tier: (row["tier"] as? String).flatMap(PartyBoss.Tier.init(rawValue:)) ?? .medium,
+                                    exp: row["exp"] as? Int ?? 0)
         }
     }
 
     private func storeRewards(userId: UUID) {
         let rows: [[String: Any]] = rewards.map {
-            ["week_start": $0.weekStart.timeIntervalSince1970, "boss_id": $0.bossId, "energy": $0.energy]
+            ["week_start": $0.weekStart.timeIntervalSince1970, "boss_id": $0.bossId, "energy": $0.energy,
+             "tier": $0.tier.rawValue, "exp": $0.exp]
         }
         UserDefaults.standard.set(rows, forKey: rewardsKey(userId))
     }
