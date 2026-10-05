@@ -114,6 +114,80 @@ begin
   raise notice 'party_boss_test: ALL PASSED';
 end $$;
 
+-- 12. ボスのランク（0042）。新しい利用者 J,K,L（10〜12）で1つのパーティを組む
+insert into auth.users select ('00000000-0000-0000-0000-0000000000'||i)::uuid from generate_series(10,12) i;
+insert into public.profiles(id) select ('00000000-0000-0000-0000-0000000000'||i)::uuid from generate_series(10,12) i;
+create function pg_temp.as_user2(n int) returns void language sql as $$
+  select set_config('test.uid', '00000000-0000-0000-0000-0000000000'||n, false)
+$$;
+do $$
+declare pid uuid; ws timestamptz := public.party_week_start(now()); s json; r json; failed boolean;
+begin
+  if to_regproc('public.vote_boss_tier') is null then
+    raise notice 'party_boss_test tier: skipped (0042 未適用)';
+    return;
+  end if;
+  perform pg_temp.as_user2(10); pid := public.create_party(3);     -- J 目標3
+  perform pg_temp.as_user2(11); perform public.join_party(pid, 2);  -- K 目標2
+  perform pg_temp.as_user2(12); perform public.join_party(pid, 2);  -- L 目標2（合計7・3人）
+
+  -- 票がゼロなら中: HP = 合計 7
+  s := public.party_status(pid);
+  assert s->>'tier' = 'medium' and (s->>'hp')::int = 7 and (s->>'reward_exp')::int = 200, '既定は中: '||s;
+
+  -- 今週ぶんの票（先週のうちに入った想定）を直接入れる: 強い2・弱い1 → 強い。HP = 7 + 3人 = 10
+  insert into public.party_tier_votes(party_id, week_start, user_id, tier) values
+    (pid, ws, '00000000-0000-0000-0000-000000000010', 'strong'),
+    (pid, ws, '00000000-0000-0000-0000-000000000011', 'strong'),
+    (pid, ws, '00000000-0000-0000-0000-000000000012', 'weak');
+  s := public.party_status(pid);
+  assert s->>'tier' = 'strong' and (s->>'hp')::int = 10 and (s->>'reward_exp')::int = 400, '多数決で強い: '||s;
+
+  -- 同票（弱い1・強い1・中0）は弱い方。HP = ceil(7 × 0.6) = 5
+  update public.party_tier_votes set tier = 'weak' where user_id = '00000000-0000-0000-0000-000000000011' and party_id = pid;
+  delete from public.party_tier_votes where user_id = '00000000-0000-0000-0000-000000000012' and party_id = pid;
+  -- J 強い・K 弱い の1対1
+  s := public.party_status(pid);
+  assert s->>'tier' = 'weak' and (s->>'hp')::int = 5, '同票は弱い方: '||s;
+
+  -- 抜けた人の票は数えない: L が強いに投票してから抜ける → 弱い1・強い1のまま（弱い）
+  insert into public.party_tier_votes(party_id, week_start, user_id, tier) values (pid, ws, '00000000-0000-0000-0000-000000000012', 'strong');
+  perform pg_temp.as_user2(12); perform public.leave_party(pid);
+  perform pg_temp.as_user2(10);
+  assert public.party_status(pid)->>'tier' = 'weak', '抜けた人の票を数えた';
+  delete from public.party_tier_votes where user_id = '00000000-0000-0000-0000-000000000012' and party_id = pid;
+  perform pg_temp.as_user2(12); perform public.join_party(pid, 2);
+
+  -- 投票 RPC は翌週に入る。自分の票と件数が返る。メンバー以外・不正なランクは拒否
+  perform pg_temp.as_user2(10); perform public.vote_boss_tier(pid, 'strong');
+  perform public.vote_boss_tier(pid, 'medium');  -- 変更できる
+  perform pg_temp.as_user2(11); perform public.vote_boss_tier(pid, 'medium');
+  perform pg_temp.as_user2(10);
+  s := public.party_status(pid);
+  assert s->>'my_next_vote' = 'medium' and ((s->'next_votes')->>'medium')::int = 2 and ((s->'next_votes')->>'strong')::int = 0, '翌週の票: '||s;
+  assert exists (select 1 from public.party_tier_votes where party_id = pid and week_start = ws + interval '7 days'), '翌週に入っていない';
+  assert s->>'tier' = 'weak', '今週のランクは投票で変わらない';
+  failed := false; begin perform public.vote_boss_tier(pid, 'huge'); exception when others then failed := true; end;
+  assert failed, '不正なランクを受け付けた';
+  perform pg_temp.as_user(1);
+  failed := false; begin perform public.vote_boss_tier(pid, 'weak'); exception when others then failed := true; end;
+  assert failed, 'メンバー以外が投票できた';
+
+  -- 弱いボス（HP 5）を J・K・L で倒すと、宝箱の EXP は 100、ランクは weak
+  perform pg_temp.as_user2(10);
+  for i in 1..3 loop
+    insert into public.workouts(user_id, completed_at) values ('00000000-0000-0000-0000-000000000010', now());
+  end loop;
+  insert into public.workouts(user_id, completed_at) values ('00000000-0000-0000-0000-000000000011', now());
+  insert into public.workouts(user_id, completed_at) values ('00000000-0000-0000-0000-000000000012', now());
+  s := public.party_status(pid);
+  assert (s->>'defeated')::bool, '弱いボスが倒れていない: '||s;
+  assert (select tier from public.party_defeats where party_id = pid and week_start = ws) = 'weak', '撃破時のランクが記録されない';
+  r := public.claim_boss_reward(pid, now());
+  assert (r->>'exp')::int = 100 and r->>'tier' = 'weak' and (r->>'energy')::int = 60, '弱いの報酬: '||r;
+  raise notice 'party_boss_test tier: ALL PASSED';
+end $$;
+
 -- 11. RLS と権限（authenticated として。I は1つもパーティに入っていない）
 select pg_temp.as_user(9);
 set role authenticated;
