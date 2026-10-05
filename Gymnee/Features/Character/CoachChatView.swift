@@ -321,7 +321,8 @@ struct CoachChatView: View {
             todayPlan: todayPlan,
             growth: CharacterInputs.growth(
                 completedWorkouts: workouts,
-                pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy, weeklyGoal: weeklyGoal
+                pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy,
+                bossRewardExp: party.rewardExp, weeklyGoal: weeklyGoal
             )
         )
     }

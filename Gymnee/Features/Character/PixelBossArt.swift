@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 週ボスのドット絵（issue #128）。
+/// 週ボスのドット絵（issue #128。ランク別の見た目は #133）。
 ///
 /// 画枠は **16 x 16**（ペットと同じ）。体色は `Ink.accent` / `Ink.accentShade` に寄せてあり、
 /// `palette(bossId:)` の差し替えだけでボスごとの色が変わる（`PixelPetArt` と同じ手）。
@@ -12,7 +12,7 @@ enum PixelBossArt {
     static let canvasHeight = 16
 
     /// サボリスライム。
-    static let slime = PixelSprite([
+    static let slimeRows = [
         "................",
         "................",
         "................",
@@ -29,10 +29,11 @@ enum PixelBossArt {
         ".oRrrrrrrrrrrRo.",
         "..oRRRRRRRRRRo..",
         "...oooooooooo...",
-    ])
+    ]
+    static let slime = PixelSprite(slimeRows)
 
     /// ソファゴーレム。
-    static let couchGolem = PixelSprite([
+    static let couchGolemRows = [
         "................",
         "................",
         "...oooooooooo...",
@@ -49,10 +50,11 @@ enum PixelBossArt {
         "okko........okko",
         "oooo........oooo",
         "................",
-    ])
+    ]
+    static let couchGolem = PixelSprite(couchGolemRows)
 
     /// ネボウドラゴン。
-    static let snoozeDragon = PixelSprite([
+    static let snoozeDragonRows = [
         "................",
         "..oo........oo..",
         "..oRo......oRo..",
@@ -69,10 +71,11 @@ enum PixelBossArt {
         ".orroRRRRRRorro.",
         ".oRo.oRRRRo.oRo.",
         "..o...oooo...o..",
-    ])
+    ]
+    static let snoozeDragon = PixelSprite(snoozeDragonRows)
 
     /// ジャンククラーケン。
-    static let junkKraken = PixelSprite([
+    static let junkKrakenRows = [
         "................",
         ".....oooooo.....",
         "....orrrrrro....",
@@ -89,7 +92,8 @@ enum PixelBossArt {
         "orRo.oRooRo.oRro",
         "oRo..oo..oo..oRo",
         ".o............o.",
-    ])
+    ]
+    static let junkKraken = PixelSprite(junkKrakenRows)
 
     /// ボスの絵。知らない id はスライムにする（サーバーが先にボスを増やしても落ちない）。
     static func sprite(bossId: String) -> PixelSprite {
@@ -99,6 +103,50 @@ enum PixelBossArt {
         case "junk_kraken": return junkKraken
         default: return slime
         }
+    }
+
+    // MARK: - ランク（issue #133）
+
+    /// 強いランクの王冠。体の色と混ざらないよう、ボスの絵が使わない金属（`m`）で描く。
+    static let crownRows = [
+        "....o..oo..o....",
+        "...omoommoomo...",
+        "...ommmmmmmmo...",
+        "...oooooooooo...",
+    ]
+
+    private static func rows(bossId: String) -> [String] {
+        switch bossId {
+        case "couch_golem": return couchGolemRows
+        case "snooze_dragon": return snoozeDragonRows
+        case "junk_kraken": return junkKrakenRows
+        default: return slimeRows
+        }
+    }
+
+    /// ランク込みの絵。強いランクは頭上の空き行を詰めて王冠を載せる（1枚の絵にしてドットの格子をずらさない）。
+    static func sprite(bossId: String, tier: PartyBoss.Tier) -> PixelSprite {
+        guard tier == .strong else { return sprite(bossId: bossId) }
+        let body = rows(bossId: bossId).drop { !$0.contains(where: { $0 != "." }) }
+        return PixelSprite(crownRows + Array(body))
+    }
+
+    /// ランク込みの配色。弱いは淡く、強いは暗い体に赤い目、金の王冠。
+    static func palette(bossId: String, tier: PartyBoss.Tier) -> PixelPalette {
+        var palette = palette(bossId: bossId)
+        switch tier {
+        case .weak:
+            palette.accent = palette.accent.mix(with: .white, by: 0.4)
+            palette.accentShade = palette.accentShade.mix(with: .white, by: 0.4)
+        case .medium:
+            break
+        case .strong:
+            palette.accent = palette.accent.mix(with: Color(hexF: 0x1A0F14), by: 0.35)
+            palette.accentShade = palette.accentShade.mix(with: Color(hexF: 0x1A0F14), by: 0.45)
+            palette.eye = Color(hexF: 0xFF3B30)
+            palette.metal = Color(hexF: 0xF5C542)
+        }
+        return palette
     }
 
     /// ボスごとの配色。体色（accent）とそのかげ（accentShade）だけを差し替える。

@@ -200,6 +200,7 @@ struct CharacterRoomView: View {
         }
         // 宝箱のパワーは @Query の外から来るので、変わったら集計し直す。
         .onChange(of: party.rewardEnergy) { _, _ in refresh() }
+        .onChange(of: party.rewardExp) { _, _ in refresh() }
         .onChange(of: scenePhase) { _, phase in
             // バックグラウンドから戻ったら時間を巻き戻さない（歩いている途中から続く）。
             if phase == .active {
@@ -1253,7 +1254,8 @@ struct CharacterRoomView: View {
         // レベル・段階・元気は**コーチと同じ式**で出す（別々に組むと数字が食い違う）。
         let growth = CharacterInputs.growth(
             completedWorkouts: completedWorkouts,
-            pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy, weeklyGoal: weeklyGoal
+            pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy,
+            bossRewardExp: party.rewardExp, weeklyGoal: weeklyGoal
         )
         let level = growth.level
         let stage = growth.stage
