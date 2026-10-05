@@ -18,7 +18,7 @@ MAGICK="/opt/homebrew/bin/magick"
 TMP="$(mktemp -d)"
 
 # パネル順とファイル名（App Store の表示順 = ファイル名順を想定）
-NAMES=(01-character 02-record 03-boss 04-ai-plan 05-home-calendar 06-body 07-social 08-share)
+NAMES=(01-keyvisual 02-boss 03-vote 04-record 05-character 06-social 07-coach 08-calendar)
 
 # レンダラーは Playwright 同梱の Chromium（初回のみ `npx -y playwright install chromium`）。
 # Chrome.app のバイナリ直接起動は、本体 Chrome が起動中だと競合してハングするため使わない。
@@ -32,14 +32,8 @@ render() { # $1=hash $2=width $3=out
 rm -rf "$OUT69" "$OUT65"
 mkdir -p "$OUT69" "$OUT65"
 
-# 1〜2枚目: パノラマ（2640px）でレンダー → 左右分割
-echo "render #pano (panels 01-02)"
-render pano 2640 "$TMP/pano.png"
-"$MAGICK" "$TMP/pano.png" -crop 1320x2868+0+0 +repage "$OUT69/${NAMES[0]}.png"
-"$MAGICK" "$TMP/pano.png" -crop 1320x2868+1320+0 +repage "$OUT69/${NAMES[1]}.png"
-
-# 3〜8枚目: 個別レンダー
-for i in 3 4 5 6 7 8; do
+# 8枚とも個別レンダー（issue #135 でパノラマはやめた。キャラ素材は promo/sprites/）
+for i in 1 2 3 4 5 6 7 8; do
   hash=$(printf "%02d" "$i")
   name="${NAMES[$((i-1))]}"
   echo "render #$hash -> $name"
