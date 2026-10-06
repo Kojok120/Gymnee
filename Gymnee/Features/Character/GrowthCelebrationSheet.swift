@@ -9,9 +9,14 @@ struct GrowthCelebrationSheet: View {
     /// 姿。**進化段階は `gain.stageAfter` を使う**（集計の反映を待たずに出すため、
     /// 呼び出し側の derived から取ると進化した回に旧段階の姿を描いてしまう）。
     let look: PixelCharacterRenderer.Look
+    /// 週ボスへの攻撃（issue #137。パーティに入っていなければ nil）。
+    var strike: PartyBattle.Strike?
+    /// 「ダンジョンへ」が押された（閉じたあとに戦闘画面を開くのは呼び出し側）。
+    var onOpenBattle: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var appeared = false
+    @State private var struck = false
 
     /// 見出しを祝う回か（進化 or レベルアップ）。紙吹雪と触覚はこのときだけ。
     private var isBig: Bool { gain.didEvolve || gain.didLevelUp }
@@ -41,6 +46,10 @@ struct GrowthCelebrationSheet: View {
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .multilineTextAlignment(.center)
+            }
+
+            if let strike {
+                strikeCard(strike)
             }
 
             Spacer(minLength: 0)
@@ -112,6 +121,50 @@ struct GrowthCelebrationSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .gymneeCard()
+    }
+
+    /// 週ボスへの1撃。ボスが斬られて揺れ、「ダンジョンへ」で戦闘画面を開く。
+    /// 台座は部屋の HUD と同じく常に暗いので、上の色は明色で固定する。
+    private func strikeCard(_ strike: PartyBattle.Strike) -> some View {
+        HStack(spacing: Theme.Spacing.md) {
+            ZStack {
+                BossSpriteView(bossId: strike.bossId, tier: strike.tier, side: 52)
+                    .offset(x: struck ? 0 : 4)
+                    .animation(.spring(response: 0.12, dampingFraction: 0.2).delay(0.5), value: struck)
+                PixelSpriteView(sprite: PixelDungeonArt.slash, palette: PixelDungeonArt.slashPalette, side: 44)
+                    .opacity(struck ? 0 : 1)
+                    .animation(.easeOut(duration: 0.35).delay(0.55), value: struck)
+            }
+            .frame(width: 64, height: 64)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(strike.title)
+                    .font(.pixel(size: 15, relativeTo: .headline))
+                    .foregroundStyle(.white)
+                Text(strike.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+                if onOpenBattle != nil {
+                    Button {
+                        onOpenBattle?()
+                        dismiss()
+                    } label: {
+                        Label("ダンジョンへ", systemImage: "flame.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(Color.black)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, 6)
+                            .background(Color(hexF: 0xC6FF3D), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Theme.Spacing.md)
+        .background(Color(hexF: 0x1B1E27), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .onAppear { struck = true }
     }
 
     /// バーの開始位置。レベルが上がった回は 0 から引き直す（前のレベルのバーから続けると

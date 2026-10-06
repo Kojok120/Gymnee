@@ -18,6 +18,7 @@ struct CharacterRoomView: View {
     @Environment(AppErrorCenter.self) private var errors
     @Environment(NotificationService.self) private var notifications
     @Environment(PartyService.self) private var party
+    @Environment(AuthService.self) private var auth
     @AppStorage("gymnee.weeklyGoal") private var weeklyGoal = 3
     @AppStorage("gymnee.notif.prePrompted") private var notifPrePrompted = false
 
@@ -39,6 +40,10 @@ struct CharacterRoomView: View {
     /// 受け取り演出中の戦利品（道中の出来事つき）。
     @State private var celebrating: ClaimResult?
     @State private var sheet: SheetRoute?
+    /// 週ボスの戦闘画面（issue #137。全画面で開く）。
+    @State private var showBattle = false
+    /// 完了直後の祝いで「ダンジョンへ」が押された（祝いを閉じたら戦闘画面を開く）。
+    @State private var openBattleAfterCelebration = false
     @State private var showNotifPrePrompt = false
     /// キャラのひとこと。タップ or 一定時間で切り替わる。
     @State private var chatter: CharacterChatter.Line?
@@ -74,7 +79,7 @@ struct CharacterRoomView: View {
 
     enum SheetRoute: String, Identifiable {
         /// `body` はキャラ本体をタップしたときに開く人体図（旧「分析」タブ）。
-        case status, expedition, quest, outfit, skins, collection, coach, body, boss
+        case status, expedition, quest, outfit, skins, collection, coach, body
         var id: String { rawValue }
     }
 
@@ -220,7 +225,7 @@ struct CharacterRoomView: View {
         .sheet(item: $celebrating) { result in
             RewardCelebrationView(result: result)
         }
-        .sheet(item: $celebratingGain, onDismiss: presentNextIntro) { gain in
+        .sheet(item: $celebratingGain, onDismiss: afterCelebration) { gain in
             GrowthCelebrationSheet(
                 gain: gain,
                 look: PixelCharacterRenderer.Look(
@@ -229,8 +234,13 @@ struct CharacterRoomView: View {
                     build: derived.build, skin: skin, equipped: equipped, stage: gain.stageAfter,
                     carriesPack: false, nameTag: nil, role: .trainee,
                     hairStyleId: hairStyleId, accessoryId: accessoryId
-                )
+                ),
+                strike: bossStrike,
+                onOpenBattle: { openBattleAfterCelebration = true }
             )
+        }
+        .fullScreenCover(isPresented: $showBattle, onDismiss: presentNextIntro) {
+            BossBattleView(userId: userId, selfLook: battleLook, pet: activePet)
         }
         .sheet(item: $sheet) { route in
             sheetContent(route)
@@ -1025,7 +1035,7 @@ struct CharacterRoomView: View {
             sceneButton("ボディ", "figure.stand", route: .body)
             sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
             // 週ボス（issue #128）。倒したのに宝箱を開けていないときだけ印を点ける。
-            sceneButton("ボス", "flame.fill", route: .boss, badge: party.hasUnclaimedChest)
+            sceneButton("ボス", "flame.fill", badge: party.hasUnclaimedChest) { showBattle = true }
             sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
             sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
             sceneButton("見た目", "paintpalette.fill", route: .skins)
@@ -1047,7 +1057,12 @@ struct CharacterRoomView: View {
     }
 
     private func sceneButton(_ title: String, _ symbol: String, route: SheetRoute, badge: Bool = false, disabled: Bool = false) -> some View {
-        Button { sheet = route } label: {
+        sceneButton(title, symbol, badge: badge, disabled: disabled) { sheet = route }
+    }
+
+    private func sceneButton(_ title: String, _ symbol: String, badge: Bool = false, disabled: Bool = false,
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: symbol)
@@ -1151,8 +1166,6 @@ struct CharacterRoomView: View {
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
-        case .boss:
-            PartyBossSheet(userId: userId)
         case .quest:
             QuestSheet(userId: userId) { sheet = .coach }
         case .coach:
@@ -1226,7 +1239,64 @@ struct CharacterRoomView: View {
         defaults.removeObject(forKey: Self.openBossRequestKey)
         // 祝い・遊び方の案内を出している最中なら、それが終わってから開く（シートは1枚ずつ）。
         guard celebratingGain == nil, !showOnboarding, introQueue.isEmpty else { return }
-        sheet = .boss
+        guard sheet != nil else {
+            showBattle = true
+            return
+        }
+        // ほかのシートを閉じきってから全画面を出す（同時に出すと表示が取りこぼされる）。
+        sheet = nil
+        Task {
+            try? await Task.sleep(for: .seconds(0.5))
+            showBattle = true
+        }
+    }
+
+    /// 祝いを閉じたあと。「ダンジョンへ」が押されていたら戦闘画面を開き、残りの案内は戦闘画面を閉じてから出す。
+    private func afterCelebration() {
+        if openBattleAfterCelebration {
+            openBattleAfterCelebration = false
+            showBattle = true
+        } else {
+            presentNextIntro()
+        }
+    }
+
+    /// 完了直後の祝いに出す「ボスに攻撃」（パーティに入っていなければ nil）。今週の回数は端末の記録が正。
+    private var bossStrike: PartyBattle.Strike? {
+        guard auth.isPermanentAccount || isDemo else { return nil }
+        return PartyBattle.strike(
+            statuses: party.statuses,
+            weekHits: PartyBattle.weekHits(completedAt: completedWorkouts.compactMap(\.completedAt), now: .now),
+            weeklyGoal: weeklyGoal
+        )
+    }
+
+    /// 戦闘画面に立つ自分の姿（遠征の荷物は背負わない）。
+    private var battleLook: PixelCharacterRenderer.Look {
+        PixelCharacterRenderer.Look(
+            build: derived.build, skin: skin, equipped: equipped, stage: derived.stage,
+            carriesPack: false, nameTag: nil, role: .trainee,
+            hairStyleId: hairStyleId, accessoryId: accessoryId
+        )
+    }
+
+    /// デモ（DEBUG の画面確認）中か。
+    private var isDemo: Bool {
+        #if DEBUG
+        return DebugSupport.demoRequested
+        #else
+        return false
+        #endif
+    }
+
+    /// 自分の見た目をサーバーに載せる（仲間の戦闘画面で本人の姿を描くため）。同じ見た目なら送らない。
+    private func publishLook() {
+        guard auth.isPermanentAccount else { return }
+        let look = PartyBoss.MemberLook(
+            build: derived.build, skinId: skin.id, stage: derived.stage,
+            hairStyleId: hairStyleId, accessoryId: accessoryId, equipped: equipped
+        )
+        Task { await party.publishLook(look, userId: userId) }
     }
 
     /// 撃破通知から「ボス画面を開く」を持ち越すキー（RootView が立て、ここで消す）。
@@ -1288,6 +1358,7 @@ struct CharacterRoomView: View {
         }.count
         next.dropMultiplier = RoomPickup.multiplier(lastWeekCount: lastWeekCount, weeklyGoal: weeklyGoal)
         derived = next
+        publishLook()
     }
 
     // MARK: - 操作

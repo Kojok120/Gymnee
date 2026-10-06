@@ -164,9 +164,13 @@ struct RootView: View {
         case "promo-sheet-0": PromoArtSheet(page: 0)
         case "promo-sheet-1": PromoArtSheet(page: 1)
         case "promo-sheet-2": PromoArtSheet(page: 2)
-        case "boss", "boss-defeated":
-            PartyBossSheet(userId: userId)
-                .onAppear { party.loadDemo(userId: userId, defeated: name == "boss-defeated") }
+        // 週ボスの戦闘画面（issue #137）。サーバーに行かずデモの状況で描く。
+        case "boss", "boss-defeated", "boss-solo":
+            BossBattleView(userId: userId, selfLook: Self.demoBattleLook, pet: PetCatalog.all.first)
+                .onAppear { party.loadDemo(userId: userId, defeated: name == "boss-defeated", solo: name == "boss-solo") }
+        case "boss-menu":
+            PartyMenuSheet(userId: userId)
+                .onAppear { party.loadDemo(userId: userId, defeated: false) }
         // タブバー込みのレイアウト検証用。単体表示では safe area にタブバーが乗らず、
         // ボタンとタブバーの重なり（実機で発覚した不具合）を再現できないため。
         case "character-tab":
@@ -202,6 +206,8 @@ struct RootView: View {
                         volumeByMuscle: [.chest: 4200, .arms: 1800],
                         prCount: 1
                     ))
+                    // 祝いに出る「ボスに攻撃」（issue #137）の見え方も確かめる。
+                    party.loadDemo(userId: userId, defeated: false)
                     NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
                 }
         case "pixelart": PixelArtGallery(section: .character)
@@ -225,6 +231,14 @@ struct RootView: View {
         default: mainTabs
         }
     }
+
+    /// 戦闘画面のハーネス用の自分の姿。
+    private static let demoBattleLook = PixelCharacterRenderer.Look(
+        build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
+        skin: SkinCatalog.skin(id: "gymnee"),
+        equipped: [.head: Expedition.item(id: "cap")!, .hand: Expedition.item(id: "power-grip")!],
+        stage: .challenger, carriesPack: false, nameTag: nil, role: .trainee
+    )
 
     /// 見た目シートのハーネス。所持ゼロ・価格は控えの値で、購入できる状態の見え方を確認する。
     @ViewBuilder
