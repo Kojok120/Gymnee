@@ -131,6 +131,47 @@ final class PartyService {
         await refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false)
     }
 
+    // MARK: - 戦闘画面（issue #137）
+
+    /// 自分のキャラの見た目を載せる。前回送った見た目と同じなら送らない（部屋を開くたびに呼ばれる）。
+    func publishLook(_ look: PartyBoss.MemberLook, userId: UUID) async {
+        guard !isDemo, let client, await client.isAuthenticated else { return }
+        let key = "gymnee.party.look.\(userId.uuidString.lowercased())"
+        guard UserDefaults.standard.string(forKey: key) != look.fingerprint else { return }
+        do {
+            try await client.setCharacterLook(look.json)
+            UserDefaults.standard.set(look.fingerprint, forKey: key)
+        } catch {
+            // 次に部屋を開いたときに送り直す。
+        }
+    }
+
+    /// 戦闘画面で再生し終えた攻撃（パーティごと、今週の分だけ）。次に開いたときは新しい攻撃だけを再生する。
+    func seenAttackIds(partyId: UUID, weekStart: Date) -> Set<String> {
+        if isDemo { return demoSeen[partyId] ?? [] }
+        guard let row = UserDefaults.standard.dictionary(forKey: seenKey(partyId)),
+              (row["week"] as? Double) == weekStart.timeIntervalSince1970
+        else { return [] }
+        return Set(row["ids"] as? [String] ?? [])
+    }
+
+    func markSeen(_ ids: [String], partyId: UUID, weekStart: Date) {
+        guard !ids.isEmpty else { return }
+        let merged = seenAttackIds(partyId: partyId, weekStart: weekStart).union(ids)
+        if isDemo {
+            demoSeen[partyId] = merged
+            return
+        }
+        // 週が替わったら前の週の分は捨てる（1パーティの1週は最大 5人 × 数回なので小さい）。
+        UserDefaults.standard.set(["week": weekStart.timeIntervalSince1970, "ids": Array(merged)], forKey: seenKey(partyId))
+    }
+
+    private func seenKey(_ partyId: UUID) -> String { "gymnee.party.seen.\(partyId.uuidString.lowercased())" }
+
+    /// デモ（DEBUG の画面確認）中か。端末に何も残さない。
+    private var isDemo = false
+    private var demoSeen: [UUID: Set<String>] = [:]
+
     /// 設定で週目標を変えたとき、全パーティの HP に反映する（入っていなければ何もしない）。
     func syncWeeklyGoal(_ weeklyGoal: Int) async {
         guard let client, await client.isAuthenticated else { return }
@@ -147,33 +188,78 @@ final class PartyService {
 
     #if DEBUG
     /// 画面確認用のデモ状態（`-gymneeScreen boss` / `boss-defeated`）。サーバー無しで描画を確かめる。
-    func loadDemo(userId: UUID, defeated: Bool) {
+    /// 攻撃の内訳はサーバーと同じ規則（`PartyBoss.score`）で組み立てる。
+    func loadDemo(userId: UUID, defeated: Bool, solo: Bool = false) {
+        isDemo = true
+        demoSeen = [:]
         let weekStart = PartyBoss.weekStart(for: .now)
-        func party(_ name: String?, _ members: [PartyBoss.Member], defeated: Bool,
+        let kenta = UUID(uuidString: "00000000-0000-0000-0000-0000000000a1")!
+        let saki = UUID(uuidString: "00000000-0000-0000-0000-0000000000a2")!
+        let haruka = UUID(uuidString: "00000000-0000-0000-0000-0000000000a3")!
+        func at(_ day: Int, _ hour: Int) -> Date {
+            weekStart.addingTimeInterval(TimeInterval(day * 86_400 + hour * 3_600))
+        }
+        func attack(_ user: UUID, _ date: Date, _ category: PartyBoss.Category) -> PartyBoss.RawAttack {
+            PartyBoss.RawAttack(workoutId: UUID(), userId: user, completedAt: date, category: category)
+        }
+        func party(_ name: String?, _ members: [PartyBoss.Member], raw: [PartyBoss.RawAttack],
                    tier: PartyBoss.Tier = .medium) -> PartyBoss.Status {
             let hp = tier.hp(goals: members.map(\.weeklyGoal))
+            let attacks = PartyBoss.score(raw, fighters: members.map {
+                PartyBoss.Fighter(id: $0.id, weeklyGoal: $0.weeklyGoal, job: $0.job)
+            })
+            let damage = attacks.reduce(0) { $0 + $1.total }
             var status = PartyBoss.Status(
                 partyId: UUID(), name: name, weekStart: weekStart, bossId: PartyBoss.bossId(forWeekStart: weekStart),
-                hp: hp, damage: min(hp, members.reduce(0) { $0 + $1.damage }),
-                defeated: defeated, claimed: false, members: members
+                hp: hp, damage: damage, defeated: damage >= hp, claimed: false, members: members
             )
             status.tier = tier
             status.rewardExp = tier.rewardExp
             status.nextVotes = [.weak: 0, .medium: 1, .strong: 1]
             status.myNextVote = .strong
+            status.attacks = attacks
             return status
+        }
+        func member(_ id: UUID, _ name: String, goal: Int, hits: Int, job: PartyBoss.Job,
+                    look: PartyBoss.MemberLook? = nil, live: Bool = false) -> PartyBoss.Member {
+            var m = PartyBoss.Member(id: id, displayName: name, avatarURL: nil, weeklyGoal: goal, hits: hits)
+            m.job = job
+            m.look = look
+            m.liveSessionId = live ? UUID() : nil
+            return m
+        }
+        let kentaLook = PartyBoss.MemberLook(
+            build: CharacterBuild(girth: .wide, arm: .thick, leg: .thin), skinId: "sunset", stage: .challenger,
+            hairStyleId: "short", accessoryId: "none",
+            equipped: [.head: Expedition.item(id: "sweat-band")!, .waist: Expedition.item(id: "lifting-belt")!]
+        )
+        let sakiLook = PartyBoss.MemberLook(
+            build: CharacterBuild(girth: .slim, arm: .thin, leg: .thick), skinId: "midnight", stage: .trainee,
+            hairStyleId: "ponytail", accessoryId: "none", equipped: [.aura: Expedition.item(id: "sweat-aura")!]
+        )
+        var gymRaw = [
+            attack(userId, at(0, 7), .upper),
+            attack(kenta, at(0, 20), .lower),
+            attack(saki, at(1, 6), .cardio),
+        ]
+        if defeated {
+            gymRaw += [attack(kenta, at(1, 19), .lower), attack(userId, at(1, 21), .upper), attack(saki, at(1, 22), .cardio)]
         }
         statuses = [
             party("ジム仲間", [
-                PartyBoss.Member(id: userId, displayName: "こうじ", avatarURL: nil, weeklyGoal: 3, hits: defeated ? 4 : 2),
-                PartyBoss.Member(id: UUID(), displayName: "けんたろう", avatarURL: nil, weeklyGoal: 2, hits: defeated ? 3 : 1),
-                PartyBoss.Member(id: UUID(), displayName: "さき", avatarURL: nil, weeklyGoal: 4, hits: defeated ? 5 : 1),
-            ], defeated: defeated, tier: defeated ? .strong : .weak),
+                member(userId, "こうじ", goal: 3, hits: defeated ? 2 : 1, job: .warrior),
+                member(kenta, "けんたろう", goal: 2, hits: defeated ? 2 : 1, job: .monk, look: kentaLook, live: !defeated),
+                member(saki, "さき", goal: 2, hits: defeated ? 2 : 1, job: .thief, look: sakiLook),
+            ], raw: gymRaw, tier: defeated ? .weak : .medium),
             party(nil, [
-                PartyBoss.Member(id: userId, displayName: "こうじ", avatarURL: nil, weeklyGoal: 3, hits: defeated ? 4 : 2),
-                PartyBoss.Member(id: UUID(), displayName: "はるか", avatarURL: nil, weeklyGoal: 2, hits: 2),
-            ], defeated: true),
+                member(userId, "こうじ", goal: 3, hits: 1, job: .warrior),
+                member(haruka, "はるか", goal: 2, hits: 2, job: .priest),
+            ], raw: [attack(userId, at(0, 7), .upper), attack(haruka, at(0, 12), .core), attack(haruka, at(1, 12), .core)]),
         ]
+        if solo {
+            statuses = [party(nil, [member(userId, "こうじ", goal: 3, hits: 1, job: .warrior)],
+                              raw: [attack(userId, at(0, 7), .upper)])]
+        }
         selectedPartyId = statuses.first?.partyId
         rewards = [
             PartyBoss.Reward(weekStart: weekStart.addingTimeInterval(-604_800), bossId: "snooze_dragon", energy: 60, tier: .strong, exp: 400),

@@ -122,8 +122,15 @@ enum PartyBoss {
         let weeklyGoal: Int
         /// 今週完了したワークアウトの回数。
         let hits: Int
+        /// 今週のジョブ（issue #137。0043 より前のサーバーは返さないので勇者）。
+        var job: Job = .hero
+        /// 本人が載せた見た目（未送信・旧版は nil。画面は ID から決まる色で描く）。
+        var look: MemberLook?
+        /// トレ中の配信（見える相手だけサーバーが返す）。応援の宛先。
+        var liveSessionId: UUID?
 
-        /// ボスに入ったダメージ。1人あたり「目標 + 1」で頭打ち（サーバーの `party_damage` と同じ）。
+        /// 基本のダメージ。1人あたり「目標 + 1」で頭打ち（サーバーの `party_attacks.base` と同じ）。
+        /// 連携とスキルの上乗せは `Status.attacks` にある。
         var damage: Int { PartyBoss.cappedDamage(hits: hits, weeklyGoal: weeklyGoal) }
     }
 
@@ -145,6 +152,8 @@ enum PartyBoss {
         /// 翌週のランクへの票（いまのメンバーの分だけ）と、自分の票。
         var nextVotes: [Tier: Int] = [:]
         var myNextVote: Tier?
+        /// 今週の攻撃（完了順。issue #137）。合計が `damage` になる。0043 より前のサーバーは返さない。
+        var attacks: [Attack] = []
 
         var id: UUID { partyId }
         var boss: Boss? { PartyBoss.boss(id: bossId) }
@@ -161,6 +170,13 @@ enum PartyBoss {
         var canInvite: Bool { members.count < PartyBoss.maxMembers }
         /// 宝箱を開けられる（倒したのにまだ受け取っていない）。育成タブのボタンのバッジにも使う。
         var hasUnclaimedChest: Bool { defeated && !claimed }
+        /// 今週の連携攻撃の回数（＝連携が成立した日数）。
+        var comboCount: Int { attacks.reduce(0) { $0 + $1.combo } }
+        /// そのメンバーが今週スキルを出したか。
+        func skillTriggered(by memberId: UUID) -> Bool {
+            attacks.contains { $0.userId == memberId && $0.skill > 0 }
+        }
+        func member(_ id: UUID) -> Member? { members.first { $0.id == id } }
     }
 
     static func cappedDamage(hits: Int, weeklyGoal: Int) -> Int {
@@ -177,13 +193,17 @@ enum PartyBoss {
         else { return nil }
         let members = (row["members"] as? [[String: Any]] ?? []).compactMap { m -> Member? in
             guard let id = (m["user_id"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
-            return Member(
+            var member = Member(
                 id: id,
                 displayName: (m["display_name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "メンバー",
                 avatarURL: m["avatar_url"] as? String,
                 weeklyGoal: (m["weekly_goal"] as? NSNumber)?.intValue ?? 3,
                 hits: (m["hits"] as? NSNumber)?.intValue ?? 0
             )
+            member.job = (m["job"] as? String).flatMap(Job.init(rawValue:)) ?? .hero
+            member.look = MemberLook(json: m["look"])
+            member.liveSessionId = (m["live_session_id"] as? String).flatMap(UUID.init(uuidString:))
+            return member
         }
         let tier = (row["tier"] as? String).flatMap(Tier.init(rawValue:)) ?? .medium
         let votes = row["next_votes"] as? [String: Any] ?? [:]
@@ -204,6 +224,7 @@ enum PartyBoss {
             ($0, (votes[$0.rawValue] as? NSNumber)?.intValue ?? 0)
         })
         status.myNextVote = (row["my_next_vote"] as? String).flatMap(Tier.init(rawValue:))
+        status.attacks = (row["attacks"] as? [[String: Any]] ?? []).compactMap(Attack.init(json:))
         return status
     }
 

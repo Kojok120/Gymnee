@@ -118,6 +118,14 @@ async function pushToUsers(
   return sent;
 }
 
+// 週ボスの名前（アプリの PartyBoss.catalog と同じ並び）。
+const BOSS_NAMES: Record<string, string> = {
+  sloth_slime: "サボリスライム",
+  couch_golem: "ソファゴーレム",
+  snooze_dragon: "ネボウドラゴン",
+  junk_kraken: "ジャンククラーケン",
+};
+
 Deno.serve(async (req) => {
   // DB トリガー以外からの呼び出しを拒否（共有シークレット照合）。
   if (PUSH_SHARED_SECRET && req.headers.get("X-Push-Secret") !== PUSH_SHARED_SECRET) {
@@ -136,6 +144,7 @@ Deno.serve(async (req) => {
     partyId?: string;
     bossId?: string;
     defeatedBy?: string;
+    attackerId?: string;
   };
   try {
     payload = await req.json();
@@ -206,19 +215,44 @@ Deno.serve(async (req) => {
     ]);
     const muted = new Set((prefs ?? []).filter((p) => p.notify_party === false).map((p) => p.id as string));
     const targets = others.filter((id) => !muted.has(id));
-    const bossNames: Record<string, string> = {
-      sloth_slime: "サボリスライム",
-      couch_golem: "ソファゴーレム",
-      snooze_dragon: "ネボウドラゴン",
-      junk_kraken: "ジャンククラーケン",
-    };
-    const bossName = bossNames[payload.bossId ?? ""] ?? "今週のボス";
+    const bossName = BOSS_NAMES[payload.bossId ?? ""] ?? "今週のボス";
     const name = profile?.display_name ?? "メンバー";
     // 複数のパーティに入れるので、どのパーティの撃破かを題名に入れる（名前が無ければ省く）。
     const partyName = (party?.name as string | null) ?? null;
     const title = partyName ? `${partyName}で${bossName}を倒しました！` : `${bossName}を倒しました！`;
     const sent = await pushToUsers(
       db, targets, title, `${name}さんの一撃でとどめ。宝箱を開けましょう`,
+      { type: "boss", partyId },
+    );
+    return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });
+  }
+
+  // --- 週ボスのあと1撃 → 攻撃した本人以外のメンバーへ通知（issue #137） ---
+  // 判定（この1回で残り HP がちょうど 1 になったか・パーティ×週で1回）は DB トリガー側で済ませてある。
+  if (event === "boss_reach") {
+    const partyId = payload.partyId;
+    const attackerId = payload.attackerId;
+    if (!partyId || !attackerId) return new Response("missing partyId/attackerId", { status: 400 });
+    const { data: members } = await db.from("party_members").select("user_id").eq("party_id", partyId);
+    const memberIds = (members ?? []).map((m) => m.user_id as string);
+    if (!memberIds.includes(attackerId)) {
+      return new Response(JSON.stringify({ sent: 0, reason: "not a member" }), { status: 200 });
+    }
+    const others = memberIds.filter((id) => id !== attackerId);
+    if (others.length === 0) return new Response(JSON.stringify({ sent: 0, reason: "solo" }), { status: 200 });
+    const [{ data: prefs }, { data: profile }, { data: party }] = await Promise.all([
+      db.from("profiles").select("id, notify_party").in("id", others),
+      db.from("profiles").select("display_name").eq("id", attackerId).single(),
+      db.from("parties").select("name").eq("id", partyId).single(),
+    ]);
+    const muted = new Set((prefs ?? []).filter((p) => p.notify_party === false).map((p) => p.id as string));
+    const targets = others.filter((id) => !muted.has(id));
+    const bossName = BOSS_NAMES[payload.bossId ?? ""] ?? "今週のボス";
+    const name = profile?.display_name ?? "メンバー";
+    const partyName = (party?.name as string | null) ?? null;
+    const title = partyName ? `${partyName}: あと1撃で${bossName}を倒せる！` : `あと1撃で${bossName}を倒せる！`;
+    const sent = await pushToUsers(
+      db, targets, title, `${name}さんの攻撃で残り HP 1。トレーニング1回でとどめです`,
       { type: "boss", partyId },
     );
     return new Response(JSON.stringify({ sent }), { headers: { "content-type": "application/json" } });

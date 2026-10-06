@@ -75,8 +75,23 @@ struct PixelArtGallery: View {
                         BossSpriteView(bossId: cell.boss.id, tier: cell.tier, side: 56)
                     }
                 }
+                // 戦闘画面の小物（issue #137）。
+                ForEach(Array(dungeonCells.enumerated()), id: \.offset) { _, cell in
+                    labelled(cell.name) {
+                        PixelSpriteView(sprite: cell.sprite, palette: cell.palette, side: 48)
+                    }
+                }
             }
         }
+    }
+
+    private var dungeonCells: [(name: String, sprite: PixelSprite, palette: PixelPalette)] {
+        PixelDungeonArt.flameFrames.enumerated().map { ("松明の炎 \($0.offset + 1)", $0.element, PixelDungeonArt.palette) }
+            + [
+                ("松明の受け皿", PixelDungeonArt.bracket, PixelDungeonArt.palette),
+                ("斬撃", PixelDungeonArt.slash, PixelDungeonArt.palette),
+                ("怒り", PixelDungeonArt.anger, PixelDungeonArt.angerPalette),
+            ]
     }
 
     private var bossCells: [(id: String, boss: PartyBoss.Boss, tier: PartyBoss.Tier)] {

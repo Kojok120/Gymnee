@@ -51,6 +51,14 @@ final class PixelSpriteTests: XCTestCase {
                 list.append(("boss-\(boss.id)-\(tier.rawValue)", PixelBossArt.sprite(bossId: boss.id, tier: tier)))
             }
         }
+        for (index, frame) in PixelDungeonArt.flameFrames.enumerated() {
+            list.append(("dungeon-flame-\(index)", frame))
+        }
+        list += [
+            ("dungeon-bracket", PixelDungeonArt.bracket),
+            ("dungeon-slash", PixelDungeonArt.slash),
+            ("dungeon-anger", PixelDungeonArt.anger),
+        ]
         for item in Expedition.items {
             list.append(("item-\(item.id)", PixelItemArt.icon(for: item)))
         }
