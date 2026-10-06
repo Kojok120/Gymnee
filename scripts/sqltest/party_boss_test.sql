@@ -1,4 +1,5 @@
--- 週ボス（0040 + 0041 複数パーティ）の検証シナリオ。失敗すると assert で止まる（ON_ERROR_STOP）。
+-- 週ボス（0040 + 0041 複数パーティ + 0042 ランク）の検証シナリオ。失敗すると assert で止まる（ON_ERROR_STOP）。
+-- 0043 でダメージにボーナス（連携・スキル）が入ったので、0043 込みの規則は boss_battle_test.sql で確かめる。
 grant usage on schema public, auth, net to authenticated;
 grant select on all tables in schema public to authenticated;
 grant execute on function auth.uid() to authenticated;
