@@ -178,6 +178,61 @@ final class PartyBossTests: XCTestCase {
         XCTAssertEqual(PartyBoss.parseTimestamp("2026-10-04T15:00:00.000Z"), expected)
     }
 
+    // MARK: - 育成タブの入口（issue #139）
+
+    private func entryStatus(boss: String = "snooze_dragon", hp: Int = 20, damage: Int, claimed: Bool = false,
+                             tier: PartyBoss.Tier = .medium) -> PartyBoss.Status {
+        var s = PartyBoss.Status(
+            partyId: UUID(), name: nil, weekStart: jst("2026-10-05T00:00:00+09:00"), bossId: boss,
+            hp: hp, damage: damage, defeated: damage >= hp, claimed: claimed, members: []
+        )
+        s.tier = tier
+        return s
+    }
+
+    func testEntryWithoutPartyUsesThisWeeksBoss() {
+        let entry = PartyBoss.entry(statuses: [], selected: nil, now: jst("2026-10-07T12:00:00+09:00"))
+        XCTAssertEqual(entry.bossId, "junk_kraken", "パーティが無くても週のボスを出す")
+        XCTAssertEqual(entry.detail, "ジャンククラーケン")
+        XCTAssertEqual(entry.title, "ボスに挑む")
+        XCTAssertNil(entry.gauge)
+        XCTAssertFalse(entry.hasChest)
+    }
+
+    func testEntryShowsRemainingHPWhileFighting() {
+        let fighting = entryStatus(hp: 20, damage: 5, tier: .strong)
+        let entry = PartyBoss.entry(statuses: [fighting], selected: fighting, now: .now)
+        XCTAssertEqual(entry.title, "ボスに挑む")
+        XCTAssertEqual(entry.detail, "ネボウドラゴン")
+        XCTAssertEqual(entry.tier, .strong)
+        XCTAssertEqual(entry.gauge, PartyBoss.Entry.Gauge(remaining: 15, total: 20))
+        XCTAssertEqual(entry.gauge?.ratio ?? 0, 0.75, accuracy: 0.0001)
+    }
+
+    func testEntryPrefersUnclaimedChestOfAnyParty() {
+        // 見ているパーティは戦闘中でも、別のパーティの宝箱を先に知らせる。
+        let fighting = entryStatus(damage: 5)
+        let chest = entryStatus(hp: 10, damage: 12, tier: .weak)
+        let entry = PartyBoss.entry(statuses: [fighting, chest], selected: fighting, now: .now)
+        XCTAssertEqual(entry.title, "宝箱を開ける")
+        XCTAssertEqual(entry.detail, "ネボウドラゴンを倒した！")
+        XCTAssertEqual(entry.tier, .weak, "絵は宝箱のあるパーティのランク")
+        XCTAssertNil(entry.gauge)
+        XCTAssertTrue(entry.hasChest)
+    }
+
+    func testEntryAfterClaimedDefeat() {
+        let done = entryStatus(hp: 10, damage: 10, claimed: true)
+        let entry = PartyBoss.entry(statuses: [done], selected: done, now: .now)
+        XCTAssertEqual(entry.title, "今週は撃破済み")
+        XCTAssertNil(entry.gauge)
+        XCTAssertFalse(entry.hasChest)
+    }
+
+    func testEntryGaugeRatioWithZeroHP() {
+        XCTAssertEqual(PartyBoss.Entry.Gauge(remaining: 0, total: 0).ratio, 0, "HP 0 で割らない")
+    }
+
     // MARK: - 招待リンク
 
     func testPartyInviteLinkRoundTripAndAppScheme() {

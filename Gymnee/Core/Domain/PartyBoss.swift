@@ -245,6 +245,50 @@ enum PartyBoss {
         return String(trimmed.prefix(maxNameLength))
     }
 
+    // MARK: - 育成タブの入口（issue #139）
+
+    /// 育成タブのボスのボタンに出す中身。
+    struct Entry: Equatable, Sendable {
+        struct Gauge: Equatable, Sendable {
+            let remaining: Int
+            let total: Int
+            var ratio: Double { total > 0 ? Double(remaining) / Double(total) : 0 }
+        }
+
+        let bossId: String
+        let tier: Tier
+        let title: String
+        /// ボスの名前（倒したあとは「〜を倒した」）。
+        let detail: String
+        /// 残りHP。戦っている最中だけ（パーティが無い・読めていない・倒したあとは nil）。
+        let gauge: Gauge?
+        /// 宝箱を開けられる（ボタンの印）。
+        let hasChest: Bool
+    }
+
+    /// 入口の中身を決める。宝箱はどのパーティの分でも最優先で知らせる（開けるまで報酬が入らない）。
+    /// パーティがまだ無い・読めていないときも、今週のボスは週から決まるので名前と絵は出せる。
+    static func entry(statuses: [Status], selected: Status?, now: Date) -> Entry {
+        let chest = statuses.first(where: \.hasUnclaimedChest)
+        let shown = chest ?? selected
+        let bossId = shown?.bossId ?? bossId(forWeekStart: weekStart(for: now))
+        let tier = shown?.tier ?? .medium
+        let name = boss(id: bossId)?.name ?? "今週のボス"
+        guard let shown else {
+            return Entry(bossId: bossId, tier: tier, title: "ボスに挑む", detail: name, gauge: nil, hasChest: false)
+        }
+        if chest != nil {
+            return Entry(bossId: bossId, tier: tier, title: "宝箱を開ける", detail: "\(name)を倒した！", gauge: nil, hasChest: true)
+        }
+        if shown.defeated {
+            return Entry(bossId: bossId, tier: tier, title: "今週は撃破済み", detail: "\(name)を倒した", gauge: nil, hasChest: false)
+        }
+        return Entry(
+            bossId: bossId, tier: tier, title: "ボスに挑む", detail: name,
+            gauge: Entry.Gauge(remaining: shown.remainingHP, total: shown.hp), hasChest: false
+        )
+    }
+
     // MARK: - 報酬と図鑑
 
     struct Reward: Equatable, Sendable {

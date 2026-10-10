@@ -176,7 +176,7 @@ xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 # Debug ビルドの bundle id は .dev サフィックス付き（com.gymnee.app は Release）
 # name（RootView.debugScreen が正）:
 #   記録系   : record（=workout）/ logger / history / calendar / body / photos
-#   育成系   : character / character-tab / coach / growth（完了直後の祝い）/
+#   育成系   : character / character-tab（-boss / -chest でボスの入口の状態違い）/ coach / growth（完了直後の祝い）/
 #              appearance / appearance-color / appearance-accessory / appearance-pet /
 #              boss / boss-defeated / boss-solo（週ボスの戦闘画面）/ boss-menu（パーティのメニュー）
 #   ドット絵 : pixelart / pixelart-items / pixelart-room / pixelart-pets
