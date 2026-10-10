@@ -946,7 +946,8 @@ struct CharacterRoomView: View {
 
     // MARK: - HUD
 
-    private var hudHeight: CGFloat { 132 }
+    /// 下部ボタン（ボスの入口＋行）が占める高さの目安。キャラの歩ける下限に使う。
+    private var hudHeight: CGFloat { 190 }
 
     private func hud(size: CGSize, bottomInset: CGFloat) -> some View {
         VStack(spacing: 0) {
@@ -1028,20 +1029,100 @@ struct CharacterRoomView: View {
     }
 
     private var actionBar: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            // ステータスは左上の Lv バッジが同じシートを開くので、ここには置かない。
-            // 空いた枠は「からだ」（人体図）に充てる。キャラ本体のタップだけだと、
-            // 押せることに気づかないと一生たどり着けない。
-            sceneButton("ボディ", "figure.stand", route: .body)
-            sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
-            // 週ボス（issue #128）。倒したのに宝箱を開けていないときだけ印を点ける。
-            sceneButton("ボス", "flame.fill", badge: party.hasUnclaimedChest) { showBattle = true }
-            sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
-            sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
-            sceneButton("見た目", "paintpalette.fill", route: .skins)
+        VStack(spacing: Theme.Spacing.md) {
+            bossEntryButton
+            HStack(spacing: Theme.Spacing.md) {
+                // ステータスは左上の Lv バッジが同じシートを開くので、ここには置かない。
+                // 空いた枠は「からだ」（人体図）に充てる。キャラ本体のタップだけだと、
+                // 押せることに気づかないと一生たどり着けない。
+                sceneButton("ボディ", "figure.stand", route: .body)
+                sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
+                sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
+                sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
+                sceneButton("見た目", "paintpalette.fill", route: .skins)
+            }
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.bottom, Theme.Spacing.xl)
+        .padding(.bottom, Theme.Spacing.lg)
+    }
+
+    /// 週ボスの入口の塗り。戦闘画面の HP バー（橙）と強いランクの印（赤）に揃える。
+    /// 自前の色で完結させ、台座（hudPlate）とも Lime とも被らないようにする。
+    private static let bossRed = Color(hexF: 0xD63B3B)
+    private static let bossOrange = Color(hexF: 0xFF8A3D)
+
+    /// 週ボスの入口（issue #139）。ほかのボタンと同じ大きさで並べると埋もれるので、
+    /// 行の上に横長で置き、今週のボスの絵と残りHPで「いま殴りに行ける」ことを伝える。
+    private var bossEntryButton: some View {
+        let entry = PartyBoss.entry(statuses: party.statuses, selected: party.status, now: .now)
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous)
+        return Button { showBattle = true } label: {
+            HStack(spacing: Theme.Spacing.md) {
+                BossSpriteView(bossId: entry.bossId, tier: entry.tier, side: 38)
+                    .frame(width: 40, height: 40)
+                    .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(entry.title)
+                        .font(.pixel(size: 16, relativeTo: .headline))
+                        .foregroundStyle(.white)
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Text(entry.detail)
+                            .font(.pixel(size: 11, relativeTo: .caption2))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .lineLimit(1)
+                        if let gauge = entry.gauge {
+                            bossGauge(gauge)
+                        }
+                    }
+                }
+                .shadow(color: .black.opacity(0.35), radius: 1, y: 1)
+
+                Spacer(minLength: 0)
+
+                Image(systemName: entry.hasChest ? "gift.fill" : "chevron.right")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(
+                LinearGradient(colors: [Self.bossRed, Self.bossOrange], startPoint: .leading, endPoint: .trailing),
+                in: shape
+            )
+            .overlay(shape.strokeBorder(.white.opacity(0.35), lineWidth: 1))
+            .overlay(alignment: .topTrailing) {
+                // 倒したのに宝箱を開けていないときの印（ほかのボタンの印と同じライム）。
+                if entry.hasChest {
+                    Circle()
+                        .fill(Self.hudAccent)
+                        .frame(width: 12, height: 12)
+                        .offset(x: 3, y: -3)
+                }
+            }
+            .shadow(color: Self.bossRed.opacity(0.5), radius: 10, y: 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(entry.title)、\(entry.detail)")
+        .accessibilityValue(entry.gauge.map { "残りHP \($0.remaining) / \($0.total)" } ?? "")
+    }
+
+    /// 入口に出す残りHP。塗りの上で読めるよう、バーは白で描く。
+    private func bossGauge(_ gauge: PartyBoss.Entry.Gauge) -> some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            ZStack(alignment: .leading) {
+                Capsule().fill(.black.opacity(0.3))
+                Capsule().fill(.white)
+                    .frame(width: 56 * max(0.04, gauge.ratio))
+            }
+            .frame(width: 56, height: 6)
+            Text("\(gauge.remaining)/\(gauge.total)")
+                .font(.pixel(size: 11, relativeTo: .caption2))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+        }
     }
 
     /// 今日のクエストがあるか（下部ボタンの印）。
