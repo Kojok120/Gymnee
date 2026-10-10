@@ -173,7 +173,9 @@ struct RootView: View {
                 .onAppear { party.loadDemo(userId: userId, defeated: false) }
         // タブバー込みのレイアウト検証用。単体表示では safe area にタブバーが乗らず、
         // ボタンとタブバーの重なり（実機で発覚した不具合）を再現できないため。
-        case "character-tab":
+        // -boss / -chest はボスの入口（issue #139）の戦闘中・宝箱の見え方を、デモのパーティで確かめる用。
+        // 戦闘中はソロのデモにする（複数パーティのデモは片方が撃破済みで、宝箱の表示が勝つ）。
+        case "character-tab", "character-tab-boss", "character-tab-chest":
             TabView(selection: .constant("character")) {
                 Tab("記録", systemImage: "dumbbell.fill", value: "record") { Color.clear }
                 Tab("カレンダー", systemImage: "calendar", value: "calendar") { Color.clear }
@@ -182,6 +184,13 @@ struct RootView: View {
                 }
                 Tab("ソーシャル", systemImage: "person.2.fill", value: "social") { Color.clear }
                 Tab("その他", systemImage: "ellipsis", value: "other") { Color.clear }
+            }
+            .onAppear {
+                switch name {
+                case "character-tab-boss": party.loadDemo(userId: userId, defeated: false, solo: true)
+                case "character-tab-chest": party.loadDemo(userId: userId, defeated: true)
+                default: break
+                }
             }
         // ドット絵の一覧。絵を足したり直したりしたとき、崩れをスクショ 1 枚で確認する用。
         // コーチとのチャット（部屋でコーチをタップしたときに出るもの）。
