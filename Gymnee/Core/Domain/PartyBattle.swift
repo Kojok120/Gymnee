@@ -289,12 +289,17 @@ extension PartyBoss {
         var accessoryId: String
         /// 部位（`Expedition.Slot.rawValue`）→ 装備の id。
         var equipped: [String: String]
+        /// 性別（`CharacterGender.rawValue`。issue #141）。キーを足しただけなので版は据え置き。
+        /// 古いアプリが送った見た目にはキーが無く、男性として読む。古いアプリは知らないキーを無視する。
+        var gender: String = CharacterGender.male.rawValue
 
         static let version = 1
         private static let maxIdLength = 32
 
         init(build: CharacterBuild, skinId: String, stage: CharacterProgress.Stage,
-             hairStyleId: String, accessoryId: String, equipped: [Expedition.Slot: Expedition.Item]) {
+             hairStyleId: String, accessoryId: String, equipped: [Expedition.Slot: Expedition.Item],
+             gender: CharacterGender = .male) {
+            self.gender = gender.rawValue
             girth = build.girth.rawValue
             arm = build.arm.rawValue
             leg = build.leg.rawValue
@@ -320,6 +325,7 @@ extension PartyBoss {
             skinId = text("skin")
             hairStyleId = text("hair")
             accessoryId = text("acc")
+            gender = CharacterGender(storedValue: row["g"] as? String).rawValue
             let gear = row["gear"] as? [String: Any] ?? [:]
             var equipped: [String: String] = [:]
             for slot in Expedition.Slot.allCases {
@@ -331,13 +337,13 @@ extension PartyBoss {
         /// `set_character_look` に送る形。
         var json: [String: Any] {
             ["v": Self.version, "girth": girth, "arm": arm, "leg": leg, "skin": skinId,
-             "stage": stage, "hair": hairStyleId, "acc": accessoryId, "gear": equipped]
+             "stage": stage, "hair": hairStyleId, "acc": accessoryId, "gear": equipped, "g": gender]
         }
 
         /// 送り直しを避けるための指紋（キーの順を固定する）。
         var fingerprint: String {
             let gear = equipped.keys.sorted().map { "\($0)=\(equipped[$0] ?? "")" }.joined(separator: ",")
-            return "v\(Self.version)|\(girth)\(arm)\(leg)|\(skinId)|\(stage)|\(hairStyleId)|\(accessoryId)|\(gear)"
+            return "v\(Self.version)|\(girth)\(arm)\(leg)|\(skinId)|\(stage)|\(hairStyleId)|\(accessoryId)|\(gear)|\(gender)"
         }
 
         var build: CharacterBuild {
@@ -349,6 +355,8 @@ extension PartyBoss {
         }
 
         var stageValue: CharacterProgress.Stage { CharacterProgress.Stage(rawValue: stage) ?? .rookie }
+
+        var genderValue: CharacterGender { CharacterGender(storedValue: gender) }
 
         /// 装備。知らない id・部位の合わない id は着けない。
         var equippedItems: [Expedition.Slot: Expedition.Item] {

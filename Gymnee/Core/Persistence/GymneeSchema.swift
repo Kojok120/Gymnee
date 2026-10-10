@@ -110,11 +110,20 @@ enum GymneeSchemaV9: VersionedSchema {
     }
 }
 
+/// スキーマ v10。キャラの性別（issue #141）を別モデルとして追加。
+/// v6 / v8 と同じく**型の追加**で表現し、既存モデルの保存プロパティには触れない。
+enum GymneeSchemaV10: VersionedSchema {
+    static var versionIdentifier = Schema.Version(10, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        GymneeSchemaV9.models + [CharacterGenderState.self]
+    }
+}
+
 /// 段階的マイグレーション計画（§7 データ保護）。
 /// スキーマ変更時はここに MigrationStage を追加する。
 enum GymneeMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self, GymneeSchemaV7.self, GymneeSchemaV8.self, GymneeSchemaV9.self]
+        [GymneeSchemaV1.self, GymneeSchemaV2.self, GymneeSchemaV3.self, GymneeSchemaV4.self, GymneeSchemaV5.self, GymneeSchemaV6.self, GymneeSchemaV7.self, GymneeSchemaV8.self, GymneeSchemaV9.self, GymneeSchemaV10.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -126,14 +135,15 @@ enum GymneeMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: GymneeSchemaV6.self, toVersion: GymneeSchemaV7.self),
             .lightweight(fromVersion: GymneeSchemaV7.self, toVersion: GymneeSchemaV8.self),
             .lightweight(fromVersion: GymneeSchemaV8.self, toVersion: GymneeSchemaV9.self),
+            .lightweight(fromVersion: GymneeSchemaV9.self, toVersion: GymneeSchemaV10.self),
         ]
     }
 }
 
 /// ModelContainer・Widget・テストから共通参照する単一の真実。
 enum GymneeSchema {
-    static let models = GymneeSchemaV9.models
-    static let schema = Schema(versionedSchema: GymneeSchemaV9.self)
+    static let models = GymneeSchemaV10.models
+    static let schema = Schema(versionedSchema: GymneeSchemaV10.self)
 
     /// ストア退避が起きたことを UI に伝えるフラグ（RootView が一度だけアラートを出して消す）。
     static let recoveryPendingKey = "gymnee.storeRecoveryPending"

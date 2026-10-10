@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 見た目の着せ替え（色 / 髪型 / アクセサリー）。
+/// 見た目の着せ替え（性別 / 色 / 髪型 / アクセサリー / ペット）。
 ///
 /// 旧「スキン」シートを置き換える。売るのは見た目だけという原則は変わらない
 /// （強さ・進化・ステータスには一切影響しない）。
@@ -17,6 +17,8 @@ struct AppearanceSheet: View {
     let currentAccessoryId: String
     /// 連れているペット id（`PetCatalog.noneId` は連れていない）。
     let currentPetId: String
+    /// 性別（issue #141）。売り物ではないので所持・価格の判定は通さない。
+    let currentGender: CharacterGender
 
     /// 所持しているか。StoreKit の所持と、1.4.1 以前のダミー購入の和集合を呼び出し側が解決する。
     /// 種別ごとに id 空間が別なので、Set を渡さずクロージャで引く。
@@ -33,6 +35,7 @@ struct AppearanceSheet: View {
     let onSelectHair: (String) -> Void
     let onSelectAccessory: (String) -> Void
     let onSelectPet: (String) -> Void
+    let onSelectGender: (CharacterGender) -> Void
     /// 購入。成功したら true。
     let onPurchase: (StoreCatalog.Kind, String) async -> Bool
     /// 復元。画面に出す一言を返す（nil なら何も出さない）。
@@ -52,10 +55,11 @@ struct AppearanceSheet: View {
     @State private var restoreMessage: String?
 
     enum Tab: String, CaseIterable, Identifiable {
-        case color, hair, accessory, pet
+        case gender, color, hair, accessory, pet
         var id: String { rawValue }
         var title: String {
             switch self {
+            case .gender: return "性別"
             case .color: return "色"
             case .hair: return "髪型"
             case .accessory: return "アクセ"
@@ -78,6 +82,7 @@ struct AppearanceSheet: View {
                 ScrollView {
                     VStack(spacing: Theme.Spacing.sm) {
                         switch tab {
+                        case .gender: genderRows
                         case .color: colorRows
                         case .hair: hairRows
                         case .accessory: accessoryRows
@@ -186,7 +191,8 @@ struct AppearanceSheet: View {
                     nameTag: nil,
                     role: .trainee,
                     hairStyleId: currentHairId,
-                    accessoryId: currentAccessoryId
+                    accessoryId: currentAccessoryId,
+                    gender: currentGender
                 ),
                 frame: .standing,
                 facing: facing,
@@ -198,6 +204,33 @@ struct AppearanceSheet: View {
     }
 
     // MARK: - 一覧
+
+    /// 性別の一覧（issue #141）。どちらも無料で、選ぶとすぐプレビューに出る。
+    /// 見本はいまの体格・色で描き、髪型は選んだときに合わせる髪型（`hairAfterChoosing`）で見せる。
+    private var genderRows: some View {
+        ForEach(CharacterGender.allCases) { gender in
+            let isCurrent = gender == currentGender
+            HStack(spacing: Theme.Spacing.md) {
+                PixelCharacterFigure(look: PixelCharacterRenderer.Look(
+                    build: build, skin: SkinCatalog.skin(id: currentSkinId), equipped: [:], stage: stage,
+                    carriesPack: false, nameTag: nil, role: .trainee,
+                    hairStyleId: CharacterGender.hairAfterChoosing(gender, current: currentHairId),
+                    accessoryId: currentAccessoryId, gender: gender
+                ))
+                .frame(width: 42, height: 52)
+                Text(gender.label).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Button(isCurrent ? "選択中" : "選ぶ") { onSelectGender(gender) }
+                    .buttonStyle(.gymneeSecondary)
+                    .disabled(isCurrent)
+                    .opacity(isCurrent ? 0.5 : 1)
+                    .accessibilityLabel(isCurrent ? "\(gender.label)、選択中" : "\(gender.label)を選ぶ")
+                    .accessibilityIdentifier("gender-row-\(gender.rawValue)")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gymneeCard(padding: Theme.Spacing.md, highlighted: isCurrent)
+        }
+    }
 
     private var colorRows: some View {
         ForEach(SkinCatalog.all) { skin in
@@ -296,7 +329,7 @@ struct AppearanceSheet: View {
     /// 一覧の見本は**顔だけ**を描く。全身だと髪型の差が小さくて選べない。
     private func headThumbnail(hairId: String, accessoryId: String) -> some View {
         Canvas { context, size in
-            let sprite = PixelHairArt.headBaseFront
+            let sprite = PixelHairArt.headBase(facing: .down, blinking: false, gender: currentGender)
             let dot = max(1, (size.width / CGFloat(sprite.width)).rounded(.down))
             let origin = CGPoint(
                 x: ((size.width - CGFloat(sprite.width) * dot) / 2).rounded(),

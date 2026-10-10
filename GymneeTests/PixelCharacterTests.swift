@@ -131,8 +131,14 @@ final class PixelSpriteTests: XCTestCase {
         for limb in CharacterBuild.Limb.allCases {
             XCTAssertEqual(PixelCharacterArt.arm(limb).width, PixelCharacterArt.armWidth(limb), "\(limb) の腕幅")
             XCTAssertEqual(PixelCharacterArt.arm(limb).height, PixelCharacterArt.armHeight, "\(limb) の腕高")
-            XCTAssertEqual(PixelCharacterArt.leg(limb).width, PixelCharacterArt.legWidth(limb), "\(limb) の脚幅")
-            XCTAssertEqual(PixelCharacterArt.leg(limb).height, PixelCharacterArt.legHeight, "\(limb) の脚高")
+            // 女性のレギンス（issue #141）も同じ寸法。体格の太さはそのまま効く。
+            for gender in CharacterGender.allCases {
+                let leg = PixelCharacterArt.leg(limb, gender: gender)
+                XCTAssertEqual(leg.width, PixelCharacterArt.legWidth(limb), "\(limb)/\(gender) の脚幅")
+                XCTAssertEqual(leg.height, PixelCharacterArt.legHeight, "\(limb)/\(gender) の脚高")
+            }
+            XCTAssertNotEqual(PixelCharacterArt.leg(limb, gender: .female), PixelCharacterArt.leg(limb, gender: .male),
+                              "\(limb) のレギンスが素足と同じ絵")
         }
     }
 

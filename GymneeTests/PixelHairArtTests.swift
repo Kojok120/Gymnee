@@ -11,9 +11,11 @@ final class PixelHairArtTests: XCTestCase {
     func testEveryLayerMatchesTheHeadFrame() {
         for facing in CharacterScene.Facing.allCases {
             for blinking in [true, false] {
-                let base = PixelHairArt.headBase(facing: facing, blinking: blinking)
-                XCTAssertEqual(base.width, PixelCharacterArt.headWidth, "\(facing) の素体幅")
-                XCTAssertEqual(base.height, PixelCharacterArt.headHeight, "\(facing) の素体高")
+                for gender in CharacterGender.allCases {
+                    let base = PixelHairArt.headBase(facing: facing, blinking: blinking, gender: gender)
+                    XCTAssertEqual(base.width, PixelCharacterArt.headWidth, "\(facing)/\(gender) の素体幅")
+                    XCTAssertEqual(base.height, PixelCharacterArt.headHeight, "\(facing)/\(gender) の素体高")
+                }
             }
             for style in PixelHairArt.styles {
                 let hair = PixelHairArt.hair(styleId: style.id, facing: facing)
@@ -77,6 +79,37 @@ final class PixelHairArtTests: XCTestCase {
                 PixelHairArt.hair(styleId: style.id, facing: .up),
                 "\(style.id) の正面と背面が同じ絵"
             )
+        }
+    }
+
+    /// 女性の素体（issue #141）は顔の向きでだけ男性と違い、後ろ姿は同じ。
+    /// 既定（男性）の素体は変えない＝既存ユーザーの見た目は 1 ドットも変わらない。
+    func testFemaleBaseDiffersOnlyWhereTheFaceIs() {
+        for facing in [CharacterScene.Facing.down, .right] {
+            for blinking in [true, false] {
+                XCTAssertNotEqual(
+                    PixelHairArt.headBase(facing: facing, blinking: blinking, gender: .female),
+                    PixelHairArt.headBase(facing: facing, blinking: blinking, gender: .male),
+                    "\(facing)/\(blinking) の女性の顔が男性と同じ"
+                )
+            }
+        }
+        XCTAssertEqual(
+            PixelHairArt.headBase(facing: .up, blinking: false, gender: .female),
+            PixelHairArt.headBase(facing: .up, blinking: false, gender: .male)
+        )
+        XCTAssertEqual(PixelHairArt.headBase(facing: .down, blinking: false), PixelHairArt.headBaseFront)
+    }
+
+    /// 女性の既定の髪型は無料で、ロング（有料）とは別の絵。
+    func testFemaleStarterHairIsFreeAndDistinct() {
+        let bob = PixelHairArt.style(id: PixelHairArt.femaleStarterStyleId)
+        XCTAssertEqual(bob.id, "bob", "未知の id で既定に落ちていない")
+        XCTAssertFalse(bob.isPaid)
+        XCTAssertNil(StoreCatalog.entry(kind: .hair, contentID: bob.id), "無料の髪型に商品が紐づいている")
+        for facing in CharacterScene.Facing.allCases {
+            XCTAssertNotEqual(PixelHairArt.hair(styleId: "bob", facing: facing), PixelHairArt.hair(styleId: "long", facing: facing))
+            XCTAssertNotEqual(PixelHairArt.hair(styleId: "bob", facing: facing), PixelHairArt.hair(styleId: "short", facing: facing))
         }
     }
 
@@ -158,7 +191,7 @@ final class PixelHairArtTests: XCTestCase {
     /// id は保存値なので変えると既存ユーザーの見た目が飛ぶ。
     func testIdsAreStable() {
         XCTAssertEqual(PixelHairArt.defaultStyleId, "short")
-        XCTAssertEqual(Set(PixelHairArt.styles.map(\.id)), ["short", "buzz", "ponytail", "long"])
+        XCTAssertEqual(Set(PixelHairArt.styles.map(\.id)), ["short", "buzz", "bob", "ponytail", "long"])
         XCTAssertEqual(Set(PixelHairArt.accessories.map(\.id)), ["none", "glasses", "shades", "earphones"])
     }
 }

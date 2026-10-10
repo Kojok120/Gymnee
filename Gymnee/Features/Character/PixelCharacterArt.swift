@@ -254,8 +254,15 @@ enum PixelCharacterArt {
 
     // MARK: - 脚（幅 3 / 4 × 高さ 4）
 
-    static func leg(_ weight: CharacterBuild.Limb) -> PixelSprite {
-        weight == .thin ? legThin : legThick
+    /// 女性（issue #141）はレギンス。素足のショートパンツと並べたとき、脚の色だけで見分けられる。
+    /// 幅は男性と同じなので、体格（記録で決まる太さ）はそのまま効く。
+    static func leg(_ weight: CharacterBuild.Limb, gender: CharacterGender = .male) -> PixelSprite {
+        switch (weight, gender) {
+        case (.thin, .male): return legThin
+        case (.thick, .male): return legThick
+        case (.thin, .female): return legThinLeggings
+        case (.thick, .female): return legThickLeggings
+        }
     }
 
     static func legWidth(_ weight: CharacterBuild.Limb) -> Int {
@@ -275,6 +282,23 @@ enum PixelCharacterArt {
         "osSso",
         "osSso",
         "osSso",
+        "ddddd",
+    ])
+
+    // レギンスはショートパンツと同じ色で足首まで覆い、裾だけ影色にする。
+    private static let legThinLeggings = PixelSprite([
+        "oppo",
+        "oppo",
+        "oppo",
+        "oPPo",
+        "dddd",
+    ])
+
+    private static let legThickLeggings = PixelSprite([
+        "oppPo",
+        "oppPo",
+        "oppPo",
+        "oPPPo",
         "ddddd",
     ])
 

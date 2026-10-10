@@ -205,6 +205,27 @@ extension CharacterStyle {
     }
 }
 
+/// キャラの性別（ローカル専用モデル・ユーザーごとに 1 行。issue #141）。
+///
+/// **`CharacterStyle` / `PetState` と同じ理由で、既存モデルに列を足さず別の型として持つ**
+/// （プロパティ追加はチェックサム衝突を起こし、実際にローカルデータ消失の事故になった）。
+/// 行が無いユーザーは男性（これまでの姿）として描く。
+@Model
+final class CharacterGenderState {
+    @Attribute(.unique) var userId: UUID
+    /// `CharacterGender.rawValue`。読むときは `CharacterGender(storedValue:)` で解く。
+    var genderRaw: String
+    var updatedAt: Date
+
+    init(userId: UUID, gender: CharacterGender = .male, updatedAt: Date = .now) {
+        self.userId = userId
+        self.genderRaw = gender.rawValue
+        self.updatedAt = updatedAt
+    }
+
+    var gender: CharacterGender { CharacterGender(storedValue: genderRaw) }
+}
+
 /// 連れているペット（ローカル専用モデル・ユーザーごとに 1 行）。
 ///
 /// **`CharacterStyle` と同じ理由で、既存モデルに列を足さず別の型として持つ**

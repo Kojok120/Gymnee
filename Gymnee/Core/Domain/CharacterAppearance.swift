@@ -35,6 +35,43 @@ struct CharacterAppearance: Equatable, Sendable {
     }
 }
 
+/// キャラの性別（issue #141）。顔と脚の描き分けと、選んだときに合わせる無料の髪型にだけ効く。
+/// 強さ・体格（記録から決まる）には一切関係しない。既存のユーザーは男性のまま始まる。
+enum CharacterGender: String, CaseIterable, Identifiable, Sendable {
+    case male
+    case female
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .male: return "男性"
+        case .female: return "女性"
+        }
+    }
+
+    /// 保存値から読む。未設定・知らない値は男性（これまでの姿）。
+    init(storedValue: String?) {
+        self = CharacterGender(rawValue: storedValue ?? "") ?? .male
+    }
+
+    /// その性別の既定の髪型（どちらも無料）。
+    var starterHairStyleId: String {
+        switch self {
+        case .male: return PixelHairArt.defaultStyleId
+        case .female: return PixelHairArt.femaleStarterStyleId
+        }
+    }
+
+    /// 性別を選んだあとの髪型。いまの髪型がどちらかの既定のままなら選んだ性別の既定に合わせ、
+    /// 自分で選んだ髪型（有料のもの・ほかの無料のもの）はそのまま残す。
+    /// 「女性を選んだのに髪がショートのまま」を避けつつ、気に入って選んだ髪型は勝手に変えない。
+    static func hairAfterChoosing(_ gender: CharacterGender, current: String) -> String {
+        let starters = Set(allCases.map(\.starterHairStyleId))
+        return starters.contains(current) ? gender.starterHairStyleId : current
+    }
+}
+
 /// キャラの配色テーマ（スキン）。強さには一切関係しない見た目だけの要素で、課金の対象はここに限る。
 struct CharacterSkin: Identifiable, Equatable, Sendable {
     let id: String

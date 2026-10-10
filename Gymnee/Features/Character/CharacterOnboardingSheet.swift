@@ -8,16 +8,39 @@ import SwiftUI
 /// そして強くなるのは現実のトレーニングだけであること。
 ///
 /// 表示は 1 回きり（`hasSeenKey`）。設定に出すほどのものではないので、再表示の導線は持たない。
+///
+/// 最初にキャラの性別を選ばせる（issue #141）。選んだ瞬間に保存し、あとから「見た目」でも変えられる。
+/// 項目が増えて小さい端末では収まらないので、本文はスクロールさせ「はじめる」だけ下に固定する。
 struct CharacterOnboardingSheet: View {
     /// 一度見たら二度と出さないための保存キー。
     static let hasSeenKey = "gymnee.character.onboarded"
 
+    /// 見本に使ういまの体格・色・髪型（記録が無ければ最小の体格）。
+    let build: CharacterBuild
+    let skin: CharacterSkin
+    let currentHairId: String
+    let gender: CharacterGender
+    let onChooseGender: (CharacterGender) -> Void
+
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.xl) {
-            Spacer(minLength: 0)
+        VStack(spacing: 0) {
+            ScrollView {
+                content
+                    .padding(Theme.Spacing.xl)
+            }
+            Button("はじめる") { dismiss() }
+                .buttonStyle(.gymneePrimary(fullWidth: true))
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.vertical, Theme.Spacing.lg)
+        }
+        .background(Theme.bg0)
+        .presentationDetents([.large])
+    }
 
+    private var content: some View {
+        VStack(spacing: Theme.Spacing.xl) {
             VStack(spacing: Theme.Spacing.sm) {
                 Text("ここはキャラの部屋")
                     .font(.title2.bold())
@@ -27,6 +50,8 @@ struct CharacterOnboardingSheet: View {
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
             }
+
+            genderPicker
 
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                 row(
@@ -66,15 +91,38 @@ struct CharacterOnboardingSheet: View {
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .multilineTextAlignment(.center)
-
-            Spacer(minLength: 0)
-
-            Button("はじめる") { dismiss() }
-                .buttonStyle(.gymneePrimary(fullWidth: true))
         }
-        .padding(Theme.Spacing.xl)
-        .background(Theme.bg0)
-        .presentationDetents([.large])
+    }
+
+    /// 性別の選択。見本は選んだときに合わせる髪型で描く（女性ならボブ）。
+    private var genderPicker: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.md) {
+                ForEach(CharacterGender.allCases) { option in
+                    Button { onChooseGender(option) } label: {
+                        VStack(spacing: Theme.Spacing.xs) {
+                            PixelCharacterFigure(look: PixelCharacterRenderer.Look(
+                                build: build, skin: skin, equipped: [:], stage: .rookie,
+                                carriesPack: false, nameTag: nil, role: .trainee,
+                                hairStyleId: CharacterGender.hairAfterChoosing(option, current: currentHairId),
+                                gender: option
+                            ))
+                            .frame(width: 64, height: 78)
+                            Text(option.label)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(Theme.textPrimary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .gymneeCard(padding: Theme.Spacing.md, highlighted: option == gender)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(option == gender ? .isSelected : [])
+                }
+            }
+            Text("あとから「見た目」でいつでも変えられます")
+                .font(.caption2)
+                .foregroundStyle(Theme.textTertiary)
+        }
     }
 
     private func row(sprite: PixelSprite, accent: Color, title: String, detail: String) -> some View {
