@@ -111,8 +111,47 @@ struct PixelArtGallery: View {
 
     // MARK: - キャラ（体格 × 仕草）
 
+    private struct FemaleCell {
+        let name: String
+        let build: CharacterBuild
+        var frame: PixelCharacterLayout.Frame = .standing
+        var facing: CharacterScene.Facing = .down
+        var gender: CharacterGender = .female
+        var hair: String = PixelHairArt.femaleStarterStyleId
+    }
+
+    private var femaleCells: [FemaleCell] {
+        let normal = CharacterBuild(girth: .normal, arm: .thick, leg: .thick)
+        return [
+            FemaleCell(name: "男性（比較）", build: normal, gender: .male, hair: PixelHairArt.defaultStyleId),
+            FemaleCell(name: "正面", build: normal),
+            FemaleCell(name: "横", build: normal, facing: .right),
+            FemaleCell(name: "背面", build: normal, facing: .up),
+            FemaleCell(name: "歩き(横)", build: normal,
+                       frame: PixelCharacterLayout.frame(for: pose(.walking, walkPhase: 0.25)), facing: .right),
+            FemaleCell(name: "まばたき", build: normal, frame: PixelCharacterLayout.frame(for: pose(.emoting(.rest), blink: 1))),
+            FemaleCell(name: "細い", build: CharacterBuild(girth: .slim, arm: .thin, leg: .thin)),
+            FemaleCell(name: "がっしり", build: CharacterBuild(girth: .wide, arm: .thick, leg: .thick)),
+        ] + PixelHairArt.styles.filter { $0.id != PixelHairArt.femaleStarterStyleId }.map {
+            FemaleCell(name: $0.name, build: normal, hair: $0.id)
+        }
+    }
+
     private var characterSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            // 女性（issue #141）。向き・髪型・体格の端を並べ、男性と見比べられるように先頭に置く。
+            SectionHeader(title: "女性（向き × 髪型 × 体格）")
+            LazyVGrid(columns: grid(minimum: 76), spacing: Theme.Spacing.md) {
+                ForEach(Array(femaleCells.enumerated()), id: \.offset) { _, cell in
+                    labelled(cell.name) {
+                        CharacterPreview(
+                            build: cell.build, frame: cell.frame, skin: SkinCatalog.all[0],
+                            facing: cell.facing, gender: cell.gender, hairStyleId: cell.hair
+                        )
+                    }
+                }
+            }
+
             SectionHeader(title: "キャラ（体格 12 通り）")
             LazyVGrid(columns: grid(minimum: 76), spacing: Theme.Spacing.md) {
                 ForEach(Array(builds.enumerated()), id: \.offset) { _, build in
@@ -386,6 +425,8 @@ private struct CharacterPreview: View {
     var equipped: [Expedition.Slot: Expedition.Item] = [:]
     var facing: CharacterScene.Facing = .down
     var role: PixelCharacterRenderer.Role = .trainee
+    var gender: CharacterGender = .male
+    var hairStyleId: String = PixelHairArt.defaultStyleId
 
     var body: some View {
         Canvas { context, size in
@@ -394,7 +435,8 @@ private struct CharacterPreview: View {
                 in: &context,
                 look: PixelCharacterRenderer.Look(
                     build: build, skin: skin, equipped: equipped,
-                    stage: .rookie, carriesPack: false, nameTag: nil, role: role
+                    stage: .rookie, carriesPack: false, nameTag: nil, role: role,
+                    hairStyleId: hairStyleId, gender: gender
                 ),
                 frame: frame,
                 facing: facing,

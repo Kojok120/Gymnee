@@ -235,7 +235,8 @@ final class PartyService {
         )
         let sakiLook = PartyBoss.MemberLook(
             build: CharacterBuild(girth: .slim, arm: .thin, leg: .thick), skinId: "midnight", stage: .trainee,
-            hairStyleId: "ponytail", accessoryId: "none", equipped: [.aura: Expedition.item(id: "sweat-aura")!]
+            hairStyleId: "ponytail", accessoryId: "none", equipped: [.aura: Expedition.item(id: "sweat-aura")!],
+            gender: .female
         )
         var gymRaw = [
             attack(userId, at(0, 7), .upper),
