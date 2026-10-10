@@ -30,6 +30,8 @@ enum PixelCharacterRenderer {
         var hairStyleId: String = PixelHairArt.defaultStyleId
         /// アクセサリー（`PixelHairArt.accessories`）。"none" は着けていない。
         var accessoryId: String = "none"
+        /// 性別（issue #141）。顔と脚の絵だけが変わる。コーチには効かない。
+        var gender: CharacterGender = .male
     }
 
     /// コーチの配色。プレイヤーのスキンとは独立させる（着せ替えの対象ではない）。
@@ -97,7 +99,7 @@ enum PixelCharacterRenderer {
         let upperY = frame.lift + frame.crouch
 
         // 脚。正面・背面は左右に並べ、横向きは重ねて前後に開く（横から見ると脚は並ばない）。
-        let legSprite = PixelCharacterArt.leg(look.build.leg)
+        let legSprite = PixelCharacterArt.leg(look.build.leg, gender: look.role == .coach ? .male : look.gender)
         let legSlots: [(x: Int, lift: Int)] = sideways
             ? [
                 // 奥の脚を先に、手前の脚を後に描く。
@@ -166,7 +168,7 @@ enum PixelCharacterRenderer {
             )
         } else {
             context.drawPixels(
-                PixelHairArt.headBase(facing: facing, blinking: frame.blinking),
+                PixelHairArt.headBase(facing: facing, blinking: frame.blinking, gender: look.gender),
                 at: headOrigin, dot: dot, palette: palette, flipped: mirrored
             )
             context.drawPixels(
@@ -350,5 +352,26 @@ private extension PixelCharacterRenderer.Look {
     var appearance01: Double {
         let count = max(1, CharacterProgress.Stage.allCases.count - 1)
         return Double(stage.rawValue) / Double(count)
+    }
+}
+
+/// キャラ 1 体を立ち姿で描く小さな View（初回案内・見た目シートの性別の見本。issue #141）。
+/// 部屋のように 1 枚の Canvas に何人も描く場面では使わない（毎フレームの差分が増える）。
+struct PixelCharacterFigure: View {
+    let look: PixelCharacterRenderer.Look
+    var facing: CharacterScene.Facing = .down
+
+    var body: some View {
+        Canvas { context, size in
+            let dot = max(1, (size.height / CGFloat(PixelCharacterArt.canvasHeight + 2)).rounded(.down))
+            PixelCharacterRenderer.draw(
+                in: &context,
+                look: look,
+                frame: .standing,
+                facing: facing,
+                feet: CGPoint(x: size.width / 2, y: size.height - dot),
+                dot: dot
+            )
+        }
     }
 }

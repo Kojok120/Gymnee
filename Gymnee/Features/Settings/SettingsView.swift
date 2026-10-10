@@ -546,6 +546,7 @@ struct SettingsView: View {
         try? context.delete(model: CharacterLoadout.self)
         try? context.delete(model: CharacterStyle.self)
         try? context.delete(model: PetState.self)
+        try? context.delete(model: CharacterGenderState.self)
         try? context.delete(model: ProfileNotificationSettings.self)
         try? context.delete(model: CoachMessage.self)
         try? context.delete(model: RoomPickupRecord.self)

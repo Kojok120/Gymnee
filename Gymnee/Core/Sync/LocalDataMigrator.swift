@@ -48,6 +48,16 @@ enum LocalDataMigrator {
         // サインイン後に見えなくなる（所持は StoreKit が正なので消えはしないが、連れ歩かなくなる）。
         reassignLocalOnly(PetState.self, context: context) { $0.userId == old } set: { $0.userId = new }
 
+        // キャラの性別（issue #141）も端末ローカル専用。初回案内はゲストのうちに出るので、
+        // 付け替えないとサインインした途端に選んだ性別が消えて男性に戻る。
+        // userId は一意なので、新アカウント側に行があればそちらを残す（同じ端末で以前に選んでいた）。
+        let hasNewGender = ((try? context.fetchCount(
+            FetchDescriptor<CharacterGenderState>(predicate: #Predicate { $0.userId == new })
+        )) ?? 0) > 0
+        if !hasNewGender {
+            reassignLocalOnly(CharacterGenderState.self, context: context) { $0.userId == old } set: { $0.userId = new }
+        }
+
         // 通知設定は profiles の同期ペイロードへ載る。新アカウントに既存設定があればそれを尊重し、
         // 無ければゲスト中の設定を引き継いでプロフィールを再送出する。
         let oldSettings = (try? context.fetch(

@@ -36,6 +36,8 @@ struct CharacterRoomView: View {
     @Query private var feedItems: [FeedItem]
     /// 連れているペット（`CharacterStyle` と同じく別モデル）。
     @Query private var pets: [PetState]
+    /// キャラの性別（issue #141。これも別モデル。行が無ければ男性）。
+    @Query private var genders: [CharacterGenderState]
 
     /// 受け取り演出中の戦利品（道中の出来事つき）。
     @State private var celebrating: ClaimResult?
@@ -67,6 +69,7 @@ struct CharacterRoomView: View {
         _pickups = Query(filter: #Predicate<RoomPickupRecord> { $0.userId == userId })
         _feedItems = Query(filter: #Predicate<FeedItem> { $0.userId != userId })
         _pets = Query(filter: #Predicate<PetState> { $0.userId == userId })
+        _genders = Query(filter: #Predicate<CharacterGenderState> { $0.userId == userId })
     }
 
     /// 受け取り結果（祝福シートに渡す）。
@@ -137,6 +140,8 @@ struct CharacterRoomView: View {
         PixelHairArt.resolveAccessory(selected: style?.accessoryId, owned: ownedCosmeticIds).id
     }
 
+    private var gender: CharacterGender { genders.first?.gender ?? .male }
+
     private var equipped: [Expedition.Slot: Expedition.Item] {
         CharacterOutfit.resolve(loadout: loadout?.loadout ?? [:], owned: ownedItemIds)
     }
@@ -148,7 +153,7 @@ struct CharacterRoomView: View {
 
     /// 集計のやり直しが要るかを判定する軽い指紋。@Query の中身が変わったときだけ変化する。
     private var signature: String {
-        "\(completedWorkouts.count)-\(records.count)-\(runs.count)-\(pickups.count)-\(loadouts.first?.updatedAt.timeIntervalSince1970 ?? 0)-\(styles.first?.updatedAt.timeIntervalSince1970 ?? 0)"
+        "\(completedWorkouts.count)-\(records.count)-\(runs.count)-\(pickups.count)-\(loadouts.first?.updatedAt.timeIntervalSince1970 ?? 0)-\(styles.first?.updatedAt.timeIntervalSince1970 ?? 0)-\(genders.first?.updatedAt.timeIntervalSince1970 ?? 0)"
     }
 
     // MARK: - 画面
@@ -233,7 +238,7 @@ struct CharacterRoomView: View {
                     // derived から取ると進化した回に旧段階の姿を描いてしまう。
                     build: derived.build, skin: skin, equipped: equipped, stage: gain.stageAfter,
                     carriesPack: false, nameTag: nil, role: .trainee,
-                    hairStyleId: hairStyleId, accessoryId: accessoryId
+                    hairStyleId: hairStyleId, accessoryId: accessoryId, gender: gender
                 ),
                 strike: bossStrike,
                 onOpenBattle: { openBattleAfterCelebration = true }
@@ -246,7 +251,10 @@ struct CharacterRoomView: View {
             sheetContent(route)
         }
         .sheet(isPresented: $showOnboarding, onDismiss: presentNextIntro) {
-            CharacterOnboardingSheet()
+            CharacterOnboardingSheet(
+                build: derived.build, skin: skin, currentHairId: hairStyleId,
+                gender: gender, onChooseGender: { selectGender($0) }
+            )
         }
         .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
             Button("オンにする") {
@@ -471,7 +479,8 @@ struct CharacterRoomView: View {
             nameTag: nil,
             role: .trainee,
             hairStyleId: hairStyleId,
-            accessoryId: accessoryId
+            accessoryId: accessoryId,
+            gender: gender
         )
         let partners = Array(coopPartners.prefix(3))
         let started = startedAt
@@ -1230,6 +1239,7 @@ struct CharacterRoomView: View {
                 currentHairId: hairStyleId,
                 currentAccessoryId: accessoryId,
                 currentPetId: pets.first?.petId ?? PetCatalog.noneId,
+                currentGender: gender,
                 isOwned: { kind, id in isOwned(kind, id) },
                 priceText: { kind, id in priceText(kind, id) },
                 isStoreReachable: store.isStoreAvailable,
@@ -1241,6 +1251,7 @@ struct CharacterRoomView: View {
                 onSelectHair: { selectHair($0) },
                 onSelectAccessory: { selectAccessory($0) },
                 onSelectPet: { selectPet($0) },
+                onSelectGender: { selectGender($0) },
                 onPurchase: { kind, id in await purchase(kind, id) },
                 onRestore: { await restorePurchases() },
                 onAppearReload: { await store.reloadProductsIfNeeded() }
@@ -1357,7 +1368,7 @@ struct CharacterRoomView: View {
         PixelCharacterRenderer.Look(
             build: derived.build, skin: skin, equipped: equipped, stage: derived.stage,
             carriesPack: false, nameTag: nil, role: .trainee,
-            hairStyleId: hairStyleId, accessoryId: accessoryId
+            hairStyleId: hairStyleId, accessoryId: accessoryId, gender: gender
         )
     }
 
@@ -1375,7 +1386,7 @@ struct CharacterRoomView: View {
         guard auth.isPermanentAccount else { return }
         let look = PartyBoss.MemberLook(
             build: derived.build, skinId: skin.id, stage: derived.stage,
-            hairStyleId: hairStyleId, accessoryId: accessoryId, equipped: equipped
+            hairStyleId: hairStyleId, accessoryId: accessoryId, equipped: equipped, gender: gender
         )
         Task { await party.publishLook(look, userId: userId) }
     }
@@ -1637,6 +1648,28 @@ struct CharacterRoomView: View {
         state.accessoryId = id
         state.updatedAt = .now
         try? context.save()
+    }
+
+    /// 性別を選ぶ（issue #141）。髪型がどちらかの既定のままなら、選んだ性別の既定に合わせる。
+    private func selectGender(_ chosen: CharacterGender) {
+        let state = ensureGenderState()
+        state.genderRaw = chosen.rawValue
+        state.updatedAt = .now
+        let hair = CharacterGender.hairAfterChoosing(chosen, current: hairStyleId)
+        if hair != hairStyleId {
+            let styleState = ensureStyle()
+            styleState.hairStyleId = hair
+            styleState.updatedAt = .now
+        }
+        try? context.save()
+    }
+
+    /// 性別の保存先を必要になった時に作る。
+    private func ensureGenderState() -> CharacterGenderState {
+        if let existing = genders.first { return existing }
+        let created = CharacterGenderState(userId: userId)
+        context.insert(created)
+        return created
     }
 
     /// 連れるペットを選ぶ（"none" で連れていない状態に戻す）。

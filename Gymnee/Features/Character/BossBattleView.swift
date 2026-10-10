@@ -254,7 +254,8 @@ struct BossBattleView: View {
                 nameTag: nil,
                 role: .trainee,
                 hairStyleId: PixelHairArt.style(id: look.hairStyleId).id,
-                accessoryId: PixelHairArt.accessory(id: look.accessoryId).id
+                accessoryId: PixelHairArt.accessory(id: look.accessoryId).id,
+                gender: look.genderValue
             )
         }
         let seed = DeterministicRandom.seed(from: member.id)

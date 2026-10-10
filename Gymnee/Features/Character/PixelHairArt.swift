@@ -9,11 +9,19 @@ enum PixelHairArt {
 
     // MARK: - 素体（髪の無い頭）
 
-    static func headBase(facing: CharacterScene.Facing, blinking: Bool) -> PixelSprite {
+    /// 女性（issue #141）は口を頬と同じ桃色にする。顔の差はここだけに留め、表情は男性と揃える
+    /// （まつ毛も試したが、24 ドットの体では眠そう・横目に見えて表情が変わってしまった）。
+    /// 女性らしさは髪型（`bob` など）と脚（レギンス）で出す。後ろ姿は顔が無いので共通。
+    static func headBase(facing: CharacterScene.Facing, blinking: Bool, gender: CharacterGender = .male) -> PixelSprite {
+        let female = gender == .female
         switch facing {
         case .up: return headBaseBack
-        case .left, .right: return blinking ? headBaseSideBlink : headBaseSide
-        case .down: return blinking ? headBaseFrontBlink : headBaseFront
+        case .left, .right:
+            if female { return blinking ? headBaseSideBlinkFemale : headBaseSideFemale }
+            return blinking ? headBaseSideBlink : headBaseSide
+        case .down:
+            if female { return blinking ? headBaseFrontBlinkFemale : headBaseFrontFemale }
+            return blinking ? headBaseFrontBlink : headBaseFront
         }
     }
 
@@ -97,6 +105,72 @@ enum PixelHairArt {
         "...oooooooo...",
     ])
 
+    // MARK: 女性の素体（口の色だけが違う）
+
+    static let headBaseFrontFemale = PixelSprite([
+        "....oooooo....",
+        "..oossssssoo..",
+        ".osssssssssso.",
+        "osssssssssssSo",
+        "osssssssssssSo",
+        "ossssssssssSSo",
+        "osssssssssssSo",
+        "ossslesslessSo",
+        "ossseesseessSo",
+        "osscsssssscsSo",
+        "osssssccssssSo",
+        "..osssssssso..",
+        "...oooooooo...",
+    ])
+
+    static let headBaseFrontBlinkFemale = PixelSprite([
+        "....oooooo....",
+        "..oossssssoo..",
+        ".osssssssssso.",
+        "osssssssssssSo",
+        "osssssssssssSo",
+        "ossssssssssSSo",
+        "osssssssssssSo",
+        "osssssssssssSo",
+        "osssoossoossSo",
+        "osscsssssscsSo",
+        "osssssccssssSo",
+        "..osssssssso..",
+        "...oooooooo...",
+    ])
+
+    static let headBaseSideFemale = PixelSprite([
+        "...oooooo.....",
+        ".oossssssoo...",
+        "osssssssssso..",
+        "ossssssssssso.",
+        "osssssssssssso",
+        "osssssssssssso",
+        "osssssssseesso",
+        "osssssssseesso",
+        "osssssssscssso",
+        "osssssssssccso",
+        ".osssssssssso.",
+        "..osssssssso..",
+        "...oooooooo...",
+    ])
+
+    static let headBaseSideBlinkFemale = PixelSprite([
+        "...oooooo.....",
+        ".oossssssoo...",
+        "osssssssssso..",
+        "ossssssssssso.",
+        "osssssssssssso",
+        "osssssssssssso",
+        "osssssssssssso",
+        "ossssssssoosso",
+        "osssssssscssso",
+        "osssssssssccso",
+        ".osssssssssso.",
+        "..osssssssso..",
+        "...oooooooo...",
+    ])
+
     // MARK: - 髪型
 
     /// 髪型のカタログ。強さには一切関係しない見た目だけの要素。
@@ -108,10 +182,13 @@ enum PixelHairArt {
     }
 
     static let defaultStyleId = "short"
+    /// 女性を選んだときの既定（無料。issue #141）。
+    static let femaleStarterStyleId = "bob"
 
     static let styles: [Style] = [
         Style(id: "short", name: "ショート", isPaid: false),
         Style(id: "buzz", name: "ベリーショート", isPaid: false),
+        Style(id: "bob", name: "ボブ", isPaid: false),
         Style(id: "ponytail", name: "ポニーテール", isPaid: true),
         Style(id: "long", name: "ロング", isPaid: true),
     ]
@@ -138,6 +215,9 @@ enum PixelHairArt {
         case ("buzz", .up): return buzzBack
         case ("buzz", .left), ("buzz", .right): return buzzSide
         case ("buzz", _): return buzzFront
+        case ("bob", .up): return bobBack
+        case ("bob", .left), ("bob", .right): return bobSide
+        case ("bob", _): return bobFront
         case ("ponytail", .up): return ponytailBack
         case ("ponytail", .left), ("ponytail", .right): return ponytailSide
         case ("ponytail", _): return ponytailFront
@@ -247,6 +327,57 @@ enum PixelHairArt {
         "..............",
         "..............",
         "..............",
+        "..............",
+    ])
+
+    // MARK: ボブ（あごの高さで内に巻く。前髪は横に流す。issue #141）
+    // 無料の女性向け。ロング（肩より下まで真っすぐ）と違い、裾があごで止まって内側へ丸まる。
+
+    private static let bobFront = PixelSprite([
+        "..............",
+        "....hhhhhh....",
+        "..hhhhhhhhhh..",
+        ".hhhhhhhhhhhH.",
+        "hhhhhhhhhhhhHh",
+        "hhhhhhhhhhhHHh",
+        "hhhhhh.....HHh",
+        "hh..........Hh",
+        "hh..........Hh",
+        "hh..........Hh",
+        "hhh........HHh",
+        ".hH........Hh.",
+        "..............",
+    ])
+
+    private static let bobBack = PixelSprite([
+        "..............",
+        "....hhhhhh....",
+        "..hhhhhhhhhh..",
+        ".hhhhhhhhhhhh.",
+        ".hhhhHHhhhhhh.",
+        "hhhhhHhHhhhhhh",
+        "hhhhhhHHhhhhhh",
+        "hhhhhhhhhhhhhh",
+        "hhhhhhhhhhhhhh",
+        "hhhhhhhhhhhhhh",
+        "hhhhhhhhhhhhhh",
+        ".HHHHHHHHHHHH.",
+        "..............",
+    ])
+
+    private static let bobSide = PixelSprite([
+        "..............",
+        "...hhhhhh.....",
+        ".hhhhhhhhhh...",
+        "hhhhhhhhhhhh..",
+        "hhhhhhhhhhhhh.",
+        "hhhhhhhhhhh...",
+        "hhhhhhh.......",
+        "hhhhhhh.......",
+        "hhhhhhh.......",
+        "hhhhhhh.......",
+        "hhhhhhh.......",
+        ".HHHHHh.......",
         "..............",
     ])
 

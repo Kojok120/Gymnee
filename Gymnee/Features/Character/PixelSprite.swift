@@ -151,6 +151,9 @@ struct PixelPalette {
         var copy = self
         copy.skin = skinShade
         copy.skinShade = skinShade.mix(with: Self.ink, by: 0.30)
+        // 奥の脚がレギンス（issue #141）のときも沈める。腕と素足には pants の色が無いので影響しない。
+        copy.pants = pantsShade
+        copy.pantsShade = pantsShade.mix(with: Self.ink, by: 0.30)
         copy.dark = dark.mix(with: Self.ink, by: 0.40)
         return copy
     }

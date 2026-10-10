@@ -170,6 +170,28 @@ final class PartyBattleTests: XCTestCase {
         XCTAssertEqual(odd.skinId.count, 32)
     }
 
+    /// 性別（issue #141）。送って読めること、キーの無い古い見た目は男性になること、指紋に入ること。
+    func testLookCarriesGenderAndDefaultsToMale() throws {
+        let female = PartyBoss.MemberLook(
+            build: CharacterBuild(girth: .slim, arm: .thin, leg: .thin), skinId: "classic", stage: .rookie,
+            hairStyleId: "bob", accessoryId: "none", equipped: [:], gender: .female
+        )
+        let data = try JSONSerialization.data(withJSONObject: female.json)
+        let decoded = try XCTUnwrap(PartyBoss.MemberLook(json: try JSONSerialization.jsonObject(with: data)))
+        XCTAssertEqual(decoded.genderValue, .female)
+        XCTAssertEqual(decoded, female)
+
+        var legacy = female.json
+        legacy.removeValue(forKey: "g")
+        XCTAssertEqual(try XCTUnwrap(PartyBoss.MemberLook(json: legacy)).genderValue, .male, "古いアプリの見た目は男性")
+        legacy["g"] = "unknown"
+        XCTAssertEqual(try XCTUnwrap(PartyBoss.MemberLook(json: legacy)).genderValue, .male, "知らない値は男性")
+
+        var male = female
+        male.gender = CharacterGender.male.rawValue
+        XCTAssertNotEqual(male.fingerprint, female.fingerprint, "性別を変えても送り直されない")
+    }
+
     func testLookJSONFitsServerLimit() throws {
         let look = PartyBoss.MemberLook(
             build: CharacterBuild(girth: .wide, arm: .thick, leg: .thick), skinId: "gymnee", stage: .legend,
