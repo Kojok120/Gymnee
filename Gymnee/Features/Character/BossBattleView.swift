@@ -13,6 +13,8 @@ struct BossBattleView: View {
     let selfLook: PixelCharacterRenderer.Look
     /// 連れているペット（ソロのとき仲間として並ぶ）。
     let pet: PetCatalog.Pet?
+    /// 手持ちのパワー（部屋で計算したもの）。必殺技を出せるかの判定に使う（issue #150）。
+    let energy: Int
     /// 部屋へ上る。nil なら「部屋へ」を出さない（DEBUG の単体ハーネス）。
     var onGoUpstairs: (() -> Void)?
 
@@ -44,6 +46,8 @@ struct BossBattleView: View {
     @State private var pendingPartyId: UUID?
     @State private var joinMessage: String?
     @State private var isJoining = false
+    @State private var confirmSpecial = false
+    @State private var isSpecialAttacking = false
 
     private static let plate = Color.black.opacity(0.55)
     private static let accent = Color(hexF: 0xC6FF3D)
@@ -74,6 +78,16 @@ struct BossBattleView: View {
         .sheet(item: $openedReward) { reward in
             BossRewardReveal(reward: reward)
                 .preferredColorScheme(.dark)
+        }
+        .confirmationDialog(
+            "パワーを\(PartyBoss.specialAttackCost)使って必殺技を出しますか？",
+            isPresented: $confirmSpecial,
+            titleVisibility: .visible
+        ) {
+            Button("必殺技を出す") { specialAttack() }
+            Button("やめる", role: .cancel) {}
+        } message: {
+            Text("ボスに1撃。1人につき、パーティごとに週1回だけ出せます。")
         }
         .task {
             pendingPartyId = UserDefaults.standard.string(forKey: PartyInviteLink.pendingDefaultsKey)
@@ -331,6 +345,7 @@ struct BossBattleView: View {
     private func strikeFX() -> BossBattleStage.Strike? {
         guard let step = currentStep, let status else { return nil }
         var bonuses: [String] = []
+        if step.attack.isSpecial { bonuses.append("必殺技") }
         if step.attack.combo > 0 { bonuses.append("連携 +1") }
         if step.attack.skill > 0 {
             bonuses.append("\((status.member(step.attack.userId)?.job ?? .hero).skillName) +1")
@@ -575,6 +590,10 @@ struct BossBattleView: View {
     private var signedInToolbar: some View {
         HStack(spacing: Theme.Spacing.sm) {
             toolbarButton("パーティ", "person.3.fill") { showMenu = true }
+            // 必殺技（issue #150）。倒したあとは宝箱の番なので出さない。
+            if let status, !status.defeated {
+                specialButton(status)
+            }
             if let status, status.canInvite {
                 ShareLink(item: PartyInviteLink.url(for: status.partyId), message: Text(PartyInviteLink.shareMessage)) {
                     toolbarLabel("仲間を誘う", "person.badge.plus")
@@ -586,6 +605,52 @@ struct BossBattleView: View {
         }
         .frame(height: Self.toolbarHeight)
         .frame(maxWidth: .infinity)
+    }
+
+    /// 必殺技のボタン。出せないときも押せて、理由（今週は使った・パワーがあと何）を窓に出す。
+    private func specialButton(_ status: PartyBoss.Status) -> some View {
+        let state = PartyBoss.specialAttackState(status: status, userId: userId, energy: energy)
+        let ready = state == .ready && !isSpecialAttacking
+        return Button {
+            switch state {
+            case .ready: confirmSpecial = true
+            case .usedThisWeek: showToast("必殺技は 今週もう つかった\n来週また 出せる")
+            case let .notEnoughEnergy(missing): showToast("パワーが あと \(missing) たりない\nトレーニングで たまる")
+            case .defeated: break
+            }
+        } label: {
+            Label(isSpecialAttacking ? "必殺技…" : "必殺技 \(PartyBoss.specialAttackCost)", systemImage: "bolt.fill")
+                .font(.pixel(size: 13, relativeTo: .subheadline))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(ready ? Color.white : Color.white.opacity(0.45))
+                .padding(.horizontal, Theme.Spacing.md)
+                .frame(height: 40)
+                .frame(maxWidth: .infinity)
+                .background(ready ? Self.specialFill : Self.plate,
+                            in: RoundedRectangle(cornerRadius: Theme.Radius.chip, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(isSpecialAttacking || playIndex != nil)
+        .accessibilityHint(ready ? "パワーを\(PartyBoss.specialAttackCost)使ってボスに1撃" : "")
+    }
+
+    /// 出せる必殺技の塗り（部屋の赤いボスの入口と同じ赤）。
+    private static let specialFill = Color(hexF: 0xD63B3B)
+
+    private func specialAttack() {
+        guard let status, !isSpecialAttacking else { return }
+        Task {
+            isSpecialAttacking = true
+            let result = await party.specialAttack(status.partyId, userId: userId, weeklyGoal: weeklyGoal)
+            isSpecialAttacking = false
+            switch result {
+            case .success: break  // 取り直した状況に必殺技が入るので、新しい攻撃として再生される
+            case .failure(.usedThisWeek): showToast("必殺技は 今週もう つかった\n来週また 出せる")
+            case .failure(.defeated): showToast("もう たおしている")
+            case .failure(.failed): showToast("必殺技を 出せなかった\n通信を たしかめて もう一度")
+            }
+        }
     }
 
     private func toolbarButton(_ title: String, _ symbol: String, highlighted: Bool = false, action: @escaping () -> Void) -> some View {

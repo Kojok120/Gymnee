@@ -46,15 +46,17 @@ enum Expedition {
         let weights: [Int]
     }
 
+    /// 消費パワーは 2026-10 に約1.5倍にした（issue #150）。パワーが溜まる一方だったので、
+    /// 週ボスの必殺技（100）と取り合う使い道にする。
     static let courses: [Course] = [
         Course(id: "morning-hill", title: "朝の丘", subtitle: "軽い足慣らし", symbol: "sun.max.fill",
-               energyCost: 20, durationMinutes: 30, minLevel: 1, weights: [80, 18, 2]),
+               energyCost: 30, durationMinutes: 30, minLevel: 1, weights: [80, 18, 2]),
         Course(id: "iron-forest", title: "鉄の森", subtitle: "手強い相手が出る", symbol: "tree.fill",
-               energyCost: 45, durationMinutes: 120, minLevel: 3, weights: [60, 33, 7]),
+               energyCost: 70, durationMinutes: 120, minLevel: 3, weights: [60, 33, 7]),
         Course(id: "old-gym", title: "廃ジム探索", subtitle: "掘り出し物の宝庫", symbol: "building.columns.fill",
-               energyCost: 80, durationMinutes: 360, minLevel: 8, weights: [40, 44, 16]),
+               energyCost: 120, durationMinutes: 360, minLevel: 8, weights: [40, 44, 16]),
         Course(id: "summit", title: "頂への遠征", subtitle: "丸一日の長征", symbol: "mountain.2.fill",
-               energyCost: 140, durationMinutes: 1440, minLevel: 15, weights: [20, 50, 30]),
+               energyCost: 200, durationMinutes: 1440, minLevel: 15, weights: [20, 50, 30]),
     ]
 
     static func course(id: String) -> Course? { courses.first { $0.id == id } }

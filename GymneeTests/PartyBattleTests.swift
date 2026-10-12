@@ -312,4 +312,67 @@ final class PartyBattleTests: XCTestCase {
             jst("2026-10-06T08:00:00+09:00"),
         ], now: now), 2)
     }
+
+    // MARK: - 必殺技（issue #150）
+
+    func testSpecialAttackIsReadFromServerCategory() throws {
+        let row: [String: Any] = ["id": "abc", "user_id": uid(1).uuidString, "day": "2026-10-01",
+                                  "category": "special", "base": 1, "skill": 0, "combo": 0]
+        let attack = try XCTUnwrap(PartyBoss.Attack(json: row))
+        XCTAssertTrue(attack.isSpecial)
+        XCTAssertEqual(attack.total, 1)
+        // 知らない系統として古い読み方をしても全身の攻撃に落ちる（古いアプリでも壊れない）
+        XCTAssertEqual(attack.category, .full)
+        var workout = row
+        workout["category"] = "upper"
+        XCTAssertFalse(try XCTUnwrap(PartyBoss.Attack(json: workout)).isSpecial)
+    }
+
+    func testSpecialAttackLines() {
+        let me = PartyBoss.Member(id: uid(1), displayName: "こうじ", avatarURL: nil, weeklyGoal: 3, hits: 1)
+        let special = PartyBoss.Attack(id: "s1", userId: uid(1), day: "2026-10-01", category: .full,
+                                       base: 1, skill: 0, combo: 0, isSpecial: true)
+        let s = status(attacks: [special], hp: 3, members: [me])
+        let lines = PartyBattle.lines(for: special, in: s, userId: uid(1), hpBefore: 3, hpAfter: 2)
+        XCTAssertEqual(lines.first, "あなたの 必殺技 \(PartyBoss.specialMove(seed: "s1"))！")
+        XCTAssertTrue(lines.contains { $0.hasSuffix("1の ダメージ！") }, "\(lines)")
+        // とどめなら倒した行も出る
+        let finishing = PartyBattle.lines(for: special, in: s, userId: uid(1), hpBefore: 1, hpAfter: 0)
+        XCTAssertTrue(finishing.last?.hasSuffix("たおした！") ?? false, "\(finishing)")
+    }
+
+    func testSpecialAttackState() {
+        let me = PartyBoss.Member(id: uid(1), displayName: "こうじ", avatarURL: nil, weeklyGoal: 3, hits: 1)
+        let friend = PartyBoss.Member(id: uid(2), displayName: "けんた", avatarURL: nil, weeklyGoal: 3, hits: 0)
+        let workout = PartyBoss.Attack(id: "w1", userId: uid(1), day: "2026-10-01", category: .upper, base: 1, skill: 0, combo: 0)
+        let cost = PartyBoss.specialAttackCost
+
+        let fighting = status(attacks: [workout], hp: 6, members: [me, friend])
+        XCTAssertEqual(PartyBoss.specialAttackState(status: fighting, userId: uid(1), energy: cost), .ready)
+        XCTAssertEqual(PartyBoss.specialAttackState(status: fighting, userId: uid(1), energy: cost - 30),
+                       .notEnoughEnergy(missing: 30))
+        XCTAssertEqual(PartyBoss.specialAttackState(status: fighting, userId: uid(1), energy: -5),
+                       .notEnoughEnergy(missing: cost), "残高が負でも足りない分は費用まで")
+
+        // 仲間が使っても自分は出せる。自分が使ったら、パワーが足りていても「今週は使った」。
+        let friendUsed = status(attacks: [workout, special(uid(2))], hp: 6, members: [me, friend])
+        XCTAssertEqual(PartyBoss.specialAttackState(status: friendUsed, userId: uid(1), energy: cost), .ready)
+        let iUsed = status(attacks: [workout, special(uid(1))], hp: 6, members: [me, friend])
+        XCTAssertEqual(PartyBoss.specialAttackState(status: iUsed, userId: uid(1), energy: 999), .usedThisWeek)
+        XCTAssertEqual(PartyBoss.specialAttackState(status: iUsed, userId: uid(1), energy: 0), .usedThisWeek,
+                       "使ったあとは足りないより「今週は使った」を伝える")
+
+        let defeated = status(attacks: [workout], hp: 1, members: [me, friend])
+        XCTAssertEqual(PartyBoss.specialAttackState(status: defeated, userId: uid(1), energy: cost), .defeated)
+    }
+
+    private func special(_ user: UUID) -> PartyBoss.Attack {
+        PartyBoss.Attack(id: "special-\(user.uuidString)", userId: user, day: "2026-10-02", category: .full,
+                         base: 1, skill: 0, combo: 0, isSpecial: true)
+    }
+
+    func testExpeditionCostsWereRaised() {
+        // パワーが溜まる一方だったので約1.5倍にした（issue #150）。安い順に並び、どれも必殺技と取り合う値。
+        XCTAssertEqual(Expedition.courses.map(\.energyCost), [30, 70, 120, 200])
+    }
 }

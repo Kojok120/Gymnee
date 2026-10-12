@@ -641,6 +641,20 @@ actor SupabaseClient {
         return ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
     }
 
+    /// 必殺技を出す（issue #150）。出したあとのパーティの状況を返す。今週使った・撃破済みなら例外。
+    func specialAttack(partyId: UUID) async throws -> Any? {
+        let data = try await rpc("party_special_attack", ["p_party_id": partyId.uuidString.lowercased()])
+        return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+    }
+
+    /// 自分が必殺技に使ったパワーの記録（RLS で自分の分だけ）。残高から引く。
+    func mySpecialAttacks() async throws -> [[String: Any]] {
+        var request = restRequest(path: "party_special_attacks", query: "select=energy_spent")
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+    }
+
     private func rpc(_ name: String, _ params: [String: Any]) async throws -> Data {
         var request = restRequest(path: "rpc/\(name)")
         request.httpMethod = "POST"
