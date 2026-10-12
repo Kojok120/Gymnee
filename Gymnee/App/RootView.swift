@@ -185,6 +185,7 @@ struct RootView: View {
                 Tab("ソーシャル", systemImage: "person.2.fill", value: "social") { Color.clear }
                 Tab("その他", systemImage: "ellipsis", value: "other") { Color.clear }
             }
+            .preferredColorScheme(isOnBossFloor ? .dark : nil)
             .onAppear {
                 switch name {
                 case "character-tab-boss": party.loadDemo(userId: userId, defeated: false, solo: true)
@@ -335,6 +336,12 @@ struct RootView: View {
         return auth.isSignedIn && !setupDone
     }
 
+    /// 育成タブで、地下のボス部屋にいるか（issue #145）。そのあいだは状態バーとタブバーも暗くする。
+    /// ほかのタブを選んでいるときは暗くしない（判定をここに置くのは、タブの選択を持つのが RootView だから）。
+    @AppStorage(CharacterRoomView.pageKey) private var characterPage = CharacterRoomView.Page.room.rawValue
+
+    private var isOnBossFloor: Bool { characterPage == CharacterRoomView.Page.boss.rawValue }
+
     private var mainTabs: some View {
         TabView(selection: $selection) {
             RecordView()
@@ -358,6 +365,7 @@ struct RootView: View {
                 .tag(AppTab.other)
         }
         .tint(Theme.energy)
+        .preferredColorScheme(selection == .character && isOnBossFloor ? .dark : nil)
         .fullScreenCover(isPresented: Binding(get: { shouldShowSetup }, set: { _ in })) {
             SetupOnboardingView()
         }
