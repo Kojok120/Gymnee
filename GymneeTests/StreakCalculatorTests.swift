@@ -89,6 +89,38 @@ final class StreakCalculatorTests: XCTestCase {
         )
     }
 
+    // MARK: - その日が今月の何日目か（投稿カードの「今月○日目」）
+
+    /// 過去の投稿は、その日までの日数で数える（あとで記録した日を足さない）。
+    func testMonthlyOrdinalCountsOnlyUpToThatDay() {
+        // 10/1・10/6・10/8・10/11 に記録した月。どの投稿も「4日目」になっていた不具合の再現。
+        let days = [day(2026, 10, 1), day(2026, 10, 6), day(2026, 10, 8), day(2026, 10, 11)]
+        XCTAssertEqual(StreakCalculator.monthlyActiveDayOrdinal(activeDays: days, on: day(2026, 10, 6), calendar: cal), 2)
+        XCTAssertEqual(StreakCalculator.monthlyActiveDayOrdinal(activeDays: days, on: day(2026, 10, 8), calendar: cal), 3)
+        XCTAssertEqual(StreakCalculator.monthlyActiveDayOrdinal(activeDays: days, on: day(2026, 10, 11), calendar: cal), 4)
+        // 月全体の日数（今月の活動日数）は別物として残る。
+        XCTAssertEqual(StreakCalculator.monthlyActiveDays(activeDays: days, in: day(2026, 10, 6), calendar: cal), 4)
+    }
+
+    /// 同じ日の2回目の記録も同じ日数（同日は 1 と数える）。その日の遅い時刻の記録も取りこぼさない。
+    func testMonthlyOrdinalSameDayAndLateTime() {
+        var c = DateComponents()
+        c.year = 2026; c.month = 10; c.day = 8; c.hour = 7
+        let morning = cal.date(from: c)!
+        c.hour = 23; c.minute = 59
+        let night = cal.date(from: c)!
+        let days = [day(2026, 10, 1), morning, night]
+        XCTAssertEqual(StreakCalculator.monthlyActiveDayOrdinal(activeDays: days, on: morning, calendar: cal), 2)
+        XCTAssertEqual(StreakCalculator.monthlyActiveDayOrdinal(activeDays: days, on: night, calendar: cal), 2)
+    }
+
+    /// 前の月の記録は数えない。月の最初の記録は 1日目。
+    func testMonthlyOrdinalResetsEachMonth() {
+        let days = [day(2026, 9, 28), day(2026, 9, 30), day(2026, 10, 2)]
+        XCTAssertEqual(StreakCalculator.monthlyActiveDayOrdinal(activeDays: days, on: day(2026, 10, 2), calendar: cal), 1)
+        XCTAssertEqual(StreakCalculator.monthlyActiveDayOrdinal(activeDays: days, on: day(2026, 9, 30), calendar: cal), 2)
+    }
+
     func testMonthlyActiveDaysEmpty() {
         XCTAssertEqual(StreakCalculator.monthlyActiveDays(activeDays: [], in: day(2026, 6, 17), calendar: cal), 0)
     }
