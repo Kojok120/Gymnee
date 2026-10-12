@@ -178,36 +178,32 @@ enum FeedPublisher {
 
     /// 投稿時点の育成キャラのレベルと進化段階。他人の端末では再計算できないので feed に焼き込む。
     /// 育成の進み具合がフィードに乗ることで、投稿そのものの中身が増える。
+    /// 「投稿時点」はそのワークアウトの完了時刻までの記録で数える。`syncPublishedPosts` が開くたびに
+    /// 作り直すので、今の記録で数えると過去の投稿まで今のレベルに上書きされる。
     @MainActor
     private static func characterBadge(for w: Workout, context: ModelContext) -> (level: Int?, stage: String?) {
-        let uid = w.userId
-        let completed = (try? context.fetch(
-            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
-        )) ?? []
-        guard !completed.isEmpty else { return (nil, nil) }
-        let prs = CharacterInputs.prHistory(from: completed)
-        let sessions = CharacterInputs.sessions(from: completed, prCountByWorkout: prs.byWorkout)
-        guard !sessions.isEmpty else { return (nil, nil) }
-        let level = CharacterProgress.level(totalExperience: CharacterProgress.totalExperience(sessions: sessions))
         let goal = UserDefaults.standard.object(forKey: "gymnee.weeklyGoal") as? Int ?? 3
-        let weeks = StreakCalculator.currentWeeklyStreak(
-            activeDays: completed.map { $0.completedAt ?? $0.date }, weeklyGoal: goal
-        ).weeks
-        let stage = CharacterProgress.stage(level: level.value, prCount: prs.total, weeklyStreakWeeks: weeks)
-        return (level.value, stage.title)
+        let badge = CharacterInputs.badge(asOf: w.completedAt ?? w.date, completed: completedWorkouts(of: w, context: context),
+                                          weeklyGoal: goal)
+        return (badge?.level, badge?.stage)
     }
 
-    /// 投稿時点の「今月の活動日数」。他人の端末では再計算できないので feed に焼き込む。
+    /// 投稿時点の「今月○日目」。他人の端末では再計算できないので feed に焼き込む。
+    /// そのワークアウトの日までの日数で数える（月全体で数えると、同じ月の投稿がすべて今の日数になる）。
     @MainActor
     private static func monthlyDay(for w: Workout, context: ModelContext) -> Int {
+        StreakCalculator.monthlyActiveDayOrdinal(
+            activeDays: completedWorkouts(of: w, context: context).map { $0.completedAt ?? $0.date },
+            on: w.completedAt ?? w.date
+        )
+    }
+
+    @MainActor
+    private static func completedWorkouts(of w: Workout, context: ModelContext) -> [Workout] {
         let uid = w.userId
-        let completed = (try? context.fetch(
+        return (try? context.fetch(
             FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
         )) ?? []
-        return StreakCalculator.monthlyActiveDays(
-            activeDays: completed.map { $0.completedAt ?? $0.date },
-            in: w.completedAt ?? w.date
-        )
     }
 
     /// PR 投稿の summary は「初回記録＝新しい種目に挑戦／更新＝自己ベスト更新」。初回判定は完了

@@ -6,6 +6,26 @@ import Foundation
 /// セット数・ボリュームを取り出す」部分は育成タブと DEBUG ハーネスの両方で要るのでここに置く。
 enum CharacterInputs {
 
+    /// 投稿時点の育成キャラ（フィードの「Lv.12 チャレンジャー」）。`asOf` までに完了したワークアウトだけで数える。
+    /// 今ある全部で数えると、投稿を同期し直すたびに過去の投稿まで今のレベルに上書きされる。
+    /// ボスの宝箱の EXP は含めない（投稿に焼き込む値はワークアウトの記録だけから決める）。
+    static func badge(asOf: Date, completed: [Workout], weeklyGoal: Int) -> (level: Int, stage: String)? {
+        let history = completed.filter { workout in
+            guard let done = workout.completedAt else { return false }
+            return done <= asOf
+        }
+        guard !history.isEmpty else { return nil }
+        let prs = prHistory(from: history)
+        let sessions = sessions(from: history, prCountByWorkout: prs.byWorkout)
+        guard !sessions.isEmpty else { return nil }
+        let level = CharacterProgress.level(totalExperience: CharacterProgress.totalExperience(sessions: sessions))
+        let weeks = StreakCalculator.currentWeeklyStreak(
+            activeDays: history.map { $0.completedAt ?? $0.date }, weeklyGoal: weeklyGoal, asOf: asOf
+        ).weeks
+        let stage = CharacterProgress.stage(level: level.value, prCount: prs.total, weeklyStreakWeeks: weeks)
+        return (level.value, stage.title)
+    }
+
     /// 完了済みワークアウトからセッション入力を作る。
     /// 日付は `completedAt` に一本化する（`date` は後追い記録でズレることがある）。
     /// ボリュームは既存の総挙上量（プロフィールの実績）と同じ数え方に合わせ、

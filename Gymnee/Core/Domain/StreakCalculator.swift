@@ -73,6 +73,21 @@ enum StreakCalculator {
         return distinct.count
     }
 
+    /// その日が、その月の何日目の活動日か（月初からその日までの活動「日数」。同日複数記録は 1 と数える）。
+    /// 投稿カードの「今月○日目」に使う。`monthlyActiveDays` は月全体を数えるので、過去の投稿に使うと
+    /// あとで記録した日まで足され、同じ月の投稿がすべて今の日数になってしまう。
+    static func monthlyActiveDayOrdinal(activeDays: [Date], on day: Date, calendar: Calendar = .current) -> Int {
+        guard let month = calendar.dateInterval(of: .month, for: day) else { return 0 }
+        let cutoff = calendar.startOfDay(for: day)
+        let distinct = Set(
+            activeDays
+                .filter { month.contains($0) }
+                .map { calendar.startOfDay(for: $0) }
+                .filter { $0 <= cutoff }
+        )
+        return distinct.count
+    }
+
     /// 週次ゴールに対する達成率（0.0〜1.0）。goal <= 0 のときは 0。
     static func weeklyAchievementRate(activeDays: [Date], goal: Int, in reference: Date = .now, calendar: Calendar = .current) -> Double {
         guard goal > 0 else { return 0 }

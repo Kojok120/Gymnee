@@ -23,3 +23,8 @@ create table public.live_sessions(id uuid primary key default gen_random_uuid(),
 create function public.is_live(s public.live_sessions) returns boolean language sql stable as $$
   select s.ended_at is null and s.started_at > now() - public.live_session_max_duration()
 $$;
+-- 0044（ライブ中の応援を投稿へ引き継ぐ）が読み書きするテーブル。0013（応援の通知）も post_reactions に掛かる。
+create table public.blocks(id uuid primary key default gen_random_uuid(), blocker_id uuid not null, blocked_id uuid not null, unique (blocker_id, blocked_id));
+create table public.feed_items(id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id), type text not null, ref_id uuid not null, visibility text not null default 'friends', created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+create table public.session_cheers(id uuid primary key default gen_random_uuid(), session_id uuid not null references public.live_sessions(id) on delete cascade, user_id uuid not null references auth.users(id), kind text not null default 'fire', created_at timestamptz not null default now(), unique (session_id, user_id, kind));
+create table public.post_reactions(id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id), feed_item_id uuid not null references public.feed_items(id) on delete cascade, kind text not null default 'like', created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique (user_id, feed_item_id, kind));

@@ -44,11 +44,12 @@ final class LiveSessionService {
     func configure(client: SupabaseClient) { self.client = client }
 
     /// 記録を始めたことを配信する。設定がオフ・未サインインなら何もしない。
-    func start(isSharing: Bool) async {
+    /// `workoutId` を持たせておくと、記録を投稿したときにライブ中の応援が投稿の応援として残る（issue #148）。
+    func start(isSharing: Bool, workoutId: UUID) async {
         guard isSharing, currentSessionId == nil, let client else { return }
         guard await client.isAuthenticated else { return }
         cheers = []
-        currentSessionId = try? await client.startLiveSession()
+        currentSessionId = try? await client.startLiveSession(workoutId: workoutId)
     }
 
     /// 配信を終える。終えないと期限（3時間）まで「トレーニング中」のままになるので、

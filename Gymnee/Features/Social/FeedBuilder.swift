@@ -293,8 +293,8 @@ enum FeedBuilder {
             prCount: prCount,
             workoutLines: lines,
             caption: w.caption,
-            monthlyDay: StreakCalculator.monthlyActiveDays(
-                activeDays: activeDays, in: w.completedAt ?? w.date, calendar: calendar
+            monthlyDay: StreakCalculator.monthlyActiveDayOrdinal(
+                activeDays: activeDays, on: w.completedAt ?? w.date, calendar: calendar
             ),
             characterLevel: character?.level,
             characterStage: character?.stage,
