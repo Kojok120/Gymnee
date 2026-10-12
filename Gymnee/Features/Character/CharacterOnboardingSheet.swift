@@ -64,7 +64,7 @@ struct CharacterOnboardingSheet: View {
                     sprite: PixelBossArt.slime,
                     accent: Color(hexF: 0x8BC34A),
                     title: "毎週のボスを友達と倒します",
-                    detail: "トレーニング1回が1撃。下の赤い「ボスに挑む」から、1人でも友達とでも挑めます"
+                    detail: "トレーニング1回が1撃。上の「ボス」に切り替えると、1人でも友達とでも挑めます"
                 )
                 row(
                     sprite: PixelItemArt.course(id: "morning-hill"),
