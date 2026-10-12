@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 週ボスの戦闘画面（issue #137。仕組みは #128 / #130 / #133）。
 ///
-/// 育成タブの「ボス」側の画面（issue #143。上の切り替えで部屋と行き来する。閉じるボタンは持たない）。
+/// 育成タブの、部屋の「地下」にあるボス部屋（issue #143 / #145）。左上の「部屋へ」で部屋に上る。
 /// 石壁のボス部屋。奥にボス、手前に仲間が背中を向けて並ぶ（背面視点）。
 /// 開くと、前回見たあとに入った仲間の攻撃を順に再生し、メッセージ窓で読ませる。
 /// ダメージ・撃破・報酬はサーバーが正（`PartyService`）。ここは見せ方だけを持つ。
@@ -13,6 +13,8 @@ struct BossBattleView: View {
     let selfLook: PixelCharacterRenderer.Look
     /// 連れているペット（ソロのとき仲間として並ぶ）。
     let pet: PetCatalog.Pet?
+    /// 部屋へ上る。nil なら「部屋へ」を出さない（DEBUG の単体ハーネス）。
+    var onGoUpstairs: (() -> Void)?
 
     @Environment(AuthService.self) private var auth
     @Environment(PartyService.self) private var party
@@ -60,8 +62,9 @@ struct BossBattleView: View {
             .ignoresSafeArea()
         }
         .background(Color(hexF: 0x0D0F15))
-        // 暗い配色はこの画面の中だけに効かせる。`preferredColorScheme` だと表示全体に効き、
-        // タブの中に置いた今は、ほかのタブへ移ってもアプリ全体が暗いままになる。
+        // 暗い配色はこの画面の中に効かせる。状態バーとタブバーは RootView が
+        // 「育成タブでボス部屋にいる間だけ」暗くする（ここで preferredColorScheme を使うと、
+        // タブを移っても画面が生きているあいだアプリ全体が暗いままになる）。
         .environment(\.colorScheme, .dark)
         // シートは表示が別なので、全画面だった頃と同じ暗い見た目をシート側で指定する。
         .sheet(isPresented: $showMenu) {
@@ -385,9 +388,25 @@ struct BossBattleView: View {
 
     // MARK: - 上の帯
 
-    /// パーティ名（切り替え）と残り日数。部屋へ戻るのは育成タブ上の切り替えなので、閉じるボタンは置かない。
+    /// 部屋へ上る階段・パーティ名（切り替え）・残り日数。
     private func topBar(safe: EdgeInsets) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
+            if let onGoUpstairs {
+                Button(action: onGoUpstairs) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("部屋へ")
+                            .font(.pixel(size: 13, relativeTo: .caption))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .frame(height: 38)
+                    .background(Self.plate, in: Capsule())
+                }
+                .accessibilityLabel("部屋に戻る")
+            }
+            Spacer(minLength: 0)
             if isSignedIn, !party.statuses.isEmpty {
                 partySwitcher
             }

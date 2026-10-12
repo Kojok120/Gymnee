@@ -42,8 +42,11 @@ struct CharacterRoomView: View {
     /// 受け取り演出中の戦利品（道中の出来事つき）。
     @State private var celebrating: ClaimResult?
     @State private var sheet: SheetRoute?
-    /// 育成タブのどちらの画面を出しているか（issue #143）。最後に開いていた方を次も開く。
-    @AppStorage(Self.pageKey) private var pageRaw = Page.room.rawValue
+    /// 部屋と地下のボス部屋のどちらにいるか（issue #143 / #145）。描画はこの @State を正にする。
+    /// @AppStorage を直接書き換えると UserDefaults 経由の更新になって withAnimation が効かず、
+    /// 縦に流れずに一瞬で切り替わってしまう。保存（最後にいた場所・RootView の暗転）は onChange で写す。
+    @State private var page: Page
+    @AppStorage(Self.pageKey) private var storedPage = Page.room.rawValue
     /// 完了直後の祝いで「ダンジョンへ」が押された（祝いを閉じたらボスに切り替える）。
     @State private var openBattleAfterCelebration = false
     @State private var showNotifPrePrompt = false
@@ -57,6 +60,8 @@ struct CharacterRoomView: View {
 
     init(userId: UUID) {
         self.userId = userId
+        // 最後にいた場所から始める。
+        _page = State(initialValue: Page(rawValue: UserDefaults.standard.string(forKey: Self.pageKey) ?? "") ?? .room)
         _completedWorkouts = Query(filter: #Predicate<Workout> { $0.userId == userId && $0.completedAt != nil })
         _records = Query(filter: #Predicate<PersonalRecord> { $0.userId == userId })
         _runs = Query(
@@ -160,11 +165,11 @@ struct CharacterRoomView: View {
 
     var body: some View {
         NavigationStack {
-            // 育成タブは「育成（部屋）」と「ボス（戦闘画面）」の2画面（issue #143）。上の切り替えで行き来する。
-            // 横スワイプでは切り替えない（部屋の「なぞって拾う」とぶつかる）。
+            // 育成タブは「部屋」と、その地下の「ボス部屋」の2つの場所（issue #143 / #145）。
+            // 部屋の赤いボタンで降り、ボス部屋の「部屋へ」で上る。切り替えは縦に流して上下の位置関係を見せる。
+            // スワイプでは切り替えない（部屋の「なぞって拾う」とぶつかる）。
             // 見えていない方は描かない（部屋は毎フレーム描き直すので、裏で回すと電池を食う）。
-            VStack(spacing: 0) {
-                pageSwitcher
+            ZStack {
                 switch page {
                 case .room:
                     // 外側で safe area の量（＝タブバー + ホームインジケータの高さ）を測ってから、
@@ -178,8 +183,12 @@ struct CharacterRoomView: View {
                         }
                         .ignoresSafeArea(edges: .bottom)
                     }
+                    .transition(.move(edge: .top))
                 case .boss:
-                    BossBattleView(userId: userId, selfLook: battleLook, pet: activePet)
+                    BossBattleView(userId: userId, selfLook: battleLook, pet: activePet) {
+                        go(to: .room)
+                    }
+                    .transition(.move(edge: .bottom))
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -200,6 +209,7 @@ struct CharacterRoomView: View {
             // 週ボスの状況（宝箱の印と、遠征に使えるパワー）。パーティはここでは作らない。
             Task { await party.refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false) }
         }
+        .onChange(of: page) { _, newValue in recordPage(newValue) }
         .onChange(of: signature) { _, _ in
             refresh()
             // 記録タブで完了 → 育成タブへ、の順で来ると @Query の反映が onAppear より後になる。
@@ -961,70 +971,35 @@ struct CharacterRoomView: View {
         .accessibilityLabel("遠征から帰った荷物を受け取る")
     }
 
-    // MARK: - 画面の切り替え（issue #143）
+    // MARK: - 部屋とボス部屋（issue #143 / #145）
 
     enum Page: String {
         case room, boss
     }
 
-    /// 最後に開いていた画面の保存キー。
+    /// 最後にいた場所の保存キー（RootView も読み、ボス部屋にいる間は表示全体を暗くする）。
     static let pageKey = "gymnee.character.page"
 
-    private var page: Page {
-        get { Page(rawValue: pageRaw) ?? .room }
-        nonmutating set { pageRaw = newValue.rawValue }
+    private static let moveDuration = 0.45
+
+    /// 部屋とボス部屋を行き来する。降りるときは部屋が上へ抜け、上るときはボス部屋が下へ抜ける。
+    private func go(to destination: Page) {
+        guard page != destination else { return }
+        withAnimation(.easeInOut(duration: Self.moveDuration)) { page = destination }
     }
 
-    /// 「育成 / ボス」の切り替え。ボスを選んでいる間は赤い入口と同じ塗りにして、ボスの画面にいることを示す。
-    /// 宝箱が未開封なら「ボス」にライムの印を出す（部屋の赤いボタンと同じ条件）。
-    private var pageSwitcher: some View {
-        HStack(spacing: Theme.Spacing.xs) {
-            pageSegment(.room, title: "育成", symbol: "figure.strengthtraining.traditional", badge: false)
-            pageSegment(.boss, title: "ボス", symbol: "flame.fill", badge: party.hasUnclaimedChest)
+    /// 最後にいた場所を保存する。RootView はこの値でボス部屋にいる間の表示（状態バー・タブバー）を暗くする。
+    /// 降りるときは流れきってから書く。先に書くと、表示全体の暗転が流れの途中で全タブを描き直して
+    /// 引っかかり、上へ抜けていく部屋も暗い配色に変わってしまう。上るときは先に書き、部屋を明るいまま入れる。
+    private func recordPage(_ destination: Page) {
+        guard destination == .boss else {
+            storedPage = destination.rawValue
+            return
         }
-        .padding(Theme.Spacing.xs)
-        .background(Theme.bg2, in: Capsule())
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.sm)
-        .background(Theme.bg0)
-    }
-
-    private func pageSegment(_ target: Page, title: String, symbol: String, badge: Bool) -> some View {
-        let selected = page == target
-        return Button { page = target } label: {
-            HStack(spacing: Theme.Spacing.xs) {
-                Image(systemName: symbol)
-                    .font(.footnote.weight(.semibold))
-                Text(title)
-                    .font(.subheadline.bold())
-            }
-            .foregroundStyle(selected ? (target == .boss ? Color.white : Theme.textPrimary) : Theme.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: 34)
-            .background {
-                if selected {
-                    if target == .boss {
-                        Capsule().fill(LinearGradient(colors: [Self.bossRed, Self.bossOrange],
-                                                      startPoint: .leading, endPoint: .trailing))
-                    } else {
-                        Capsule().fill(Theme.bg1).shadow(color: .black.opacity(0.08), radius: 2, y: 1)
-                    }
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if badge {
-                    Circle().fill(Self.hudAccent)
-                        .frame(width: 9, height: 9)
-                        .padding(.top, 4)
-                        .padding(.trailing, Theme.Spacing.md)
-                }
-            }
-            .contentShape(Capsule())
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Self.moveDuration))
+            if page == .boss { storedPage = Page.boss.rawValue }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityValue(badge ? "宝箱が開けられます" : "")
-        // タブバーにも「育成」があるので、UI テストは id で引く。
-        .accessibilityIdentifier("page-\(target.rawValue)")
     }
 
     // MARK: - HUD
@@ -1139,7 +1114,7 @@ struct CharacterRoomView: View {
     private var bossEntryButton: some View {
         let entry = PartyBoss.entry(statuses: party.statuses, selected: party.status, now: .now)
         let shape = RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous)
-        return Button { page = .boss } label: {
+        return Button { go(to: .boss) } label: {
             HStack(spacing: Theme.Spacing.md) {
                 BossSpriteView(bossId: entry.bossId, tier: entry.tier, side: 38)
                     .frame(width: 40, height: 40)
@@ -1164,7 +1139,8 @@ struct CharacterRoomView: View {
 
                 Spacer(minLength: 0)
 
-                Image(systemName: entry.hasChest ? "gift.fill" : "chevron.right")
+                // 地下へ降りる入口なので、矢印は下向き。
+                Image(systemName: entry.hasChest ? "gift.fill" : "chevron.down")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.white)
             }
@@ -1406,14 +1382,14 @@ struct CharacterRoomView: View {
         // ボスはシートではなく切り替えなので、案内の最中でもすぐ切り替えてよい（案内はその上に出る）。
         // 見た目などのシートが開いていれば閉じて、戦闘画面が見えるようにする。
         sheet = nil
-        page = .boss
+        go(to: .boss)
     }
 
     /// 祝いを閉じたあと。「ダンジョンへ」が押されていたらボスに切り替える。残りの案内はそのまま続けて出す。
     private func afterCelebration() {
         if openBattleAfterCelebration {
             openBattleAfterCelebration = false
-            page = .boss
+            go(to: .boss)
         }
         presentNextIntro()
     }

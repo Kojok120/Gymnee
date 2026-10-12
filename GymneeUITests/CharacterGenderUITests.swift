@@ -36,10 +36,9 @@ final class CharacterGenderUITests: XCTestCase {
         let later = app.alerts.buttons["あとで"]
         if later.waitForExistence(timeout: 3) { later.tap() }
 
-        // 育成タブは「育成 / ボス」の2画面（issue #143）。前回ボスで終えていても部屋に戻す。
-        let roomPage = app.buttons["page-room"]
-        XCTAssertTrue(roomPage.waitForExistence(timeout: 10), "育成タブの切り替えが出ない")
-        roomPage.tap()
+        // 育成タブは部屋と地下のボス部屋の2か所（issue #145）。前回ボス部屋で終えていても部屋に上る。
+        let upstairs = app.buttons["部屋に戻る"]
+        if upstairs.waitForExistence(timeout: 3) { upstairs.tap() }
 
         let appearance = app.buttons["見た目"]
         XCTAssertTrue(appearance.waitForExistence(timeout: 10), "部屋の「見た目」が出ない")
