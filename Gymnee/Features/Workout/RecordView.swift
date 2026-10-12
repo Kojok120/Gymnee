@@ -1008,7 +1008,8 @@ struct RecordContent: View {
         try? context.save()   // 下書き(completedAt=nil)。サーバー同期は完了時のみ。
         activeWorkout = w
         // トレ開始をフォロワーに知らせる（設定がオンのときだけ）。失敗しても記録は妨げない。
-        Task { await live.start(isSharing: shouldShareLiveStart) }
+        // この記録の id を持たせ、投稿したときにライブ中の応援を投稿の応援として引き継ぐ。
+        Task { await live.start(isSharing: shouldShareLiveStart, workoutId: w.id) }
         return w
     }
 

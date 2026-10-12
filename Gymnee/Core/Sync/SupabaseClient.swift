@@ -124,12 +124,14 @@ actor SupabaseClient {
     /// どれも失敗しても記録の妨げにならないよう、呼び出し側で握り潰してよい。
 
     /// トレ開始を配信する。返り値はセッション id（配信オフや失敗なら nil）。
-    func startLiveSession() async throws -> UUID? {
+    /// `workoutId` は記録中のワークアウト。投稿したときに、ライブ中の応援を投稿の応援へ写すのに使う
+    /// （サーバーの 0044。`live_sessions.workout_id` が無いサーバーには送れないので、0044 の適用が先）。
+    func startLiveSession(workoutId: UUID) async throws -> UUID? {
         var request = restRequest(path: "live_sessions", query: "select=id")
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("return=representation", forHTTPHeaderField: "Prefer")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [[:] as [String: Any]])
+        request.httpBody = try JSONSerialization.data(withJSONObject: [["workout_id": workoutId.uuidString.lowercased()]])
         let data = try await send(request)
         let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
         return (rows.first?["id"] as? String).flatMap(UUID.init(uuidString:))
