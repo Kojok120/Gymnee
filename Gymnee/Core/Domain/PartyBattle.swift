@@ -42,6 +42,38 @@ extension PartyBoss {
         }
     }
 
+    // MARK: - 必殺技（issue #150）
+
+    /// 必殺技に使うパワー（サーバーの `party_special_attack_cost()` と同じ値）。
+    static let specialAttackCost = 100
+
+    /// 必殺技の技名。同じ必殺技はいつ見ても同じ名前になるよう、攻撃の id で選ぶ。
+    static func specialMove(seed: String) -> String {
+        let moves = ["テストステロン・バースト", "パワー解放", "筋肉の咆哮"]
+        let sum = seed.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
+        return moves[sum % moves.count]
+    }
+
+    /// 必殺技を出せるか。
+    enum SpecialAttackState: Equatable, Sendable {
+        case ready
+        /// 今週はこのパーティで使った（1人につきパーティごと週1回）。
+        case usedThisWeek
+        /// もう倒した（宝箱を開ける番）。
+        case defeated
+        /// パワーが足りない（あといくら）。
+        case notEnoughEnergy(missing: Int)
+    }
+
+    /// 出せるかを決める。倒したか → 今週使ったか → パワーが足りるか、の順に見る
+    /// （使ったあとはパワーが減って「足りない」になるが、伝えたいのは「今週は使った」）。
+    static func specialAttackState(status: Status, userId: UUID, energy: Int) -> SpecialAttackState {
+        if status.defeated { return .defeated }
+        if status.attacks.contains(where: { $0.isSpecial && $0.userId == userId }) { return .usedThisWeek }
+        let missing = specialAttackCost - max(0, energy)
+        return missing > 0 ? .notEnoughEnergy(missing: missing) : .ready
+    }
+
     // MARK: - ジョブ
 
     /// その週のジョブ。前の28日間に完了したワークアウトの系統で決まる（サーバーの `party_member_job`）。
@@ -134,10 +166,13 @@ extension PartyBoss {
         let skill: Int
         /// 連携（その日に2人目の仲間が来た1撃）。
         let combo: Int
+        /// パワーを使った必殺技（issue #150。サーバーの category が 'special'）。ワークアウトの攻撃ではない。
+        let isSpecial: Bool
 
         var total: Int { base + skill + combo }
 
-        init(id: String, userId: UUID, day: String, category: Category, base: Int, skill: Int, combo: Int) {
+        init(id: String, userId: UUID, day: String, category: Category, base: Int, skill: Int, combo: Int,
+             isSpecial: Bool = false) {
             self.id = id
             self.userId = userId
             self.day = day
@@ -145,6 +180,7 @@ extension PartyBoss {
             self.base = base
             self.skill = skill
             self.combo = combo
+            self.isSpecial = isSpecial
         }
 
         init?(json row: [String: Any]) {
@@ -152,12 +188,14 @@ extension PartyBoss {
                   let userId = (row["user_id"] as? String).flatMap(UUID.init(uuidString:)),
                   let day = row["day"] as? String
             else { return nil }
+            let categoryText = row["category"] as? String
             self.init(
                 id: id, userId: userId, day: day,
-                category: (row["category"] as? String).flatMap(Category.init(rawValue:)) ?? .full,
+                category: categoryText.flatMap(Category.init(rawValue:)) ?? .full,
                 base: max(0, (row["base"] as? NSNumber)?.intValue ?? 0),
                 skill: max(0, (row["skill"] as? NSNumber)?.intValue ?? 0),
-                combo: max(0, (row["combo"] as? NSNumber)?.intValue ?? 0)
+                combo: max(0, (row["combo"] as? NSNumber)?.intValue ?? 0),
+                isSpecial: categoryText == "special"
             )
         }
 
@@ -430,7 +468,9 @@ enum PartyBattle {
                       hpBefore: Int, hpAfter: Int) -> [String] {
         let bossName = status.boss?.name ?? "ボス"
         let who = name(of: attack.userId, in: status, userId: userId)
-        var lines = ["\(who)の \(attack.category.move(seed: attack.id))！"]
+        var lines = [attack.isSpecial
+            ? "\(who)の 必殺技 \(PartyBoss.specialMove(seed: attack.id))！"
+            : "\(who)の \(attack.category.move(seed: attack.id))！"]
         guard hpBefore > 0 else {
             return lines + ["しかし \(bossName)は もう たおれている"]
         }

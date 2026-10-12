@@ -185,7 +185,7 @@ struct CharacterRoomView: View {
                     }
                     .transition(.move(edge: .top))
                 case .boss:
-                    BossBattleView(userId: userId, selfLook: battleLook, pet: activePet) {
+                    BossBattleView(userId: userId, selfLook: battleLook, pet: activePet, energy: derived.energy) {
                         go(to: .room)
                     }
                     .transition(.move(edge: .bottom))
@@ -231,6 +231,8 @@ struct CharacterRoomView: View {
         }
         // 宝箱のパワーは @Query の外から来るので、変わったら集計し直す。
         .onChange(of: party.rewardEnergy) { _, _ in refresh() }
+        // 必殺技に使ったパワーも @Query の外から来る（issue #150）。
+        .onChange(of: party.specialEnergySpent) { _, _ in refresh() }
         .onChange(of: party.rewardExp) { _, _ in refresh() }
         .onChange(of: scenePhase) { _, phase in
             // バックグラウンドから戻ったら時間を巻き戻さない（歩いている途中から続く）。
@@ -1458,7 +1460,7 @@ struct CharacterRoomView: View {
         let growth = CharacterInputs.growth(
             completedWorkouts: completedWorkouts,
             pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy,
-            bossRewardExp: party.rewardExp, weeklyGoal: weeklyGoal
+            bossRewardExp: party.rewardExp, specialAttackEnergy: party.specialEnergySpent, weeklyGoal: weeklyGoal
         )
         let level = growth.level
         let stage = growth.stage

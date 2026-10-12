@@ -43,6 +43,8 @@ final class PartyService {
     var rewardEnergy: Int { PartyBoss.totalEnergy(from: rewards) }
     /// 受け取った報酬の EXP 合計（キャラの成長に上乗せする。issue #133）。
     var rewardExp: Int { PartyBoss.totalExp(from: rewards) }
+    /// 必殺技に使ったパワーの合計（issue #150。サーバーが正。遠征の残高から引く）。
+    private(set) var specialEnergySpent = 0
 
     /// 状況を取り直す。`createIfNeeded` はボス画面を開いたとき（1つも無ければ1人パーティを作る）だけ true。
     /// 育成タブのバッジのために読むだけのときは、パーティを勝手に作らない。
@@ -52,6 +54,7 @@ final class PartyService {
             return
         }
         restoreRewards(userId: userId)
+        restoreSpecialEnergy(userId: userId)
         isLoading = true
         defer { isLoading = false }
         do {
@@ -65,6 +68,11 @@ final class PartyService {
             let rows = try await client.bossRewards()
             rewards = rows.compactMap(PartyBoss.reward(fromJSON:))
             storeRewards(userId: userId)
+            // 必殺技に使ったパワー。読めなくても状況の読み込みは止めない（控えの値のまま）。
+            if let spends = try? await client.mySpecialAttacks() {
+                specialEnergySpent = spends.reduce(0) { $0 + max(0, ($1["energy_spent"] as? NSNumber)?.intValue ?? 0) }
+                UserDefaults.standard.set(specialEnergySpent, forKey: specialEnergyKey(userId))
+            }
             loadFailed = false
         } catch {
             loadFailed = true
@@ -131,6 +139,48 @@ final class PartyService {
         await refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false)
     }
 
+    // MARK: - 必殺技（issue #150）
+
+    enum SpecialAttackError: Error, Equatable {
+        case usedThisWeek
+        case defeated
+        case failed
+    }
+
+    /// 必殺技を出す。パワーが足りるかは呼び出し側が確かめる（残高は端末で計算するため）。
+    /// 出せたら状況を取り直す（戦闘画面は新しい攻撃として必殺技を再生する）。
+    func specialAttack(_ partyId: UUID, userId: UUID, weeklyGoal: Int) async -> Result<Void, SpecialAttackError> {
+        #if DEBUG
+        if isDemo { return demoSpecialAttack(partyId, userId: userId) }
+        #endif
+        guard let client, await client.isAuthenticated else { return .failure(.failed) }
+        do {
+            _ = try await client.specialAttack(partyId: partyId)
+        } catch {
+            return .failure(Self.specialAttackError(error))
+        }
+        // 取り直しが失敗しても、使った分はすぐ残高に効かせる（次の取り直しでサーバーの値に揃う）。
+        specialEnergySpent += PartyBoss.specialAttackCost
+        UserDefaults.standard.set(specialEnergySpent, forKey: specialEnergyKey(userId))
+        await refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false)
+        return .success(())
+    }
+
+    private static func specialAttackError(_ error: Error) -> SpecialAttackError {
+        guard case let SupabaseClient.SupabaseError.http(_, body) = error else { return .failed }
+        if body.contains("already used") { return .usedThisWeek }
+        if body.contains("already defeated") { return .defeated }
+        return .failed
+    }
+
+    private func specialEnergyKey(_ userId: UUID) -> String { "gymnee.party.special.\(userId.uuidString.lowercased())" }
+
+    /// 端末の控えを読む（オフラインでも遠征の残高を崩さない）。サーバーから読めた後は上書きされる。
+    private func restoreSpecialEnergy(userId: UUID) {
+        guard specialEnergySpent == 0 else { return }
+        specialEnergySpent = UserDefaults.standard.integer(forKey: specialEnergyKey(userId))
+    }
+
     // MARK: - 戦闘画面（issue #137）
 
     /// 自分のキャラの見た目を載せる。前回送った見た目と同じなら送らない（部屋を開くたびに呼ばれる）。
@@ -187,6 +237,30 @@ final class PartyService {
     }
 
     #if DEBUG
+    /// デモの必殺技。サーバーと同じ規則（1撃・週1回・撃破後は不可）で状況に足す。
+    private func demoSpecialAttack(_ partyId: UUID, userId: UUID) -> Result<Void, SpecialAttackError> {
+        guard let index = statuses.firstIndex(where: { $0.partyId == partyId }) else { return .failure(.failed) }
+        let current = statuses[index]
+        if current.defeated { return .failure(.defeated) }
+        if current.attacks.contains(where: { $0.isSpecial && $0.userId == userId }) { return .failure(.usedThisWeek) }
+        let day = PartyBoss.dayFormatter.string(from: .now)
+        let attack = PartyBoss.Attack(id: UUID().uuidString.lowercased(), userId: userId, day: day, category: .full,
+                                      base: 1, skill: 0, combo: 0, isSpecial: true)
+        let damage = current.damage + 1
+        var updated = PartyBoss.Status(
+            partyId: current.partyId, name: current.name, weekStart: current.weekStart, bossId: current.bossId,
+            hp: current.hp, damage: damage, defeated: damage >= current.hp, claimed: current.claimed, members: current.members
+        )
+        updated.tier = current.tier
+        updated.rewardExp = current.rewardExp
+        updated.nextVotes = current.nextVotes
+        updated.myNextVote = current.myNextVote
+        updated.attacks = current.attacks + [attack]
+        statuses[index] = updated
+        specialEnergySpent += PartyBoss.specialAttackCost
+        return .success(())
+    }
+
     /// 画面確認用のデモ状態（`-gymneeScreen boss` / `boss-defeated`）。サーバー無しで描画を確かめる。
     /// 攻撃の内訳はサーバーと同じ規則（`PartyBoss.score`）で組み立てる。
     func loadDemo(userId: UUID, defeated: Bool, solo: Bool = false) {

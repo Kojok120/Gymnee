@@ -166,7 +166,7 @@ struct RootView: View {
         case "promo-sheet-2": PromoArtSheet(page: 2)
         // 週ボスの戦闘画面（issue #137）。サーバーに行かずデモの状況で描く。
         case "boss", "boss-defeated", "boss-solo":
-            BossBattleView(userId: userId, selfLook: Self.demoBattleLook, pet: PetCatalog.all.first)
+            BossBattleView(userId: userId, selfLook: Self.demoBattleLook, pet: PetCatalog.all.first, energy: 360)
                 .onAppear { party.loadDemo(userId: userId, defeated: name == "boss-defeated", solo: name == "boss-solo") }
         case "boss-menu":
             PartyMenuSheet(userId: userId)

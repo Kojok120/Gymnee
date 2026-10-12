@@ -77,6 +77,7 @@ enum CharacterInputs {
         runs: [ExpeditionRun],
         bossRewardEnergy: Int = 0,
         bossRewardExp: Int = 0,
+        specialAttackEnergy: Int = 0,
         weeklyGoal: Int
     ) -> Growth {
         let prs = prHistory(from: completedWorkouts)
@@ -102,7 +103,8 @@ enum CharacterInputs {
             ),
             energy: Expedition.availableEnergy(
                 sessions: sessions,
-                spent: runs.reduce(0) { $0 + $1.energySpent },
+                // 遠征に払った分と、週ボスの必殺技に使った分（issue #150。サーバーが正で PartyService が控える）。
+                spent: runs.reduce(0) { $0 + $1.energySpent } + max(0, specialAttackEnergy),
                 // 週ボスの宝箱のパワー（サーバーが正。PartyService が端末に控える）。
                 bonus: RoomPickup.totalEnergy(collectedItemIds: collectedIds) + max(0, bossRewardEnergy)
             ),
