@@ -42,9 +42,9 @@ struct CharacterRoomView: View {
     /// 受け取り演出中の戦利品（道中の出来事つき）。
     @State private var celebrating: ClaimResult?
     @State private var sheet: SheetRoute?
-    /// 週ボスの戦闘画面（issue #137。全画面で開く）。
-    @State private var showBattle = false
-    /// 完了直後の祝いで「ダンジョンへ」が押された（祝いを閉じたら戦闘画面を開く）。
+    /// 育成タブのどちらの画面を出しているか（issue #143）。最後に開いていた方を次も開く。
+    @AppStorage(Self.pageKey) private var pageRaw = Page.room.rawValue
+    /// 完了直後の祝いで「ダンジョンへ」が押された（祝いを閉じたらボスに切り替える）。
     @State private var openBattleAfterCelebration = false
     @State private var showNotifPrePrompt = false
     /// キャラのひとこと。タップ or 一定時間で切り替わる。
@@ -160,16 +160,27 @@ struct CharacterRoomView: View {
 
     var body: some View {
         NavigationStack {
-            // 外側で safe area の量（＝タブバー + ホームインジケータの高さ）を測ってから、
-            // 内側で safe area を無視して全面に描く。部屋（床）はタブバーの下まで広がるが、
-            // ボタン類は inset ぶん持ち上げてタブバーに重ねない。
-            // 単体ハーネス（タブバー無し）では inset がホームインジケータ分だけになり、両方で正しく出る。
-            GeometryReader { outer in
-                let bottomInset = outer.safeAreaInsets.bottom
-                GeometryReader { geometry in
-                    scene(in: geometry.size, bottomInset: bottomInset)
+            // 育成タブは「育成（部屋）」と「ボス（戦闘画面）」の2画面（issue #143）。上の切り替えで行き来する。
+            // 横スワイプでは切り替えない（部屋の「なぞって拾う」とぶつかる）。
+            // 見えていない方は描かない（部屋は毎フレーム描き直すので、裏で回すと電池を食う）。
+            VStack(spacing: 0) {
+                pageSwitcher
+                switch page {
+                case .room:
+                    // 外側で safe area の量（＝タブバー + ホームインジケータの高さ）を測ってから、
+                    // 内側で safe area を無視して全面に描く。部屋（床）はタブバーの下まで広がるが、
+                    // ボタン類は inset ぶん持ち上げてタブバーに重ねない。
+                    // 単体ハーネス（タブバー無し）では inset がホームインジケータ分だけになり、両方で正しく出る。
+                    GeometryReader { outer in
+                        let bottomInset = outer.safeAreaInsets.bottom
+                        GeometryReader { geometry in
+                            scene(in: geometry.size, bottomInset: bottomInset)
+                        }
+                        .ignoresSafeArea(edges: .bottom)
+                    }
+                case .boss:
+                    BossBattleView(userId: userId, selfLook: battleLook, pet: activePet)
                 }
-                .ignoresSafeArea(edges: .bottom)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
@@ -243,9 +254,6 @@ struct CharacterRoomView: View {
                 strike: bossStrike,
                 onOpenBattle: { openBattleAfterCelebration = true }
             )
-        }
-        .fullScreenCover(isPresented: $showBattle, onDismiss: presentNextIntro) {
-            BossBattleView(userId: userId, selfLook: battleLook, pet: activePet)
         }
         .sheet(item: $sheet) { route in
             sheetContent(route)
@@ -953,6 +961,72 @@ struct CharacterRoomView: View {
         .accessibilityLabel("遠征から帰った荷物を受け取る")
     }
 
+    // MARK: - 画面の切り替え（issue #143）
+
+    enum Page: String {
+        case room, boss
+    }
+
+    /// 最後に開いていた画面の保存キー。
+    static let pageKey = "gymnee.character.page"
+
+    private var page: Page {
+        get { Page(rawValue: pageRaw) ?? .room }
+        nonmutating set { pageRaw = newValue.rawValue }
+    }
+
+    /// 「育成 / ボス」の切り替え。ボスを選んでいる間は赤い入口と同じ塗りにして、ボスの画面にいることを示す。
+    /// 宝箱が未開封なら「ボス」にライムの印を出す（部屋の赤いボタンと同じ条件）。
+    private var pageSwitcher: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            pageSegment(.room, title: "育成", symbol: "figure.strengthtraining.traditional", badge: false)
+            pageSegment(.boss, title: "ボス", symbol: "flame.fill", badge: party.hasUnclaimedChest)
+        }
+        .padding(Theme.Spacing.xs)
+        .background(Theme.bg2, in: Capsule())
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(Theme.bg0)
+    }
+
+    private func pageSegment(_ target: Page, title: String, symbol: String, badge: Bool) -> some View {
+        let selected = page == target
+        return Button { page = target } label: {
+            HStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: symbol)
+                    .font(.footnote.weight(.semibold))
+                Text(title)
+                    .font(.subheadline.bold())
+            }
+            .foregroundStyle(selected ? (target == .boss ? Color.white : Theme.textPrimary) : Theme.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .background {
+                if selected {
+                    if target == .boss {
+                        Capsule().fill(LinearGradient(colors: [Self.bossRed, Self.bossOrange],
+                                                      startPoint: .leading, endPoint: .trailing))
+                    } else {
+                        Capsule().fill(Theme.bg1).shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+                    }
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if badge {
+                    Circle().fill(Self.hudAccent)
+                        .frame(width: 9, height: 9)
+                        .padding(.top, 4)
+                        .padding(.trailing, Theme.Spacing.md)
+                }
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityValue(badge ? "宝箱が開けられます" : "")
+        // タブバーにも「育成」があるので、UI テストは id で引く。
+        .accessibilityIdentifier("page-\(target.rawValue)")
+    }
+
     // MARK: - HUD
 
     /// 下部ボタン（ボスの入口＋行）が占める高さの目安。キャラの歩ける下限に使う。
@@ -1065,7 +1139,7 @@ struct CharacterRoomView: View {
     private var bossEntryButton: some View {
         let entry = PartyBoss.entry(statuses: party.statuses, selected: party.status, now: .now)
         let shape = RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous)
-        return Button { showBattle = true } label: {
+        return Button { page = .boss } label: {
             HStack(spacing: Theme.Spacing.md) {
                 BossSpriteView(bossId: entry.bossId, tier: entry.tier, side: 38)
                     .frame(width: 40, height: 40)
@@ -1329,28 +1403,19 @@ struct CharacterRoomView: View {
             || defaults.string(forKey: PartyInviteLink.pendingDefaultsKey) != nil
         guard requested else { return }
         defaults.removeObject(forKey: Self.openBossRequestKey)
-        // 祝い・遊び方の案内を出している最中なら、それが終わってから開く（シートは1枚ずつ）。
-        guard celebratingGain == nil, !showOnboarding, introQueue.isEmpty else { return }
-        guard sheet != nil else {
-            showBattle = true
-            return
-        }
-        // ほかのシートを閉じきってから全画面を出す（同時に出すと表示が取りこぼされる）。
+        // ボスはシートではなく切り替えなので、案内の最中でもすぐ切り替えてよい（案内はその上に出る）。
+        // 見た目などのシートが開いていれば閉じて、戦闘画面が見えるようにする。
         sheet = nil
-        Task {
-            try? await Task.sleep(for: .seconds(0.5))
-            showBattle = true
-        }
+        page = .boss
     }
 
-    /// 祝いを閉じたあと。「ダンジョンへ」が押されていたら戦闘画面を開き、残りの案内は戦闘画面を閉じてから出す。
+    /// 祝いを閉じたあと。「ダンジョンへ」が押されていたらボスに切り替える。残りの案内はそのまま続けて出す。
     private func afterCelebration() {
         if openBattleAfterCelebration {
             openBattleAfterCelebration = false
-            showBattle = true
-        } else {
-            presentNextIntro()
+            page = .boss
         }
+        presentNextIntro()
     }
 
     /// 完了直後の祝いに出す「ボスに攻撃」（パーティに入っていなければ nil）。今週の回数は端末の記録が正。

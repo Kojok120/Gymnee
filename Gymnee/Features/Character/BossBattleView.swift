@@ -2,7 +2,8 @@ import SwiftUI
 
 /// 週ボスの戦闘画面（issue #137。仕組みは #128 / #130 / #133）。
 ///
-/// 全画面の石壁のボス部屋。奥にボス、手前に仲間が背中を向けて並ぶ（背面視点）。
+/// 育成タブの「ボス」側の画面（issue #143。上の切り替えで部屋と行き来する。閉じるボタンは持たない）。
+/// 石壁のボス部屋。奥にボス、手前に仲間が背中を向けて並ぶ（背面視点）。
 /// 開くと、前回見たあとに入った仲間の攻撃を順に再生し、メッセージ窓で読ませる。
 /// ダメージ・撃破・報酬はサーバーが正（`PartyService`）。ここは見せ方だけを持つ。
 /// パーティの切り替え・招待・投票・図鑑・戦いの記録は「パーティ」メニュー（`PartyMenuSheet`）。
@@ -13,7 +14,6 @@ struct BossBattleView: View {
     /// 連れているペット（ソロのとき仲間として並ぶ）。
     let pet: PetCatalog.Pet?
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(AuthService.self) private var auth
     @Environment(PartyService.self) private var party
     @Environment(LiveSessionService.self) private var live
@@ -60,13 +60,17 @@ struct BossBattleView: View {
             .ignoresSafeArea()
         }
         .background(Color(hexF: 0x0D0F15))
-        .preferredColorScheme(.dark)
-        .statusBarHidden(false)
+        // 暗い配色はこの画面の中だけに効かせる。`preferredColorScheme` だと表示全体に効き、
+        // タブの中に置いた今は、ほかのタブへ移ってもアプリ全体が暗いままになる。
+        .environment(\.colorScheme, .dark)
+        // シートは表示が別なので、全画面だった頃と同じ暗い見た目をシート側で指定する。
         .sheet(isPresented: $showMenu) {
             PartyMenuSheet(userId: userId)
+                .preferredColorScheme(.dark)
         }
         .sheet(item: $openedReward) { reward in
             BossRewardReveal(reward: reward)
+                .preferredColorScheme(.dark)
         }
         .task {
             pendingPartyId = UserDefaults.standard.string(forKey: PartyInviteLink.pendingDefaultsKey)
@@ -381,17 +385,9 @@ struct BossBattleView: View {
 
     // MARK: - 上の帯
 
+    /// パーティ名（切り替え）と残り日数。部屋へ戻るのは育成タブ上の切り替えなので、閉じるボタンは置かない。
     private func topBar(safe: EdgeInsets) -> some View {
         HStack(spacing: Theme.Spacing.sm) {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(Self.plate, in: Circle())
-            }
-            .accessibilityLabel("閉じる")
-            Spacer(minLength: 0)
             if isSignedIn, !party.statuses.isEmpty {
                 partySwitcher
             }

@@ -16,6 +16,7 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 記録を起点に、ワークアウトの記録・育成・共有・購買（アフィリエイト送客）が 1 アプリで完結します。
 タブは 記録 / カレンダー / 育成 / ソーシャル / その他 の 5 本（iOS の上限。超えると More に畳まれる）。
 プロフィール・ショップ・設定は「その他」配下に `AppRoute` の値ルートで置く。
+育成タブは上の切り替えで「育成（部屋 `CharacterRoomView`）」と「ボス（週ボスの戦闘画面 `BossBattleView`）」の2画面を行き来する（最後に開いていた方を次も開く）。
 人体図（旧「分析」タブ）は育成タブでキャラ本体をタップすると開く。
 ローカル（SwiftData）を正とする**オフラインファースト**設計で、Supabase をリモート同期・認証・ストレージ・AI 計画のバックエンドに使います。本体アプリに加え、ウィジェット（WidgetKit / Live Activity）と watchOS アプリを含みます。
 
@@ -183,6 +184,8 @@ xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 #   分析系   : analytics（からだ＝人体図）/ muscle
 #   ソーシャル: social / friends / composer / share / summary
 #   その他   : profile / shop / other / settings
+# 育成タブの「育成 / ボス」は `-gymnee.character.page room|boss` を足すと固定できる（撮影専用。
+# 引数の値が UserDefaults より優先されるので、渡している間は切り替えが効かない。UI テストでは使わない）
 ```
 
 ## 環境変数 / シークレット
