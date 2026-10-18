@@ -76,7 +76,8 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 ## Supabase スキーマ / マイグレーション
 
 - スキーマ変更は `supabase/migrations/` に**番号順**の SQL で追加する
-- 追加した SQL は **必ず `supabase/setup_all.sql` にも同じ内容を番号順で反映**し、dev Supabase プロジェクトへ Management API / `psql` で適用する（このリポジトリの `.claude` フック・運用ルール）
+- 追加した SQL は **必ず `supabase/setup_all.sql` にも同じ内容を番号順で反映**する（このリポジトリの `.claude` フック・運用ルール）
+- **dev / ステージングの Supabase は無い**（dev プロジェクトは 2026-07 にコスト削減で削除済み。Supabase は本番 `ibtrbymfmxrruuwuzell` のみ）。検証は `scripts/sqltest/run.sh <migration...> <test.sql>`（一時 PostgreSQL で 2 周流して冪等性も見る）か、本番への `begin; ...; rollback;` のドライランで行い、本番への適用は Management API でユーザーの明示 OK のあとに行う。クライアントが新しい列を送るビルドは、migration が無いと同期が失敗するので**アプリ配信より先に適用**する。`supabase db push` は使わない（リモートの migration 履歴が 0024 で止まっている）
 - **全ユーザーテーブルに RLS を必須**とする。マスタ（gyms / exercises のプリセット = `created_by IS NULL`）は全員参照・作成者のみ更新、公開コンテンツは `visibility` + `is_following()` で判定
 - Storage バケットのパスは `<uid>/<file>` 規約（RLS で本人のみ書込）。private バケット（progress-photos / visit-photos）は署名/認証付き GET で配信
 
