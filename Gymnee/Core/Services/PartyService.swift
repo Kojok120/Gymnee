@@ -65,6 +65,8 @@ final class PartyService {
             if let selected = selectedPartyId, !statuses.contains(where: { $0.partyId == selected }) {
                 selectedPartyId = nil
             }
+            // ウィジェットに今週のボスの残り HP を控える（issue #155。拡張は通信しない）。
+            WidgetArtworkRenderer.updateBoss(status)
             let rows = try await client.bossRewards()
             rewards = rows.compactMap(PartyBoss.reward(fromJSON:))
             storeRewards(userId: userId)

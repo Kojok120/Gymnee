@@ -5,7 +5,7 @@ import SwiftUI
 struct StreakWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "StreakWidget", provider: SnapshotProvider()) { entry in
-            StreakWidgetView(snapshot: entry.snapshot)
+            StreakWidgetView(snapshot: entry.snapshot, boss: entry.boss, date: entry.date)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Gymnee 連続記録")
@@ -17,6 +17,8 @@ struct StreakWidget: Widget {
 struct SnapshotEntry: TimelineEntry {
     let date: Date
     let snapshot: GymneeSnapshot
+    /// 今週のボス（issue #155）。今週の値でなければ nil。
+    var boss: WidgetArtwork.Boss? = nil
 }
 
 struct SnapshotProvider: TimelineProvider {
@@ -24,18 +26,26 @@ struct SnapshotProvider: TimelineProvider {
         SnapshotEntry(date: .now, snapshot: GymneeSnapshot(streak: 5, weeklyCount: 2, lastWorkoutName: "胸・三頭"))
     }
     func getSnapshot(in context: Context, completion: @escaping (SnapshotEntry) -> Void) {
-        completion(SnapshotEntry(date: .now, snapshot: SharedStore.load()))
+        completion(current())
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<SnapshotEntry>) -> Void) {
-        let entry = SnapshotEntry(date: .now, snapshot: SharedStore.load())
+        let entry = current()
         let next = Calendar.current.date(byAdding: .hour, value: 3, to: .now) ?? .now
         completion(Timeline(entries: [entry], policy: .after(next)))
+    }
+
+    private func current() -> SnapshotEntry {
+        let now = Date.now
+        let boss = WidgetArtwork.loadBoss().flatMap { WidgetArtwork.isCurrent($0, now: now) ? $0 : nil }
+        return SnapshotEntry(date: now, snapshot: SharedStore.load(), boss: boss)
     }
 }
 
 struct StreakWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let snapshot: GymneeSnapshot
+    var boss: WidgetArtwork.Boss? = nil
+    var date: Date = .now
 
     var body: some View {
         switch family {
@@ -49,10 +59,17 @@ struct StreakWidgetView: View {
             }
         case .systemMedium:
             HStack {
+                WidgetCharacter(lastWorkoutDate: snapshot.lastWorkoutDate, now: date)
+                    .frame(width: 64)
                 streakBlock
                 Divider()
                 VStack(alignment: .leading, spacing: 6) {
-                    detailRow("最終", snapshot.lastWorkoutName ?? "—")
+                    // 週ボスと戦っていれば、その残り HP を一番上に（issue #155）。
+                    if let boss {
+                        WidgetBossRow(boss: boss)
+                    } else {
+                        detailRow("最終", snapshot.lastWorkoutName ?? "—")
+                    }
                     detailRow("次の予定", snapshot.nextPlannedName ?? "未設定")
                     detailRow("今週", "\(snapshot.weeklyCount)/\(snapshot.weeklyGoal)")
                 }
@@ -60,7 +77,11 @@ struct StreakWidgetView: View {
                 Spacer()
             }
         default:
-            streakBlock
+            HStack(alignment: .bottom, spacing: 0) {
+                streakBlock
+                WidgetCharacter(lastWorkoutDate: snapshot.lastWorkoutDate, now: date)
+                    .frame(width: 52)
+            }
         }
     }
 

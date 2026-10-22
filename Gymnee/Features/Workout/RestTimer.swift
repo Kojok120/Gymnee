@@ -98,7 +98,9 @@ final class RestTimer {
         guard ActivityAuthorizationInfo().areActivitiesEnabled, let endDate else { return }
         endLiveActivity()
         let attributes = RestTimerActivityAttributes(workoutName: "Gymnee")
-        let state = RestTimerActivityAttributes.ContentState(endDate: endDate, exerciseName: exerciseName)
+        let state = RestTimerActivityAttributes.ContentState(
+            endDate: endDate, exerciseName: exerciseName, startDate: endDate.addingTimeInterval(-TimeInterval(total))
+        )
         do {
             activity = try Activity.request(
                 attributes: attributes,
@@ -112,7 +114,9 @@ final class RestTimer {
     /// +30 等で終了時刻を延長したら Live Activity の endDate も更新する（ロック画面と一致させる）。
     private func updateLiveActivity() {
         guard let activity, let endDate else { return }
-        let state = RestTimerActivityAttributes.ContentState(endDate: endDate, exerciseName: exerciseName)
+        let state = RestTimerActivityAttributes.ContentState(
+            endDate: endDate, exerciseName: exerciseName, startDate: endDate.addingTimeInterval(-TimeInterval(total))
+        )
         Task { await activity.update(.init(state: state, staleDate: nil)) }
     }
 
