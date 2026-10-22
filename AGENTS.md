@@ -179,12 +179,13 @@ xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 # name（RootView.debugScreen が正）:
 #   記録系   : record（=workout）/ logger / history / calendar / body / photos
 #   育成系   : character / character-tab（-boss / -chest でボスの入口の状態違い）/ coach / growth（完了直後の祝い）/
-#              appearance / appearance-gender / appearance-color / appearance-accessory / appearance-pet /
+#              appearance / appearance-gender / appearance-color / appearance-accessory / appearance-pet / appearance-trial（試着）/
 #              boss / boss-defeated / boss-solo（週ボスの戦闘画面）/ boss-menu（パーティのメニュー）
 #   ドット絵 : pixelart / pixelart-items / pixelart-room / pixelart-pets
 #   分析系   : analytics（からだ＝人体図）/ muscle
 #   ソーシャル: social / friends / composer / share / summary
 #   その他   : profile / shop / other / settings
+# 季節のボス（issue #155）は `-gymneeSeasonalEvent halloween|christmas|newYear` を足すと今週をその週として出せる
 # 育成タブの部屋 / ボス部屋は `-gymnee.character.page room|boss` を足すと固定できる（撮影専用。
 # 引数の値が UserDefaults より優先されるので、渡している間は切り替えが効かない。UI テストでは使わない）
 ```

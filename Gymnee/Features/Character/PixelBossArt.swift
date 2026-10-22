@@ -6,6 +6,7 @@ import SwiftUI
 /// `palette(bossId:)` の差し替えだけでボスごとの色が変わる（`PixelPetArt` と同じ手）。
 ///
 /// **絵を足したら `PixelArtGallery` と `PixelCharacterTests.allSprites` にも足すこと。**
+/// 季節のボス（issue #155）は帽子やもちを載せるので、`d` `f` `l` `c` の色もボスごとに差し替える。
 enum PixelBossArt {
 
     static let canvasWidth = 16
@@ -95,12 +96,80 @@ enum PixelBossArt {
     ]
     static let junkKraken = PixelSprite(junkKrakenRows)
 
+    // MARK: - 季節のボス（issue #155）
+
+    /// カボチャスライム（ハロウィン）。魔女の帽子は `d`、帽子の帯は `f`、光る顔は `l`。
+    static let pumpkinSlimeRows = [
+        "..........oo....",
+        ".........odo....",
+        "........oddo....",
+        ".......odddo....",
+        "......oddddo....",
+        ".....offfffo....",
+        ".oddddddddddddo.",
+        ".orrRrrrrrRrrro.",
+        "orrrRrrrrrRrrrro",
+        "orrlllrrrrlllrro",
+        "orrrlrRrrRrlrrro",
+        "orrrrrRrrRrrrrro",
+        "orrllllllllllrro",
+        "oRrrllrRRrllrrRo",
+        ".oRRRRRRRRRRRRo.",
+        "..oooooooooooo..",
+    ]
+    static let pumpkinSlime = PixelSprite(pumpkinSlimeRows)
+
+    /// サンタゴーレム（クリスマス）。ソファゴーレムにサンタ帽（`c` と `l`）を載せる。
+    static let santaGolemRows = [
+        "....oooooo......",
+        "...occcccccoo...",
+        "..occcccccccccoo",
+        "..olllllllllloll",
+        "..orrrrrrrrrrooo",
+        "..orlerrrrlero..",
+        "..orrrrrrrrrro..",
+        "..orrrddddrrro..",
+        "ooooRRRRRRRRoooo",
+        "orrofffffffforro",
+        "orrofffffffforro",
+        "orrRRRRRRRRRRrro",
+        "oRRRRRRRRRRRRRRo",
+        "okkooooooooookko",
+        "okko........okko",
+        "oooo........oooo",
+    ]
+    static let santaGolem = PixelSprite(santaGolemRows)
+
+    /// ネショウガツドラゴン（年末年始）。ネボウドラゴンの角のあいだに鏡もち（`l`）とみかん（`f`）。
+    static let newYearDragonRows = [
+        ".......oo.......",
+        "..oo..offo..oo..",
+        "..oRoollllooRo..",
+        "...oRollllllRo..",
+        "...oorrrrrroo...",
+        "..orrrrrrrrrro..",
+        ".orrddrrrrddrro.",
+        ".orrrrrrrrrrrro.",
+        ".orrrrrrrrrrrro.",
+        ".oRrrrllllrrrRo.",
+        "..oRrlddddlrRo..",
+        "...oRlllllllo...",
+        "..orRRRRRRRRro..",
+        ".orroRRRRRRorro.",
+        ".oRo.oRRRRo.oRo.",
+        "..o...oooo...o..",
+    ]
+    static let newYearDragon = PixelSprite(newYearDragonRows)
+
     /// ボスの絵。知らない id はスライムにする（サーバーが先にボスを増やしても落ちない）。
     static func sprite(bossId: String) -> PixelSprite {
         switch bossId {
         case "couch_golem": return couchGolem
         case "snooze_dragon": return snoozeDragon
         case "junk_kraken": return junkKraken
+        case "pumpkin_slime": return pumpkinSlime
+        case "santa_golem": return santaGolem
+        case "newyear_dragon": return newYearDragon
         default: return slime
         }
     }
@@ -125,8 +194,9 @@ enum PixelBossArt {
     }
 
     /// ランク込みの絵。強いランクは頭上の空き行を詰めて王冠を載せる（1枚の絵にしてドットの格子をずらさない）。
+    /// 季節のボスは帽子をかぶっているので王冠を載せず、強さは配色とオーラだけで見せる。
     static func sprite(bossId: String, tier: PartyBoss.Tier) -> PixelSprite {
-        guard tier == .strong else { return sprite(bossId: bossId) }
+        guard tier == .strong, SeasonalEvent.event(bossId: bossId) == nil else { return sprite(bossId: bossId) }
         let body = rows(bossId: bossId).drop { !$0.contains(where: { $0 != "." }) }
         return PixelSprite(crownRows + Array(body))
     }
@@ -157,6 +227,17 @@ enum PixelBossArt {
         case "couch_golem": colors = (0xB5654A, 0x7E4130)
         case "snooze_dragon": colors = (0x7E6BD6, 0x5546A3)
         case "junk_kraken": colors = (0xE0708A, 0xA94A60)
+        case "pumpkin_slime":
+            colors = (0xFF8A1E, 0xC85A0A)
+            palette.dark = Color(hexF: 0x6A3D9A)
+            palette.cloth = Color(hexF: 0xF5C542)
+            palette.light = Color(hexF: 0xFFE066)
+        case "santa_golem":
+            colors = (0xB5654A, 0x7E4130)
+            palette.cheek = Color(hexF: 0xE8483F)
+        case "newyear_dragon":
+            colors = (0x7E6BD6, 0x5546A3)
+            palette.cloth = Color(hexF: 0xFF9F1C)
         default: colors = (0x8BC34A, 0x5E8F2E)
         }
         palette.accent = Color(hexF: colors.0)

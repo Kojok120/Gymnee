@@ -46,7 +46,7 @@ final class PixelSpriteTests: XCTestCase {
                 }
             }
         }
-        for boss in PartyBoss.catalog {
+        for boss in PartyBoss.catalog + SeasonalEvent.allCases.map(\.boss) {
             for tier in PartyBoss.Tier.allCases {
                 list.append(("boss-\(boss.id)-\(tier.rawValue)", PixelBossArt.sprite(bossId: boss.id, tier: tier)))
             }
@@ -59,7 +59,7 @@ final class PixelSpriteTests: XCTestCase {
             ("dungeon-slash", PixelDungeonArt.slash),
             ("dungeon-anger", PixelDungeonArt.anger),
         ]
-        for item in Expedition.items {
+        for item in Expedition.allItems {
             list.append(("item-\(item.id)", PixelItemArt.icon(for: item)))
         }
         for course in Expedition.courses {
@@ -203,7 +203,7 @@ final class PixelSpriteTests: XCTestCase {
     /// 戦利品 12 種すべてに専用の絵があること（取りこぼすと汎用の四角が出る）。
     func testEveryLootItemHasItsOwnIcon() {
         var seen: [String: [PixelSprite.Run]] = [:]
-        for item in Expedition.items {
+        for item in Expedition.allItems {
             let sprite = PixelItemArt.icon(for: item)
             XCTAssertEqual(sprite.width, PixelItemArt.side, "\(item.id) の幅")
             XCTAssertEqual(sprite.height, PixelItemArt.side, "\(item.id) の高さ")

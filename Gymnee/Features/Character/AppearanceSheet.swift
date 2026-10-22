@@ -46,9 +46,13 @@ struct AppearanceSheet: View {
 
     /// 最初に開くタブ。既定は髪型。DEBUG ハーネス（審査用スクリーンショットの撮影）で切り替える。
     var initialTab: Tab = .hair
+    /// 最初から試着している状態にする（DEBUG ハーネスの撮影用。ふだんは nil）。
+    var initialTrial: AppearanceTryOn.Trial?
 
     @Environment(\.dismiss) private var dismiss
     @State private var tab = Tab.hair
+    /// 試着しているもの（issue #154）。買っていない見た目を 1 つだけプレビューに出す。保存はしない。
+    @State private var trial: AppearanceTryOn.Trial?
     /// 購入処理中の product id。押している間は一覧全体を触れなくする。
     @State private var purchasing: String?
     @State private var isRestoring = false
@@ -130,7 +134,10 @@ struct AppearanceSheet: View {
             .navigationTitle("見た目")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完了") { dismiss() } } }
-            .onAppear { tab = initialTab }
+            .onAppear {
+                tab = initialTab
+                trial = initialTrial
+            }
             // 起動時にオフラインだと商品が空のままなので、開いたときに取り直す。
             .task { await onAppearReload() }
         }
@@ -138,13 +145,19 @@ struct AppearanceSheet: View {
 
     // MARK: - プレビュー
 
+    /// プレビューに描く見た目（着ているものに試着を重ねたもの）。
+    private var shown: AppearanceTryOn {
+        AppearanceTryOn(skinId: currentSkinId, hairId: currentHairId, accessoryId: currentAccessoryId, petId: currentPetId)
+            .applying(trial)
+    }
+
     /// いまの選択で実際に描いた姿。正面と横を並べ、髪型の違いが分かるようにする。
     /// ペットタブでは足元にペットも並べる（連れて歩いたらこう見える、が一目で分かる）。
     private var preview: some View {
         HStack(spacing: Theme.Spacing.xl) {
             previewFigure(facing: .down)
             previewFigure(facing: .right)
-            if tab == .pet {
+            if tab == .pet || trial?.kind == .pet {
                 previewPet
             } else {
                 previewFigure(facing: .up)
@@ -153,12 +166,43 @@ struct AppearanceSheet: View {
         .frame(height: 120)
         .frame(maxWidth: .infinity)
         .background(Theme.bg1)
+        .overlay(alignment: .top) { trialBanner }
+    }
+
+    /// 試着中の印。何を着ているのかと、元に戻す手段を出す（戻さずに閉じても保存はされない）。
+    @ViewBuilder
+    private var trialBanner: some View {
+        if let trial {
+            HStack(spacing: Theme.Spacing.sm) {
+                Text("試着中：\(itemName(trial))")
+                    .font(.caption.bold())
+                    .foregroundStyle(Theme.onLime)
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, 4)
+                    .background(Theme.lime, in: Capsule())
+                Spacer()
+                Button("もとに戻す") { self.trial = nil }
+                    .font(.caption.bold())
+                    .accessibilityIdentifier("appearance-trial-reset")
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.top, Theme.Spacing.xs)
+        }
+    }
+
+    private func itemName(_ trial: AppearanceTryOn.Trial) -> String {
+        switch trial.kind {
+        case .skin: return SkinCatalog.all.first { $0.id == trial.id }?.name ?? ""
+        case .hair: return PixelHairArt.styles.first { $0.id == trial.id }?.name ?? ""
+        case .accessory: return PixelHairArt.accessories.first { $0.id == trial.id }?.name ?? ""
+        case .pet: return PetCatalog.pet(id: trial.id)?.name ?? ""
+        }
     }
 
     /// 選択中のペット（未選択なら足跡だけ）。キャラと同じ縮尺で並べて大きさの差を見せる。
     @ViewBuilder
     private var previewPet: some View {
-        if let pet = PetCatalog.pet(id: currentPetId) {
+        if let pet = PetCatalog.pet(id: shown.petId) {
             Canvas { context, size in
                 let dot = max(1, (size.height / CGFloat(PixelCharacterArt.canvasHeight)).rounded(.down))
                 let sprite = PixelPetArt.sprite(petId: pet.id, facing: .down, blink: false)
@@ -184,14 +228,14 @@ struct AppearanceSheet: View {
                 in: &context,
                 look: PixelCharacterRenderer.Look(
                     build: build,
-                    skin: SkinCatalog.skin(id: currentSkinId),
+                    skin: SkinCatalog.skin(id: shown.skinId),
                     equipped: equipped,
                     stage: stage,
                     carriesPack: false,
                     nameTag: nil,
                     role: .trainee,
-                    hairStyleId: currentHairId,
-                    accessoryId: currentAccessoryId,
+                    hairStyleId: shown.hairId,
+                    accessoryId: shown.accessoryId,
                     gender: currentGender
                 ),
                 frame: .standing,
@@ -357,29 +401,47 @@ struct AppearanceSheet: View {
         let productID = StoreCatalog.entry(kind: kind, contentID: id)?.productID
         let isPurchasing = purchasing != nil && purchasing == productID
         let buyable = productID != nil && canPurchase(kind, id)
+        let candidate = AppearanceTryOn.Trial(kind: kind, id: id)
+        let isTrying = trial == candidate
         return HStack(spacing: Theme.Spacing.md) {
             thumbnail()
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).font(.subheadline.bold()).foregroundStyle(Theme.textPrimary)
-                Text(owned ? (isCurrent ? "使用中" : "所持済み") : priceText(kind, id))
+                Text(owned ? (isCurrent ? "使用中" : "所持済み") : (isTrying ? "試着中 · \(priceText(kind, id))" : priceText(kind, id)))
                     .font(.caption)
-                    .foregroundStyle(isCurrent ? Theme.lime : .secondary)
+                    .foregroundStyle(isCurrent || isTrying ? Theme.lime : .secondary)
             }
+            // 未所持はボタンが 2 つ並ぶので、名前を折り返させずに先に幅を取る。
+            .layoutPriority(1)
             Spacer()
             if owned {
-                Button(isCurrent ? "使用中" : "着る", action: select)
-                    .buttonStyle(.gymneeSecondary)
-                    .disabled(isCurrent)
-                    .opacity(isCurrent ? 0.5 : 1)
+                Button(isCurrent ? "使用中" : "着る") {
+                    trial = nil
+                    select()
+                }
+                .buttonStyle(.gymneeSecondary)
+                .disabled(isCurrent)
+                .opacity(isCurrent ? 0.5 : 1)
             } else if isPurchasing {
                 ProgressView()
             } else {
+                // 買う前に着た姿を見られるように（issue #154）。押し直すと試着をやめる。
+                Button(isTrying ? "やめる" : "試着") {
+                    trial = AppearanceTryOn.toggled(trial, with: candidate)
+                }
+                .buttonStyle(.gymneeSecondary)
+                .disabled(purchasing != nil)
+                .accessibilityLabel(isTrying ? "\(name)の試着をやめる" : "\(name)を試着する")
+                .accessibilityIdentifier("appearance-try-\(kind.rawValue)-\(id)")
                 Button("購入") {
                     guard let productID else { return }
                     Task {
                         purchasing = productID
                         // 買えたらそのまま着せる。買ってから探させない。
-                        if await onPurchase(kind, id) { select() }
+                        if await onPurchase(kind, id) {
+                            trial = nil
+                            select()
+                        }
                         purchasing = nil
                     }
                 }
@@ -390,6 +452,6 @@ struct AppearanceSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gymneeCard(padding: Theme.Spacing.md, highlighted: isCurrent)
+        .gymneeCard(padding: Theme.Spacing.md, highlighted: isCurrent || isTrying)
     }
 }

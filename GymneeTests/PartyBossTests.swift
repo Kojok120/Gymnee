@@ -166,8 +166,9 @@ final class PartyBossTests: XCTestCase {
             PartyBoss.Reward(weekStart: jst("2026-09-21T00:00:00+09:00"), bossId: "couch_golem", energy: 60),
         ]
         let trophies = PartyBoss.trophies(from: rewards)
-        XCTAssertEqual(trophies.map(\.boss.id), PartyBoss.catalog.map(\.id), "図鑑は catalog の順")
-        XCTAssertEqual(trophies.map(\.defeats), [0, 1, 2, 0])
+        XCTAssertEqual(trophies.map(\.boss.id), PartyBoss.catalog.map(\.id) + SeasonalEvent.allCases.map(\.boss.id),
+                       "図鑑は catalog の順で、そのあとに季節のボス（issue #155）")
+        XCTAssertEqual(trophies.map(\.defeats), [0, 1, 2, 0, 0, 0, 0])
         XCTAssertEqual(PartyBoss.totalEnergy(from: rewards), 180)
     }
 

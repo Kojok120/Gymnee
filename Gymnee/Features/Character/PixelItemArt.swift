@@ -29,9 +29,71 @@ enum PixelItemArt {
         case "protein-aura": return proteinAura
         case "sweat-aura": return steamAura
         case "legend-aura": return legendAura
+        case SeasonalEvent.halloween.rewardItem.id: return witchHat
+        case SeasonalEvent.christmas.rewardItem.id: return santaHat
+        case SeasonalEvent.newYear.rewardItem.id: return hinomaruBand
         default: return unknown
         }
     }
+
+    // MARK: 季節の限定装備（issue #155）。色は `PixelPalette.item(_:)` が装備ごとに決める。
+
+    private static let witchHat = PixelSprite([
+        "................",
+        "...........oo...",
+        "..........oro...",
+        ".........orro...",
+        "........orrro...",
+        ".......orrrro...",
+        "......orrrrRo...",
+        "......offfffo...",
+        "..oorrrrrrrrrroo",
+        "..oRRRRRRRRRRRRo",
+        "...oooooooooooo.",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+    ])
+
+    private static let santaHat = PixelSprite([
+        "................",
+        "................",
+        "................",
+        "....ooooo.......",
+        "...orrrrroo.....",
+        "..orrrrrrrroo...",
+        ".orrrrrrrrrrroo.",
+        ".orrrrrrrrrrrrlo",
+        ".ollllllllllolll",
+        ".ollllllllllooll",
+        "..oooooooooo..oo",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+    ])
+
+    private static let hinomaruBand = PixelSprite([
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        ".oooooooooooo...",
+        ".olllllrrlllloo.",
+        ".olllllrrllllolo",
+        ".oooooooooooo.lo",
+        "..............o.",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+    ])
 
     // MARK: 頭
 

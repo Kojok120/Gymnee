@@ -217,9 +217,9 @@ enum PixelCharacterRenderer {
 
         if let headItem = look.equipped[.head] {
             palette.accent = rarityColor(headItem.rarity)
-            let sprite = PixelCharacterArt.headGear(headItem.rarity)
-            let offset = PixelCharacterArt.headGearOffset(headItem.rarity)
-            context.drawPixels(sprite, at: place(Anchor.headX, headY + offset), dot: dot, palette: palette, flipped: mirrored)
+            let gear = PixelCharacterArt.headGear(for: headItem)
+            let gearPalette = palette.limitedGear(headItem) ?? palette
+            context.drawPixels(gear.sprite, at: place(Anchor.headX, headY + gear.offset), dot: dot, palette: gearPalette, flipped: mirrored)
         }
 
         if let name = look.nameTag {

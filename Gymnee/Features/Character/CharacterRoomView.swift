@@ -124,8 +124,9 @@ struct CharacterRoomView: View {
         runs.compactMap { run in run.reward.map { (run, $0) } }
     }
 
+    /// 持っている装備。遠征で持ち帰ったものと、季節のボスの宝箱でもらった限定装備（issue #155）。
     private var ownedItemIds: Set<String> {
-        Set(runs.compactMap(\.rewardItemId))
+        Set(runs.compactMap(\.rewardItemId)).union(SeasonalEvent.ownedItemIds(rewards: party.rewards))
     }
 
     private var loadout: CharacterLoadout? { loadouts.first }
@@ -1850,7 +1851,7 @@ private struct RewardCelebrationView: View {
             VStack(spacing: Theme.Spacing.lg) {
                 PixelSpriteView(
                     sprite: PixelItemArt.icon(for: result.item),
-                    palette: .item(rarity: result.item.rarity),
+                    palette: .item(result.item),
                     side: 128
                 )
                 .padding(Theme.Spacing.lg)

@@ -284,7 +284,7 @@ final class PartyService {
             })
             let damage = attacks.reduce(0) { $0 + $1.total }
             var status = PartyBoss.Status(
-                partyId: UUID(), name: name, weekStart: weekStart, bossId: PartyBoss.bossId(forWeekStart: weekStart),
+                partyId: UUID(), name: name, weekStart: weekStart, bossId: PartyBoss.displayBossId(forWeekStart: weekStart),
                 hp: hp, damage: damage, defeated: damage >= hp, claimed: false, members: members
             )
             status.tier = tier

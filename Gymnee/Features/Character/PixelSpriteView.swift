@@ -42,6 +42,31 @@ extension PixelPalette {
         return palette
     }
 
+    /// その装備のアイコン用のパレット。限定装備（issue #155）はレア度の色ではなく装備の色で塗る。
+    static func item(_ item: Expedition.Item) -> PixelPalette {
+        let base = self.item(rarity: item.rarity)
+        return base.limitedGear(item) ?? base
+    }
+
+    /// 限定装備（issue #155）の配色。レア度の色ではなく、その装備の色で塗る（魔女の帽子は紫、サンタ帽は赤）。
+    /// 限定装備でなければ nil（呼び出し側はレア度の色のまま描く）。
+    func limitedGear(_ item: Expedition.Item) -> PixelPalette? {
+        var palette = self
+        switch item.id {
+        case SeasonalEvent.halloween.rewardItem.id:
+            palette.accent = Color(hexF: 0x6A3D9A)
+            palette.accentShade = Color(hexF: 0x4A2A6A)
+            palette.cloth = Color(hexF: 0xF5C542)
+        case SeasonalEvent.christmas.rewardItem.id, SeasonalEvent.newYear.rewardItem.id:
+            palette.accent = Color(hexF: 0xE8483F)
+            palette.accentShade = Color(hexF: 0xB0302A)
+            palette.light = Color(hexF: 0xFFFFFF)
+        default:
+            return nil
+        }
+        return palette
+    }
+
     /// 部屋・小物用の中立パレット。
     static let neutral: PixelPalette = make(skin: SkinCatalog.all[0])
 }
