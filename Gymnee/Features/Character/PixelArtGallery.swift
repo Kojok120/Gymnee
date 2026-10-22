@@ -24,6 +24,7 @@ struct PixelArtGallery: View {
                     case .character:
                         characterSection
                     case .items:
+                        gearSection
                         itemSection
                         courseSection
                     case .room:
@@ -95,7 +96,7 @@ struct PixelArtGallery: View {
     }
 
     private var bossCells: [(id: String, boss: PartyBoss.Boss, tier: PartyBoss.Tier)] {
-        PartyBoss.catalog.flatMap { boss in
+        (PartyBoss.catalog + SeasonalEvent.allCases.map(\.boss)).flatMap { boss in
             PartyBoss.Tier.allCases.map { (id: "\(boss.id)-\($0.rawValue)", boss: boss, tier: $0) }
         }
     }
@@ -228,6 +229,12 @@ struct PixelArtGallery: View {
                 }
             }
 
+        }
+    }
+
+    /// 装備を着せた状態（レア度ごと＋季節の限定装備）。戦利品の一覧の先頭に出す。
+    private var gearSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
             SectionHeader(title: "装備を着せた状態")
             LazyVGrid(columns: grid(minimum: 76), spacing: Theme.Spacing.md) {
                 ForEach(Expedition.Rarity.allCases, id: \.self) { rarity in
@@ -240,6 +247,17 @@ struct PixelArtGallery: View {
                         )
                     }
                 }
+                // 季節の限定装備（issue #155）。
+                ForEach(Expedition.limitedItems) { item in
+                    labelled(item.name) {
+                        CharacterPreview(
+                            build: CharacterBuild(girth: .wide, arm: .thick, leg: .thick),
+                            frame: .standing,
+                            skin: SkinCatalog.all[0],
+                            equipped: [item.slot: item]
+                        )
+                    }
+                }
             }
         }
     }
@@ -248,13 +266,13 @@ struct PixelArtGallery: View {
 
     private var itemSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            SectionHeader(title: "戦利品 12 種")
+            SectionHeader(title: "戦利品 12 種と季節の限定装備")
             LazyVGrid(columns: grid(minimum: 82), spacing: Theme.Spacing.md) {
-                ForEach(Expedition.items) { item in
+                ForEach(Expedition.allItems) { item in
                     labelled(item.name) {
                         PixelSpriteView(
                             sprite: PixelItemArt.icon(for: item),
-                            palette: .item(rarity: item.rarity),
+                            palette: .item(item),
                             side: 64
                         )
                     }

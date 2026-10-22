@@ -75,7 +75,8 @@ final class CharacterOutfitTests: XCTestCase {
         for slot in Expedition.Slot.allCases {
             XCTAssertFalse(Expedition.items(in: slot).isEmpty, "\(slot.rawValue) に装備が1つも無い")
         }
-        XCTAssertEqual(Expedition.items.count, Expedition.Slot.allCases.reduce(0) { $0 + Expedition.items(in: $1).count })
+        // 部位ごとの一覧は限定装備（issue #155）も含むので、全部（allItems）と数が合う。
+        XCTAssertEqual(Expedition.allItems.count, Expedition.Slot.allCases.reduce(0) { $0 + Expedition.items(in: $1).count })
     }
 
     // MARK: - スキン

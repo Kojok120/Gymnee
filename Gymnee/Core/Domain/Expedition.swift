@@ -154,10 +154,16 @@ enum Expedition {
         Item(id: "legend-aura", name: "伝説のオーラ", symbol: "sparkles", rarity: .epic, slot: .aura),
     ]
 
-    /// 部位ごとの装備一覧（装備選択 UI 用）。
-    static func items(in slot: Slot) -> [Item] { items.filter { $0.slot == slot } }
+    /// 季節のボスを倒すともらえる限定装備（issue #155）。**遠征の抽選には入れない**（`reward` は `items` だけから引く）。
+    static var limitedItems: [Item] { SeasonalEvent.allCases.map(\.rewardItem) }
 
-    static func item(id: String) -> Item? { items.first { $0.id == id } }
+    /// 遠征の装備と限定装備をあわせた全部。
+    static var allItems: [Item] { items + limitedItems }
+
+    /// 部位ごとの装備一覧（装備選択 UI 用）。限定装備も含む。
+    static func items(in slot: Slot) -> [Item] { allItems.filter { $0.slot == slot } }
+
+    static func item(id: String) -> Item? { allItems.first { $0.id == id } }
 
     /// 合トレ（同じ日に仲間も記録した）で上乗せするレア度の重み。
     /// 強さは変わらず「良いものが出やすくなる」だけ＝現実の一緒に行った事実へのご褒美。

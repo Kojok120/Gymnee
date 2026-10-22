@@ -118,7 +118,7 @@ struct BossBattleView: View {
     private var status: PartyBoss.Status? { party.status }
 
     private var bossId: String {
-        status?.bossId ?? PartyBoss.bossId(forWeekStart: PartyBoss.weekStart(for: .now))
+        status?.bossId ?? PartyBoss.displayBossId(forWeekStart: PartyBoss.weekStart(for: .now))
     }
 
     private var tier: PartyBoss.Tier { status?.tier ?? .medium }
@@ -816,7 +816,17 @@ struct BossRewardReveal: View {
             }
             Label("テストステロンパワー +\(reward.energy)", systemImage: "bolt.heart.fill")
                 .font(.headline).foregroundStyle(Theme.lime)
-            Text("図鑑に記録しました。EXP はキャラの成長に、パワーは遠征に使えます。")
+            if let item = SeasonalEvent.event(forWeekStart: reward.weekStart)?.rewardItem {
+                // 季節のボスだけの限定装備（issue #155）。
+                HStack(spacing: Theme.Spacing.sm) {
+                    PixelSpriteView(sprite: PixelItemArt.icon(for: item), palette: .item(item), side: 40)
+                    Text("限定の「\(item.name)」を手に入れた！")
+                        .font(.headline).foregroundStyle(Theme.textPrimary)
+                }
+            }
+            Text(SeasonalEvent.event(forWeekStart: reward.weekStart) == nil
+                 ? "図鑑に記録しました。EXP はキャラの成長に、パワーは遠征に使えます。"
+                 : "図鑑に記録しました。限定装備は「着替え」で着けられます。")
                 .font(.caption).foregroundStyle(Theme.textSecondary)
             Spacer()
             Button("いいね") { dismiss() }

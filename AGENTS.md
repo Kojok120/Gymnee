@@ -185,6 +185,7 @@ xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 #   分析系   : analytics（からだ＝人体図）/ muscle
 #   ソーシャル: social / friends / composer / share / summary
 #   その他   : profile / shop / other / settings
+# 季節のボス（issue #155）は `-gymneeSeasonalEvent halloween|christmas|newYear` を足すと今週をその週として出せる
 # 育成タブの部屋 / ボス部屋は `-gymnee.character.page room|boss` を足すと固定できる（撮影専用。
 # 引数の値が UserDefaults より優先されるので、渡している間は切り替えが効かない。UI テストでは使わない）
 ```

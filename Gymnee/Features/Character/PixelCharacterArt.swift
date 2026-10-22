@@ -365,6 +365,47 @@ enum PixelCharacterArt {
         "...rrrrrrrr...",
     ])
 
+    // MARK: - 季節の限定装備（issue #155）
+
+    /// 頭の装備を装備ごとに決める。限定装備は専用の絵、それ以外はレア度の絵。
+    /// `offset` は頭スプライトの上端からのドット数（負＝頭より上にはみ出す）。
+    static func headGear(for item: Expedition.Item) -> (sprite: PixelSprite, offset: Int) {
+        switch item.id {
+        case SeasonalEvent.halloween.rewardItem.id: return (witchHat, -3)
+        case SeasonalEvent.christmas.rewardItem.id: return (santaHat, -3)
+        case SeasonalEvent.newYear.rewardItem.id: return (hinomaruBand, 5)
+        default: return (headGear(item.rarity), headGearOffset(item.rarity))
+        }
+    }
+
+    /// 魔女の帽子。つばを頭の上から 3 段目にかぶせ、とんがりは頭より 3 ドット上まで（王冠と同じ高さに収める）。
+    static let witchHat = PixelSprite([
+        "........ooo...",
+        ".......orRo...",
+        "......orrRo...",
+        ".....orrrRo...",
+        ".....offffo...",
+        "oorrrrrrrrrroo",
+        "oRRRRRRRRRRRRo",
+    ])
+
+    /// サンタ帽。先が右に垂れて、白い玉が耳の上に来る。
+    static let santaHat = PixelSprite([
+        "...ooooo......",
+        "..orrrrroo....",
+        ".orrrrrrrroo..",
+        "orrrrrrrrrrroo",
+        "olllllllllllol",
+        "...........oll",
+        "............oo",
+    ])
+
+    /// 日の丸はちまき。ヘッドバンドと同じ位置に巻く。
+    static let hinomaruBand = PixelSprite([
+        ".ollllrrllllo.",
+        ".ollllrrllllo.",
+    ])
+
     /// 手の装備。腕の先に重ねる。
     static func handGear(_ rarity: Expedition.Rarity) -> PixelSprite {
         switch rarity {

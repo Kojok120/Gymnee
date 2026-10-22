@@ -270,7 +270,7 @@ struct PartyMenuSheet: View {
                         Task { await party.vote(tier, partyId: status.partyId, userId: userId, weeklyGoal: weeklyGoal) }
                     } label: {
                         VStack(spacing: 4) {
-                            BossSpriteView(bossId: PartyBoss.bossId(forWeekStart: nextWeekStart(status)),
+                            BossSpriteView(bossId: PartyBoss.displayBossId(forWeekStart: nextWeekStart(status)),
                                            tier: tier, side: 52)
                             BossTierBadge(tier: tier)
                             Text("EXP +\(tier.rewardExp)").font(.caption2.monospacedDigit()).foregroundStyle(Theme.textSecondary)
@@ -313,7 +313,7 @@ struct PartyMenuSheet: View {
                         Text(entry.defeats > 0 ? entry.boss.name : "？？？")
                             .font(.caption2).foregroundStyle(Theme.textSecondary)
                             .lineLimit(1).minimumScaleFactor(0.7)
-                        Text(entry.defeats > 0 ? "×\(entry.defeats)" : "未撃破")
+                        Text(entry.defeats > 0 ? "×\(entry.defeats)" : (SeasonalEvent.event(bossId: entry.boss.id) != nil ? "期間限定" : "未撃破"))
                             .font(.caption2.monospacedDigit().bold())
                             .foregroundStyle(entry.defeats > 0 ? Theme.lime : Theme.textTertiary)
                     }

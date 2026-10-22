@@ -535,6 +535,7 @@ enum PartyBattle {
 
     /// ボスの挑発（由来に合わせる）。
     static func taunt(bossId: String) -> String {
+        if let event = SeasonalEvent.event(bossId: bossId) { return event.taunt }
         switch bossId {
         case "couch_golem": return "ソファゴーレムが ふかふかの 腕を ひろげている…"
         case "snooze_dragon": return "ネボウドラゴンが 二度寝の 炎を ためている…"

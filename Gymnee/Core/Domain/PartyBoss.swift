@@ -21,7 +21,8 @@ enum PartyBoss {
         Boss(id: "junk_kraken", name: "ジャンククラーケン", flavor: "夜食とお菓子を八本の腕で差し出してくる。"),
     ]
 
-    static func boss(id: String) -> Boss? { catalog.first { $0.id == id } }
+    /// 普段のボスに加えて、季節のボス（issue #155）も引ける。
+    static func boss(id: String) -> Boss? { catalog.first { $0.id == id } ?? SeasonalEvent.event(bossId: id)?.boss }
 
     /// 撃破の報酬（テストステロンパワー）。サーバーの `party_boss_reward_energy` と揃える。
     static let rewardEnergy = 60
@@ -111,6 +112,12 @@ enum PartyBoss {
         let today = calendar.startOfDay(for: now)
         let days = calendar.dateComponents([.day], from: today, to: end).day ?? 0
         return min(max(days, 0), 7)
+    }
+
+    /// 画面に出す週のボス。イベントの週は季節のボス（issue #155）。サーバーの状況が無いときの代わりに使う。
+    /// `bossId(forWeekStart:)` はサーバーの写しなので、季節の読み替えはこちらに分けておく。
+    static func displayBossId(forWeekStart weekStart: Date) -> String {
+        SeasonalEvent.displayBossId(serverBossId: bossId(forWeekStart: weekStart), weekStart: weekStart)
     }
 
     // MARK: - 状況
@@ -211,7 +218,8 @@ enum PartyBoss {
             partyId: partyId,
             name: (row["name"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             weekStart: weekStart,
-            bossId: bossId,
+            // イベントの週は季節のボスに読み替える（サーバーの規則はそのまま。issue #155）。
+            bossId: SeasonalEvent.displayBossId(serverBossId: bossId, weekStart: weekStart),
             hp: (row["hp"] as? NSNumber)?.intValue ?? 0,
             damage: (row["damage"] as? NSNumber)?.intValue ?? 0,
             defeated: (row["defeated"] as? Bool) ?? false,
@@ -271,7 +279,7 @@ enum PartyBoss {
     static func entry(statuses: [Status], selected: Status?, now: Date) -> Entry {
         let chest = statuses.first(where: \.hasUnclaimedChest)
         let shown = chest ?? selected
-        let bossId = shown?.bossId ?? bossId(forWeekStart: weekStart(for: now))
+        let bossId = shown?.bossId ?? displayBossId(forWeekStart: weekStart(for: now))
         let tier = shown?.tier ?? .medium
         let name = boss(id: bossId)?.name ?? "今週のボス"
         guard let shown else {
@@ -307,16 +315,22 @@ enum PartyBoss {
               let weekStart = parseTimestamp(weekText),
               let bossId = row["boss_id"] as? String
         else { return nil }
-        var reward = Reward(weekStart: weekStart, bossId: bossId, energy: (row["energy"] as? NSNumber)?.intValue ?? 0)
+        var reward = Reward(weekStart: weekStart,
+                            bossId: SeasonalEvent.displayBossId(serverBossId: bossId, weekStart: weekStart),
+                            energy: (row["energy"] as? NSNumber)?.intValue ?? 0)
         reward.tier = (row["tier"] as? String).flatMap(Tier.init(rawValue:)) ?? .medium
         reward.exp = (row["exp"] as? NSNumber)?.intValue ?? 0
         return reward
     }
 
-    /// 図鑑。ボスごとの撃破回数（未撃破は 0）。並びは `catalog` の順。
+    /// 図鑑。ボスごとの撃破回数（未撃破は 0）。並びは `catalog` の順で、そのあとに季節のボス（issue #155）。
+    /// 季節のボスは報酬の**週**で数える（読み替える前に控えた報酬でも取りこぼさない）。
     static func trophies(from rewards: [Reward]) -> [(boss: Boss, defeats: Int)] {
         let counts = Dictionary(grouping: rewards, by: \.bossId).mapValues(\.count)
+        let seasonal = Dictionary(grouping: rewards.compactMap { SeasonalEvent.event(forWeekStart: $0.weekStart) }, by: { $0 })
+            .mapValues(\.count)
         return catalog.map { ($0, counts[$0.id] ?? 0) }
+            + SeasonalEvent.allCases.map { ($0.boss, seasonal[$0] ?? 0) }
     }
 
     /// キャラの EXP への上乗せ（受け取った報酬の合計）。
