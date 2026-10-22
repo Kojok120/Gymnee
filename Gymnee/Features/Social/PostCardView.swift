@@ -63,8 +63,20 @@ struct PostCardView: View {
         HStack(spacing: metrics.spacing * 0.6) {
             AvatarView(urlString: entry.authorAvatarURL, size: metrics.avatarSize)
             VStack(alignment: .leading, spacing: 1) {
-                Text(entry.authorName ?? "自分").font(metrics.authorName).foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(entry.authorName ?? "自分").font(metrics.authorName).foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    // 投稿したときに着けていた称号（issue #155）。
+                    if let title = entry.authorTitle {
+                        Text(title)
+                            .font(.pixel(size: 10, relativeTo: .caption2))
+                            .foregroundStyle(Theme.onLime)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Theme.lime, in: Capsule())
+                            .lineLimit(1)
+                    }
+                }
                 Text(entry.date, format: .dateTime.month().day().hour().minute())
                     .font(metrics.meta).foregroundStyle(.secondary)
             }

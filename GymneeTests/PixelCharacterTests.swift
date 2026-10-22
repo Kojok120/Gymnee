@@ -56,6 +56,10 @@ final class PixelSpriteTests: XCTestCase {
         }
         list += [
             ("dungeon-bracket", PixelDungeonArt.bracket),
+            ("training-dummy", PixelBossArt.trainingDummy),
+            ("hat-witch", PixelCharacterArt.witchHat),
+            ("hat-santa", PixelCharacterArt.santaHat),
+            ("hat-hinomaru", PixelCharacterArt.hinomaruBand),
             ("dungeon-slash", PixelDungeonArt.slash),
             ("dungeon-anger", PixelDungeonArt.anger),
         ]

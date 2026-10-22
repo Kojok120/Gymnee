@@ -172,7 +172,8 @@ enum FeedPublisher {
                                   minutes: minutes, prCount: prCount, muscles: muscles, exerciseLines: lines,
                                   caption: w.caption, photoRef: w.photoURL,
                                   monthlyDay: monthlyDay(for: w, context: context),
-                                  characterLevel: character.level, characterStage: character.stage)
+                                  characterLevel: character.level, characterStage: character.stage,
+                                  title: postedTitle(for: w, context: context))
         return PostContent(summary: w.name, date: w.date, statsJSON: stats.encodedJSON())
     }
 
@@ -186,6 +187,19 @@ enum FeedPublisher {
         let badge = CharacterInputs.badge(asOf: w.completedAt ?? w.date, completed: completedWorkouts(of: w, context: context),
                                           weeklyGoal: goal)
         return (badge?.level, badge?.stage)
+    }
+
+    /// 投稿に焼き込む称号（issue #155）。**一度投稿したら変えない**: 既に投稿があればその称号を引き継ぎ、
+    /// 初めて投稿するときだけ今着けている称号を入れる。`syncPublishedPosts` が開くたびに作り直すので、
+    /// 今の称号で作ると過去の投稿まで書き換わる（称号が無かった頃の投稿は無いまま）。
+    @MainActor
+    private static func postedTitle(for w: Workout, context: ModelContext) -> String? {
+        let wid = w.id
+        if let existing = (try? context.fetch(FetchDescriptor<FeedItem>(predicate: #Predicate { $0.id == wid })))?.first {
+            return FeedItemStats.decode(existing.statsJSON)?.title
+        }
+        let selected = UserDefaults.standard.string(forKey: PlayerTitle.selectedKey) ?? ""
+        return selected.isEmpty ? nil : selected
     }
 
     /// 投稿時点の「今月○日目」。他人の端末では再計算できないので feed に焼き込む。

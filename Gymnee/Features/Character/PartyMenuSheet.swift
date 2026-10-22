@@ -170,6 +170,10 @@ struct PartyMenuSheet: View {
                                 Text("戦闘中").font(.caption2.bold()).foregroundStyle(Theme.lime)
                             }
                         }
+                        // 着けている称号（issue #155）。
+                        if let title = PlayerTitle.displayName(forId: member.look?.title) {
+                            Text("称号：\(title)").font(.caption2.bold()).foregroundStyle(Theme.lime)
+                        }
                         Text("今週 \(member.hits)回 / 目標 \(member.weeklyGoal)回 ・ \(member.job.skillName)"
                              + (status.skillTriggered(by: member.id) ? " 発動ずみ" : " まだ"))
                             .font(.caption2).foregroundStyle(Theme.textTertiary)

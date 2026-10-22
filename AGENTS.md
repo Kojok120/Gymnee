@@ -18,6 +18,10 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 プロフィール・ショップ・設定は「その他」配下に `AppRoute` の値ルートで置く。
 育成タブは「部屋（`CharacterRoomView`）」と、その地下の「ボス部屋（週ボスの戦闘画面 `BossBattleView`）」の2つの場所を行き来する。部屋の赤いボタンで降り、ボス部屋の「部屋へ」で上る（最後にいた場所から始まる。ボス部屋にいる間は RootView が表示を暗くする）。
 人体図（旧「分析」タブ）は育成タブでキャラ本体をタップすると開く。
+ゲームの要素（issue #155）: 記録画面の下に戦闘の帯（`RecordBattleStrip`。セットごとに技、完了でとどめ。週ボスのダメージ規則は変えない）、
+種目ごとの技と技図鑑（`Technique`）、1 人用の冒険マップ（`AdventureMap`）、称号（`PlayerTitle`。見た目とフィードの投稿に id を載せる）、
+季節のボス（`SeasonalEvent`。アプリ側の読み替えだけ）、8bit の効果音と BGM（`GameSound`、音源は `scripts/audio/make_game_sounds.py` で合成）、
+ウィジェットと Live Activity のキャラ（本体が PNG を App Group に置く。`WidgetArtwork`）。値はすべて記録から導出し、強さには効かない。
 ローカル（SwiftData）を正とする**オフラインファースト**設計で、Supabase をリモート同期・認証・ストレージ・AI 計画のバックエンドに使います。本体アプリに加え、ウィジェット（WidgetKit / Live Activity）と watchOS アプリを含みます。
 
 このファイルはリポジトリ全体に共通する実装原則を定義します。配下に `AGENTS.md` が存在する場合は、その領域固有ルールもあわせて従ってください。
@@ -177,10 +181,11 @@ DEBUG 限定の検証ハーネス（製品ビルドには含まれない）:
 xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 # Debug ビルドの bundle id は .dev サフィックス付き（com.gymnee.app は Release）
 # name（RootView.debugScreen が正）:
-#   記録系   : record（=workout）/ logger / history / calendar / body / photos
+#   記録系   : record（=workout）/ logger / history / calendar / body / photos / battle-strip（記録画面の戦闘の帯の一覧）
 #   育成系   : character / character-tab（-boss / -chest でボスの入口の状態違い）/ coach / growth（完了直後の祝い）/
 #              appearance / appearance-gender / appearance-color / appearance-accessory / appearance-pet / appearance-trial（試着）/
-#              boss / boss-defeated / boss-solo（週ボスの戦闘画面）/ boss-menu（パーティのメニュー）
+#              boss / boss-defeated / boss-solo（週ボスの戦闘画面）/ boss-menu（パーティのメニュー）/
+#              techniques / adventure / titles（技図鑑・冒険マップ・称号を開いた部屋）
 #   ドット絵 : pixelart / pixelart-items / pixelart-room / pixelart-pets
 #   分析系   : analytics（からだ＝人体図）/ muscle
 #   ソーシャル: social / friends / composer / share / summary

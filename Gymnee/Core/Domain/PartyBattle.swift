@@ -330,14 +330,18 @@ extension PartyBoss {
         /// 性別（`CharacterGender.rawValue`。issue #141）。キーを足しただけなので版は据え置き。
         /// 古いアプリが送った見た目にはキーが無く、男性として読む。古いアプリは知らないキーを無視する。
         var gender: String = CharacterGender.male.rawValue
+        /// 着けている称号の id（`PlayerTitle`。issue #155）。キーを足しただけなので版は据え置き。
+        /// 古いアプリは知らないキーを無視し、知らない id は名前に直せないので出さない。
+        var title: String?
 
         static let version = 1
         private static let maxIdLength = 32
 
         init(build: CharacterBuild, skinId: String, stage: CharacterProgress.Stage,
              hairStyleId: String, accessoryId: String, equipped: [Expedition.Slot: Expedition.Item],
-             gender: CharacterGender = .male) {
+             gender: CharacterGender = .male, title: String? = nil) {
             self.gender = gender.rawValue
+            self.title = title
             girth = build.girth.rawValue
             arm = build.arm.rawValue
             leg = build.leg.rawValue
@@ -364,6 +368,8 @@ extension PartyBoss {
             hairStyleId = text("hair")
             accessoryId = text("acc")
             gender = CharacterGender(storedValue: row["g"] as? String).rawValue
+            let titleId = text("title")
+            title = titleId.isEmpty ? nil : titleId
             let gear = row["gear"] as? [String: Any] ?? [:]
             var equipped: [String: String] = [:]
             for slot in Expedition.Slot.allCases {
@@ -374,14 +380,16 @@ extension PartyBoss {
 
         /// `set_character_look` に送る形。
         var json: [String: Any] {
-            ["v": Self.version, "girth": girth, "arm": arm, "leg": leg, "skin": skinId,
-             "stage": stage, "hair": hairStyleId, "acc": accessoryId, "gear": equipped, "g": gender]
+            var row: [String: Any] = ["v": Self.version, "girth": girth, "arm": arm, "leg": leg, "skin": skinId,
+                                      "stage": stage, "hair": hairStyleId, "acc": accessoryId, "gear": equipped, "g": gender]
+            if let title { row["title"] = title }
+            return row
         }
 
         /// 送り直しを避けるための指紋（キーの順を固定する）。
         var fingerprint: String {
             let gear = equipped.keys.sorted().map { "\($0)=\(equipped[$0] ?? "")" }.joined(separator: ",")
-            return "v\(Self.version)|\(girth)\(arm)\(leg)|\(skinId)|\(stage)|\(hairStyleId)|\(accessoryId)|\(gear)|\(gender)"
+            return "v\(Self.version)|\(girth)\(arm)\(leg)|\(skinId)|\(stage)|\(hairStyleId)|\(accessoryId)|\(gear)|\(gender)|\(title ?? "")"
         }
 
         var build: CharacterBuild {

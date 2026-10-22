@@ -322,7 +322,9 @@ struct CoachChatView: View {
             growth: CharacterInputs.growth(
                 completedWorkouts: workouts,
                 pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy,
-                bossRewardExp: party.rewardExp, specialAttackEnergy: party.specialEnergySpent, weeklyGoal: weeklyGoal
+                bossRewardExp: party.rewardExp, specialAttackEnergy: party.specialEnergySpent,
+                tutorialChestEnergy: RecordBattle.tutorialBonus(opened: UserDefaults.standard.bool(forKey: RecordBattle.tutorialChestKey)),
+                weeklyGoal: weeklyGoal
             )
         )
     }

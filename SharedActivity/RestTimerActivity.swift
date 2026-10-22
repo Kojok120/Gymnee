@@ -6,6 +6,8 @@ struct RestTimerActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         var endDate: Date
         var exerciseName: String
+        /// レストを始めた時刻（残り時間のゲージに使う。issue #155）。古いビルドが送った状態には無い。
+        var startDate: Date? = nil
     }
 
     var workoutName: String

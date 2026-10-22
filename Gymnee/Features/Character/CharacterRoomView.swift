@@ -88,6 +88,8 @@ struct CharacterRoomView: View {
     enum SheetRoute: String, Identifiable {
         /// `body` はキャラ本体をタップしたときに開く人体図（旧「分析」タブ）。
         case status, expedition, quest, outfit, skins, collection, coach, body
+        /// 技図鑑・冒険マップ・称号（issue #155）。
+        case techniques, adventure, titles
         var id: String { rawValue }
     }
 
@@ -110,6 +112,10 @@ struct CharacterRoomView: View {
         var daysSinceLastWorkout: Int?
         /// 前週の記録から決まるグッズの落下倍率。
         var dropMultiplier: Double = 1
+        /// 技図鑑（issue #155）。
+        var techniqueBook: [Technique.Entry] = []
+        /// 称号の判定のうち、記録から数えられる分（ボスの分は開くときに足す）。
+        var titleBase = PlayerTitle.Stats()
 
         static let empty = Derived()
     }
@@ -207,6 +213,13 @@ struct CharacterRoomView: View {
             // 用事があれば、開いてすぐコーチが歩いて入ってくる。
             updateCoachPresence()
             openBossIfRequested()
+            #if DEBUG
+            // 撮影用（`-gymneeScreen techniques|adventure|titles`）。図鑑・マップ・称号を開いた状態で始める。
+            if let route = DebugSupport.screen.flatMap(SheetRoute.init(rawValue:)),
+               [.techniques, .adventure, .titles].contains(route) {
+                sheet = route
+            }
+            #endif
             // 週ボスの状況（宝箱の印と、遠征に使えるパワー）。パーティはここでは作らない。
             Task { await party.refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false) }
         }
@@ -487,6 +500,10 @@ struct CharacterRoomView: View {
     @State private var departedAt: Date?
     /// 初回案内をまだ見ていないか。
     @AppStorage(CharacterOnboardingSheet.hasSeenKey) private var hasSeenOnboarding = false
+    /// 着けている称号の id（issue #155）。空は着けていない。
+    @AppStorage(PlayerTitle.selectedKey) private var selectedTitleId = ""
+    /// チュートリアルの宝箱を開けたか（記録画面で 1 セット目にちびスライムを倒すと立つ）。
+    @AppStorage(RecordBattle.tutorialChestKey) private var tutorialChestOpened = false
     @State private var showOnboarding = false
 
     /// キャラたち。**全員を 1 枚の Canvas に描く**ことで、毎フレームの View 差分を発生させない。
@@ -1091,20 +1108,79 @@ struct CharacterRoomView: View {
 
     private var actionBar: some View {
         VStack(spacing: Theme.Spacing.md) {
-            bossEntryButton
-            HStack(spacing: Theme.Spacing.md) {
+            // 初めての人には、週ボスの代わりにチュートリアルのちびスライムを出す（issue #155）。
+            if showsTutorialEntry {
+                tutorialEntryButton
+            } else {
+                bossEntryButton
+            }
+            HStack(spacing: Theme.Spacing.sm) {
                 // ステータスは左上の Lv バッジが同じシートを開くので、ここには置かない。
                 // 空いた枠は「からだ」（人体図）に充てる。キャラ本体のタップだけだと、
                 // 押せることに気づかないと一生たどり着けない。
                 sceneButton("ボディ", "figure.stand", route: .body)
                 sceneButton("クエスト", "checklist", route: .quest, badge: hasQuestToday)
+                sceneButton("冒険", "map.fill", route: .adventure)
+                bookMenuButton
                 sceneButton("着替え", "tshirt.fill", route: .outfit, disabled: ownedItemIds.isEmpty)
-                sceneButton("戦利品", "shippingbox.fill", route: .collection, disabled: collection.isEmpty)
                 sceneButton("見た目", "paintpalette.fill", route: .skins)
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.bottom, Theme.Spacing.lg)
+    }
+
+    /// 図鑑（技・称号・戦利品）。ボタンを増やすと列に収まらないので、1 つのボタンから選ばせる（issue #155）。
+    private var bookMenuButton: some View {
+        Menu {
+            Button { sheet = .techniques } label: {
+                Label("技図鑑（\(Technique.learnedCount(derived.techniqueBook))）", systemImage: "bolt.fill")
+            }
+            Button { sheet = .titles } label: {
+                Label("称号（\(PlayerTitle.earned(stats: titleStats).count)）", systemImage: "rosette")
+            }
+            Button { sheet = .collection } label: {
+                Label("戦利品（\(collection.count)）", systemImage: "shippingbox.fill")
+            }
+            .disabled(collection.isEmpty)
+        } label: {
+            sceneButtonLabel("図鑑", "book.fill", badge: false, disabled: false)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// まだ 1 回も記録していなくて、チュートリアルの宝箱も開けていない（記録を消して 0 回に戻った人には出さない）。
+    private var showsTutorialEntry: Bool {
+        derived.sessionCount == 0 && !tutorialChestOpened
+    }
+
+    /// チュートリアルの入口。押すと記録タブ（はじめてのメニュー）へ。1 セット記録すると倒れて宝箱が出る。
+    private var tutorialEntryButton: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.button, style: .continuous)
+        return Button {
+            NotificationCenter.default.post(name: .gymneeStartWorkout, object: nil)
+        } label: {
+            HStack(spacing: Theme.Spacing.md) {
+                BossSpriteView(bossId: "sloth_slime", tier: .weak, side: 30)
+                    .frame(width: 40, height: 40)
+                    .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("ちびスライムが あらわれた！")
+                        .font(.pixel(size: 16, relativeTo: .headline))
+                        .foregroundStyle(.white)
+                    Text("1セット記録すれば たおせる。宝箱つき")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.white.opacity(0.8))
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Self.bossOrange.opacity(0.85), in: shape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("room-tutorial-entry")
     }
 
     /// 週ボスの入口の塗り。戦闘画面の HP バー（橙）と強いランクの印（赤）に揃える。
@@ -1206,6 +1282,14 @@ struct CharacterRoomView: View {
     private func sceneButton(_ title: String, _ symbol: String, badge: Bool = false, disabled: Bool = false,
                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
+            sceneButtonLabel(title, symbol, badge: badge, disabled: disabled)
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.45 : 1)
+    }
+
+    private func sceneButtonLabel(_ title: String, _ symbol: String, badge: Bool, disabled: Bool) -> some View {
             VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: symbol)
@@ -1225,10 +1309,6 @@ struct CharacterRoomView: View {
                     .foregroundStyle(disabled ? Color.white.opacity(0.4) : .white.opacity(0.9))
                     .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
             }
-        }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .opacity(disabled ? 0.45 : 1)
     }
 
     /// 拾った内容の告知。何が増えたのかをその場で伝える。
@@ -1311,6 +1391,15 @@ struct CharacterRoomView: View {
             )
         case .collection:
             LootCollectionSheet(items: collection.map(\.item))
+        case .techniques:
+            TechniqueBookSheet(book: derived.techniqueBook)
+        case .adventure:
+            AdventureMapSheet(completedWorkouts: derived.sessionCount, look: battleLook)
+        case .titles:
+            TitleSheet(stats: titleStats, selectedId: selectedTitleId.isEmpty ? nil : selectedTitleId) { id in
+                selectedTitleId = id ?? ""
+                publishLook()
+            }
         case .quest:
             QuestSheet(userId: userId) { sheet = .coach }
         case .coach:
@@ -1427,12 +1516,31 @@ struct CharacterRoomView: View {
 
     /// 自分の見た目をサーバーに載せる（仲間の戦闘画面で本人の姿を描くため）。同じ見た目なら送らない。
     private func publishLook() {
-        guard auth.isPermanentAccount else { return }
         let look = PartyBoss.MemberLook(
             build: derived.build, skinId: skin.id, stage: derived.stage,
-            hairStyleId: hairStyleId, accessoryId: accessoryId, equipped: equipped, gender: gender
+            hairStyleId: hairStyleId, accessoryId: accessoryId, equipped: equipped, gender: gender,
+            title: wornTitle?.id
         )
+        // 記録画面の戦闘の帯とウィジェットは、ここで解決した見た目を使う（issue #155）。
+        CharacterLookStore.save(look)
+        WidgetArtworkRenderer.updateCharacter(look)
+        guard auth.isPermanentAccount else { return }
         Task { await party.publishLook(look, userId: userId) }
+    }
+
+    // MARK: - 称号（issue #155）
+
+    /// 称号の判定に使う事実。記録の分（`derived.titleBase`）に、週ボスの撃破を足す。
+    private var titleStats: PlayerTitle.Stats {
+        var stats = derived.titleBase
+        stats.bossDefeats = party.rewards.count
+        stats.seasonalDefeats = Set(party.rewards.compactMap { SeasonalEvent.event(forWeekStart: $0.weekStart) })
+        return stats
+    }
+
+    /// 着けている称号（持っていなければ nil）。
+    private var wornTitle: PlayerTitle.Title? {
+        PlayerTitle.resolve(selectedId: selectedTitleId.isEmpty ? nil : selectedTitleId, stats: titleStats)
     }
 
     /// 撃破通知から「ボス画面を開く」を持ち越すキー（RootView が立て、ここで消す）。
@@ -1461,7 +1569,8 @@ struct CharacterRoomView: View {
         let growth = CharacterInputs.growth(
             completedWorkouts: completedWorkouts,
             pickups: pickups, runs: runs, bossRewardEnergy: party.rewardEnergy,
-            bossRewardExp: party.rewardExp, specialAttackEnergy: party.specialEnergySpent, weeklyGoal: weeklyGoal
+            bossRewardExp: party.rewardExp, specialAttackEnergy: party.specialEnergySpent,
+            tutorialChestEnergy: RecordBattle.tutorialBonus(opened: tutorialChestOpened), weeklyGoal: weeklyGoal
         )
         let level = growth.level
         let stage = growth.stage
@@ -1493,6 +1602,17 @@ struct CharacterRoomView: View {
             calendar.isDate($0, equalTo: lastWeek, toGranularity: .weekOfYear)
         }.count
         next.dropMultiplier = RoomPickup.multiplier(lastWeekCount: lastWeekCount, weeklyGoal: weeklyGoal)
+        let prs = CharacterInputs.prHistory(from: completedWorkouts)
+        next.techniqueBook = Technique.book(
+            tallies: CharacterInputs.techniqueTallies(from: completedWorkouts, prByExercise: prs.byExercise),
+            presets: SeedData.presetExercises.map { ($0.name, $0.muscle) }
+        )
+        next.titleBase = CharacterInputs.titleStats(
+            completed: completedWorkouts,
+            prTotal: prs.total,
+            longestWeeklyStreak: StreakCalculator.longestWeeklyStreak(activeDays: activeDays, weeklyGoal: weeklyGoal)
+        )
+        next.titleBase.learnedTechniques = Technique.learnedCount(next.techniqueBook)
         derived = next
         publishLook()
     }
@@ -1893,5 +2013,6 @@ private struct RewardCelebrationView: View {
             .padding(Theme.Spacing.xl)
         }
         .background(Theme.bg0)
+        .onAppear { GameSound.play(.chest) }
     }
 }

@@ -36,6 +36,10 @@ struct SettingsView: View {
     @AppStorage("gymnee.restSeconds") private var restSeconds: Int = 90
     // レスト終了チャイム（RestChime が参照。サイレントスイッチでも鳴る）。
     @AppStorage(RestChime.enabledKey) private var restSoundEnabled = true
+    // ゲームの演出（issue #155）。記録画面の戦闘・効果音・ボス部屋の BGM。
+    @AppStorage(RecordBattle.enabledKey) private var recordBattleEnabled = true
+    @AppStorage(GameSound.effectsKey) private var gameSoundEnabled = true
+    @AppStorage(GameSound.musicKey) private var bossMusicEnabled = true
     // AI コーチの関わり方（#79）。育成タブのコーチ表示とチャットの挙動を決める。
     @AppStorage(CoachMode.storageKey) private var coachModeRaw = CoachMode.default.rawValue
     // 通知の種類別 ON/OFF。ローカル通知はこの @AppStorage を NotificationService が参照。
@@ -123,6 +127,16 @@ struct SettingsView: View {
                 Text("ワークアウト")
             } footer: {
                 Text("「今週の達成」リングの目標日数と、セット記録後に始まるレストの既定秒数。終了音はマナーモードでも鳴ります（アプリを開いている間）。")
+            }
+
+            Section {
+                Toggle("記録画面で戦う", isOn: $recordBattleEnabled)
+                Toggle("ゲームの効果音", isOn: $gameSoundEnabled)
+                Toggle("ボス部屋の BGM", isOn: $bossMusicEnabled)
+            } header: {
+                Text("ゲーム")
+            } footer: {
+                Text("効果音と BGM はマナーモードでは鳴りません。音楽を聞いているときは BGM を流しません。")
             }
 
             Section {

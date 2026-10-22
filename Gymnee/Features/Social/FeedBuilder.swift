@@ -28,6 +28,8 @@ struct FeedItemStats: Codable {
     var characterLevel: Int? = nil
     /// 投稿時点の進化段階の名前（例: チャレンジャー）。
     var characterStage: String? = nil
+    /// 投稿したときに着けていた称号の id（`PlayerTitle`。issue #155）。古いアプリは無視する。
+    var title: String? = nil
 
     /// 1 種目分のセット内訳。
     struct ExerciseLine: Codable, Equatable {
@@ -149,6 +151,8 @@ struct FeedEntry: Identifiable {
     /// 投稿時点の育成キャラ（「Lv.12 チャレンジャー」チップ）。nil なら非表示。
     var characterLevel: Int? = nil
     var characterStage: String? = nil
+    /// 投稿者が着けていた称号（名前。issue #155）。
+    var authorTitle: String? = nil
 
     /// 他ユーザーの投稿か（メニュー・写真取得経路などの分岐用）。
     /// 自分の投稿にも authorName を入れるため「名前の有無」からは導出せず明示フラグで持つ。
@@ -349,6 +353,7 @@ enum FeedBuilder {
                 monthlyDay: stats?.monthlyDay,
                 characterLevel: stats?.characterLevel,
                 characterStage: stats?.characterStage,
+                authorTitle: PlayerTitle.displayName(forId: stats?.title),
                 isFromOther: true
             )
         }

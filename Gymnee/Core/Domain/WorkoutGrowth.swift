@@ -75,6 +75,8 @@ enum WorkoutGrowth {
         let prCount: Int
         /// 完了した時点で見た「次の段階」。集計の反映を待たずに出せるよう、ここに固定する。
         let nextStage: CharacterProgress.NextStage?
+        /// この 1 回より前に完了していたセッションの数（冒険マップの 1 マス。issue #155）。古い控えには無い。
+        var sessionsBefore: Int?
 
         var didLevelUp: Bool { levelAfter.value > levelBefore.value }
         var didEvolve: Bool { stageAfter > stageBefore }
