@@ -101,7 +101,12 @@ struct BossBattleView: View {
         }
         .task(id: playToken) { await play() }
         .onChange(of: statusKey) { _, _ in startReplayIfNeeded() }
-        .onDisappear { finishReplay(markOnly: true) }
+        // ボス部屋の BGM（issue #155）。部屋へ上がったら止める。
+        .onAppear { GameSound.startBossMusic() }
+        .onDisappear {
+            finishReplay(markOnly: true)
+            GameSound.stopBossMusic()
+        }
     }
 
     // MARK: - 状態
@@ -179,6 +184,7 @@ struct BossBattleView: View {
             shownHP = step.hpBefore
             guard await pause(BossBattleStage.impactAt) else { return }
             withAnimation(.smooth(duration: 0.5)) { shownHP = step.hpAfter }
+            GameSound.play(step.defeats ? .finish : .hit)
             if step.defeats { defeatStartedAt = .now }
             for line in 1...max(1, lines(for: step, at: index).count) {
                 visibleLines = line
@@ -230,7 +236,8 @@ struct BossBattleView: View {
         let me = status.member(userId)
         let selfActor = BossBattleStage.Actor(
             id: .member(userId), look: selfLook, pet: nil, name: "あなた",
-            job: me?.job, isLive: me?.liveSessionId != nil
+            job: me?.job, isLive: me?.liveSessionId != nil,
+            title: PlayerTitle.displayName(forId: CharacterLookStore.load().title)
         )
         // ソロはコーチとペットが仲間として並ぶ（ダメージは無い）。
         if status.members.count <= 1 {
@@ -243,7 +250,8 @@ struct BossBattleView: View {
         let others = status.members.filter { $0.id != userId }.map { member in
             BossBattleStage.Actor(
                 id: .member(member.id), look: look(for: member), pet: nil, name: member.displayName,
-                job: member.job, isLive: member.liveSessionId != nil
+                job: member.job, isLive: member.liveSessionId != nil,
+                title: PlayerTitle.displayName(forId: member.look?.title)
             )
         }
         // 自分を真ん中に置く。
@@ -266,18 +274,7 @@ struct BossBattleView: View {
     /// 仲間の姿。見た目が載っていなければ、部屋の合トレ仲間と同じく ID から決まる色で描く。
     private func look(for member: PartyBoss.Member) -> PixelCharacterRenderer.Look {
         if let look = member.look {
-            return PixelCharacterRenderer.Look(
-                build: look.build,
-                skin: SkinCatalog.skin(id: look.skinId),
-                equipped: look.equippedItems,
-                stage: look.stageValue,
-                carriesPack: false,
-                nameTag: nil,
-                role: .trainee,
-                hairStyleId: PixelHairArt.style(id: look.hairStyleId).id,
-                accessoryId: PixelHairArt.accessory(id: look.accessoryId).id,
-                gender: look.genderValue
-            )
+            return PixelCharacterRenderer.Look(memberLook: look)
         }
         let seed = DeterministicRandom.seed(from: member.id)
         var fallback = selfLook
@@ -834,6 +831,7 @@ struct BossRewardReveal: View {
         }
         .padding(Theme.Spacing.xl)
         .background(Theme.bg0)
+        .onAppear { GameSound.play(.chest) }
         .presentationDetents([.medium])
     }
 }

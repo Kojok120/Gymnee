@@ -388,6 +388,19 @@ struct RecordContent: View {
 
     @AppStorage("gymnee.recordShelves") private var shelvesJSON = ""
 
+    // MARK: 記録画面の戦闘（issue #155）
+    @AppStorage(RecordBattle.enabledKey) private var battleEnabled = true
+    @AppStorage(RecordBattle.tutorialChestKey) private var tutorialChestOpened = false
+    /// 最後の一撃（帯の演出のきっかけ）。
+    @State private var battleStrike: RecordBattleStrip.Strike?
+    /// とどめの演出中（完了してからサマリーを出すまで）。
+    @State private var battleFinishing = false
+    /// 記録を始めた時点の前提（最初のセットで 1 度だけ数える）。
+    @State private var battleBaseline: BattleBaseline?
+    /// この記録でチュートリアルのちびスライムを倒した（宝箱を出したまま帯に残す）。
+    @State private var tutorialClearedNow = false
+    @State private var battleLook = PixelCharacterRenderer.Look(memberLook: CharacterLookStore.load())
+
     @AppStorage("gymnee.recordOnboardingShown") private var onboardingShown = false
     @AppStorage("gymnee.defaultVisibility") private var defaultVisibilityRaw = Visibility.friends.rawValue
     /// 投稿プレビューのヘッダーに出す自分のアバター（ProfileEditView が書き込む値）。
@@ -460,7 +473,11 @@ struct RecordContent: View {
                 Task { await live.refreshCheers() }
             }
         }
-        .task { await live.refreshCheers() }
+        .task {
+            async let cheers: Void = live.refreshCheers()
+            await prepareBattle()
+            await cheers
+        }
         // プッシュで届いた応援をその場で帯に足す（取り直しを待たせない）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeCheerReceived)) { note in
             live.appendFromPush(
@@ -867,6 +884,26 @@ struct RecordContent: View {
     @ViewBuilder
     private var timerBar: some View {
         if let w = activeWorkout {
+            VStack(spacing: 0) {
+                if showsBattle {
+                    RecordBattleStrip(
+                        opponent: battleOpponent,
+                        look: battleLook,
+                        chip: RecordBattle.chipProgress(sets: recordedSetCount, expectedSets: battleBaseline?.expectedSets ?? 12),
+                        strike: battleStrike,
+                        tutorialCleared: tutorialClearedNow,
+                        finishing: battleFinishing
+                    )
+                    .padding(.top, Theme.Spacing.sm)
+                }
+                timerRow(w)
+            }
+            .background(.ultraThinMaterial)
+            .sensoryFeedback(.success, trigger: restTimer.isRunning)
+        }
+    }
+
+    private func timerRow(_ w: Workout) -> some View {
             HStack(spacing: Theme.Spacing.md) {
                 // レスト（左）
                 HStack(spacing: Theme.Spacing.sm) {
@@ -893,9 +930,96 @@ struct RecordContent: View {
                 }
             }
             .padding(.horizontal, Theme.Spacing.lg).padding(.vertical, Theme.Spacing.sm)
-            .background(.ultraThinMaterial)
-            .sensoryFeedback(.success, trigger: restTimer.isRunning)
+    }
+
+    // MARK: - 戦闘の帯（issue #155）
+
+    /// 開いたときの用意。見た目を読み直し、続きから開いた記録なら前提を数え、
+    /// 相手（週ボス）を出すためにまだ読んでいなければパーティを読む。
+    private func prepareBattle() async {
+        battleLook = PixelCharacterRenderer.Look(memberLook: CharacterLookStore.load())
+        if showsBattle && battleBaseline == nil { battleBaseline = loadBattleBaseline() }
+        guard battleEnabled, auth.isPermanentAccount, party.statuses.isEmpty else { return }
+        await party.refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false)
+    }
+
+    /// 帯を出すか。設定で切れる。過去の記録を開いて直しているとき（完了済み）は出さない。
+    private var showsBattle: Bool {
+        guard battleEnabled, let w = activeWorkout else { return false }
+        return w.completedAt == nil || battleFinishing
+    }
+
+    private var recordedSetCount: Int {
+        activeWorkout?.exercises.reduce(0) { $0 + $1.sets.count } ?? 0
+    }
+
+    private var battleOpponent: RecordBattle.Opponent {
+        if tutorialClearedNow { return .tutorial }
+        guard let base = battleBaseline else { return .dummy(.noParty) }
+        return RecordBattle.opponent(
+            completedWorkouts: base.completedWorkouts,
+            tutorialDone: tutorialChestOpened,
+            status: auth.isPermanentAccount ? party.status : nil,
+            weekHits: base.weekHits,
+            weeklyGoal: weeklyGoal
+        )
+    }
+
+    /// 記録を始めた時点の前提を数える（この記録を除いた完了済みの記録から）。
+    private func loadBattleBaseline() -> BattleBaseline {
+        let uid = userId
+        let currentId = activeWorkout?.id
+        let completed = ((try? context.fetch(
+            FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
+        )) ?? []).filter { $0.id != currentId }
+        var setsByExercise: [String: Int] = [:]
+        for tally in CharacterInputs.techniqueTallies(from: completed) {
+            setsByExercise[tally.exerciseName, default: 0] += tally.completedSets
         }
+        // 続きから開いた記録は、すでに記録したセットも数えておく（「覚えた」を二度言わない）。
+        for we in activeWorkout?.exercises ?? [] {
+            if let name = we.exercise?.name { setsByExercise[name, default: 0] += we.sets.count }
+        }
+        let recent = completed
+            .sorted { ($0.completedAt ?? $0.date) > ($1.completedAt ?? $1.date) }
+            .prefix(5)
+            .map { $0.exercises.reduce(0) { $0 + $1.sets.count } }
+        let planned = activePlanId
+            .flatMap { pid in todayPlanned.first { $0.id == pid } }
+            .map { PlanDetail.decode($0.detailJSON).reduce(0) { $0 + $1.sets } }
+        return BattleBaseline(
+            completedWorkouts: completed.count,
+            weekHits: PartyBattle.weekHits(completedAt: completed.compactMap(\.completedAt), now: .now),
+            expectedSets: RecordBattle.expectedSets(plannedSets: planned, recentSetCounts: Array(recent)),
+            setsByExercise: setsByExercise
+        )
+    }
+
+    /// 1 セットの一撃。技を出し、自己ベストなら会心。チュートリアルなら 1 撃で倒して宝箱。
+    private func strikeBattle(exercise: Exercise, weight: Double, reps: Int, duration: Int?, isPR: Bool) {
+        guard var base = battleBaseline else { return }
+        let before = base.setsByExercise[exercise.name] ?? 0
+        base.setsByExercise[exercise.name] = before + 1
+        battleBaseline = base
+        let event = Technique.event(exerciseName: exercise.name, setsBefore: before)
+        var line = RecordBattle.strikeLine(event: event, isPR: isPR)
+        if battleOpponent == .tutorial && !tutorialChestOpened {
+            tutorialClearedNow = true
+            tutorialChestOpened = true
+            line = "ちびスライムを たおした！ 宝箱から パワー +\(RecordBattle.tutorialChestEnergy)"
+            GameSound.play(.finish)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { GameSound.play(.chest) }
+        } else {
+            switch event {
+            case .learned, .leveledUp: GameSound.play(isPR ? .critical : .learn)
+            case .used: GameSound.play(isPR ? .critical : .hit)
+            }
+        }
+        battleStrike = RecordBattleStrip.Strike(
+            label: RecordBattle.strikeLabel(weight: weight, reps: reps, duration: duration),
+            line: line,
+            isCritical: isPR
+        )
     }
 
 
@@ -1082,7 +1206,11 @@ struct RecordContent: View {
     }
 
     private func commitSet(exercise: Exercise, weight: Double, reps: Int, duration: Int?, distanceKm: Double? = nil, angleDegrees: Int? = nil) {
+        // とどめの演出中（完了済み・サマリー待ち）は記録させない。完了した記録にセットが増えて同期から漏れる。
+        guard !battleFinishing else { return }
         let workout = ensureWorkout()
+        // 戦闘の前提は、このセットを入れる前に数える（このセットを「前から知っていた」ことにしない）。
+        if showsBattle && battleBaseline == nil { battleBaseline = loadBattleBaseline() }
         let we = workoutExercise(for: exercise, in: workout)
         let set = ExerciseSet(setIndex: we.sets.count, weight: weight, reps: reps,
                               isCompleted: true, durationSeconds: duration, distanceKm: distanceKm,
@@ -1091,7 +1219,8 @@ struct RecordContent: View {
         try? context.save()   // 下書きはローカルのみ。同期は完了時。
         // PR の確定・永続は完了時にまとめて。ここでは履歴ベストとの純粋比較で「更新ペース！」を
         // その場表示するだけ（非永続。中断したワークアウトに PR を残さない設計を壊さない）。
-        showProvisionalPRIfNeeded(set: set, exercise: exercise)
+        let isPR = showProvisionalPRIfNeeded(set: set, exercise: exercise)
+        if showsBattle { strikeBattle(exercise: exercise, weight: weight, reps: reps, duration: duration, isPR: isPR) }
         restTimer.exerciseName = exercise.name
         restTimer.start()
     }
@@ -1119,14 +1248,16 @@ struct RecordContent: View {
     }
 
     /// 履歴ベスト（この set を除く）を上回ったら暫定スパークを出す。永続化はしない。
-    private func showProvisionalPRIfNeeded(set: ExerciseSet, exercise: Exercise) {
+    /// 上回ったかを返す（記録画面の戦闘で会心の一撃にする。issue #155）。
+    @discardableResult
+    private func showProvisionalPRIfNeeded(set: ExerciseSet, exercise: Exercise) -> Bool {
         let bests = WorkoutMetrics.bests(for: exercise, userId: userId, excludingSetId: set.id)
         let detected = PRDetector.detect(
             measurementType: exercise.measurementType,
             weight: set.weight, reps: set.reps, durationSeconds: set.durationSeconds,
             against: bests, loadMode: exercise.loadMode
         )
-        guard !detected.isEmpty else { return }
+        guard !detected.isEmpty else { return false }
         let label = detected.map(\.type.label).joined(separator: "・")
         let spark = PRSpark(exerciseName: exercise.name, typesLabel: label)
         withAnimation(.bouncy) { prSpark = spark }
@@ -1136,9 +1267,11 @@ struct RecordContent: View {
                 withAnimation(.easeOut(duration: 0.25)) { if prSpark?.id == spark.id { prSpark = nil } }
             }
         }
+        return true
     }
 
     private func deleteSet(_ set: ExerciseSet) {
+        guard !battleFinishing else { return }
         // 最後のセットを消したら、空になった種目エントリ(WorkoutExercise)も削除する。
         // 残すと完了後の投稿/詳細に「セットなし」の種目として出てしまうため。
         let we = set.workoutExercise
@@ -1149,6 +1282,7 @@ struct RecordContent: View {
     }
 
     private func commitSetEdit(_ set: ExerciseSet) {
+        guard !battleFinishing else { return }
         set.updatedAt = .now
         set.isDirty = true
         try? context.save()   // 下書き中の編集。同期は完了時。
@@ -1202,8 +1336,11 @@ struct RecordContent: View {
     // MARK: - 完了 / セッション終了
 
     private func finish() {
-        guard let w = activeWorkout else { return }
+        // とどめの演出中はもう完了している（二重に完了させない）。
+        guard let w = activeWorkout, !battleFinishing else { return }
         let isFirstCompletion = w.completedAt == nil
+        // とどめの演出を出すかは、完了時刻を入れる前に決める（入れると帯が消える）。
+        let playsFinish = showsBattle
         // 育成の祝いは**初回完了だけ**。カレンダーから過去の記録を開いて直しただけの回で
         // 「この1回でこれだけ育った」と出すと、伸びていない EXP を伸びたことにしてしまう。
         //
@@ -1280,25 +1417,35 @@ struct RecordContent: View {
         pendingGrowth = growthBefore.map { growthGain(for: w, before: $0) }
         // 完了時に feed_item は作らない（fail-closed）。公開はサマリーの「ソーシャルに投稿」
         // ボタン（publishConsented）を押した時だけ。押さなければ feed_item は存在せず＝非公開。
-        showSummary = true
+        if playsFinish {
+            // とどめの一撃を見せてからサマリーへ（issue #155）。
+            battleFinishing = true
+            GameSound.play(.finish)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { showSummary = true }
+        } else {
+            showSummary = true
+        }
     }
     /// 完了直後の状態と控えた「前」から、祝う内容を組み立てる。
     /// **判定そのものは `WorkoutGrowth.gain` に置く**。ここは SwiftData から値を集めるだけ。
     private func growthGain(for workout: Workout, before: WorkoutGrowth.Snapshot) -> WorkoutGrowth.Gain {
         let after = growthSnapshot(for: workout)
         let sessions = CharacterInputs.sessions(from: [workout])
-        return WorkoutGrowth.gain(
+        var gain = WorkoutGrowth.gain(
             before: before,
             after: after.snapshot,
             energy: sessions.first.map(Expedition.energyEarned) ?? 0,
             volumeByMuscle: CharacterInputs.volumeByMuscle(from: [workout]),
             prCount: after.prUpdatesByWorkout[workout.id] ?? 0
         )
+        // 冒険マップの 1 マス（issue #155）。この回を含めたセッション数から 1 を引く。
+        if !sessions.isEmpty { gain.sessionsBefore = max(0, after.sessionCount - 1) }
+        return gain
     }
 
     /// 育成の状態を取る。`finish()` の先頭で呼べば「この回を含まない」状態、
     /// 完了処理のあとで呼べば「含んだ」状態になる（`completedAt` の有無で決まる）。
-    private func growthSnapshot(for workout: Workout) -> (snapshot: WorkoutGrowth.Snapshot, prUpdatesByWorkout: [UUID: Int]) {
+    private func growthSnapshot(for workout: Workout) -> (snapshot: WorkoutGrowth.Snapshot, prUpdatesByWorkout: [UUID: Int], sessionCount: Int) {
         let uid = userId
         let completed = (try? context.fetch(
             FetchDescriptor<Workout>(predicate: #Predicate { $0.userId == uid && $0.completedAt != nil })
@@ -1320,7 +1467,7 @@ struct RecordContent: View {
             prCount: prs.total,
             streakWeeks: streak.weeks
         )
-        return (snapshot, prs.byWorkout)
+        return (snapshot, prs.byWorkout, sessions.count)
     }
 
     /// サマリーの「ソーシャルに投稿」: このワークアウトと当日の最大重量 PR を公開範囲付きで発行する。
@@ -1347,6 +1494,7 @@ struct RecordContent: View {
     /// サマリーを閉じた後：待機状態へ戻す。
     /// 左上「キャンセル」。記録済みセットがあれば確認、無ければ即キャンセル。
     private func attemptCancel() {
+        guard !battleFinishing else { return }
         let hasSets = !(activeWorkout?.exercises.flatMap { $0.sets } ?? []).isEmpty
         if hasSets { showCancelConfirm = true } else { cancelRecording() }
     }
@@ -1395,6 +1543,10 @@ struct RecordContent: View {
     }
 
     private func endSession() {
+        battleStrike = nil
+        battleFinishing = false
+        battleBaseline = nil
+        tutorialClearedNow = false
         // 完了でも中断でも配信は必ず終える。終えないと期限（3時間）まで
         // 「トレーニング中」のままになり、いない人を応援させてしまう。
         Task { await live.end() }
@@ -2041,4 +2193,16 @@ private struct RecordOnboardingSheet: View {
             Spacer(minLength: 0)
         }
     }
+}
+
+/// 記録画面の戦闘の前提（issue #155）。記録を始めた時点で 1 度だけ数え、セットごとに数え直さない。
+private struct BattleBaseline {
+    /// この記録を除いた完了済みの回数（0 ならチュートリアル）。
+    var completedWorkouts: Int
+    /// 今週これまでの完了回数（この記録を除く）。
+    var weekHits: Int
+    /// 今日の記録で見込むセット数。
+    var expectedSets: Int
+    /// 種目名 → これまでの累計セット数（この記録の分も、記録するたびに足していく）。
+    var setsByExercise: [String: Int]
 }

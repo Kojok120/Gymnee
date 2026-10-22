@@ -88,6 +88,8 @@ struct BossBattleStage: View {
         let job: PartyBoss.Job?
         /// トレ中（戦闘中の動きで、ときどきボスを殴る）。
         let isLive: Bool
+        /// 着けている称号（名前。issue #155）。
+        var title: String? = nil
     }
 
     /// 再生中の1回の攻撃の演出。
@@ -320,6 +322,12 @@ struct BossBattleStage: View {
             Text(actor.name).font(.pixel(size: 11, relativeTo: .caption2)).foregroundStyle(Color.white)
         )
         y = drawPlate(&context, text: name, centerX: feet.x, bottom: y, fill: .black.opacity(0.6))
+        if let title = actor.title {
+            let titleText = context.resolve(
+                Text(title).font(.pixel(size: 9, relativeTo: .caption2)).foregroundStyle(Color(hexF: 0xFFE066))
+            )
+            y = drawPlate(&context, text: titleText, centerX: feet.x, bottom: y - 2, fill: .black.opacity(0.5))
+        }
         if let job = actor.job {
             let jobText = context.resolve(
                 Text("\(Image(systemName: job.symbol)) \(job.label)")

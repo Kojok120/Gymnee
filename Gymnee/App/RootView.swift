@@ -213,13 +213,16 @@ struct RootView: View {
                 .onAppear {
                     // レベルアップした回の見え方を確認する用の作り物。
                     // **本番と同じ純粋関数で組み立てる**（手で並べるとレベルと次段階がずれる）。
-                    WorkoutGrowth.Pending.save(WorkoutGrowth.gain(
+                    var gain = WorkoutGrowth.gain(
                         before: .init(totalExperience: 380, prCount: 0, streakWeeks: 1),
                         after: .init(totalExperience: 566, prCount: 1, streakWeeks: 1),
                         energy: 48,
                         volumeByMuscle: [.chest: 4200, .arms: 1800],
                         prCount: 1
-                    ))
+                    )
+                    // 冒険マップで中ボスを倒した回（issue #155）。
+                    gain.sessionsBefore = 4
+                    WorkoutGrowth.Pending.save(gain)
                     // 祝いに出る「ボスに攻撃」（issue #137）の見え方も確かめる。
                     party.loadDemo(userId: userId, defeated: false)
                     NotificationCenter.default.post(name: .gymneeShowCharacter, object: nil)
@@ -242,6 +245,10 @@ struct RootView: View {
             } else {
                 RecordView()
             }
+        // 記録画面の戦闘の帯（issue #155）。相手ごとの見え方を 1 枚で並べる。
+        case "battle-strip": RecordBattleStripGallery(look: Self.demoBattleLook)
+        // 技図鑑・冒険マップ・称号（issue #155）。デモの記録で組み立てる。
+        case "techniques", "adventure", "titles": CharacterRoomView(userId: userId)
         default: mainTabs
         }
     }

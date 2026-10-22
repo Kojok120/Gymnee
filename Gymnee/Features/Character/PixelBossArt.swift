@@ -161,6 +161,36 @@ enum PixelBossArt {
     ]
     static let newYearDragon = PixelSprite(newYearDragonRows)
 
+    // MARK: - 練習用のかかし（issue #155）
+
+    /// 記録画面の戦闘で、週ボスと戦わないときの相手。わら（`f`）と木（`k`）、赤い帯（`r`）。
+    static let trainingDummy = PixelSprite([
+        "................",
+        ".....oooooo.....",
+        "....offffffo....",
+        "...offdffdffo...",
+        "...offffffffo...",
+        "...offfddfffo...",
+        "....offffffo....",
+        ".ooooookkoooooo.",
+        "okkkkkokkokkkkko",
+        ".oooooffffooooo.",
+        ".....offffo.....",
+        ".....orrrro.....",
+        "......okko......",
+        "......okko......",
+        "....ookkkkoo....",
+        "...oooooooooo...",
+    ])
+
+    static let trainingDummyPalette: PixelPalette = {
+        var palette = PixelPalette.neutral
+        palette.cloth = Color(hexF: 0xD9B86C)
+        palette.accent = Color(hexF: 0xE8483F)
+        palette.accentShade = Color(hexF: 0xB0302A)
+        return palette
+    }()
+
     /// ボスの絵。知らない id はスライムにする（サーバーが先にボスを増やしても落ちない）。
     static func sprite(bossId: String) -> PixelSprite {
         switch bossId {

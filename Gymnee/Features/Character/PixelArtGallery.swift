@@ -89,6 +89,7 @@ struct PixelArtGallery: View {
     private var dungeonCells: [(name: String, sprite: PixelSprite, palette: PixelPalette)] {
         PixelDungeonArt.flameFrames.enumerated().map { ("松明の炎 \($0.offset + 1)", $0.element, PixelDungeonArt.palette) }
             + [
+                ("練習用のかかし", PixelBossArt.trainingDummy, PixelBossArt.trainingDummyPalette),
                 ("松明の受け皿", PixelDungeonArt.bracket, PixelDungeonArt.palette),
                 ("斬撃", PixelDungeonArt.slash, PixelDungeonArt.palette),
                 ("怒り", PixelDungeonArt.anger, PixelDungeonArt.angerPalette),

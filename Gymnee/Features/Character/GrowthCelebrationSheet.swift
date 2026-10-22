@@ -52,6 +52,10 @@ struct GrowthCelebrationSheet: View {
                 strikeCard(strike)
             }
 
+            if let before = gain.sessionsBefore {
+                adventureCard(completedBefore: before)
+            }
+
             Spacer(minLength: 0)
 
             Button("いいね") { dismiss() }
@@ -63,9 +67,40 @@ struct GrowthCelebrationSheet: View {
         .overlay(alignment: .top) {
             if isBig && appeared { ConfettiView().transition(.opacity).allowsHitTesting(false) }
         }
-        .onAppear { withAnimation(.smooth) { appeared = true } }
+        .onAppear {
+            withAnimation(.smooth) { appeared = true }
+            // 進化・レベルアップの音（issue #155）。どちらでもない回は静かに。
+            if gain.didEvolve {
+                GameSound.play(.evolve)
+            } else if gain.didLevelUp {
+                GameSound.play(.levelUp)
+            }
+        }
         .sensoryFeedback(isBig ? .success : .impact(weight: .light), trigger: appeared)
         .presentationDetents([.large])
+    }
+
+    /// 冒険マップで 1 マス進んだこと（issue #155）。中ボス・大ボスのマスなら倒したことを言う。
+    private func adventureCard(completedBefore before: Int) -> some View {
+        let position = AdventureMap.position(completedWorkouts: before + 1)
+        let text: String
+        switch AdventureMap.event(completedBefore: before) {
+        case .defeatedMidBoss(let bossId):
+            text = "冒険マップ：中ボス「\(PartyBoss.boss(id: bossId)?.name ?? "ボス")」を倒した！"
+        case .clearedRegion(let region, let next):
+            text = "冒険マップ：\(region)の大ボスを倒した！ 次は\(next)へ"
+        case .advanced:
+            text = "冒険マップ：\(position.region.name)を 1マス進んだ（\(position.step) / \(position.region.steps)）"
+        }
+        return HStack(spacing: Theme.Spacing.sm) {
+            PixelSpriteView(sprite: PixelItemArt.course(id: position.region.id), palette: .neutral, side: 28)
+            Text(text)
+                .font(.caption.bold())
+                .foregroundStyle(Theme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .gymneeCard(padding: Theme.Spacing.md)
     }
 
     /// 育った本人。進化した回は一段大きく出す。
