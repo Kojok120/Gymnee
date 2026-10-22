@@ -205,6 +205,8 @@ struct RootView: View {
         case "appearance-pet": debugAppearanceSheet(tab: .pet)
         // 性別のタブ（issue #141）。女性を選んだ状態（髪はボブ）で描く。
         case "appearance-gender": debugAppearanceSheet(tab: .gender, gender: .female)
+        // 買う前の試着（issue #154）。ロングヘアを試着している状態。
+        case "appearance-trial": debugAppearanceSheet(tab: .hair, trial: .init(kind: .hair, id: "long"))
         // 完了直後の祝い（育成タブで出るもの）。デモの最新完了ワークアウトで組み立てる。
         case "growth":
             CharacterRoomView(userId: userId)
@@ -254,7 +256,8 @@ struct RootView: View {
 
     /// 見た目シートのハーネス。所持ゼロ・価格は控えの値で、購入できる状態の見え方を確認する。
     @ViewBuilder
-    private func debugAppearanceSheet(tab: AppearanceSheet.Tab, gender: CharacterGender = .male) -> some View {
+    private func debugAppearanceSheet(tab: AppearanceSheet.Tab, gender: CharacterGender = .male,
+                                      trial: AppearanceTryOn.Trial? = nil) -> some View {
         AppearanceSheet(
             build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
             stage: .challenger,
@@ -274,7 +277,8 @@ struct RootView: View {
             onSelectAccessory: { _ in }, onSelectPet: { _ in }, onSelectGender: { _ in },
             onPurchase: { _, _ in false }, onRestore: { nil },
             onAppearReload: {},
-            initialTab: tab
+            initialTab: tab,
+            initialTrial: trial
         )
     }
 
