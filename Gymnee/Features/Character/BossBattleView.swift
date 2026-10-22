@@ -6,7 +6,9 @@ import SwiftUI
 /// 石壁のボス部屋。奥にボス、手前に仲間が背中を向けて並ぶ（背面視点）。
 /// 開くと、前回見たあとに入った仲間の攻撃を順に再生し、メッセージ窓で読ませる。
 /// ダメージ・撃破・報酬はサーバーが正（`PartyService`）。ここは見せ方だけを持つ。
-/// パーティの切り替え・招待・投票・図鑑・戦いの記録は「パーティ」メニュー（`PartyMenuSheet`）。
+/// パーティの切り替え・招待・投票・図鑑・戦いの記録は「パーティ」メニュー（`PartyMenuView`）。
+/// 確かめるとき（必殺技・招待への参加）は、iOS の確認窓を使わず、メッセージ窓で問いかけて
+/// 下の帯を「はい / いいえ」に替える（issue #161）。
 struct BossBattleView: View {
     let userId: UUID
     /// 自分の姿（部屋で組み立てたもの。サーバーに載せた見た目より新しい）。
@@ -17,6 +19,22 @@ struct BossBattleView: View {
     let energy: Int
     /// 部屋へ上る。nil なら「部屋へ」を出さない（DEBUG の単体ハーネス）。
     var onGoUpstairs: (() -> Void)?
+    /// 撮影用に、開いた直後の状態を決める（DEBUG の単体ハーネス。`-gymneeScreen boss-menu` など）。
+    var debugStart: DebugStart?
+
+    enum DebugStart {
+        case menu(PartyMenuView.Page)
+        case special
+        case invite
+    }
+
+    /// メッセージ窓で問いかけていること。
+    enum Question: Equatable {
+        /// パワーを使って必殺技を出すか。
+        case special
+        /// 招待されたパーティに参加するか。
+        case invite(UUID)
+    }
 
     @Environment(AuthService.self) private var auth
     @Environment(PartyService.self) private var party
@@ -39,14 +57,14 @@ struct BossBattleView: View {
     // 画面
     @State private var selectedActor: BattleActorID?
     @State private var showMenu = false
+    @State private var menuPage = PartyMenuView.Page.members
     @State private var openedReward: PartyBoss.Reward?
     @State private var isClaiming = false
     @State private var toast: String?
     @State private var cheered: Set<UUID> = []
     @State private var pendingPartyId: UUID?
-    @State private var joinMessage: String?
     @State private var isJoining = false
-    @State private var confirmSpecial = false
+    @State private var question: Question?
     @State private var isSpecialAttacking = false
 
     private static let plate = Color.black.opacity(0.55)
@@ -64,6 +82,14 @@ struct BossBattleView: View {
                 scene(size: proxy.size, safe: safe)
             }
             .ignoresSafeArea()
+            .blur(radius: showMenu ? 3 : 0)
+            // パーティのメニューは、シートではなくボス部屋の上に重ねる（issue #161）。
+            if showMenu {
+                PartyMenuView(userId: userId, selfLook: selfLook, initialPage: menuPage) {
+                    withAnimation(.easeOut(duration: 0.15)) { showMenu = false }
+                }
+                .transition(.opacity)
+            }
         }
         .background(Color(hexF: 0x0D0F15))
         // 暗い配色はこの画面の中に効かせる。状態バーとタブバーは RootView が
@@ -71,23 +97,9 @@ struct BossBattleView: View {
         // タブを移っても画面が生きているあいだアプリ全体が暗いままになる）。
         .environment(\.colorScheme, .dark)
         // シートは表示が別なので、全画面だった頃と同じ暗い見た目をシート側で指定する。
-        .sheet(isPresented: $showMenu) {
-            PartyMenuSheet(userId: userId)
-                .preferredColorScheme(.dark)
-        }
         .sheet(item: $openedReward) { reward in
             BossRewardReveal(reward: reward)
                 .preferredColorScheme(.dark)
-        }
-        .confirmationDialog(
-            "パワーを\(PartyBoss.specialAttackCost)使って必殺技を出しますか？",
-            isPresented: $confirmSpecial,
-            titleVisibility: .visible
-        ) {
-            Button("必殺技を出す") { specialAttack() }
-            Button("やめる", role: .cancel) {}
-        } message: {
-            Text("ボスに1撃。1人につき、パーティごとに週1回だけ出せます。")
         }
         .task {
             pendingPartyId = UserDefaults.standard.string(forKey: PartyInviteLink.pendingDefaultsKey)
@@ -98,6 +110,7 @@ struct BossBattleView: View {
             }
             if pendingPartyId == party.status?.partyId { clearPendingInvite() }
             startReplayIfNeeded()
+            applyDebugStart()
         }
         .task(id: playToken) { await play() }
         .onChange(of: statusKey) { _, _ in startReplayIfNeeded() }
@@ -110,6 +123,22 @@ struct BossBattleView: View {
     }
 
     // MARK: - 状態
+
+    private func applyDebugStart() {
+        switch debugStart {
+        case let .menu(page)?:
+            menuPage = page
+            showMenu = true
+        case .special?:
+            finishReplay(markOnly: false)
+            question = .special
+        case .invite?:
+            finishReplay(markOnly: false)
+            pendingPartyId = UUID()
+        case nil:
+            break
+        }
+    }
 
     private var isDemo: Bool {
         #if DEBUG
@@ -237,7 +266,8 @@ struct BossBattleView: View {
         let selfActor = BossBattleStage.Actor(
             id: .member(userId), look: selfLook, pet: nil, name: "あなた",
             job: me?.job, isLive: me?.liveSessionId != nil,
-            title: PlayerTitle.displayName(forId: CharacterLookStore.load().title)
+            title: PlayerTitle.displayName(forId: CharacterLookStore.load().title),
+            pips: me?.pips
         )
         // ソロはコーチとペットが仲間として並ぶ（ダメージは無い）。
         if status.members.count <= 1 {
@@ -251,7 +281,8 @@ struct BossBattleView: View {
             BossBattleStage.Actor(
                 id: .member(member.id), look: look(for: member), pet: nil, name: member.displayName,
                 job: member.job, isLive: member.liveSessionId != nil,
-                title: PlayerTitle.displayName(forId: member.look?.title)
+                title: PlayerTitle.displayName(forId: member.look?.title),
+                pips: member.pips
             )
         }
         // 自分を真ん中に置く。
@@ -271,19 +302,8 @@ struct BossBattleView: View {
         )
     }
 
-    /// 仲間の姿。見た目が載っていなければ、部屋の合トレ仲間と同じく ID から決まる色で描く。
     private func look(for member: PartyBoss.Member) -> PixelCharacterRenderer.Look {
-        if let look = member.look {
-            return PixelCharacterRenderer.Look(memberLook: look)
-        }
-        let seed = DeterministicRandom.seed(from: member.id)
-        var fallback = selfLook
-        fallback.skin = SkinCatalog.all[Int(seed % UInt64(SkinCatalog.all.count))]
-        fallback.equipped = [:]
-        fallback.stage = .rookie
-        fallback.hairStyleId = PixelHairArt.defaultStyleId
-        fallback.accessoryId = "none"
-        return fallback
+        PixelCharacterRenderer.Look.partyMember(member, base: selfLook)
     }
 
     /// 下に積むもの（メッセージ窓と下の帯）の高さ。仲間はこの上に立つ。
@@ -312,9 +332,6 @@ struct BossBattleView: View {
             topBar(safe: safe)
             VStack(spacing: Theme.Spacing.sm) {
                 Spacer()
-                if let pendingPartyId, isSignedIn, pendingPartyId != status?.partyId {
-                    inviteCard(pendingPartyId)
-                }
                 if let selectedActor {
                     actorCard(selectedActor)
                 }
@@ -361,7 +378,13 @@ struct BossBattleView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    if selectedActor != nil { selectedActor = nil } else { advance() }
+                    if question == .special {
+                        question = nil
+                    } else if selectedActor != nil {
+                        selectedActor = nil
+                    } else {
+                        advance()
+                    }
                 }
             ForEach(cast) { actor in
                 if let rect = layout.hitRect(for: actor.id) {
@@ -438,24 +461,9 @@ struct BossBattleView: View {
         .padding(.top, safe.top + Theme.Spacing.xs)
     }
 
-    /// 入っているパーティの切り替え。1つなら名前だけ出す。
+    /// パーティ名。押すとパーティのメニューを開く（切り替えはメニューの上のタブ。issue #161）。
     private var partySwitcher: some View {
-        Menu {
-            ForEach(party.statuses) { candidate in
-                Button {
-                    party.selectedPartyId = candidate.partyId
-                    selectedActor = nil
-                } label: {
-                    if candidate.partyId == status?.partyId {
-                        Label(candidate.title(for: userId), systemImage: "checkmark")
-                    } else {
-                        Text(candidate.title(for: userId) + (candidate.hasUnclaimedChest ? "（宝箱）" : ""))
-                    }
-                }
-            }
-            Divider()
-            Button("パーティのメニュー", systemImage: "person.3") { showMenu = true }
-        } label: {
+        Button { openMenu(.members) } label: {
             HStack(spacing: 6) {
                 Text(status?.title(for: userId) ?? "パーティ")
                     .lineLimit(1)
@@ -472,6 +480,16 @@ struct BossBattleView: View {
             .frame(height: 38)
             .background(Self.plate, in: Capsule())
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("パーティのメニューを開く")
+    }
+
+    private func openMenu(_ page: PartyMenuView.Page) {
+        GameSound.play(.select)
+        question = nil
+        selectedActor = nil
+        menuPage = page
+        withAnimation(.easeOut(duration: 0.15)) { showMenu = true }
     }
 
     // MARK: - ボスの名前と HP
@@ -518,8 +536,8 @@ struct BossBattleView: View {
     // MARK: - メッセージ窓
 
     private var messageWindow: some View {
-        // 再生していないときの言葉は時刻で入れ替わるので、4秒ごとに描き直す。
-        TimelineView(.periodic(from: .now, by: 4)) { timeline in
+        // 「静か」の判定（挑発を出すか）は時刻で変わるので、1 分ごとに描き直す。
+        TimelineView(.everyMinute) { timeline in
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(messageLines(at: timeline.date).enumerated()), id: \.offset) { _, line in
                     Text(line)
@@ -534,10 +552,11 @@ struct BossBattleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Theme.Spacing.md)
         .frame(height: Self.messageHeight)
-        .background(Color.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white, lineWidth: 2.5))
+        .background(GameWindowStyle.fill, in: RoundedRectangle(cornerRadius: GameWindowStyle.radius))
+        .overlay(RoundedRectangle(cornerRadius: GameWindowStyle.radius)
+            .strokeBorder(GameWindowStyle.border, lineWidth: GameWindowStyle.lineWidth))
         .overlay(alignment: .bottomTrailing) {
-            if playIndex != nil {
+            if playIndex != nil, activeQuestion == nil {
                 Image(systemName: "arrowtriangle.down.fill")
                     .font(.system(size: 9))
                     .foregroundStyle(.white)
@@ -553,9 +572,10 @@ struct BossBattleView: View {
         .accessibilityHint(playIndex != nil ? "タップで次へ" : "")
     }
 
-    /// いま窓に出す行。再生中はその段の行、それ以外は状況に応じた言葉を入れ替えて出す。
+    /// いま窓に出す行。一言（失敗など）と問いかけを先に、再生中はその段の行、それ以外は今の状況を 1 行。
     private func messageLines(at now: Date) -> [String] {
-        if let toast { return [toast] }
+        if let toast { return toast.components(separatedBy: "\n") }
+        if let activeQuestion { return questionLines(activeQuestion) }
         if !isSignedIn {
             return ["\(PartyBoss.boss(id: bossId)?.name ?? "ボス")が まちかまえている！", "サインインすると 仲間と 戦える"]
         }
@@ -566,16 +586,47 @@ struct BossBattleView: View {
             if party.loadFailed { return ["読み込めなかった…", "通信できるところで もう一度 開こう"] }
             return ["ダンジョンに はいった…"]
         }
-        let messages = PartyBattle.idleMessages(status: status, userId: userId, now: now)
-        let index = Int(now.timeIntervalSince1970 / 4) % max(messages.count, 1)
-        return messages[index].components(separatedBy: "\n")
+        return [PartyBattle.stateMessage(status: status, now: now)]
+    }
+
+    // MARK: - 問いかけ
+
+    /// 今の問いかけ。招待は、仲間の攻撃の再生を見せ終えてから聞く。
+    private var activeQuestion: Question? {
+        if let question { return question }
+        if let pendingPartyId, isSignedIn, pendingPartyId != status?.partyId, playIndex == nil {
+            return .invite(pendingPartyId)
+        }
+        return nil
+    }
+
+    private func questionLines(_ question: Question) -> [String] {
+        switch question {
+        case .special: return ["パワーを \(PartyBoss.specialAttackCost) つかって", "必殺技を 出しますか？"]
+        case .invite: return ["パーティに さそわれた！", "さんか しますか？"]
+        }
+    }
+
+    private func answer(_ question: Question, yes: Bool) {
+        self.question = nil
+        switch question {
+        case .special:
+            if yes { specialAttack() }
+        case let .invite(partyId):
+            if yes { Task { await join(partyId) } } else { clearPendingInvite() }
+        }
     }
 
     // MARK: - 下の帯
 
     @ViewBuilder
     private var toolbar: some View {
-        if isSignedIn {
+        if let activeQuestion {
+            GameChoiceBar(busy: isJoining || isSpecialAttacking,
+                          onYes: { answer(activeQuestion, yes: true) },
+                          onNo: { answer(activeQuestion, yes: false) })
+                .frame(height: Self.toolbarHeight)
+        } else if isSignedIn {
             signedInToolbar
         } else {
             BackendSignInButtons()
@@ -586,7 +637,7 @@ struct BossBattleView: View {
 
     private var signedInToolbar: some View {
         HStack(spacing: Theme.Spacing.sm) {
-            toolbarButton("パーティ", "person.3.fill") { showMenu = true }
+            toolbarButton("パーティ", "person.3.fill") { openMenu(.members) }
             // 必殺技（issue #150）。倒したあとは宝箱の番なので出さない。
             if let status, !status.defeated {
                 specialButton(status)
@@ -610,7 +661,10 @@ struct BossBattleView: View {
         let ready = state == .ready && !isSpecialAttacking
         return Button {
             switch state {
-            case .ready: confirmSpecial = true
+            case .ready:
+                GameSound.play(.select)
+                selectedActor = nil
+                question = .special
             case .usedThisWeek: showToast("必殺技は 今週もう つかった\n来週また 出せる")
             case let .notEnoughEnergy(missing): showToast("パワーが あと \(missing) たりない\nトレーニングで たまる")
             case .defeated: break
@@ -675,12 +729,12 @@ struct BossBattleView: View {
             switch actor {
             case .coach:
                 Text("コーチ").font(.pixel(size: 15)).foregroundStyle(.white)
-                Text("ソロのときに付き添う応援役。ダメージは入らない。仲間を誘うと、連携攻撃ができるようになる。")
-                    .font(.caption).foregroundStyle(.white.opacity(0.8))
+                Text("おうえん やく。ダメージは 入らない")
+                    .font(.pixel(size: 13)).foregroundStyle(GameWindowStyle.muted)
             case .pet:
                 Text(pet?.name ?? "ペット").font(.pixel(size: 15)).foregroundStyle(.white)
-                Text("いっしょに来てくれた。ダメージは入らない。")
-                    .font(.caption).foregroundStyle(.white.opacity(0.8))
+                Text("いっしょに 来てくれた。ダメージは 入らない")
+                    .font(.pixel(size: 13)).foregroundStyle(GameWindowStyle.muted)
             case let .member(id):
                 if let member = status?.member(id) {
                     memberDetail(member)
@@ -688,43 +742,35 @@ struct BossBattleView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.md)
-        .background(Color.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.5), lineWidth: 1.5))
+        .gameWindow()
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
+    /// タップした仲間の窓。名前・ジョブ・今週のマスと、スキルを 1 行。トレ中なら応援できる。
     @ViewBuilder
     private func memberDetail(_ member: PartyBoss.Member) -> some View {
         let isMe = member.id == userId
         HStack(spacing: Theme.Spacing.sm) {
-            Text(isMe ? "\(member.displayName)（あなた）" : member.displayName)
+            Text(isMe ? "あなた" : member.displayName)
                 .font(.pixel(size: 15)).foregroundStyle(.white).lineLimit(1)
-            Label(member.job.label, systemImage: member.job.symbol)
-                .font(.caption.bold()).foregroundStyle(Self.accent)
+            Text(member.job.label)
+                .font(.pixel(size: 13)).foregroundStyle(Self.accent)
             Spacer(minLength: 0)
-            Text("今週 \(member.hits) / 目標 \(member.weeklyGoal)")
-                .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.8))
+            HitPipsView(pips: member.pips)
         }
         let triggered = status?.skillTriggered(by: member.id) ?? false
-        Text("\(member.job.skillName): \(member.job.skillRule)" + (triggered ? "（今週は発動ずみ）" : ""))
-            .font(.caption).foregroundStyle(.white.opacity(0.85))
+        Text("\(member.job.skillName): \(member.job.skillRule)" + (triggered ? "（済み）" : ""))
+            .font(.pixel(size: 13)).foregroundStyle(GameWindowStyle.muted)
             .fixedSize(horizontal: false, vertical: true)
         if let sessionId = member.liveSessionId, !isMe {
-            Button {
+            GameCommand(title: cheered.contains(member.id) ? "おうえん した！" : "おうえん する",
+                        selected: !cheered.contains(member.id), enabled: !cheered.contains(member.id), size: 15) {
                 Task {
                     await live.cheer(sessionId: sessionId, kind: "fire")
                     cheered.insert(member.id)
                     showToast("\(member.displayName)に 応援を おくった！")
                 }
-            } label: {
-                Label(cheered.contains(member.id) ? "応援を送りました" : "戦闘中の\(member.displayName)を応援する",
-                      systemImage: "flame.fill")
-                    .font(.subheadline.bold())
-                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.gymneePrimary(fullWidth: true))
-            .disabled(cheered.contains(member.id))
         }
     }
 
@@ -738,54 +784,49 @@ struct BossBattleView: View {
 
     // MARK: - 招待を受けた
 
-    private func inviteCard(_ partyId: UUID) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Label("友達のパーティに招待されています", systemImage: "person.2.wave.2")
-                .font(.subheadline.bold()).foregroundStyle(.white)
-            Text("参加しても、いまのパーティはそのままです。トレーニング1回が、入っているすべてのパーティのボスに1撃ずつ入ります。")
-                .font(.caption).foregroundStyle(.white.opacity(0.8))
-                .fixedSize(horizontal: false, vertical: true)
-            if let joinMessage {
-                Text(joinMessage).font(.caption.bold()).foregroundStyle(Theme.warning)
-            }
-            HStack(spacing: Theme.Spacing.sm) {
-                Button {
-                    Task { await join(partyId) }
-                } label: {
-                    Text(isJoining ? "参加しています…" : "参加する").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.gymneePrimary(fullWidth: true))
-                .disabled(isJoining)
-                Button("やめておく") { clearPendingInvite() }
-                    .font(.subheadline).foregroundStyle(.white.opacity(0.8))
-            }
-        }
-        .padding(Theme.Spacing.md)
-        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Self.accent, lineWidth: 2))
-    }
-
     private func join(_ partyId: UUID) async {
         isJoining = true
         defer { isJoining = false }
         switch await party.join(partyId, userId: userId, weeklyGoal: weeklyGoal) {
         case .success:
             clearPendingInvite()
+            showToast("パーティに さんか した！")
         case .failure(.full):
-            joinMessage = "このパーティは満員です（最大\(PartyBoss.maxMembers)人）。"
-        case .failure(.tooMany):
-            joinMessage = "入れるパーティは\(PartyBoss.maxPartiesPerUser)つまでです。どれかを抜けてから参加してください。"
-        case .failure(.notFound):
-            joinMessage = "このパーティは見つかりませんでした。招待した人に、新しいリンクを送ってもらってください。"
             clearPendingInvite()
+            showToast("この パーティは まんいん だった…\n（\(PartyBoss.maxMembers)人 まで）")
+        case .failure(.tooMany):
+            clearPendingInvite()
+            showToast("パーティは \(PartyBoss.maxPartiesPerUser)つ まで\nどれかを ぬけてから さんか しよう")
+        case .failure(.notFound):
+            clearPendingInvite()
+            showToast("この パーティは みつからなかった…\nあたらしい リンクを もらおう")
         case .failure(.failed):
-            joinMessage = "参加できませんでした。通信できるところで、もう一度お試しください。"
+            // 通信の失敗は招待を残す（一言が消えたら、もう一度聞く）。
+            showToast("さんか できなかった\n通信を たしかめて もう一度")
         }
     }
 
     private func clearPendingInvite() {
         UserDefaults.standard.removeObject(forKey: PartyInviteLink.pendingDefaultsKey)
         pendingPartyId = nil
+    }
+}
+
+extension PixelCharacterRenderer.Look {
+    /// パーティの仲間の姿（ボス部屋とメニューで同じ姿にする）。見た目が載っていなければ、
+    /// 部屋の合トレ仲間と同じく ID から決まる色で、自分の姿をもとに描く。
+    static func partyMember(_ member: PartyBoss.Member, base: Self) -> Self {
+        if let look = member.look {
+            return Self(memberLook: look)
+        }
+        let seed = DeterministicRandom.seed(from: member.id)
+        var fallback = base
+        fallback.skin = SkinCatalog.all[Int(seed % UInt64(SkinCatalog.all.count))]
+        fallback.equipped = [:]
+        fallback.stage = .rookie
+        fallback.hairStyleId = PixelHairArt.defaultStyleId
+        fallback.accessoryId = "none"
+        return fallback
     }
 }
 

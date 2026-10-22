@@ -270,25 +270,33 @@ final class PartyBattleTests: XCTestCase {
 
     // MARK: - セリフ
 
-    func testIdleMessages() {
+    func testStateMessage() {
         let members = fighters()
         var s = status(attacks: [], hp: 7, members: members)
-        // 水曜まで誰も攻撃していない → 挑発が入る。自分のジョブとスキルも出す。
-        var messages = PartyBattle.idleMessages(status: s, userId: uid(1), now: jst("2026-09-30T12:00:00+09:00"))
-        XCTAssertTrue(messages.contains { $0.hasPrefix("ソファゴーレムが ふかふかの") })
-        XCTAssertTrue(messages.contains { $0.contains("あなたは 戦士。底力") })
-        XCTAssertTrue(messages.contains { $0.contains("連携攻撃") })
+        // 水曜まで誰も攻撃していない → 挑発だけを出す（豆知識は入れ替えない。issue #161）。
+        XCTAssertEqual(PartyBattle.stateMessage(status: s, now: jst("2026-09-30T12:00:00+09:00")),
+                       "ソファゴーレムが ふかふかの 腕を ひろげている…")
         // 月曜は静かでも挑発しない。
-        messages = PartyBattle.idleMessages(status: s, userId: uid(1), now: jst("2026-09-28T12:00:00+09:00"))
-        XCTAssertFalse(messages.contains { $0.contains("ふかふか") })
+        XCTAssertEqual(PartyBattle.stateMessage(status: s, now: jst("2026-09-28T12:00:00+09:00")),
+                       "ソファゴーレムが たちはだかる！")
         // 残り1。
-        s.attacks = [PartyBoss.Attack(id: "x", userId: uid(1), day: "2026-09-28", category: .upper, base: 1, skill: 0, combo: 0)]
-        s = status(attacks: s.attacks, hp: 2, members: members)
-        messages = PartyBattle.idleMessages(status: s, userId: uid(1), now: jst("2026-09-28T12:00:00+09:00"))
-        XCTAssertEqual(messages.first, "あと 1撃で たおせる！\nトレーニング 1回で とどめだ")
-        // 撃破済み。
-        s = status(attacks: s.attacks, hp: 1, members: members)
-        XCTAssertEqual(PartyBattle.idleMessages(status: s, userId: uid(1), now: .now), ["宝箱が おちている！\nタップして 開けよう"])
+        let attacks = [PartyBoss.Attack(id: "x", userId: uid(1), day: "2026-09-28", category: .upper, base: 1, skill: 0, combo: 0)]
+        s = status(attacks: attacks, hp: 2, members: members)
+        XCTAssertEqual(PartyBattle.stateMessage(status: s, now: jst("2026-09-28T12:00:00+09:00")), "あと 1撃で たおせる！")
+        // 撃破済みで宝箱が残っている。
+        s = status(attacks: attacks, hp: 1, members: members)
+        XCTAssertEqual(PartyBattle.stateMessage(status: s, now: .now), "宝箱が おちている！")
+    }
+
+    func testPips() {
+        // 目標 3 回で 2 回 → 4 マス（最後が上乗せ）のうち 2 つ埋まる。
+        var pips = PartyBoss.Pips(goal: 3, filled: PartyBoss.cappedDamage(hits: 2, weeklyGoal: 3))
+        XCTAssertEqual(pips.slots, 4)
+        XCTAssertEqual((0..<pips.slots).map(pips.isFilled), [true, true, false, false])
+        XCTAssertEqual((0..<pips.slots).map(pips.isBonus), [false, false, false, true])
+        // 目標を大きく超えても、ダメージになる目標＋1 回までしか埋めない。
+        pips = PartyBoss.Pips(goal: 3, filled: PartyBoss.cappedDamage(hits: 9, weeklyGoal: 3))
+        XCTAssertEqual((0..<pips.slots).filter(pips.isFilled).count, 4)
     }
 
     // MARK: - 完了直後の「ボスに攻撃」

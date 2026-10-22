@@ -503,34 +503,17 @@ enum PartyBattle {
         return lines
     }
 
-    /// 再生していないときにメッセージ窓に出す言葉（順に入れ替えて出す）。1つが1〜2行。
-    static func idleMessages(status: PartyBoss.Status, userId: UUID, now: Date) -> [String] {
+    /// 再生していないときにメッセージ窓に出す言葉。今の状況を 1 つだけ（issue #161）。
+    /// 以前はジョブ・連携・残り日数の豆知識を 4 秒ごとに入れ替えていたが、ずっと読まされて頭に入らないのでやめた。
+    /// きまりの説明はパーティのメニューの「あそびかた」に置く。
+    static func stateMessage(status: PartyBoss.Status, now: Date) -> String {
         let bossName = status.boss?.name ?? "ボス"
         if status.defeated {
-            return status.hasUnclaimedChest
-                ? ["宝箱が おちている！\nタップして 開けよう"]
-                : ["\(bossName)を たおした！\n次のボスは 月曜に やってくる"]
+            return status.hasUnclaimedChest ? "宝箱が おちている！" : "\(bossName)を たおした！"
         }
-        var messages: [String] = []
-        if status.remainingHP == 1 {
-            messages.append("あと 1撃で たおせる！\nトレーニング 1回で とどめだ")
-        } else {
-            messages.append("\(bossName)が たちはだかる！\nのこり HP \(status.remainingHP)")
-        }
-        if isQuiet(status: status, now: now) {
-            messages.append(taunt(bossId: status.bossId) + "\nだれかが トレーニングすれば 目をさます")
-        }
-        if let me = status.member(userId) {
-            messages.append("あなたは \(me.job.label)。\(me.job.skillName):\n\(me.job.skillRule)")
-        }
-        if status.members.count > 1 {
-            messages.append("仲間と 同じ日に トレーニングすると\n連携攻撃で さらに 1")
-        } else {
-            messages.append("仲間を さそうと\n連携攻撃が できるように なる")
-        }
-        let days = PartyBoss.daysLeft(in: status.weekStart, now: now)
-        messages.append("あと \(days)日で\n\(bossName)は にげてしまう")
-        return messages
+        if status.remainingHP == 1 { return "あと 1撃で たおせる！" }
+        if isQuiet(status: status, now: now) { return taunt(bossId: status.bossId) }
+        return "\(bossName)が たちはだかる！"
     }
 
     /// 2日以上だれも攻撃していない（月曜はまだ始まったばかりなので静かでも言わない）。

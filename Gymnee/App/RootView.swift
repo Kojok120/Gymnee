@@ -168,8 +168,15 @@ struct RootView: View {
         case "boss", "boss-defeated", "boss-solo":
             BossBattleView(userId: userId, selfLook: Self.demoBattleLook, pet: PetCatalog.all.first, energy: 360)
                 .onAppear { party.loadDemo(userId: userId, defeated: name == "boss-defeated", solo: name == "boss-solo") }
-        case "boss-menu":
-            PartyMenuSheet(userId: userId)
+        // パーティのメニュー（issue #161）。-log / -vote / -trophies / -rules でコマンドを選んだ状態から。
+        case "boss-menu", "boss-menu-log", "boss-menu-vote", "boss-menu-trophies", "boss-menu-rules":
+            BossBattleView(userId: userId, selfLook: Self.demoBattleLook, pet: PetCatalog.all.first, energy: 360,
+                           debugStart: .menu(Self.debugMenuPage(name)))
+                .onAppear { party.loadDemo(userId: userId, defeated: false) }
+        // ボス部屋の問いかけ（必殺技・招待への参加）。iOS の確認窓ではなく「はい / いいえ」で聞く（issue #161）。
+        case "boss-confirm", "boss-invite":
+            BossBattleView(userId: userId, selfLook: Self.demoBattleLook, pet: PetCatalog.all.first, energy: 360,
+                           debugStart: name == "boss-confirm" ? .special : .invite)
                 .onAppear { party.loadDemo(userId: userId, defeated: false) }
         // タブバー込みのレイアウト検証用。単体表示では safe area にタブバーが乗らず、
         // ボタンとタブバーの重なり（実機で発覚した不具合）を再現できないため。
@@ -254,6 +261,16 @@ struct RootView: View {
     }
 
     /// 戦闘画面のハーネス用の自分の姿。
+    private static func debugMenuPage(_ name: String) -> PartyMenuView.Page {
+        switch name {
+        case "boss-menu-log": return .log
+        case "boss-menu-vote": return .vote
+        case "boss-menu-trophies": return .trophies
+        case "boss-menu-rules": return .rules
+        default: return .members
+        }
+    }
+
     private static let demoBattleLook = PixelCharacterRenderer.Look(
         build: CharacterBuild(girth: .normal, arm: .thick, leg: .thick),
         skin: SkinCatalog.skin(id: "gymnee"),
