@@ -26,6 +26,16 @@ final class PRHistoryTests: XCTestCase {
         XCTAssertEqual(result.total, 4)
     }
 
+    func testCountsPerExerciseForTechniquePower() {
+        // 技の威力（issue #155）は種目ごとの更新件数で上がる。数え方は byWorkout と同じ。
+        let w1 = workout(0, [weight(bench, 60, 10), weight(pushup, 20, 10)])
+        let w2 = workout(2, [weight(bench, 62.5, 10)])
+        let result = PRHistory.replay([w1, w2])
+        XCTAssertEqual(result.byExercise[bench], 4)
+        XCTAssertEqual(result.byExercise[pushup], 2)
+        XCTAssertEqual(result.byExercise.values.reduce(0, +), result.total)
+    }
+
     func testSameMetricImprovedTwiceInOneWorkoutCountsOnce() {
         let w = workout(0, [weight(bench, 60, 10), weight(bench, 65, 10)])
         XCTAssertEqual(PRHistory.replay([w]).byWorkout[w.id], 2, "最大重量と推定1RMをそれぞれ1件")

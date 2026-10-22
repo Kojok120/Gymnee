@@ -32,6 +32,8 @@ enum PRHistory {
         let byWorkout: [UUID: Int]
         /// 更新件数の合計（進化条件の「自己ベスト」）。
         let total: Int
+        /// 種目ごとの更新件数（技の威力。issue #155）。数え方は `byWorkout` と同じ（同じ回の同じ指標は 1 件）。
+        var byExercise: [UUID: Int] = [:]
     }
 
     static func replay(_ workouts: [WorkoutInput]) -> Result {
@@ -41,6 +43,7 @@ enum PRHistory {
         }
         var bests: [UUID: PRDetector.Bests] = [:]
         var byWorkout: [UUID: Int] = [:]
+        var byExercise: [UUID: Int] = [:]
         var total = 0
         for workout in ordered {
             var improved = Set<String>()
@@ -63,9 +66,14 @@ enum PRHistory {
             if !improved.isEmpty {
                 byWorkout[workout.id] = improved.count
                 total += improved.count
+                for key in improved {
+                    if let id = key.split(separator: "|").first.flatMap({ UUID(uuidString: String($0)) }) {
+                        byExercise[id, default: 0] += 1
+                    }
+                }
             }
         }
-        return Result(byWorkout: byWorkout, total: total)
+        return Result(byWorkout: byWorkout, total: total, byExercise: byExercise)
     }
 }
 
