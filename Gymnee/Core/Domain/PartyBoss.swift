@@ -33,6 +33,29 @@ enum PartyBoss {
     /// パーティ名の上限（サーバーの `parties_name_length` と揃える）。
     static let maxNameLength = 20
 
+    // MARK: - あそびかた（issue #161）
+
+    /// パーティのメニューの「あそびかた」に並べる、きまりの短い行。サーバーの規則の写しなので、規則を変えたらここも直す。
+    static var howToPlay: [String] {
+        [
+            "トレーニング 1回で ボスに 1撃",
+            "ダメージは 1人 目標＋1回 まで",
+            "おなじ日に なかまと こうげきで 連携 +1",
+            "ジョブの スキルは 1人 週1回 +1",
+            "HP は みんなの 週目標の 合計（つよさで かわる）",
+            "パワー \(specialAttackCost)で 必殺技（パーティごとに 週1回）",
+            "のこり HP 1で なかまに しらせる",
+            "月曜 0時に ボスが いれかわる",
+            "パーティは \(maxPartiesPerUser)つ まで",
+        ]
+    }
+
+    /// 「つぎのボス」の「？」に出す、投票のきまり（サーバーの `party_tier` の写し）。
+    static var voteRules: [String] {
+        ["日曜 23:59 に しめきり", "票の おおい つよさに きまる", "おなじ 票なら よわい ほう", "だれも いれなければ 中くらい"]
+            + Tier.allCases.map { "\($0.label): \($0.hpRule)" }
+    }
+
     // MARK: - ランク（issue #133）
 
     /// ボスの強さ。前の週のうちにメンバーが投票し、日曜 23:59（JST）で締め切って決まる。
@@ -139,6 +162,20 @@ enum PartyBoss {
         /// 基本のダメージ。1人あたり「目標 + 1」で頭打ち（サーバーの `party_attacks.base` と同じ）。
         /// 連携とスキルの上乗せは `Status.attacks` にある。
         var damage: Int { PartyBoss.cappedDamage(hits: hits, weeklyGoal: weeklyGoal) }
+
+        /// 名札とメニューに並べる今週のマス（issue #161）。
+        var pips: Pips { Pips(goal: max(weeklyGoal, 0), filled: damage) }
+    }
+
+    /// 今週の回数のマス（issue #161）。目標の数のマスと、目標を超えた 1 回ぶんの「上乗せ」のマスを並べ、
+    /// ダメージになった回数だけ埋める（目標＋1 回より先はダメージにならないので、マスも増やさない）。
+    struct Pips: Equatable, Sendable {
+        let goal: Int
+        let filled: Int
+
+        var slots: Int { goal + 1 }
+        func isFilled(_ index: Int) -> Bool { index < filled }
+        func isBonus(_ index: Int) -> Bool { index == goal }
     }
 
     struct Status: Identifiable, Equatable, Sendable {

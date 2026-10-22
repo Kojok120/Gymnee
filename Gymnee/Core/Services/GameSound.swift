@@ -17,6 +17,8 @@ enum GameSound {
         case evolve = "sfx_evolve"
         case chest = "sfx_chest"
         case learn = "sfx_learn"
+        /// コマンドを選んだ（issue #161）。
+        case select = "sfx_select"
     }
 
     /// 設定のトグル。未設定は ON。

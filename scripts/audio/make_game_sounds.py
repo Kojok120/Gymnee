@@ -188,6 +188,13 @@ def sfx_learn():
     return tr
 
 
+def sfx_select():
+    """コマンドを選んだ（issue #161）。RPG のカーソルの短い 1 音。"""
+    tr = Track(0.07)
+    tr.tone(0, 0.05, 'B5', duty=0.5, vol=0.14)
+    return tr
+
+
 # ---------------------------------------------------------------- BGM（ボス部屋）
 
 def bgm_boss():
@@ -238,6 +245,7 @@ SOUNDS = {
     'sfx_evolve': sfx_evolve,
     'sfx_chest': sfx_chest,
     'sfx_learn': sfx_learn,
+    'sfx_select': sfx_select,
 }
 
 

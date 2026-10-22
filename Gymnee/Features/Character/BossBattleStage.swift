@@ -90,6 +90,8 @@ struct BossBattleStage: View {
         let isLive: Bool
         /// 着けている称号（名前。issue #155）。
         var title: String? = nil
+        /// 今週の回数のマス（パーティのメンバーだけ。issue #161）。
+        var pips: PartyBoss.Pips? = nil
     }
 
     /// 再生中の1回の攻撃の演出。
@@ -311,13 +313,17 @@ struct BossBattleStage: View {
         }
     }
 
-    /// 頭上の名札（ジョブと名前）。トレ中なら上に印を出す。
+    /// 頭上の名札。下から今週のマス・名前・称号を積み、トレ中なら上に印を出す。
+    /// ジョブ名は出さない（文字が多くて読めないため。ジョブはタップした仲間の窓とメニューで見せる。issue #161）。
     private func drawLabel(_ context: inout GraphicsContext, actor: Actor, feet: CGPoint, now: Date) {
         let dot = layout.actorDot
         let height: CGFloat = actor.look != nil
             ? CGFloat(PixelCharacterArt.canvasHeight) * dot
             : CGFloat(PixelPetArt.canvasHeight) * dot
         var y = feet.y - height - 4
+        if let pips = actor.pips {
+            y = drawPips(&context, pips: pips, centerX: feet.x, bottom: y) - 2
+        }
         let name = context.resolve(
             Text(actor.name).font(.pixel(size: 11, relativeTo: .caption2)).foregroundStyle(Color.white)
         )
@@ -328,20 +334,32 @@ struct BossBattleStage: View {
             )
             y = drawPlate(&context, text: titleText, centerX: feet.x, bottom: y - 2, fill: .black.opacity(0.5))
         }
-        if let job = actor.job {
-            let jobText = context.resolve(
-                Text("\(Image(systemName: job.symbol)) \(job.label)")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.9))
-            )
-            y = drawPlate(&context, text: jobText, centerX: feet.x, bottom: y - 2, fill: .black.opacity(0.4))
-        }
         if actor.isLive, Int(now.timeIntervalSince(sceneStart) / 0.6) % 2 == 0 {
             let live = context.resolve(
-                Text("戦闘中").font(.pixel(size: 10, relativeTo: .caption2)).foregroundStyle(Color.black)
+                Text("トレ中").font(.pixel(size: 10, relativeTo: .caption2)).foregroundStyle(Color.black)
             )
             _ = drawPlate(&context, text: live, centerX: feet.x, bottom: y - 2, fill: Self.accent)
         }
+    }
+
+    /// 今週のマスを台座つきで描き、台座の上端を返す。埋まったマスは緑、上乗せのマスは空なら枠だけ。
+    private func drawPips(_ context: inout GraphicsContext, pips: PartyBoss.Pips, centerX: CGFloat, bottom: CGFloat) -> CGFloat {
+        let side: CGFloat = 5, gap: CGFloat = 2, pad: CGFloat = 3
+        let width = CGFloat(pips.slots) * side + CGFloat(max(0, pips.slots - 1)) * gap + pad * 2
+        let box = CGRect(x: (centerX - width / 2).rounded(), y: (bottom - side - pad * 2).rounded(),
+                         width: width.rounded(), height: side + pad * 2)
+        context.fill(Path(box), with: .color(.black.opacity(0.55)))
+        for index in 0..<pips.slots {
+            let rect = CGRect(x: box.minX + pad + CGFloat(index) * (side + gap), y: box.minY + pad, width: side, height: side)
+            if pips.isFilled(index) {
+                context.fill(Path(rect), with: .color(Self.accent))
+            } else if pips.isBonus(index) {
+                context.stroke(Path(rect.insetBy(dx: 0.5, dy: 0.5)), with: .color(.white.opacity(0.6)), lineWidth: 1)
+            } else {
+                context.fill(Path(rect), with: .color(.white.opacity(0.25)))
+            }
+        }
+        return box.minY
     }
 
     /// 文字の台座を描き、台座の上端を返す。
