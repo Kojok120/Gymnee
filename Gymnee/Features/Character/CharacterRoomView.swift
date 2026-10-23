@@ -190,6 +190,9 @@ struct CharacterRoomView: View {
                         }
                         .ignoresSafeArea(edges: .bottom)
                     }
+                    // 部屋の BGM。ボス部屋へ降りたら、ボス部屋の曲に替わる。
+                    .onAppear { GameSound.startMusic(.room) }
+                    .onDisappear { GameSound.stopMusic(.room) }
                     .transition(.move(edge: .top))
                 case .boss:
                     BossBattleView(userId: userId, selfLook: battleLook, pet: activePet, energy: derived.energy) {

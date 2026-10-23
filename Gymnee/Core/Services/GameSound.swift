@@ -21,15 +21,34 @@ enum GameSound {
         case select = "sfx_select"
     }
 
+    /// BGM の曲。
+    enum Music: String {
+        /// 部屋（育成タブ）。ずっと居る場所なのでボス部屋より小さく流す。
+        case room = "bgm_room"
+        /// ボス部屋。
+        case boss = "bgm_boss"
+
+        var volume: Float {
+            switch self {
+            case .room: return 0.4
+            case .boss: return 0.45
+            }
+        }
+    }
+
     /// 設定のトグル。未設定は ON。
     static let effectsKey = "gymnee.gameSoundEnabled"
+    /// BGM のトグル。キーの名前はボス部屋にしか BGM が無かった頃のまま（切った人の設定を引き継ぐ）。
     static let musicKey = "gymnee.bossMusicEnabled"
 
     static var effectsEnabled: Bool { UserDefaults.standard.object(forKey: effectsKey) as? Bool ?? true }
     static var musicEnabled: Bool { UserDefaults.standard.object(forKey: musicKey) as? Bool ?? true }
 
     private static var players: [Effect: AVAudioPlayer] = [:]
+    /// いま見えている画面が流したい曲。流せなかったときも覚えておき、アプリに戻ったときに流し直す。
+    private static var wanted: Music?
     private static var music: AVAudioPlayer?
+    private static var playing: Music?
 
     /// 効果音を鳴らす。連打されたら頭から鳴らし直す（重ねると音が割れる）。
     static func play(_ effect: Effect) {
@@ -39,21 +58,51 @@ enum GameSound {
         player.play()
     }
 
-    /// ボス部屋の BGM を流す。音楽を聞いているとき・設定で切っているときは流さない。
-    static func startBossMusic() {
-        guard musicEnabled, music?.isPlaying != true else { return }
-        guard !AVAudioSession.sharedInstance().secondaryAudioShouldBeSilencedHint, prepareSession() else { return }
-        guard let url = Bundle.main.url(forResource: "bgm_boss", withExtension: "caf"),
-              let player = try? AVAudioPlayer(contentsOf: url) else { return }
-        player.numberOfLoops = -1
-        player.volume = 0.45
-        player.play()
-        music = player
+    /// 画面に入ったら呼ぶ。同じ曲が流れていれば頭から鳴らし直さない。
+    static func startMusic(_ track: Music) {
+        wanted = track
+        playWanted()
     }
 
-    static func stopBossMusic() {
+    /// 画面を出たら呼ぶ。その曲を流しているときだけ止める
+    /// （部屋⇄ボス部屋の切り替えで、行き先が先に次の曲を始めていたらそれは止めない）。
+    static func stopMusic(_ track: Music) {
+        guard wanted == track else { return }
+        wanted = nil
+        stopPlayer()
+    }
+
+    /// アプリに戻ったときに呼ぶ。`.ambient` は裏に回ると OS に止められ、戻っても自分では鳴り直さない。
+    static func resumeMusic() {
+        playWanted()
+    }
+
+    /// 見えている画面の曲を流す。音楽を聞いているとき・設定で切っているときは流さない。
+    private static func playWanted() {
+        guard let track = wanted, musicEnabled,
+              !AVAudioSession.sharedInstance().secondaryAudioShouldBeSilencedHint else {
+            stopPlayer()
+            return
+        }
+        if playing == track, let music {
+            if !music.isPlaying, prepareSession() { music.play() }
+            return
+        }
+        stopPlayer()
+        guard prepareSession(),
+              let url = Bundle.main.url(forResource: track.rawValue, withExtension: "caf"),
+              let player = try? AVAudioPlayer(contentsOf: url) else { return }
+        player.numberOfLoops = -1
+        player.volume = track.volume
+        player.play()
+        music = player
+        playing = track
+    }
+
+    private static func stopPlayer() {
         music?.stop()
         music = nil
+        playing = nil
     }
 
     private static func player(for effect: Effect) -> AVAudioPlayer? {

@@ -108,6 +108,24 @@ def arp(tr, start, notes, step, **kw):
     return start + len(notes) * step
 
 
+def line(tr, text, step, long_vibrato=0.0, **kw):
+    """空白区切りの旋律を鳴らす。1 語が `step` 秒。'-' は前の音を伸ばし、'.' は休み。
+
+    `long_vibrato` を渡すと、3 拍（3 語）以上伸ばす音にだけビブラートを掛ける。
+    """
+    notes = text.split()
+    i = 0
+    while i < len(notes):
+        n = notes[i]
+        length = 1
+        while i + length < len(notes) and notes[i + length] == '-':
+            length += 1
+        if n != '.':
+            vibrato = long_vibrato if length >= 3 else 0.0
+            tr.tone(i * step, length * step * 0.92, n, vibrato=vibrato, **kw)
+        i += length
+
+
 # ---------------------------------------------------------------- 効果音
 
 def sfx_hit():
@@ -213,15 +231,8 @@ def bgm_boss():
         'B4 - A4 - G4 - B4 - '
         'E5 - D5 - C5 - B4 - '
         'G#4 - B4 - E5 - - - '
-    ).split()
-    i = 0
-    while i < len(melody):
-        n = melody[i]
-        length = 1
-        while i + length < len(melody) and melody[i + length] == '-':
-            length += 1
-        tr.tone(i * eighth, length * eighth * 0.92, n, duty=0.25, vol=0.13)
-        i += length
+    )
+    line(tr, melody, eighth, duty=0.25, vol=0.13)
     roots = ['A2', 'A2', 'F2', 'F2', 'G2', 'G2', 'E2', 'E2']
     for b, root in enumerate(roots):
         octave_up = root[:-1] + str(int(root[-1]) + 1)
@@ -237,6 +248,60 @@ def bgm_boss():
     return tr
 
 
+# ---------------------------------------------------------------- BGM（部屋）
+
+def bgm_room():
+    """部屋（育成タブ）の BGM。104bpm・16 小節のループ（ハ長調）。
+
+    ボス部屋と違ってずっと居る場所なので、ドラムを抜いて静かにし、16 小節で繰り返しを目立たせない。
+    """
+    bpm = 104
+    eighth = 60 / bpm / 2
+    bars = 16
+    total = bars * 8 * eighth
+    tr = Track(total)
+    melody = (
+        'G4 - C5 - E5 - D5 C5 '
+        'E5 - - - A4 - . . '
+        'F4 - A4 - C5 - D5 C5 '
+        'D5 - - - G4 - . . '
+        'G4 - C5 - E5 - G5 E5 '
+        'A5 - G5 - E5 - C5 - '
+        'D5 - F5 - E5 - D5 - '
+        'B4 - - - G4 - . . '
+        'A4 - C5 - F5 - E5 D5 '
+        'D5 - - - B4 - G4 - '
+        'G4 - B4 - E5 - D5 B4 '
+        'C5 - - - A4 - . . '
+        'F4 - A4 - D5 - C5 A4 '
+        'B4 - D5 - G5 - F5 D5 '
+        'E5 - G5 - E5 - D5 - '
+        'C5 - - - - - . . '
+    )
+    line(tr, melody, eighth, long_vibrato=0.004, duty=0.5, vol=0.12)
+    # 和音（3 度と 5 度）を裏拍で細く刻み、ベースは 4 分で根音と 5 度を行き来する。
+    chords = {
+        'C': (('E4', 'G4'), ('C3', 'G2')),
+        'Am': (('C4', 'E4'), ('A2', 'E2')),
+        'F': (('A3', 'C4'), ('F2', 'C3')),
+        'G': (('B3', 'D4'), ('G2', 'D3')),
+        'Dm': (('F4', 'A4'), ('D3', 'A2')),
+        'Em': (('G4', 'B4'), ('E2', 'B2')),
+    }
+    progression = ['C', 'Am', 'F', 'G', 'C', 'Am', 'Dm', 'G',
+                   'F', 'G', 'Em', 'Am', 'Dm', 'G', 'C', 'C']
+    for b, name in enumerate(progression):
+        (third, fifth), (root, low_fifth) = chords[name]
+        for k in range(8):
+            t = (b * 8 + k) * eighth
+            if k % 2:
+                tr.tone(t, eighth * 0.6, third if k % 4 == 1 else fifth, duty=0.125, vol=0.045)
+                tr.noise(t, 0.03, vol=0.03, decay=0.012, period=1, seed=2000 + b * 8 + k)
+            else:
+                tr.tone(t, eighth * 1.8, root if k % 4 == 0 else low_fifth, wave_='tri', vol=0.2)
+    return tr
+
+
 SOUNDS = {
     'sfx_hit': sfx_hit,
     'sfx_critical': sfx_critical,
@@ -248,6 +313,11 @@ SOUNDS = {
     'sfx_select': sfx_select,
 }
 
+MUSIC = {
+    'bgm_boss': bgm_boss,
+    'bgm_room': bgm_room,
+}
+
 
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else 'Gymnee/Resources/Sounds'
@@ -255,12 +325,13 @@ def main():
     for name, make in SOUNDS.items():
         make().write_wav(os.path.join(out, f'{name}.wav'))
         print('wrote', name)
-    tmp = os.path.join(out, 'bgm_boss.tmp.wav')
-    bgm_boss().write_wav(tmp, peak=0.7)
-    caf = os.path.join(out, 'bgm_boss.caf')
-    subprocess.run(['afconvert', '-f', 'caff', '-d', 'ima4', tmp, caf], check=True)
-    os.remove(tmp)
-    print('wrote bgm_boss')
+    for name, make in MUSIC.items():
+        tmp = os.path.join(out, f'{name}.tmp.wav')
+        make().write_wav(tmp, peak=0.7)
+        caf = os.path.join(out, f'{name}.caf')
+        subprocess.run(['afconvert', '-f', 'caff', '-d', 'ima4', tmp, caf], check=True)
+        os.remove(tmp)
+        print('wrote', name)
 
 
 if __name__ == '__main__':

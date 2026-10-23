@@ -36,10 +36,10 @@ struct SettingsView: View {
     @AppStorage("gymnee.restSeconds") private var restSeconds: Int = 90
     // レスト終了チャイム（RestChime が参照。サイレントスイッチでも鳴る）。
     @AppStorage(RestChime.enabledKey) private var restSoundEnabled = true
-    // ゲームの演出（issue #155）。記録画面の戦闘・効果音・ボス部屋の BGM。
+    // ゲームの演出（issue #155）。記録画面の戦闘・効果音・部屋とボス部屋の BGM。
     @AppStorage(RecordBattle.enabledKey) private var recordBattleEnabled = true
     @AppStorage(GameSound.effectsKey) private var gameSoundEnabled = true
-    @AppStorage(GameSound.musicKey) private var bossMusicEnabled = true
+    @AppStorage(GameSound.musicKey) private var musicEnabled = true
     // AI コーチの関わり方（#79）。育成タブのコーチ表示とチャットの挙動を決める。
     @AppStorage(CoachMode.storageKey) private var coachModeRaw = CoachMode.default.rawValue
     // 通知の種類別 ON/OFF。ローカル通知はこの @AppStorage を NotificationService が参照。
@@ -132,7 +132,7 @@ struct SettingsView: View {
             Section {
                 Toggle("記録画面で戦う", isOn: $recordBattleEnabled)
                 Toggle("ゲームの効果音", isOn: $gameSoundEnabled)
-                Toggle("ボス部屋の BGM", isOn: $bossMusicEnabled)
+                Toggle("BGM", isOn: $musicEnabled)
             } header: {
                 Text("ゲーム")
             } footer: {
