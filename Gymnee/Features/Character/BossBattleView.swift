@@ -114,11 +114,11 @@ struct BossBattleView: View {
         }
         .task(id: playToken) { await play() }
         .onChange(of: statusKey) { _, _ in startReplayIfNeeded() }
-        // ボス部屋の BGM（issue #155）。部屋へ上がったら止める。
-        .onAppear { GameSound.startBossMusic() }
+        // ボス部屋の BGM（issue #155）。部屋へ上がったら部屋の曲に替わる。
+        .onAppear { GameSound.startMusic(.boss) }
         .onDisappear {
             finishReplay(markOnly: true)
-            GameSound.stopBossMusic()
+            GameSound.stopMusic(.boss)
         }
     }
 

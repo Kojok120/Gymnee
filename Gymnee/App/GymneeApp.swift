@@ -55,6 +55,8 @@ struct GymneeApp: App {
                     if phase == .active {
                         Task { await env.sync.syncNow() }
                         Task { await env.store.reloadProductsIfNeeded() }
+                        // 裏に回ると OS が BGM を止めるので、部屋・ボス部屋にいたら続きを流す。
+                        GameSound.resumeMusic()
                     }
                 }
                 // サインイン完了時に同期（Apple サインインでトークンが入った直後）。

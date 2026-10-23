@@ -182,7 +182,8 @@ struct RootView: View {
         // ボタンとタブバーの重なり（実機で発覚した不具合）を再現できないため。
         // -boss / -chest はボスの入口（issue #139）の戦闘中・宝箱の見え方を、デモのパーティで確かめる用。
         // 戦闘中はソロのデモにする（複数パーティのデモは片方が撃破済みで、宝箱の表示が勝つ）。
-        case "character-tab", "character-tab-boss", "character-tab-chest":
+        // character-book / character-notif は図鑑の小窓・通知の問いかけ（iOS の Menu・確認窓の代わり）を出した部屋。
+        case "character-tab", "character-tab-boss", "character-tab-chest", "character-book", "character-notif":
             TabView(selection: .constant("character")) {
                 Tab("記録", systemImage: "dumbbell.fill", value: "record") { Color.clear }
                 Tab("カレンダー", systemImage: "calendar", value: "calendar") { Color.clear }

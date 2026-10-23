@@ -1,8 +1,8 @@
 import SwiftUI
 
-// ボス部屋とパーティのメニューで使う、ゲームの窓とコマンド（issue #161）。
+// 育成タブ（部屋・ボス部屋・パーティのメニュー）で使う、ゲームの窓とコマンド（issue #161）。
 //
-// iOS の確認窓・シート・Menu はドット絵の画面から浮くので、ボス部屋の中で問いかける・選ばせるときは
+// iOS の確認窓・シート・Menu はドット絵の画面から浮くので、育成タブの中で問いかける・選ばせるときは
 // メッセージ窓と同じ「黒地に白い枠」の窓と、▶ のカーソルが付くコマンドを使う。
 
 enum GameWindowStyle {
@@ -56,6 +56,8 @@ struct GameCursor: View {
 /// カーソル付きのコマンド。押すと選ぶ音を鳴らす。
 struct GameCommand: View {
     let title: String
+    /// 右端に添える数など（図鑑の件数）。
+    var detail: String?
     var selected = false
     var enabled = true
     var size: CGFloat = 17
@@ -72,6 +74,13 @@ struct GameCommand: View {
                     .font(.pixel(size: size, relativeTo: .body))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                if let detail {
+                    Spacer(minLength: Theme.Spacing.md)
+                    Text(detail)
+                        .font(.pixel(size: size, relativeTo: .body))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
             }
             .foregroundStyle(enabled ? Color.white : GameWindowStyle.muted)
             .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)

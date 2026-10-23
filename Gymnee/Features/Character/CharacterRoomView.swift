@@ -49,7 +49,10 @@ struct CharacterRoomView: View {
     @AppStorage(Self.pageKey) private var storedPage = Page.room.rawValue
     /// 完了直後の祝いで「ダンジョンへ」が押された（祝いを閉じたらボスに切り替える）。
     @State private var openBattleAfterCelebration = false
+    /// 通知の許諾の問いかけ。iOS の確認窓ではなく、下のボタン列の代わりにゲームの窓で聞く。
     @State private var showNotifPrePrompt = false
+    /// 「図鑑」の小窓（技図鑑・称号・戦利品を選ぶ）。iOS の Menu はドット絵の部屋から浮くので使わない。
+    @State private var bookMenuOpen = false
     /// キャラのひとこと。タップ or 一定時間で切り替わる。
     @State private var chatter: CharacterChatter.Line?
     /// シーンの再生開始時刻。画面を離れている間はアニメーションを進めない。
@@ -190,6 +193,13 @@ struct CharacterRoomView: View {
                         }
                         .ignoresSafeArea(edges: .bottom)
                     }
+                    // 部屋の拾うジェスチャの外に重ねる（中に置くと、小窓の外のタップが部屋のタップになる）。
+                    .overlay {
+                        if bookMenuOpen { bookMenuPopup }
+                    }
+                    // 部屋の BGM。ボス部屋へ降りたら、ボス部屋の曲に替わる。
+                    .onAppear { GameSound.startMusic(.room) }
+                    .onDisappear { GameSound.stopMusic(.room) }
                     .transition(.move(edge: .top))
                 case .boss:
                     BossBattleView(userId: userId, selfLook: battleLook, pet: activePet, energy: derived.energy) {
@@ -219,6 +229,9 @@ struct CharacterRoomView: View {
                [.techniques, .adventure, .titles].contains(route) {
                 sheet = route
             }
+            // 撮影用（`-gymneeScreen character-book|character-notif`）。図鑑の小窓・通知の問いかけを出した部屋。
+            if DebugSupport.screen == "character-book" { bookMenuOpen = true }
+            if DebugSupport.screen == "character-notif" { showNotifPrePrompt = true }
             #endif
             // 週ボスの状況（宝箱の印と、遠征に使えるパワー）。パーティはここでは作らない。
             Task { await party.refresh(userId: userId, weeklyGoal: weeklyGoal, createIfNeeded: false) }
@@ -289,17 +302,6 @@ struct CharacterRoomView: View {
                 build: derived.build, skin: skin, currentHairId: hairStyleId,
                 gender: gender, onChooseGender: { selectGender($0) }
             )
-        }
-        .alert("通知をオンにしますか？", isPresented: $showNotifPrePrompt) {
-            Button("オンにする") {
-                notifPrePrompted = true
-                Task { await notifications.requestAuthorization() }
-            }
-            Button("あとで", role: .cancel) {
-                notifPrePrompted = true
-            }
-        } message: {
-            Text("トレーニングを続けるためのリマインドや、フレンドからの反応をお届けします。")
         }
     }
 
@@ -1043,7 +1045,12 @@ struct CharacterRoomView: View {
             // 以前は代わりに大きな案内ブロックを出していたが、それが常時居座って
             // ステータス・遠征・見た目に一切たどり着けなくなっていた（実機で発覚）。
             // 記録への促しはコーチのふきだしと初回案内が担う。
-            actionBar
+            // 通知の許諾を聞いている間だけは、ボタン列の代わりに問いかけの窓を出す（ボス部屋と同じ形）。
+            if showNotifPrePrompt {
+                notificationQuestion
+            } else {
+                actionBar
+            }
         }
         // タブバー（＋ホームインジケータ）の高さぶん持ち上げる。
         // これが無いとボタン列がタブバーの真下に潜る（実機で発覚）。
@@ -1131,22 +1138,76 @@ struct CharacterRoomView: View {
     }
 
     /// 図鑑（技・称号・戦利品）。ボタンを増やすと列に収まらないので、1 つのボタンから選ばせる（issue #155）。
+    /// 選ぶのは iOS の Menu ではなく、パーティのメニューの小窓と同じゲームの窓（`bookMenuPopup`）。
     private var bookMenuButton: some View {
-        Menu {
-            Button { sheet = .techniques } label: {
-                Label("技図鑑（\(Technique.learnedCount(derived.techniqueBook))）", systemImage: "bolt.fill")
-            }
-            Button { sheet = .titles } label: {
-                Label("称号（\(PlayerTitle.earned(stats: titleStats).count)）", systemImage: "rosette")
-            }
-            Button { sheet = .collection } label: {
-                Label("戦利品（\(collection.count)）", systemImage: "shippingbox.fill")
-            }
-            .disabled(collection.isEmpty)
-        } label: {
-            sceneButtonLabel("図鑑", "book.fill", badge: false, disabled: false)
+        sceneButton("図鑑", "book.fill") {
+            GameSound.play(.select)
+            withAnimation(.easeOut(duration: 0.15)) { bookMenuOpen = true }
         }
-        .buttonStyle(.plain)
+    }
+
+    /// 図鑑の小窓。外をタップするか「やめる」で閉じる。
+    private var bookMenuPopup: some View {
+        ZStack {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { closeBookMenu() }
+            VStack(alignment: .leading, spacing: 0) {
+                Text("ずかん")
+                    .font(.pixel(size: 16, relativeTo: .headline))
+                    .foregroundStyle(.white)
+                    .padding(.bottom, Theme.Spacing.xs)
+                GameCommand(title: "技図鑑", detail: "\(Technique.learnedCount(derived.techniqueBook))",
+                            selected: true) { openBook(.techniques) }
+                GameCommand(title: "称号", detail: "\(PlayerTitle.earned(stats: titleStats).count)") { openBook(.titles) }
+                GameCommand(title: "戦利品", detail: "\(collection.count)", enabled: !collection.isEmpty) {
+                    openBook(.collection)
+                }
+                GameCommand(title: "やめる") { closeBookMenu() }
+            }
+            .frame(maxWidth: 260, alignment: .leading)
+            .gameWindow()
+            .padding(.horizontal, Theme.Spacing.xl)
+        }
+        .transition(.opacity)
+    }
+
+    private func openBook(_ route: SheetRoute) {
+        bookMenuOpen = false
+        sheet = route
+    }
+
+    private func closeBookMenu() {
+        withAnimation(.easeOut(duration: 0.15)) { bookMenuOpen = false }
+    }
+
+    /// 通知の許諾の問いかけ。「オンにする」を選んだときだけ OS の許諾ダイアログへ進む。
+    private var notificationQuestion: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("通知を オンに しますか？")
+                Text("リマインドと フレンドの反応が とどく")
+            }
+            .font(.pixel(size: 15, relativeTo: .body))
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gameWindow()
+            GameChoiceBar(yes: "オンにする", no: "あとで",
+                          onYes: { answerNotificationQuestion(yes: true) },
+                          onNo: { answerNotificationQuestion(yes: false) })
+                .frame(height: 52)
+        }
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.bottom, Theme.Spacing.lg)
+        .transition(.opacity)
+    }
+
+    private func answerNotificationQuestion(yes: Bool) {
+        notifPrePrompted = true
+        withAnimation(.easeOut(duration: 0.15)) { showNotifPrePrompt = false }
+        if yes { Task { await notifications.requestAuthorization() } }
     }
 
     /// まだ 1 回も記録していなくて、チュートリアルの宝箱も開けていない（記録を消して 0 回に戻った人には出さない）。

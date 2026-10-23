@@ -136,7 +136,6 @@ private struct StartGateView: View {
                             Text("Gymnee")
                                 .font(.system(size: 40, weight: .heavy, design: .rounded))
                                 .foregroundStyle(Theme.textPrimary)
-                            Text("準備ができたら開始しましょう").font(.subheadline).foregroundStyle(Theme.textSecondary)
                         }
                         if !starterMenus.isEmpty {
                             starterSection
