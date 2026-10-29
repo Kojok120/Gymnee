@@ -242,7 +242,7 @@ xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 
 ## 決定済みの事項（蒸し返さない）
 
-- 撤去・不採用にしたもの（チェックイン / ジム・カスタムセット・サブスク・記録画面の左レール・匿名認証）と、意図的に残している未使用のテーブル・コードは [`docs/agent-notes/settled-decisions.md`](docs/agent-notes/settled-decisions.md) にある。再提案する前、残置物やデッドコードを消す前に読む
+- 撤去・不採用にしたもの（チェックイン / ジム・カスタムセット・サブスク・記録画面の左レール・匿名認証）と、意図的に残している未使用のテーブル・コードは [`agent-notes/settled-decisions.md`](agent-notes/settled-decisions.md) にある。再提案する前、残置物やデッドコードを消す前に読む
 
 ### 育成タブのドット絵
 
