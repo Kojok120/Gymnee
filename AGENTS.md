@@ -80,10 +80,31 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 ## Supabase スキーマ / マイグレーション
 
 - スキーマ変更は `supabase/migrations/` に**番号順**の SQL で追加する
-- 追加した SQL は **必ず `supabase/setup_all.sql` にも同じ内容を番号順で反映**する（このリポジトリの `.claude` フック・運用ルール）
+- 追加した SQL は **必ず `supabase/setup_all.sql` にも同じ内容を番号順で反映**し、migration と同じコミットに入れる（このリポジトリの `.claude` フック・運用ルール。setup_all.sql は新規構築用の手保守ファイルで、漏れると機能が丸ごと欠ける）
+- 本番には実ユーザーのデータがある。drop・列の削除・型変更などの破壊的な変更は特に慎重に扱い、ドライランを省かない
 - **dev / ステージングの Supabase は無い**（dev プロジェクトは 2026-07 にコスト削減で削除済み。Supabase は本番 `ibtrbymfmxrruuwuzell` のみ）。検証は `scripts/sqltest/run.sh <migration...> <test.sql>`（一時 PostgreSQL で 2 周流して冪等性も見る）か、本番への `begin; ...; rollback;` のドライランで行い、本番への適用は Management API でユーザーの明示 OK のあとに行う。クライアントが新しい列を送るビルドは、migration が無いと同期が失敗するので**アプリ配信より先に適用**する。`supabase db push` は使わない（リモートの migration 履歴が 0024 で止まっている）
 - **全ユーザーテーブルに RLS を必須**とする。マスタ（gyms / exercises のプリセット = `created_by IS NULL`）は全員参照・作成者のみ更新、公開コンテンツは `visibility` + `is_following()` で判定
 - Storage バケットのパスは `<uid>/<file>` 規約（RLS で本人のみ書込）。private バケット（progress-photos / visit-photos）は署名/認証付き GET で配信
+
+## 差分同期の不変条件
+
+- pull は `updated_at > 基準` の upsert だけ。基準時刻は `SyncWatermark`（スキーマ v7）として**ストアの中**に置き、UserDefaults などストアの外に置かない（ストアだけ作り直されると基準が残り、データが二度と降りてこない）
+- 「手元は空か」の判定は自分の行（自分の記録と投稿）だけで数える（フォロー相手の投稿まで数えると復旧が発火しない。`SyncRecovery`）
+- DELETE は差分 pull に乗らない（tombstone 無し）。post_reactions / comments / feed_items / blocks は id をフル取得して照合し、余剰を消す（`SyncReconciler.orphanIds`。未送出の `isDirty` 行は守る）。他のテーブルで削除を伝播させたいときもこの照合に足す
+- id の取得件数が上限（`reconcileSafetyCap`）に達した回は、誤削除を避けて照合を飛ばす。id 取得のページングとサーバー側のソフトデリートは未実装
+- 同期の不具合はコードから推測する前にデータを見る（テーブル別・ユーザー別の件数と `max(updated_at)`）。「一部だけ見える」は、まず基準より新しい行だけが降りてきている状態を疑う
+
+## アイデンティティと環境の不変条件
+
+正典は [`docs/identity-environment-design.md`](docs/identity-environment-design.md)。
+
+- 匿名認証は撤去済み。再導入せず、ゲストと本人アカウントの区別は `IdentityAdoptionPolicy` で守る
+- ローカルデータの付け替えは「ゲスト → 最初の本人確定」の 1 回だけ。本人アカウント A → B の切り替えでは吸い上げない（別アカウント・別環境のデータが混入する）
+- 公開は fail-closed: feed_item がある＝公開。feed_item を作るのはユーザーの明示操作だけ
+- サインイン方法ごとに別 uid になる。push は所有者 id を現在の認証 uid で stamp するので、サインイン前のローカル分は自分のものとして同期される。別の実アカウントで push 済みの行は RLS（42501）で動かせず、手動統合しかない
+- APNs の端末トークンは RPC `set_device_token` で今のアカウントへ付け替える（token だけで upsert すると、後からサインインしたアカウントに push が届かない）
+- Debug（`com.gymnee.app.dev`）は本番ホストに繋がず、Release は本番ホストにしか繋がない。`EnvironmentGuard` が起動時にビルド種別と接続先の整合を強制しているので緩めない
+- 認証・同期を触ったら「A でサインアウト → B でサインインし、A のデータが B に付かない」を毎回確かめる
 
 ## コーディング規約
 
@@ -105,6 +126,22 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 - SwiftUI View は小さく保ち、状態は `@Observable` モデルへ寄せる
 - 依存は `@Environment(AppEnvironment.self)` で受け取り、View 内でサービスを直接生成しない
 - 共通 UI は `Features/Shared/Components.swift`、色・タイポ・モーションは `Theme.swift` のトークンを使う
+- スクロールの中の押下は `Button` で取る（自前の `DragGesture` はスクロールを奪う）
+
+### 画面遷移（iOS 26 対策で値ベースに統一）
+
+- `NavigationLink` は `AppRoute` の値で書き、`navigationDestination` は各 NavigationStack のルートで `gymneeNavigationDestinations` にまとめて宣言する。push 先には置かない（iOS 26.5 では push 先の宣言が子のリンクから解決されない）
+- List / ForEach の中でクロージャ型の `NavigationLink` を使わない（遷移先を先に生成する。init で `#Predicate` 付き `@Query` を作る重い画面だとウォッチドッグ 0x8BADF00D で落ちる）
+- クロージャ型の push の上に値ベースの push を混ぜない（値ルートが下に積まれ、ループしたり一覧の裏に隠れたりする）
+- リンクが消えたときの自動 pop に頼らない。path をバインドして明示的にクリアする
+- この種の不具合はシミュレータの直接起動では再現しないことがある。回帰は `xcodebuild -project Gymnee.xcodeproj -scheme GymneeUITests -destination 'id=<sim>' test` で見る（CI では走らない）
+
+### SwiftData の罠
+
+- 同期で削除され得る相手への inverse 無しの to-one 関連を読まない（参照先が消えると読んだ瞬間に EXC_BREAKPOINT。outbox に残って毎同期で落ち続ける）。名前や id の別フィールドで引く（例: `SupplyLog.productName`）
+- テストの中で `@Model` の `ModelContainer` を作らない（テストホストがフルの容器を起動しているので二重になり落ちる）。ストアのロジックは純粋関数に切り出してテストする
+- `.task(id: X)` の中で X を変える書き込みをしない（無限に挿入されてフリーズする）
+- ストアの実体は App Group 側。`sqlite3` は存在しないパスに空の DB を作るので `-readonly` で開く
 
 ## レビュー方針
 
@@ -166,7 +203,7 @@ xcodebuild -project Gymnee.xcodeproj -scheme Gymnee -destination "id=$DEV" -deri
 xcrun simctl install $DEV <ddOld>/Gymnee.app && xcrun simctl launch $DEV com.gymnee.app.dev -gymneeDemo
 # 2. ストアの行数を控える（実体は App Group 側。ModelConfiguration の groupContainer が .automatic のため）
 S=~/Library/Developer/CoreSimulator/Devices/$DEV/data/Containers/Shared/AppGroup/*/Library/Application\ Support/default.store
-sqlite3 "$S" "select count(*) from ZWORKOUT;"
+sqlite3 -readonly "$S" "select count(*) from ZWORKOUT;"
 # 3. 変更後をビルドし **uninstall せずに** 上書きインストールして起動
 git stash pop && xcodegen generate && xcodebuild ... -derivedDataPath /tmp/ddNew build
 xcrun simctl install $DEV <ddNew>/Gymnee.app && xcrun simctl launch --console-pty $DEV com.gymnee.app.dev
@@ -196,6 +233,33 @@ xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 # 育成タブの部屋 / ボス部屋は `-gymnee.character.page room|boss` を足すと固定できる（撮影専用。
 # 引数の値が UserDefaults より優先されるので、渡している間は切り替えが効かない。UI テストでは使わない）
 ```
+
+### 検証の罠
+
+- `-destination` は `OS=latest` でなくシミュレータの `id=<sim>` か `name=` で指定する（入っているランタイム次第で失敗する）
+- `simctl` はタップできず、座標クリックによる自動操作も当てにならない。画面は `-gymneeScreen` で直接開き、操作は XCUITest で行う
+- `CoachModeTests.testPersonaKeepsItsGuardrails` は手元でだけ EINTR で落ちることがある（CI では通る）。これ単独の失敗で原因を追わない
+
+## 決定済みの事項（蒸し返さない）
+
+- 撤去・不採用にしたもの（チェックイン / ジム・カスタムセット・サブスク・記録画面の左レール・匿名認証）と、意図的に残している未使用のテーブル・コードは [`docs/agent-notes/settled-decisions.md`](docs/agent-notes/settled-decisions.md) にある。再提案する前、残置物やデッドコードを消す前に読む
+
+### 育成タブのドット絵
+
+- 絵は 1 文字＝1 ドットのコード内スプライト（`PixelSprite`）。外部のアイコン集や SF Symbol をシーンに混ぜない（質感が割れる）
+- 座標は整数のドット格子に置き、縮小は偶数分の 1 だけにする
+- 絵を足したら、行幅と未知の文字を機械でチェックする（キリル文字の `о` のような見た目の同じ文字が混ざる）→ `-gymneeScreen pixelart*` で目視 → `PixelCharacterTests`。`PixelArtGallery` と `PixelCharacterTests.allSprites` にも足す
+
+### ゲーム画面の UI
+
+- ボス部屋とパーティのメニューでは iOS の確認窓（`confirmationDialog` / `alert`）・シート・`Menu` を使わない（ゲームの雰囲気が崩れる）。部屋の「図鑑」の `Menu` と通知の確認もゲームの窓にした。部屋から開くシートはまだ iOS 標準
+- 問いかけはメッセージ窓＋下の帯の「はい / いいえ」、一覧は RPG のメニュー画面（`PartyMenuView`。部品は `GameWindow.swift`）
+- 説明の段落を置かない。絵・マス・数で見せ、きまりは「あそびかた」や「？」の中にだけ書く
+- 育成タブの外（ソーシャル・カレンダー・身体メトリクス・記録）をゲームの窓に置き換えるかは未決。勝手に広げない
+
+### 素材
+
+- 参考画像を渡されたら手描きで近似せず、まずオープンライセンスの既製アセットを探す。取り込んだら `NOTICE.md` に明記する（人体図は MuscleMap（MIT）を取り込んだ）
 
 ## 環境変数 / シークレット
 
