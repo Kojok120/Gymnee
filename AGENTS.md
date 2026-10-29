@@ -52,7 +52,7 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 ### アーキテクチャ（オフラインファースト）
 
 - **SwiftData がローカルの正**。同期は `SyncEngine` / `LocalSyncEngine`（outbox にためる）で抽象化し、コンフリクトは last-write-wins（`ConflictResolver`）で解く
-- **DI は `AppEnvironment`**（`@MainActor @Observable`）に各サービス（auth / sync / location / health / notifications / subscription / calendar 等）を集約し `.environment(...)` で注入する。サービスを View 内で直接 new しない
+- **DI は `AppEnvironment`**（`@MainActor @Observable`）に各サービス（auth / sync / health / notifications / store / party / calendar / coach 等）を集約し `.environment(...)` で注入する。サービスを View 内で直接 new しない
 - **ドメインロジックは純粋関数として `Gymnee/Core/Domain/` に置く**（`OneRepMax` / `PRDetector` / `WeeklyMuscleLoad` / `PlateCalculator` / `StreakCalculator` / `RecoveryAnalyzer` / `ConflictResolver` 等）。新しいビジネスルールはここに切り出してユニットテストを書く
 - 本体 / Widget / Watch の共有コードは `Shared/` `SharedActivity/` `SharedConnectivity/` に置く
 
@@ -265,7 +265,7 @@ xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 
 iOS の `.env` 相当は **xcconfig** で扱う。`Config/Secrets.example.xcconfig` を複製して用意する（いずれも gitignore 済み）。
 
-- `Config/Secrets.dev.xcconfig`（Debug ビルド）/ `Config/Secrets.prod.xcconfig`（Release ビルド）で **Debug→dev / Release→prod** が自動切替
+- `Config/Secrets.dev.xcconfig`（Debug ビルド。接続先はローカル Supabase で、手順は `docs/local-dev.md`）/ `Config/Secrets.prod.xcconfig`（Release ビルド。本番）が自動で切り替わる
 - 主なキー:
   - `SUPABASE_HOST` — `[PROJECT_REF].supabase.co`（スキームは付けない）
   - `SUPABASE_KEY` — Publishable key か Legacy anon（Secret key は不可）
@@ -274,7 +274,7 @@ iOS の `.env` 相当は **xcconfig** で扱う。`Config/Secrets.example.xcconf
 
 ## デプロイ
 
-- **TestFlight**: `testflight.yml` を手動起動（`gh workflow run testflight.yml --ref main`）してビルド → 署名 → App Store Connect へ配信。2026-07 のCI整理で main push トリガーは外し workflow_dispatch のみ。GitHub Actions の課金は 2026-08 に再開済み。ビルド番号は run number + 100
+- **TestFlight**: `testflight.yml` を手動起動（`gh workflow run testflight.yml --ref main`）してビルド → 署名 → App Store Connect へ配信。2026-07 のCI整理で main push トリガーは外し workflow_dispatch のみ。GitHub Actions の課金は 2026-08 に再開済み。ビルド番号は run number + 200
 - **TestFlight 配信は外部グループまでやって完了**: アップロードと内部グループ配信で止めない。処理が VALID になったら ①テスト内容(ja)を設定 ②外部グループ(公開リンク付き「運営」)に追加 ③ベータ審査へ提出、まで一続きで行う。実テスターは外部グループにいるため内部止まりでは配信の意味がない。同じ `MARKETING_VERSION` で既にベータ審査を通過していれば提出直後に配信状態になる
 - **CI**: `ci.yml` でビルド / テストを実行
 - 署名・プロビジョニング・ASC / APNs 鍵などの秘匿値は CI のシークレットおよび `Config/Secrets.*.xcconfig` で管理し、リポジトリに含めない
