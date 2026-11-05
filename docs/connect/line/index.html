@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LINE でコーチ — Gymnee 連携</title>
+<meta name="description" content="Gymnee を LINE とつなぐと、話しかけるだけで記録とコーチ。毎朝のメニューや、記録が途切れそうなときの声かけも届きます。アプリのボタン 1 つでつながります。">
+<meta property="og:title" content="Gymnee を LINE とつなぐ">
+<meta property="og:description" content="話しかけるだけで記録とコーチ。毎朝のメニューも LINE に届きます。">
+<meta property="og:image" content="../../assets/gymnee-icon.png">
+<meta name="theme-color" content="#0B0D0C">
+<link rel="icon" href="../../assets/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../connect.css">
+</head>
+<body>
+<header class="site"><div class="inner">
+  <img src="../../assets/gymnee-icon.png" alt=""><a class="brand" href="../../">Gymnee</a>
+  <nav><a href="../">連携</a><a href="./" aria-current="page">LINE</a><a href="../ai/">AI につなぐ</a><a href="../chat/">Slack・Discord</a><a href="../api/">API</a></nav>
+</div></header>
+<main>
+  <h1><span class="lime">LINE</span> にいるコーチ</h1>
+  <p class="lead">いつもの LINE で、話しかけるだけ。やったことを送れば記録になり、迷ったらメニューを組んでくれます。アプリを開かない日も続けられます。</p>
+
+  <h2>つなぎ方</h2>
+  <ol class="steps">
+    <li>Gymnee アプリの <em>その他 &gt; 連携</em> で「LINE と連携」を押します。</li>
+    <li>LINE が開き、Gymnee の公式アカウントのトークに「連携 123456」のような文字が入っています。そのまま送ってください。友だちに追加していなければ、先に追加します。</li>
+    <li>「連携しました」と返ってきたら完了です。アプリに戻ると「連携しています」になります。</li>
+  </ol>
+  <p class="small muted">コードは 10 分で切れます。切れたら、もう一度「LINE と連携」を押してください。</p>
+
+  <h2>できること</h2>
+  <div class="table-wrap"><table>
+    <tr><th>記録する</th><td>「ベンチプレス 60kg 10回 3セット」「懸垂 8回 3セット」「ランニング 5km 30分」のように送ると、内容を見せてから記録します。「記録する」を押したときだけ記録します。</td></tr>
+    <tr><th>今日のメニュー</th><td>最近の記録から、今日のメニューを組みます。アプリのコーチ画面にも届くので、アプリで取り込むこともできます。やったら「やった！記録する」で記録に。</td></tr>
+    <tr><th>ふりかえり</th><td>今週の回数・セット数・総量と、目標まであと何回かを返します。</td></tr>
+    <tr><th>相談する</th><td>「肩が痛い」「時間がない」「やる気が出ない」など。記録を見て、無理のない一手を返します。医療の診断はしません。</td></tr>
+  </table></div>
+  <p>画面の下のメニューのボタンを押すだけでも使えます。LINE で話した内容は、アプリのコーチの会話にも残ります。</p>
+
+  <h2>通知の出し方</h2>
+  <p>アプリの <em>その他 &gt; 連携</em> で選べます。届くのは 1 日に 1 通までで、その日もう記録していれば送りません。</p>
+  <div class="table-wrap"><table>
+    <tr><th>途切れそうなときだけ</th><td>最後の記録から 3 日たったときに、軽めに戻すための声かけ</td></tr>
+    <tr><th>毎日</th><td>決めた時刻に、今週の回数と、今日どうするかの声かけ</td></tr>
+    <tr><th>毎日＋メニュー提案</th><td>決めた時刻に、今日のメニューを組んで届ける</td></tr>
+    <tr><th>送らない</th><td>通知は届かない（話しかければ答えます）</td></tr>
+  </table></div>
+
+  <h2>安心して使えるように</h2>
+  <ul>
+    <li>LINE に送った内容は、記録とコーチのためにだけ使います。グループやトークルームでは答えません（個人の記録を他の人に見せないため）。</li>
+    <li>LINE の名前やプロフィール写真は使いません。Gymnee が持つのは、つながっているかを見分ける LINE の ID だけです。</li>
+    <li>やめるときは、アプリの <em>その他 &gt; 連携</em> で「連携を解除」を押すか、LINE で公式アカウントをブロックしてください。ブロックすると連携も外れます。</li>
+    <li>くわしくは<a href="../../privacy-policy.html">プライバシーポリシー</a>の「外部連携」をご覧ください。</li>
+  </ul>
+</main>
+<footer><div class="inner">
+  <a href="../">連携</a><a href="../../privacy-policy.html">プライバシーポリシー</a><a href="../../terms-of-service.html">利用規約</a>
+</div></footer>
+</body>
+</html>
