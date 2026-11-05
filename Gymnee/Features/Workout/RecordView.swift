@@ -1215,7 +1215,12 @@ struct RecordContent: View {
                               isCompleted: true, durationSeconds: duration, distanceKm: distanceKm,
                               angleDegrees: angleDegrees, workoutExercise: we)
         context.insert(set)
-        try? context.save()   // 下書きはローカルのみ。同期は完了時。
+        try? context.save()   // 下書きはローカルのみ。同期は完了時。完了済みの記録を直しているときはその場で送る（#170）。
+        syncCompletedEdit(.added(
+            set: .init(id: set.id, updatedAt: set.updatedAt),
+            workoutExercise: .init(id: we.id, updatedAt: we.updatedAt),
+            exercise: exercise.isCustom ? .init(id: exercise.id, updatedAt: exercise.updatedAt) : nil
+        ))
         // PR の確定・永続は完了時にまとめて。ここでは履歴ベストとの純粋比較で「更新ペース！」を
         // その場表示するだけ（非永続。中断したワークアウトに PR を残さない設計を壊さない）。
         let isPR = showProvisionalPRIfNeeded(set: set, exercise: exercise)
@@ -1275,16 +1280,29 @@ struct RecordContent: View {
         // 残すと完了後の投稿/詳細に「セットなし」の種目として出てしまうため。
         let we = set.workoutExercise
         let wasLastSet = (we?.sets.count ?? 0) <= 1
+        // 消したあとは行の中身を読めないので、送る id は先に控える。
+        let setId = set.id
+        let removedWorkoutExercise = wasLastSet ? we?.id : nil
         context.delete(set)
         if wasLastSet, let we { context.delete(we) }
-        try? context.save()   // 下書き中の削除。未同期なのでローカルのみ。
+        try? context.save()
+        // 下書きならローカルだけで済む。完了済みの記録なら削除をサーバーへ送る（#170。差分 pull は削除を伝えない）。
+        syncCompletedEdit(.deleted(setId: setId, removedWorkoutExercise: removedWorkoutExercise))
     }
 
     private func commitSetEdit(_ set: ExerciseSet) {
         guard !battleFinishing else { return }
         set.updatedAt = .now
         set.isDirty = true
-        try? context.save()   // 下書き中の編集。同期は完了時。
+        try? context.save()   // 下書きなら同期は完了時。完了済みの記録ならその場で送る（#170）。
+        syncCompletedEdit(.edited(set: .init(id: set.id, updatedAt: set.updatedAt)))
+    }
+
+    /// 完了済みの記録を直したときだけ、変更をその場で送信待ちに積む（#170）。
+    /// 完了ボタンを押さずに戻っても、足した・直した・消したセットがサーバーに届くようにする。
+    private func syncCompletedEdit(_ edit: CompletedWorkoutSync.Edit) {
+        guard let w = activeWorkout else { return }
+        sync.enqueueBatch(CompletedWorkoutSync.changes(for: edit, isCompleted: w.completedAt != nil))
     }
 
     /// このワークアウトにメモが付いているか（ツールバーアイコンの状態表示用）。
@@ -1347,7 +1365,12 @@ struct RecordContent: View {
         // （自己ベストの更新は行を増やさず workoutId を付け替えるため）。
         let growthBefore = w.completedAt == nil ? growthSnapshot(for: w).snapshot : nil
         // セット0件の種目エントリは投稿/同期前に取り除く（記録ミスで残った空種目を「セットなし」で残さない）。
-        for we in Array(w.exercises) where we.sets.isEmpty { context.delete(we) }
+        // 完了済みの記録を直しているときは、サーバーにある行なので削除も送る（#170）。
+        var removedEmpty: [PendingChange] = []
+        for we in Array(w.exercises) where we.sets.isEmpty {
+            removedEmpty += CompletedWorkoutSync.changes(for: .removedEmptyWorkoutExercise(id: we.id), isCompleted: !isFirstCompletion)
+            context.delete(we)
+        }
         // 初回完了のみ時刻を確定する（編集での再完了は既存の完了時刻・総合時間を保持）。
         if w.completedAt == nil {
             let now = Date.now
@@ -1381,7 +1404,7 @@ struct RecordContent: View {
         }
         // 完了時に初めてサーバー同期（下書き中は一切送らない）。種目→種目並び→セットの順に送出。
         // enqueue は1件ごとに outbox 全書き出しが走るため、まとめて enqueueBatch（ディスク書込1回）にする。
-        var pending: [PendingChange] = [PendingChange(entity: "workouts", recordId: w.id, operation: .upsert, updatedAt: w.updatedAt)]
+        var pending: [PendingChange] = [PendingChange(entity: "workouts", recordId: w.id, operation: .upsert, updatedAt: w.updatedAt)] + removedEmpty
         for we in w.exercises {
             if let ex = we.exercise {
                 pending.append(PendingChange(entity: "exercises", recordId: ex.id, operation: .upsert, updatedAt: ex.updatedAt))
