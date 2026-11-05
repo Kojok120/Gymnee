@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gymnee 連携 — AI・API で記録を使う</title>
+<meta name="description" content="Gymnee の筋トレ記録を、Claude や ChatGPT、自分のスクリプトから使う方法。承認は iPhone の Gymnee で行い、渡す権限は自分で選べます。">
+<meta property="og:title" content="Gymnee 連携 — AI・API で記録を使う">
+<meta property="og:description" content="Claude や ChatGPT に URL を 1 つ足すだけで、Gymnee の記録を読んでふりかえりやメニュー作りができます。">
+<meta property="og:image" content="../assets/gymnee-icon.png">
+<meta name="theme-color" content="#0B0D0C">
+<link rel="icon" href="../assets/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="connect.css">
+</head>
+<body>
+<header class="site"><div class="inner">
+  <img src="../assets/gymnee-icon.png" alt=""><a class="brand" href="../">Gymnee</a>
+  <nav><a href="./" aria-current="page">連携</a><a href="ai/">AI につなぐ</a><a href="api/">API</a></nav>
+</div></header>
+<main>
+  <h1>Gymnee を、<span class="lime">アプリの外</span>へ</h1>
+  <p class="lead">Claude や ChatGPT に話しかけるだけで、自分の記録をもとにふりかえりやメニュー作りができます。自分でスクリプトを書く人には API もあります。</p>
+
+  <div class="cards">
+    <a class="card" href="ai/">
+      <span class="kicker">AI</span>
+      <h3>Claude・ChatGPT につなぐ</h3>
+      <p>URL を 1 つ足して、iPhone の Gymnee で承認するだけ。「今週のふりかえり」もボタン 1 つ。</p>
+    </a>
+    <a class="card" href="api/">
+      <span class="kicker">開発者</span>
+      <h3>API と API キー</h3>
+      <p>記録を読む・足す REST API。Claude Code やスクリプトから使えます。</p>
+    </a>
+  </div>
+
+  <h2>できること・できないこと</h2>
+  <div class="table-wrap"><table>
+    <tr><th>できる</th><td>記録・自己ベスト・体重（アプリで記録した分）・パーティの状況を読む<br>ワークアウトの記録を足す（権限を付けたときだけ）<br>アプリのコーチ画面にメニューを提案する（権限を付けたときだけ）</td></tr>
+    <tr><th>できない</th><td>記録を消す・直す（アプリだけで行います）<br>投稿・フォロー・ほかの人のデータを見る<br>アプリの計画を勝手に書き換える（提案を取り込むかはアプリで決めます）</td></tr>
+  </table></div>
+
+  <h2>安心して使えるように</h2>
+  <ul>
+    <li><strong>承認はあなたの iPhone で。</strong>つなぐときは、ブラウザと Gymnee アプリに同じ番号が出ます。見比べてから承認してください。</li>
+    <li><strong>渡す権限を選べます。</strong>「読むだけ」にもできます。</li>
+    <li><strong>いつでも解除できます。</strong>アプリの <em>その他 &gt; 連携</em> から。</li>
+    <li>パスワードや Apple ID の情報、ヘルスケア（HealthKit）から取り込んだデータは、つないだ AI には渡りません。</li>
+    <li>くわしくは<a href="../privacy-policy.html">プライバシーポリシー</a>の「外部連携」をご覧ください。</li>
+  </ul>
+
+  <h2>はじめる前に</h2>
+  <ul>
+    <li>Gymnee に<strong>サインイン</strong>している必要があります（<em>設定 &gt; アカウント</em>）。</li>
+    <li>AI や API が読むのは、サーバーに同期された記録です。オフラインで記録した分は、通信できたときに反映されます。</li>
+    <li>外から足した記録は、アプリを開くと同期されて表示されます。</li>
+  </ul>
+</main>
+<footer><div class="inner">
+  <a href="../">Gymnee</a><a href="../privacy-policy.html">プライバシーポリシー</a><a href="../terms-of-service.html">利用規約</a>
+</div></footer>
+</body>
+</html>

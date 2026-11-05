@@ -1,0 +1,2254 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Gymnee API",
+    "version": "1.0.0",
+    "description": "Gymnee の記録を読み書きする API。トークンはアプリの「その他 > 連携 > API キー」で作る（PAT）か、OAuth 2.1 で取る。日時は ISO 8601、重量は kg、週は JST の月曜始まり。消す・直すはアプリだけで行う。"
+  },
+  "servers": [
+    {
+      "url": "https://api.gymnee.app"
+    }
+  ],
+  "tags": [
+    {
+      "name": "読む",
+      "description": "記録・自己ベスト・体重・パーティを読む（read）"
+    },
+    {
+      "name": "書く",
+      "description": "記録を足す（workouts:write）・メニューを提案する（coach:write）"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "PAT（gym_pat_…）。アプリで作る"
+      },
+      "oauth2": {
+        "type": "oauth2",
+        "description": "MCP クライアント向け。承認は iPhone の Gymnee で行う",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://api.gymnee.app/authorize",
+            "tokenUrl": "https://api.gymnee.app/oauth/token",
+            "refreshUrl": "https://api.gymnee.app/oauth/token",
+            "scopes": {
+              "read": "記録・自己ベスト・体重（アプリで記録した分）・パーティの状況を読む",
+              "workouts:write": "ワークアウトの記録を足す（消す・直すはできない）",
+              "coach:write": "アプリのコーチ画面にメニューを提案する"
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/me": {
+      "get": {
+        "operationId": "get_profile",
+        "summary": "自分の情報",
+        "description": "表示名・週の目標（回数）・タイムゾーンを返す。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "weeklyGoal": {
+                          "type": "number"
+                        },
+                        "timeZone": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "displayName",
+                        "weeklyGoal",
+                        "timeZone"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "get_profile"
+      }
+    },
+    "/v1/summary": {
+      "get": {
+        "operationId": "get_summary",
+        "summary": "いまの状況のまとめ",
+        "description": "今週と先週の回数・セット数・総量・部位、週の目標を続けて満たした週の数、最後に記録してからの日数、直近の記録と自己ベストをまとめて返す。ふりかえりやメニューを考える前に、まずこれを読む。週は JST の月曜始まり。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "asOf": {
+                          "type": "string"
+                        },
+                        "weekStart": {
+                          "type": "string",
+                          "description": "今週の初日（JST・月曜始まり）"
+                        },
+                        "weeklyGoal": {
+                          "type": "number"
+                        },
+                        "thisWeek": {
+                          "type": "object",
+                          "properties": {
+                            "workouts": {
+                              "type": "number"
+                            },
+                            "activeDays": {
+                              "type": "number"
+                            },
+                            "sets": {
+                              "type": "number"
+                            },
+                            "volumeKg": {
+                              "type": "number"
+                            },
+                            "muscles": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "sets": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "label",
+                                  "sets"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "workouts",
+                            "activeDays",
+                            "sets",
+                            "volumeKg",
+                            "muscles"
+                          ]
+                        },
+                        "lastWeek": {
+                          "type": "object",
+                          "properties": {
+                            "workouts": {
+                              "type": "number"
+                            },
+                            "activeDays": {
+                              "type": "number"
+                            },
+                            "sets": {
+                              "type": "number"
+                            },
+                            "volumeKg": {
+                              "type": "number"
+                            },
+                            "muscles": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "label": {
+                                    "type": "string"
+                                  },
+                                  "sets": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "label",
+                                  "sets"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "workouts",
+                            "activeDays",
+                            "sets",
+                            "volumeKg",
+                            "muscles"
+                          ]
+                        },
+                        "streakWeeks": {
+                          "type": "number",
+                          "description": "週の目標を続けて満たした週の数"
+                        },
+                        "recordedToday": {
+                          "type": "boolean"
+                        },
+                        "daysSinceLastWorkout": {
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "recentSessions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "completedAt": {
+                                "type": "string"
+                              },
+                              "daysAgo": {
+                                "type": "number"
+                              },
+                              "sets": {
+                                "type": "number"
+                              },
+                              "volumeKg": {
+                                "type": "number"
+                              },
+                              "muscles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "completedAt",
+                              "daysAgo",
+                              "sets",
+                              "volumeKg",
+                              "muscles"
+                            ]
+                          }
+                        },
+                        "recentPersonalRecords": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "exercise": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "number"
+                              },
+                              "achievedAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "exercise",
+                              "type",
+                              "label",
+                              "value",
+                              "achievedAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "asOf",
+                        "weekStart",
+                        "weeklyGoal",
+                        "thisWeek",
+                        "lastWeek",
+                        "streakWeeks",
+                        "recordedToday",
+                        "daysSinceLastWorkout",
+                        "recentSessions",
+                        "recentPersonalRecords"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "get_summary"
+      }
+    },
+    "/v1/workouts": {
+      "get": {
+        "operationId": "list_workouts",
+        "summary": "記録の一覧",
+        "description": "完了した記録を新しい順に返す。種目とセットの中身つき。from / to で期間を絞れる（to は含まない）。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "日付（2026-11-01）か日時（2026-11-01T09:00:00+09:00）",
+            "schema": {
+              "type": "string",
+              "description": "日付（2026-11-01）か日時（2026-11-01T09:00:00+09:00）"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "日付（2026-11-01）か日時（2026-11-01T09:00:00+09:00）",
+            "schema": {
+              "type": "string",
+              "description": "日付（2026-11-01）か日時（2026-11-01T09:00:00+09:00）"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "件数（1〜50、既定 20）",
+            "schema": {
+              "description": "件数（1〜50、既定 20）",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "date": {
+                            "type": "string"
+                          },
+                          "completedAt": {
+                            "type": "string"
+                          },
+                          "durationSeconds": {
+                            "nullable": true,
+                            "type": "number"
+                          },
+                          "note": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "exercises": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "exercise": {
+                                  "nullable": true,
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "muscleGroup": {
+                                      "type": "string",
+                                      "description": "部位（chest / back / shoulders / arms / abs / core / glutes / legs / cardio / full_body / other）"
+                                    },
+                                    "equipment": {
+                                      "type": "string"
+                                    },
+                                    "measurementType": {
+                                      "type": "string",
+                                      "enum": [
+                                        "weight",
+                                        "bodyweight",
+                                        "time",
+                                        "cardio"
+                                      ],
+                                      "description": "記録のしかた"
+                                    },
+                                    "loadMode": {
+                                      "type": "string",
+                                      "enum": [
+                                        "none",
+                                        "weighted",
+                                        "assisted"
+                                      ],
+                                      "description": "自重種目の負荷（自重のみ / 荷重 / 補助）"
+                                    },
+                                    "isCustom": {
+                                      "type": "boolean",
+                                      "description": "自分で作った種目か"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "name",
+                                    "muscleGroup",
+                                    "equipment",
+                                    "measurementType",
+                                    "loadMode",
+                                    "isCustom"
+                                  ]
+                                },
+                                "sets": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "index": {
+                                        "type": "number"
+                                      },
+                                      "weightKg": {
+                                        "type": "number",
+                                        "description": "重量（kg）。補助付きの自重種目は負"
+                                      },
+                                      "reps": {
+                                        "type": "number"
+                                      },
+                                      "durationSeconds": {
+                                        "nullable": true,
+                                        "type": "number"
+                                      },
+                                      "distanceKm": {
+                                        "nullable": true,
+                                        "type": "number"
+                                      },
+                                      "isPR": {
+                                        "type": "boolean",
+                                        "description": "このセットで自己ベストを更新したか"
+                                      }
+                                    },
+                                    "required": [
+                                      "index",
+                                      "weightKg",
+                                      "reps",
+                                      "durationSeconds",
+                                      "distanceKm",
+                                      "isPR"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "exercise",
+                                "sets"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "date",
+                          "completedAt",
+                          "durationSeconds",
+                          "note",
+                          "exercises"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "list_workouts"
+      },
+      "post": {
+        "operationId": "log_workout",
+        "summary": "記録を足す",
+        "description": "終えたワークアウトを記録する。種目は Gymnee の種目に合わせる（名前か id。名前が一つに決まらないときは候補を返すので、選び直して呼び直す）。自己ベストはアプリと同じ規則で判定する。記録はアプリを開くと同期される。消す・直すはアプリで行う。同じ記録を二重に足さないよう、REST では Idempotency-Key ヘッダー、MCP では idempotencyKey を付けることを勧める。",
+        "tags": [
+          "書く"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "workouts:write"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "再送で二重にならないための鍵（8〜100 文字）。同じ鍵の 2 回目は何も増やさず 200 を返す",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 100
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "description": "記録の名前（例: 胸の日）。省略すると「ワークアウト」",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "completedAt": {
+                    "description": "終えた時刻（ISO 8601）。省略すると今",
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "durationMinutes": {
+                    "description": "かかった時間（分）",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 600
+                  },
+                  "note": {
+                    "description": "メモ",
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "exercises": {
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "exerciseId": {
+                          "description": "種目の id（list_exercises で取れる）。name とどちらかが要る",
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "description": "種目名（例: ベンチプレス）。id が分からないとき",
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60
+                        },
+                        "sets": {
+                          "minItems": 1,
+                          "maxItems": 30,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "weightKg": {
+                                "description": "重量（kg）。補助付きの自重種目は負の値（-10 = 10kg の補助）",
+                                "type": "number",
+                                "minimum": -300,
+                                "maximum": 1000
+                              },
+                              "reps": {
+                                "description": "回数",
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 1000
+                              },
+                              "durationSeconds": {
+                                "description": "時間（秒）。プランクなど時間の種目と有酸素で使う",
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 86400
+                              },
+                              "distanceKm": {
+                                "description": "距離（km）。有酸素で使う",
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1000
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "sets"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "exercises"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "同じ Idempotency-Key で記録済み（何も増やしていない）"
+          },
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "workoutId": {
+                          "type": "string"
+                        },
+                        "created": {
+                          "type": "boolean",
+                          "description": "false なら同じ鍵で既に記録済み（何も増やしていない）"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "type": "string"
+                        },
+                        "exercises": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "sets": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "sets"
+                            ]
+                          }
+                        },
+                        "personalRecords": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "exercise": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "exercise",
+                              "label",
+                              "value"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "workoutId",
+                        "created",
+                        "name",
+                        "completedAt",
+                        "exercises",
+                        "personalRecords"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "入力の形が違う",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（workouts:write が要る）"
+          },
+          "422": {
+            "description": "種目が決まらない・値が足りない（details に候補）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "workouts:write",
+        "x-mcp-tool": "log_workout"
+      }
+    },
+    "/v1/workouts/{workoutId}": {
+      "get": {
+        "operationId": "get_workout",
+        "summary": "記録を 1 件",
+        "description": "記録 1 件を、種目とセットの中身つきで返す。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workoutId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "date": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "type": "string"
+                        },
+                        "durationSeconds": {
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "note": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "exercises": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "exercise": {
+                                "nullable": true,
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "muscleGroup": {
+                                    "type": "string",
+                                    "description": "部位（chest / back / shoulders / arms / abs / core / glutes / legs / cardio / full_body / other）"
+                                  },
+                                  "equipment": {
+                                    "type": "string"
+                                  },
+                                  "measurementType": {
+                                    "type": "string",
+                                    "enum": [
+                                      "weight",
+                                      "bodyweight",
+                                      "time",
+                                      "cardio"
+                                    ],
+                                    "description": "記録のしかた"
+                                  },
+                                  "loadMode": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "weighted",
+                                      "assisted"
+                                    ],
+                                    "description": "自重種目の負荷（自重のみ / 荷重 / 補助）"
+                                  },
+                                  "isCustom": {
+                                    "type": "boolean",
+                                    "description": "自分で作った種目か"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "muscleGroup",
+                                  "equipment",
+                                  "measurementType",
+                                  "loadMode",
+                                  "isCustom"
+                                ]
+                              },
+                              "sets": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "index": {
+                                      "type": "number"
+                                    },
+                                    "weightKg": {
+                                      "type": "number",
+                                      "description": "重量（kg）。補助付きの自重種目は負"
+                                    },
+                                    "reps": {
+                                      "type": "number"
+                                    },
+                                    "durationSeconds": {
+                                      "nullable": true,
+                                      "type": "number"
+                                    },
+                                    "distanceKm": {
+                                      "nullable": true,
+                                      "type": "number"
+                                    },
+                                    "isPR": {
+                                      "type": "boolean",
+                                      "description": "このセットで自己ベストを更新したか"
+                                    }
+                                  },
+                                  "required": [
+                                    "index",
+                                    "weightKg",
+                                    "reps",
+                                    "durationSeconds",
+                                    "distanceKm",
+                                    "isPR"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "exercise",
+                              "sets"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "date",
+                        "completedAt",
+                        "durationSeconds",
+                        "note",
+                        "exercises"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "404": {
+            "description": "見つからない",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "get_workout"
+      }
+    },
+    "/v1/exercises": {
+      "get": {
+        "operationId": "list_exercises",
+        "summary": "種目の一覧",
+        "description": "記録に使える種目（プリセットと自分の種目）。q で名前の一部か部位名（胸・背中・脚 など）で絞れる。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "名前の一部か部位名",
+            "schema": {
+              "description": "名前の一部か部位名",
+              "type": "string",
+              "maxLength": 40
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "muscleGroup": {
+                            "type": "string",
+                            "description": "部位（chest / back / shoulders / arms / abs / core / glutes / legs / cardio / full_body / other）"
+                          },
+                          "equipment": {
+                            "type": "string"
+                          },
+                          "measurementType": {
+                            "type": "string",
+                            "enum": [
+                              "weight",
+                              "bodyweight",
+                              "time",
+                              "cardio"
+                            ],
+                            "description": "記録のしかた"
+                          },
+                          "loadMode": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "weighted",
+                              "assisted"
+                            ],
+                            "description": "自重種目の負荷（自重のみ / 荷重 / 補助）"
+                          },
+                          "isCustom": {
+                            "type": "boolean",
+                            "description": "自分で作った種目か"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "muscleGroup",
+                          "equipment",
+                          "measurementType",
+                          "loadMode",
+                          "isCustom"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "list_exercises"
+      }
+    },
+    "/v1/exercises/{exerciseId}/history": {
+      "get": {
+        "operationId": "get_exercise_history",
+        "summary": "種目の履歴",
+        "description": "ある種目の過去の記録を新しい順に返す。1 回ごとのセット・いちばん良かったセットの推定 1RM・総量つき。伸びや停滞を見るのに使う。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exerciseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "回数（既定 20）",
+            "schema": {
+              "description": "回数（既定 20）",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "exercise": {
+                          "nullable": true,
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "muscleGroup": {
+                              "type": "string",
+                              "description": "部位（chest / back / shoulders / arms / abs / core / glutes / legs / cardio / full_body / other）"
+                            },
+                            "equipment": {
+                              "type": "string"
+                            },
+                            "measurementType": {
+                              "type": "string",
+                              "enum": [
+                                "weight",
+                                "bodyweight",
+                                "time",
+                                "cardio"
+                              ],
+                              "description": "記録のしかた"
+                            },
+                            "loadMode": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "weighted",
+                                "assisted"
+                              ],
+                              "description": "自重種目の負荷（自重のみ / 荷重 / 補助）"
+                            },
+                            "isCustom": {
+                              "type": "boolean",
+                              "description": "自分で作った種目か"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "muscleGroup",
+                            "equipment",
+                            "measurementType",
+                            "loadMode",
+                            "isCustom"
+                          ]
+                        },
+                        "sessions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "workoutId": {
+                                "type": "string"
+                              },
+                              "completedAt": {
+                                "type": "string"
+                              },
+                              "sets": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "index": {
+                                      "type": "number"
+                                    },
+                                    "weightKg": {
+                                      "type": "number",
+                                      "description": "重量（kg）。補助付きの自重種目は負"
+                                    },
+                                    "reps": {
+                                      "type": "number"
+                                    },
+                                    "durationSeconds": {
+                                      "nullable": true,
+                                      "type": "number"
+                                    },
+                                    "distanceKm": {
+                                      "nullable": true,
+                                      "type": "number"
+                                    },
+                                    "isPR": {
+                                      "type": "boolean",
+                                      "description": "このセットで自己ベストを更新したか"
+                                    }
+                                  },
+                                  "required": [
+                                    "index",
+                                    "weightKg",
+                                    "reps",
+                                    "durationSeconds",
+                                    "distanceKm",
+                                    "isPR"
+                                  ]
+                                }
+                              },
+                              "bestEst1RM": {
+                                "type": "number"
+                              },
+                              "volumeKg": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "workoutId",
+                              "completedAt",
+                              "sets",
+                              "bestEst1RM",
+                              "volumeKg"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "exercise",
+                        "sessions"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "404": {
+            "description": "見つからない",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "get_exercise_history"
+      }
+    },
+    "/v1/personal-records": {
+      "get": {
+        "operationId": "list_personal_records",
+        "summary": "自己ベスト",
+        "description": "種目ごと・種別ごと（最大重量・推定1RM・最大レップ・最長時間・最小補助）の自己ベストを、新しい順に返す。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "exerciseId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "exerciseName": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "number"
+                          },
+                          "achievedAt": {
+                            "type": "string"
+                          },
+                          "workoutId": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "exerciseId",
+                          "exerciseName",
+                          "type",
+                          "label",
+                          "value",
+                          "achievedAt",
+                          "workoutId"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "list_personal_records"
+      }
+    },
+    "/v1/body-metrics": {
+      "get": {
+        "operationId": "list_body_metrics",
+        "summary": "体重・体脂肪率",
+        "description": "アプリで記録した体重と体脂肪率を新しい順に返す。ヘルスケア（HealthKit）から取り込んだ値は返さない。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "日付（2026-11-01）か日時（2026-11-01T09:00:00+09:00）",
+            "schema": {
+              "type": "string",
+              "description": "日付（2026-11-01）か日時（2026-11-01T09:00:00+09:00）"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "日付（2026-11-01）か日時（2026-11-01T09:00:00+09:00）",
+            "schema": {
+              "type": "string",
+              "description": "日付（2026-11-01）か日時（2026-11-01T09:00:00+09:00）"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "件数（既定 90）",
+            "schema": {
+              "description": "件数（既定 90）",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "date": {
+                            "type": "string"
+                          },
+                          "weightKg": {
+                            "nullable": true,
+                            "type": "number"
+                          },
+                          "bodyFatPercent": {
+                            "nullable": true,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "date",
+                          "weightKg",
+                          "bodyFatPercent"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "list_body_metrics"
+      }
+    },
+    "/v1/party": {
+      "get": {
+        "operationId": "get_party",
+        "summary": "パーティと週ボス",
+        "description": "入っているパーティごとに、今週のボス・HP・与えたダメージ・自分の回数を返す。ほかのメンバーの名前や回数は返さない。",
+        "tags": [
+          "読む"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "read"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "partyId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "weekStart": {
+                            "type": "string"
+                          },
+                          "boss": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ]
+                          },
+                          "hp": {
+                            "type": "number"
+                          },
+                          "damage": {
+                            "type": "number"
+                          },
+                          "remainingHp": {
+                            "type": "number"
+                          },
+                          "defeated": {
+                            "type": "boolean"
+                          },
+                          "memberCount": {
+                            "type": "number"
+                          },
+                          "myHits": {
+                            "type": "number"
+                          },
+                          "myWeeklyGoal": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "partyId",
+                          "name",
+                          "weekStart",
+                          "boss",
+                          "hp",
+                          "damage",
+                          "remainingHp",
+                          "defeated",
+                          "memberCount",
+                          "myHits",
+                          "myWeeklyGoal"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（read が要る）"
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "read",
+        "x-mcp-tool": "get_party"
+      }
+    },
+    "/v1/coach/proposals": {
+      "post": {
+        "operationId": "propose_menu",
+        "summary": "メニューを提案する",
+        "description": "アプリのコーチ画面に、メッセージとメニューの提案を届ける。利用者がアプリで「取り込む」を押すと、その日の計画になる。アプリの計画を直接書き換えることはしない。重量は直近の記録から地続きの範囲にする。",
+        "tags": [
+          "書く"
+        ],
+        "security": [
+          {
+            "oauth2": [
+              "coach:write"
+            ]
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40,
+                    "description": "メニュー名（例: 胸と三頭）"
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": "コーチからのひと言（1〜3 文）"
+                  },
+                  "exercises": {
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 60,
+                          "description": "種目名（例: ベンチプレス）"
+                        },
+                        "sets": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10
+                        },
+                        "reps": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 50
+                        },
+                        "weightKg": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 500,
+                          "description": "重量（kg）。自重なら 0"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "sets",
+                        "reps",
+                        "weightKg"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "title",
+                  "message",
+                  "exercises"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "messageId": {
+                          "type": "string"
+                        },
+                        "proposal": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "exercises": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 60,
+                                    "description": "種目名（例: ベンチプレス）"
+                                  },
+                                  "sets": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 10
+                                  },
+                                  "reps": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 50
+                                  },
+                                  "weightKg": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 500,
+                                    "description": "重量（kg）。自重なら 0"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "sets",
+                                  "reps",
+                                  "weightKg"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "exercises"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "messageId",
+                        "proposal"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "入力の形が違う",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "トークンが無い・切れている"
+          },
+          "403": {
+            "description": "権限が足りない（coach:write が要る）"
+          },
+          "429": {
+            "description": "呼び出しが多すぎる。少し待ってから"
+          },
+          "500": {
+            "description": "サーバー側の失敗",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-required-scope": "coach:write",
+        "x-mcp-tool": "propose_menu"
+      }
+    }
+  }
+}

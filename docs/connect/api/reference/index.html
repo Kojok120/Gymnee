@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API リファレンス — Gymnee</title>
+<meta name="description" content="Gymnee API の全操作の入力と出力（OpenAPI から生成）。">
+<meta name="theme-color" content="#0B0D0C">
+<link rel="icon" href="../../../assets/favicon.ico" sizes="any">
+<style>body{margin:0;background:#0B0D0C}</style>
+</head>
+<body>
+<div id="app"></div>
+<!-- 中身は ../openapi.json（connect/src/api/operations.ts から pnpm openapi で書き出したもの）。手で書かない。 -->
+<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.73.1"></script>
+<script>
+  Scalar.createApiReference("#app", {
+    url: "../openapi.json",
+    darkMode: true,
+    forceDarkModeState: "dark",
+    hideDarkModeToggle: true,
+    metaData: { title: "Gymnee API リファレンス" },
+    defaultHttpClient: { targetKey: "shell", clientKey: "curl" },
+  });
+</script>
+</body>
+</html>
