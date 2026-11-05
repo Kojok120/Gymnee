@@ -15,7 +15,8 @@ import { decryptString, encryptString } from "../domain/crypto.js";
 import { generateWebhookSecret } from "../domain/standardWebhooks.js";
 import { authorizeUrl, providerConfigured, type ChatProvider } from "../integrations/chatOAuth.js";
 import { sendHello } from "../jobs/deliver.js";
-import type { DestinationRow } from "../db/repo.js";
+import type { DestinationRow, LineLinkRow } from "../db/repo.js";
+import { addFriendUrl, lineConfigured, linkMessageUrl } from "../integrations/line.js";
 
 type AppEnv = { Bindings: Env; Variables: { userId: string; repo: Repo } };
 
@@ -32,6 +33,25 @@ const CreateDestinationInput = z
     events: z.array(z.enum(EVENT_NAMES)).min(1).max(2).optional(),
   })
   .strict();
+
+const UpdateLineInput = z
+  .object({
+    notifyMode: z.enum(["off", "lapse", "daily", "daily_menu"]).optional(),
+    notifyHour: z.number().int().min(0).max(23).optional(),
+  })
+  .strict();
+
+export function lineView(env: Env, link: LineLinkRow | null) {
+  const basicId = env.LINE_BASIC_ID ?? null;
+  return {
+    configured: lineConfigured(env) && Boolean(basicId),
+    linked: Boolean(link),
+    notifyMode: link?.notify_mode ?? null,
+    notifyHour: link?.notify_hour ?? null,
+    linkedAt: link?.linked_at ?? null,
+    addFriendUrl: basicId ? addFriendUrl(basicId) : null,
+  };
+}
 
 const UpdateDestinationInput = z
   .object({ events: z.array(z.enum(EVENT_NAMES)).min(1).max(2) })
@@ -78,10 +98,11 @@ export function appRoutes() {
   app.get("/connections", async (c) => {
     const userId = c.get("userId");
     const oauth = authorizationServer(c.env).getOAuthApi(c.env);
-    const [tokens, grants, destinations] = await Promise.all([
+    const [tokens, grants, destinations, lineLink] = await Promise.all([
       c.get("repo").listApiTokens(userId),
       oauth.listUserGrants(userId),
       c.get("repo").listDestinations(userId),
+      c.get("repo").lineLinkByUser(userId),
     ]);
     return c.json({
       mcpUrl: resourceUrls(c.env.PUBLIC_ORIGIN).mcp,
@@ -94,6 +115,7 @@ export function appRoutes() {
         scopes: describeScopes(g.scope.filter((s) => s !== "offline_access")),
         createdAt: new Date(g.createdAt * 1000).toISOString(),
       })),
+      line: lineView(c.env, lineLink),
       destinations: destinations.map(destinationView),
       providers: { slack: providerConfigured(c.env, "slack"), discord: providerConfigured(c.env, "discord") },
       apiTokens: tokens.map((t) => ({
@@ -126,6 +148,27 @@ export function appRoutes() {
   app.delete("/tokens/:id", async (c) => {
     const ok = await c.get("repo").revokeApiToken(c.get("userId"), c.req.param("id"));
     return ok ? c.body(null, 204) : c.json({ error: { code: "not_found", message: "その API キーは無い" } }, 404);
+  });
+
+  // ---- LINE ----
+
+  // 連携コードを作り、LINE のトークを「連携 123456」が入った状態で開く URL を返す。
+  app.post("/line/link-code", async (c) => {
+    if (!lineConfigured(c.env) || !c.env.LINE_BASIC_ID) return c.json({ error: { code: "not_configured", message: "準備中です" } }, 503);
+    const { code, expiresAt } = await c.get("repo").createLinkCode(c.get("userId"));
+    return c.json({ code, expiresAt, openUrl: linkMessageUrl(c.env.LINE_BASIC_ID, code), addFriendUrl: addFriendUrl(c.env.LINE_BASIC_ID) }, 201);
+  });
+
+  app.patch("/line", async (c) => {
+    const parsed = UpdateLineInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: { code: "invalid_request", message: "通知の設定を確かめて" } }, 400);
+    const row = await c.get("repo").updateLineSettings(c.get("userId"), parsed.data);
+    return row ? c.json({ line: lineView(c.env, row) }) : c.json({ error: { code: "not_linked", message: "LINE と連携していません" } }, 404);
+  });
+
+  app.delete("/line", async (c) => {
+    await c.get("repo").unlinkLine(c.get("userId"));
+    return c.body(null, 204);
   });
 
   // ---- 送り先（Slack / Discord / 汎用 Webhook） ----

@@ -12,7 +12,8 @@
 | `/authorize` ほか `/.well-known/*`・`/oauth/*` | OAuth 2.1 の認可サーバー（`@cloudflare/workers-oauth-provider`） | 承認は iPhone の Gymnee で行う |
 | `/app/*` | iOS アプリ向け（連携の一覧・API キー・承認・送り先） | アプリのサインイン（Supabase のアクセストークン） |
 | `/slack/callback`・`/discord/callback` | 「追加」ボタンの戻り先 | 署名した state |
-| cron（毎分） | 送り先への配信・週のふりかえり・掃除 | — |
+| `/line/webhook` | LINE の Webhook（コーチ・記録・連携コード） | `X-Line-Signature` |
+| cron（毎分） | 送り先への配信・週のふりかえり・LINE の毎日の通知・掃除 | — |
 | `/openapi.json` | API の仕様 | なし |
 
 ## 不変条件（崩さない）
@@ -41,6 +42,20 @@
 - 「追加」ボタン（Slack の `incoming-webhook`・Discord の `webhook.incoming`）は `src/integrations/chatOAuth.ts`。state に利用者 id と用途を署名して載せ、別の用途の state を通さない。戻り先は `gymnee://connect/done`（アプリは ASWebAuthenticationSession で受ける）
 - ローカルで cron を呼ぶ: `wrangler dev --env local --test-scheduled` で起動し `curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=*+*+*+*+*"`（`pnpm e2e:local` がやる）
 
+## LINE（3 段目）
+
+- 連携は LINE ログインを使わない。アプリが 6 桁の連携コード（`line_link_codes`。10 分・1 回きり）を作り、`https://line.me/R/oaMessage/<basic id>/?連携 123456` を開く。利用者がそのまま送ると webhook が紐付ける（`line_links`。1 つの LINE は 1 アカウントだけ）。総当たりは LINE の利用者ごとに 1 時間 10 回で止める
+- グループ・トークルームからのイベントには答えない（個人の記録を他人に見せない）。ブロック（unfollow）で紐付けを消す
+- 返事はすべて Reply API（通数に数えない）。通数に数えるのは毎日の通知（Push）だけ
+- 文で来たら AI（`src/domain/lineCoach.ts`。人格は coach-chat の写し。変えるときは両方直す）が「記録・メニュー・相談」を見分ける
+  - 記録: すぐには書かない。`line_pending_logs` に置いて「記録する／やめる」を出し、押されたら書く（先に押された 1 回だけ。鍵も確認待ちの id）。種目が決まらなければ候補のボタン（`pick:`）を出す
+  - メニュー: `coach_messages.proposal`（channel=line）にも書き、アプリで取り込めるようにする。「やった！記録する」（`doneplan:`）で記録の確認に進む
+  - 相談: 会話は `coach_messages` に channel=line で残す（アプリのコーチと会話を共有する）
+- AI の呼び出しは LINE から 1 人 1 日 30 回まで（`connect_take_ai_quota`）。アプリの CoachQuota は端末だけなのでサーバーでも数える
+- 毎日の通知（`src/jobs/lineDaily.ts`）: その時刻（JST）の人を、今日まだの人だけ取り出す（取り出した時点で今日は送った扱い）。今日もう記録した人には送らない。「途切れそう」は最後の記録から 3 日目から 3 日分（アプリの `ReengagementReminder` と同じ）。1 人 1 日 1 通で、`X-Line-Retry-Key` で二重に送らない
+- 通数の残りが上限の 1 割（少なくとも 10 通）を切ったら、途切れそうな人への通知だけ送る（`allowPush`）。止めたら `OPS_ALERT_WEBHOOK_URL` に知らせる（1 日 1 回）
+- 公式アカウントの初期設定（Webhook の URL・リッチメニュー）は `scripts/line-setup.mjs`。画像は `scripts/make-richmenu-image.py` で作る。本番への反映なので、流すのは岡本さんの OK のあと
+
 ## OAuth の承認の流れ
 
 ログインの代わりに「iPhone の Gymnee で承認」する（利用者の多くが Apple サインインで、Web のログインを用意できないため）。
@@ -64,6 +79,7 @@ pnpm e2e:local                        # PAT・REST・MCP・送り先と配信・
 # DB の関数の検証（ローカル Supabase に対して。begin/rollback で何も残さない）
 psql postgresql://postgres:postgres@127.0.0.1:54422/postgres -v ON_ERROR_STOP=1 -f ../scripts/sqltest/connect_local_test.sql
 psql postgresql://postgres:postgres@127.0.0.1:54422/postgres -v ON_ERROR_STOP=1 -f ../scripts/sqltest/connect_webhooks_local_test.sql
+psql postgresql://postgres:postgres@127.0.0.1:54422/postgres -v ON_ERROR_STOP=1 -f ../scripts/sqltest/connect_line_local_test.sql
 ```
 
 - `cloudflare:workers` は vitest（Node）に無いので、`test/stubs/` の代役を当てている

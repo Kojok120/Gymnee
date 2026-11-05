@@ -97,7 +97,7 @@ export async function handleRest(
     if (idempotencyKey !== undefined && (idempotencyKey.length < 8 || idempotencyKey.length > 100)) {
       return json(errorBody("invalid_request", "Idempotency-Key は 8〜100 文字"), 400);
     }
-    const data = await op.run({ userId: ctx.userId, service: ctx.service, idempotencyKey }, input);
+    const data = await op.run({ userId: ctx.userId, service: ctx.service, idempotencyKey, channel: "api" }, input);
     const status = op.method === "POST" && (data as { created?: boolean })?.created !== false ? 201 : 200;
     return json({ data }, status);
   } catch (error) {

@@ -53,6 +53,39 @@ final class ConnectService {
         }
     }
 
+    /// LINE の連携（#171 の 3 段目）。
+    struct Line: Decodable, Hashable, Sendable {
+        let configured: Bool
+        let linked: Bool
+        let notifyMode: String?
+        let notifyHour: Int?
+        let linkedAt: String?
+        let addFriendUrl: String?
+
+        static let unavailable = Line(configured: false, linked: false, notifyMode: nil, notifyHour: nil, linkedAt: nil, addFriendUrl: nil)
+    }
+
+    /// LINE の通知の出し方。サーバーの line_links.notify_mode と同じ値。
+    enum LineNotifyMode: String, CaseIterable, Identifiable, Sendable {
+        case off, lapse, daily, dailyMenu = "daily_menu"
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .off: return "送らない"
+            case .lapse: return "途切れそうなときだけ"
+            case .daily: return "毎日"
+            case .dailyMenu: return "毎日＋メニュー提案"
+            }
+        }
+    }
+
+    struct LinkCode: Decodable, Sendable {
+        let code: String
+        let expiresAt: String
+        let openUrl: String
+        let addFriendUrl: String
+    }
+
     struct Providers: Decodable, Hashable, Sendable {
         let slack: Bool
         let discord: Bool
@@ -66,9 +99,10 @@ final class ConnectService {
         let apiTokens: [ApiToken]
         let destinations: [Destination]
         let providers: Providers
+        let line: Line
 
         init(mcpUrl: String, apiBaseUrl: String, docsUrl: String, aiClients: [AIClient], apiTokens: [ApiToken],
-             destinations: [Destination] = [], providers: Providers = Providers(slack: false, discord: false)) {
+             destinations: [Destination] = [], providers: Providers = Providers(slack: false, discord: false), line: Line = .unavailable) {
             self.mcpUrl = mcpUrl
             self.apiBaseUrl = apiBaseUrl
             self.docsUrl = docsUrl
@@ -76,9 +110,10 @@ final class ConnectService {
             self.apiTokens = apiTokens
             self.destinations = destinations
             self.providers = providers
+            self.line = line
         }
 
-        private enum CodingKeys: String, CodingKey { case mcpUrl, apiBaseUrl, docsUrl, aiClients, apiTokens, destinations, providers }
+        private enum CodingKeys: String, CodingKey { case mcpUrl, apiBaseUrl, docsUrl, aiClients, apiTokens, destinations, providers, line }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -90,6 +125,7 @@ final class ConnectService {
             // 送り先は 2 段目で足した。古いサーバーが返さなくても一覧は出す。
             destinations = try c.decodeIfPresent([Destination].self, forKey: .destinations) ?? []
             providers = try c.decodeIfPresent(Providers.self, forKey: .providers) ?? Providers(slack: false, discord: false)
+            line = try c.decodeIfPresent(Line.self, forKey: .line) ?? .unavailable
         }
     }
 
@@ -198,6 +234,26 @@ final class ConnectService {
         await load()
     }
 
+    // MARK: - LINE
+
+    /// 連携コードを作る。返る URL を開くと、LINE のトークに「連携 123456」が入った状態になる。
+    func lineLinkCode() async throws -> LinkCode {
+        try Self.decode(LinkCode.self, try await call("POST", "app/line/link-code"))
+    }
+
+    func updateLine(mode: LineNotifyMode? = nil, hour: Int? = nil) async throws {
+        var body: [String: Any] = [:]
+        if let mode { body["notifyMode"] = mode.rawValue }
+        if let hour { body["notifyHour"] = hour }
+        try await call("PATCH", "app/line", body: body)
+        await load()
+    }
+
+    func unlinkLine() async throws {
+        try await call("DELETE", "app/line")
+        await load()
+    }
+
     // MARK: - 送り先（Slack / Discord / 汎用 Webhook）
 
     func addDestination(url: String, label: String?) async throws -> CreatedDestination {
@@ -278,7 +334,8 @@ final class ConnectService {
                 Destination(id: "d2", kind: "discord", label: "Discord（ジム仲間）", events: [Destination.weeklySummary],
                             disabledReason: "送り先が見つからない（チャンネルか Webhook が消された）", lastDeliveredAt: nil, createdAt: "2026-11-03T10:00:00.000Z"),
             ],
-            providers: Providers(slack: true, discord: true)
+            providers: Providers(slack: true, discord: true),
+            line: Line(configured: true, linked: true, notifyMode: "daily_menu", notifyHour: 7, linkedAt: "2026-11-05T22:00:00.000Z", addFriendUrl: "https://line.me/R/ti/p/@gymnee")
         )
     }
     #endif

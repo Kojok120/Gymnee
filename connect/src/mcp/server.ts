@@ -89,7 +89,7 @@ export function buildMcpServer(ctx: { userId: string; scopes: string[]; service:
     const parsed = op.input.safeParse(request.params.arguments ?? {});
     if (!parsed.success) return toolError("引数の形が違う", z.treeifyError(parsed.error));
     try {
-      return toolResult(await op.run({ userId: ctx.userId, service: ctx.service }, parsed.data));
+      return toolResult(await op.run({ userId: ctx.userId, service: ctx.service, channel: "mcp" }, parsed.data));
     } catch (error) {
       if (error instanceof OperationError) return toolError(error.message, error.details);
       console.error("mcp tool error", op.id, error instanceof Error ? error.message : String(error));
