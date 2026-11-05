@@ -4,6 +4,12 @@
 # v3 では db / migration 系を対象無しで叩くとローカルを向き、ホストを変える操作は確認か --yes が要る。
 project_id = "gymnee-local"
 
+# ローカルは CLI v3 の実験版スタックで動かす。Docker が無ければ native（素のプロセス。Apple silicon・macOS 14+）
+# になり、この Mac（Docker 無し）でも supabase start / db reset が使える。手順と制約は docs/local-dev.md。
+# サービスの版は supabase/supabase.lock で固定する（コミット対象）。
+[experimental]
+stack = true
+
 # ローカルポートは既定(5432x)から +100 した専用ブロック(5442x)。1台で他のローカル Supabase
 # プロジェクトを同時に動かしても衝突しないようにするため。アプリ(Debug)の接続先は API port の
 # 127.0.0.1:54421（Config/Secrets.dev.xcconfig と docs/local-dev.md を参照）。
