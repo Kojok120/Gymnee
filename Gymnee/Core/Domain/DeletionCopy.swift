@@ -72,7 +72,7 @@ enum DeletionCopy {
             return AccountDeletion(
                 buttonLabel: "アカウントを削除",
                 title: "アカウントを削除しますか？",
-                message: "サーバー上の記録・フレンド・投稿・連携（AI・Slack・Discord）もすべて消え、ほかの端末からも見られなくなります。サインアウトされ、元に戻せません。",
+                message: "サーバー上の記録・フレンド・投稿・連携（LINE・AI・Slack・Discord）もすべて消え、ほかの端末からも見られなくなります。サインアウトされ、元に戻せません。",
                 confirmLabel: "アカウントを削除",
                 footer: "アカウントを削除すると、この端末とサーバーの両方からデータが消えます。残したい記録は先に CSV で書き出してください。"
             )
