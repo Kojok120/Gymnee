@@ -215,7 +215,7 @@ export class GymneeService {
   }
 
   /** アプリのコーチ画面にメニューを提案する。取り込むかは利用者がアプリで決める。 */
-  async proposeMenu(userId: string, input: MenuProposalInput) {
+  async proposeMenu(userId: string, input: MenuProposalInput, channel: "line" | "mcp" | "api" = "mcp") {
     const proposal = {
       title: input.title.slice(0, 40) || "今日のメニュー",
       exercises: input.exercises.slice(0, 8).map((e) => ({
@@ -225,7 +225,7 @@ export class GymneeService {
         weightKg: clampInt(e.weightKg, 0, 500),
       })),
     };
-    const { id } = await this.repo.addCoachMessage(userId, { body: input.message, isFromCoach: true, proposal });
+    const { id } = await this.repo.addCoachMessage(userId, { body: input.message, isFromCoach: true, proposal, channel });
     return { messageId: id, proposal };
   }
 }

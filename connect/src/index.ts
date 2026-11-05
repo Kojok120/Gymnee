@@ -7,7 +7,8 @@
 //   /openapi.json                                  API の仕様（認証なし）
 //   /app/*                                         iOS アプリ向け（アプリのサインイン）
 //   /slack/callback, /discord/callback              「追加」ボタンの戻り先（state で利用者を確かめる）
-//   scheduled（毎分）                               送り先への配信（jobs/deliver.ts）
+//   /line/webhook                                  LINE の Webhook（署名を確かめる）
+//   scheduled（毎分）                               送り先への配信（jobs/deliver.ts）・LINE の毎日の通知（jobs/lineDaily.ts）
 
 import { Hono } from "hono";
 import type { Env } from "./env.js";
@@ -23,6 +24,9 @@ import { handleMcp } from "./mcp/server.js";
 import { appRoutes, MAX_DESTINATIONS_PER_USER } from "./app/routes.js";
 import { backToApp, exchange, type ChatProvider } from "./integrations/chatOAuth.js";
 import { runDeliveries, sendHello } from "./jobs/deliver.js";
+import { runLineDaily } from "./jobs/lineDaily.js";
+import { handleLineEvents } from "./line/webhook.js";
+import { LineClient, lineConfigured, verifyLineSignature } from "./integrations/line.js";
 import { encryptString } from "./domain/crypto.js";
 
 function repoFor(env: Env): Repo {
@@ -83,6 +87,24 @@ app.on(["GET", "POST", "OPTIONS"], ["/v1", "/v1/*", "/.well-known/oauth-protecte
 // ---- アプリ向け ----
 app.route("/app", appRoutes());
 
+// ---- LINE の Webhook ----
+// すぐ 200 を返し、中身はあとで処理する（LINE は返事が遅いと再送する）。
+app.post("/line/webhook", async (c) => {
+  if (!lineConfigured(c.env)) return c.body(null, 503);
+  const body = await c.req.text();
+  if (!(await verifyLineSignature(c.env.LINE_MESSAGING_CHANNEL_SECRET ?? "", body, c.req.header("x-line-signature") ?? null))) {
+    return c.body(null, 401);
+  }
+  let events: Parameters<typeof handleLineEvents>[1] = [];
+  try {
+    events = (JSON.parse(body) as { events?: typeof events }).events ?? [];
+  } catch {
+    return c.body(null, 400);
+  }
+  c.executionCtx.waitUntil(handleLineEvents({ env: c.env, repo: repoFor(c.env), line: new LineClient(c.env) }, events));
+  return c.body(null, 200);
+});
+
 // ---- Slack / Discord の「追加」ボタンの戻り先 ----
 app.get("/:provider{slack|discord}/callback", async (c) => {
   const provider = c.req.param("provider") as ChatProvider;
@@ -117,6 +139,14 @@ export default {
           if (r.sent > 0 || r.fannedOut > 0 || r.weekly > 0) console.log("deliveries", JSON.stringify(r));
         },
         (e) => console.error("deliveries failed", e instanceof Error ? e.message : String(e)),
+      ),
+    );
+    ctx.waitUntil(
+      runLineDaily(env, repoFor(env)).then(
+        (r) => {
+          if (r.claimed > 0) console.log("line daily", JSON.stringify(r));
+        },
+        (e) => console.error("line daily failed", e instanceof Error ? e.message : String(e)),
       ),
     );
   },

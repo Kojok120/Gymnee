@@ -2,7 +2,7 @@
 // どの関数も最初の引数に「認証で確かめた利用者 id」を取り、必ずその id で絞る。
 // 呼び出し側（API・MCP・LINE）から来た値で、ほかの利用者の行に届く経路を作らない。
 
-import { assertUuid, type Postgrest } from "./postgrest.js";
+import { assertUuid, PostgrestError, type Postgrest } from "./postgrest.js";
 import type { ExerciseInfo, LoadMode, MeasurementType, PersonalRecordRow, WorkoutRecord } from "../domain/types.js";
 
 // ---- 行の形（PostgREST の返り値） ----
@@ -140,6 +140,16 @@ export interface DeliveryRow {
   status: string;
   attempts: number;
   next_attempt_at: string;
+}
+
+export interface LineLinkRow {
+  user_id: string;
+  line_user_id: string;
+  notify_mode: "off" | "lapse" | "daily" | "daily_menu";
+  notify_hour: number;
+  last_notified_on: string | null;
+  linked_at: string;
+  updated_at: string;
 }
 
 export interface PartyOverview {
@@ -303,7 +313,7 @@ export class Repo {
   /** アプリのコーチ画面にメッセージ（と提案）を置く。アプリは差分 pull で受け取る。 */
   async addCoachMessage(
     userId: string,
-    message: { body: string; isFromCoach: boolean; proposal?: unknown },
+    message: { body: string; isFromCoach: boolean; proposal?: unknown; channel?: "app" | "line" | "mcp" | "api" },
   ): Promise<{ id: string }> {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
@@ -316,12 +326,25 @@ export class Repo {
         body: message.body.slice(0, 4000),
         proposal: message.proposal ?? null,
         is_applied: false,
+        ...(message.channel ? { channel: message.channel } : {}),
         created_at: now,
         updated_at: now,
       },
       { returning: false },
     );
     return { id };
+  }
+
+  /** 本人のコーチの提案（LINE の「やった！記録する」で使う）。 */
+  async coachProposal(userId: string, messageId: string): Promise<{ title: string; exercises: { name: string; sets: number; reps: number; weightKg: number }[] } | null> {
+    const rows = await this.db.select<{ proposal: { title?: string; exercises?: { name: string; sets: number; reps: number; weightKg: number }[] } | null }>("coach_messages", {
+      select: "proposal",
+      id: `eq.${assertUuid(messageId)}`,
+      user_id: `eq.${assertUuid(userId)}`,
+    });
+    const p = rows[0]?.proposal;
+    if (!p || !Array.isArray(p.exercises) || p.exercises.length === 0) return null;
+    return { title: p.title ?? "今日のメニュー", exercises: p.exercises };
   }
 
   async recentCoachMessages(userId: string, limit = 12): Promise<{ isFromCoach: boolean; body: string; createdAt: string }[]> {
@@ -505,6 +528,135 @@ export class Repo {
 
   purge(): Promise<void> {
     return this.db.rpc("connect_purge", {});
+  }
+
+  // ---- LINE ----
+
+  async lineLinkByUser(userId: string): Promise<LineLinkRow | null> {
+    const rows = await this.db.select<LineLinkRow>("line_links", { select: "*", user_id: `eq.${assertUuid(userId)}` });
+    return rows[0] ?? null;
+  }
+
+  /** LINE の利用者 id から持ち主を引く（webhook の入口。LINE の署名を確かめたあとだけ呼ぶ）。 */
+  async lineLinkByLineUser(lineUserId: string): Promise<LineLinkRow | null> {
+    if (!/^U[0-9a-f]{32}$/.test(lineUserId)) return null;
+    const rows = await this.db.select<LineLinkRow>("line_links", { select: "*", line_user_id: `eq.${lineUserId}` });
+    return rows[0] ?? null;
+  }
+
+  /** 連携コードを作る（前のコードは消す）。6 桁の数字。 */
+  async createLinkCode(userId: string): Promise<{ code: string; expiresAt: string }> {
+    await this.db.delete("line_link_codes", { user_id: `eq.${assertUuid(userId)}` });
+    for (let i = 0; i < 5; i++) {
+      const n = new Uint32Array(1);
+      crypto.getRandomValues(n);
+      const code = String(n[0]! % 1_000_000).padStart(6, "0");
+      try {
+        const rows = await this.db.insert<{ code: string; expires_at: string }>("line_link_codes", { code, user_id: assertUuid(userId) });
+        return { code, expiresAt: rows[0]!.expires_at };
+      } catch (error) {
+        if (!(error instanceof PostgrestError && error.code === "23505")) throw error;
+      }
+    }
+    throw new Error("連携コードを作れなかった");
+  }
+
+  /** 連携コードを使い切って持ち主を返す。切れている・無ければ null。 */
+  async consumeLinkCode(code: string): Promise<string | null> {
+    if (!/^[0-9]{6}$/.test(code)) return null;
+    const rows = await this.db.select<{ user_id: string }>("line_link_codes", {
+      select: "user_id",
+      code: `eq.${code}`,
+      expires_at: `gt.${new Date().toISOString()}`,
+    });
+    const userId = rows[0]?.user_id;
+    if (!userId) return null;
+    await this.db.delete("line_link_codes", { code: `eq.${code}` });
+    return userId;
+  }
+
+  /** 連携コードの試行を数える（総当たりを止める）。この 1 時間の回数を返す。 */
+  async recordLinkAttempt(lineUserId: string): Promise<number> {
+    await this.db.insert("line_link_attempts", { line_user_id: lineUserId }, { returning: false });
+    const rows = await this.db.select<{ line_user_id: string }>("line_link_attempts", {
+      select: "line_user_id",
+      line_user_id: `eq.${lineUserId}`,
+      attempted_at: `gt.${new Date(Date.now() - 3_600_000).toISOString()}`,
+    });
+    return rows.length;
+  }
+
+  /** 紐付ける。この LINE が別のアカウントに付いていれば "already"。同じアカウントの前の LINE は付け替える。 */
+  async linkLine(userId: string, lineUserId: string): Promise<"linked" | "already"> {
+    const existing = await this.lineLinkByLineUser(lineUserId);
+    if (existing && existing.user_id !== userId) return "already";
+    await this.db.insert(
+      "line_links",
+      { user_id: assertUuid(userId), line_user_id: lineUserId, linked_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { onConflict: "user_id", returning: false },
+    );
+    return "linked";
+  }
+
+  async updateLineSettings(userId: string, settings: { notifyMode?: string; notifyHour?: number }): Promise<LineLinkRow | null> {
+    const rows = await this.db.update<LineLinkRow>(
+      "line_links",
+      { user_id: `eq.${assertUuid(userId)}` },
+      {
+        ...(settings.notifyMode ? { notify_mode: settings.notifyMode } : {}),
+        ...(settings.notifyHour !== undefined ? { notify_hour: settings.notifyHour } : {}),
+        updated_at: new Date().toISOString(),
+      },
+    );
+    return rows[0] ?? null;
+  }
+
+  async unlinkLine(userId: string): Promise<void> {
+    await this.db.delete("line_links", { user_id: `eq.${assertUuid(userId)}` });
+  }
+
+  /** ブロック（友だち解除）されたら紐付けを消す。 */
+  async unlinkLineUser(lineUserId: string): Promise<void> {
+    if (!/^U[0-9a-f]{32}$/.test(lineUserId)) return;
+    await this.db.delete("line_links", { line_user_id: `eq.${lineUserId}` });
+  }
+
+  claimLineNotifications(hour: number, day: string, limit = 20): Promise<LineLinkRow[]> {
+    return this.db.rpc("connect_claim_line_notifications", { p_hour: hour, p_day: day, p_limit: limit });
+  }
+
+  takeAiQuota(userId: string, day: string, limit: number): Promise<boolean> {
+    return this.db.rpc("connect_take_ai_quota", { p_user: assertUuid(userId), p_day: day, p_limit: limit });
+  }
+
+  async createPendingLog(userId: string, payload: unknown): Promise<string> {
+    const rows = await this.db.insert<{ id: string }>("line_pending_logs", { user_id: assertUuid(userId), payload });
+    return rows[0]!.id;
+  }
+
+  async pendingLog(userId: string, id: string): Promise<unknown | null> {
+    const rows = await this.db.select<{ payload: unknown }>("line_pending_logs", {
+      select: "payload",
+      id: `eq.${assertUuid(id)}`,
+      user_id: `eq.${assertUuid(userId)}`,
+      consumed_at: "is.null",
+      expires_at: `gt.${new Date().toISOString()}`,
+    });
+    return rows[0]?.payload ?? null;
+  }
+
+  async updatePendingLog(userId: string, id: string, payload: unknown): Promise<void> {
+    await this.db.update("line_pending_logs", { id: `eq.${assertUuid(id)}`, user_id: `eq.${assertUuid(userId)}`, consumed_at: "is.null" }, { payload });
+  }
+
+  /** 確認待ちを使い切る。先に押された方だけが true（二重に記録しない）。 */
+  async consumePendingLog(userId: string, id: string): Promise<boolean> {
+    const rows = await this.db.update<{ id: string }>(
+      "line_pending_logs",
+      { id: `eq.${assertUuid(id)}`, user_id: `eq.${assertUuid(userId)}`, consumed_at: "is.null", expires_at: `gt.${new Date().toISOString()}` },
+      { consumed_at: new Date().toISOString() },
+    );
+    return rows.length > 0;
   }
 
   // ---- PAT ----

@@ -6,3 +6,8 @@ SUPABASE_SERVICE_ROLE_KEY=
 ENCRYPTION_KEY=
 # openssl rand -hex 32
 STATE_SECRET=
+
+# LINE を手元で確かめるときだけ（本物のチャネルでなくてよい。返信は失敗するが、連携の紐付けまでは確かめられる）
+LINE_MESSAGING_CHANNEL_ID=local
+LINE_MESSAGING_CHANNEL_SECRET=local-line-secret
+LINE_BASIC_ID=@gymnee-local

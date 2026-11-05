@@ -11,6 +11,8 @@ export interface OperationContext {
   service: GymneeService;
   /** 記録の追加の再送を見分ける鍵（REST は Idempotency-Key ヘッダー、MCP は引数）。 */
   idempotencyKey?: string;
+  /** どの入口から来たか（コーチの会話の出どころに残す）。 */
+  channel?: "mcp" | "api";
 }
 
 export interface Operation {
@@ -344,7 +346,7 @@ export const operations: Operation[] = [
     readOnly: false,
     idempotent: false,
     run: (ctx, input) =>
-      ctx.service.proposeMenu(ctx.userId, input as { title: string; message: string; exercises: z.infer<typeof MenuExercise>[] }),
+      ctx.service.proposeMenu(ctx.userId, input as { title: string; message: string; exercises: z.infer<typeof MenuExercise>[] }, ctx.channel ?? "api"),
   },
 ];
 

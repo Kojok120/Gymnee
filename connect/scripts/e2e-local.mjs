@@ -7,7 +7,8 @@
 // 4.5 送り先（汎用 Webhook）を足し、記録の完了が届くまで（cron を手で呼ぶ）
 // 5. OAuth（DCR → 承認画面 → アプリで承認 → トークン）で MCP を呼ぶ
 // 6. 後片付け（作った利用者を消す。記録は連鎖削除）
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
 const WORKER = process.env.WORKER ?? "http://localhost:8787";
@@ -20,6 +21,10 @@ const PSQL = process.env.PSQL ?? "/opt/homebrew/opt/postgresql@16/bin/psql";
 const sql = (q) => execFileSync(PSQL, [DB_URL, "-tAX", "-c", q], { encoding: "utf8" }).trim();
 // 汎用 Webhook の確かめに使う、公開の受け口（POST に 200 を返すもの）
 const ECHO_URL = process.env.ECHO_URL ?? "https://httpbin.org/post";
+// LINE を手元で確かめるときの秘密（.dev.vars.local に書いてあれば LINE の連携も確かめる）
+const devVars = Object.fromEntries(
+  readFileSync(new URL("../.dev.vars.local", import.meta.url), "utf8").split("\n").filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
+);
 
 let failures = 0;
 function check(label, ok, detail) {
@@ -140,6 +145,31 @@ try {
   check("送る内容を変える", JSON.stringify(patched.destination?.events) === '["weekly.summary"]', patched);
   const removed = await app(`/destinations/${destId}`, { method: "DELETE" });
   check("送り先を消す", removed.status === 204 && (await app("/connections").then(j)).destinations?.length === 0);
+
+  // ---- 4.6 LINE の連携（返信は本物の LINE が無いので失敗するが、紐付けまでは確かめる） ----
+  if (devVars.LINE_MESSAGING_CHANNEL_SECRET) {
+    const lineUser = "U" + randomBytes(16).toString("hex");
+    const codeRes = await app("/line/link-code", { method: "POST" });
+    const codeBody = await j(codeRes);
+    check("LINE の連携コードを作る（トークを開く URL つき）", codeRes.status === 201 && /^[0-9]{6}$/.test(codeBody.code) && codeBody.openUrl?.includes("oaMessage"), codeBody);
+    const event = (text) => JSON.stringify({ events: [{ type: "message", replyToken: "r", source: { type: "user", userId: lineUser }, message: { type: "text", text } }] });
+    const send = (body, secret = devVars.LINE_MESSAGING_CHANNEL_SECRET) =>
+      fetch(`${WORKER}/line/webhook`, { method: "POST", headers: { "Content-Type": "application/json", "X-Line-Signature": createHmac("sha256", secret).update(body).digest("base64") }, body });
+    check("署名の違う webhook は断る（401）", (await send(event(`連携 ${codeBody.code}`), "wrong")).status === 401);
+    check("署名の正しい webhook は受ける（200）", (await send(event(`連携 ${codeBody.code}`))).status === 200);
+    let linked = "";
+    for (let i = 0; i < 10 && !linked; i++) {
+      linked = sql(`select user_id from public.line_links where line_user_id = '${lineUser}'`);
+      if (!linked) await new Promise((r) => setTimeout(r, 500));
+    }
+    check("連携コードで LINE が紐付く", linked === userId, linked);
+    check("使った連携コードは消える", sql(`select count(*) from public.line_link_codes where code = '${codeBody.code}'`) === "0");
+    const lineView = (await app("/connections").then(j)).line;
+    check("連携の一覧に LINE が出る（既定は毎日 7 時）", lineView?.linked === true && lineView?.notifyMode === "daily" && lineView?.notifyHour === 7, lineView);
+    const patchedLine = await app("/line", { method: "PATCH", body: JSON.stringify({ notifyMode: "daily_menu", notifyHour: 21 }) }).then(j);
+    check("通知の出し方と時刻を変える", patchedLine.line?.notifyMode === "daily_menu" && patchedLine.line?.notifyHour === 21, patchedLine);
+    check("LINE の連携を解除する", (await app("/line", { method: "DELETE" })).status === 204 && sql(`select count(*) from public.line_links where user_id = '${userId}'`) === "0");
+  }
 
   // ---- 5. OAuth ----
   const prm = await fetch(`${WORKER}/.well-known/oauth-protected-resource/mcp`).then(j);
