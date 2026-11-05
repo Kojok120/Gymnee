@@ -24,11 +24,17 @@ struct GymneeApp: App {
                 .environment(env.party)
                 .environment(env.calendar)
                 .environment(env.googleCalendar)
+                .environment(env.connect)
                 .modelContainer(env.container)
                 // Google サインインの OAuth コールバック（reversed client id スキーム）と
                 // フレンド招待の Universal Link（https://gymnee.app/invite/?u=...）を処理。
                 .onOpenURL { url in
                     if env.googleCalendar.handleURL(url) { return }
+                    // AI（MCP クライアント）の接続の承認（#171）。RootView がシートで出す。
+                    if let pairingId = ConnectLink.pairingId(from: url) {
+                        env.connect.pendingPairingId = pairingId
+                        return
+                    }
                     // 週ボスのパーティ招待。参加は育成タブのボス画面で確認してから行う（issue #128）。
                     if let partyId = PartyInviteLink.partyId(from: url) {
                         UserDefaults.standard.set(partyId.uuidString, forKey: PartyInviteLink.pendingDefaultsKey)

@@ -663,6 +663,21 @@ actor SupabaseClient {
         return try await send(request)
     }
 
+    // MARK: - 外部連携（api.gymnee.app。#171）
+
+    /// 外部連携の Worker を、サインイン中の本人として呼ぶ。Worker は Supabase の /auth/v1/user で本人を確かめる。
+    /// 401 のときは REST と同じく refresh_token で一度だけ更新して再試行する（`send` が受け持つ）。
+    @discardableResult
+    func connectCall(method: String, path: String, body: [String: Any]? = nil) async throws -> Data {
+        guard accessToken != nil else { throw SupabaseError.http(status: 401, body: "not signed in") }
+        var request = URLRequest(url: ConnectEndpoint.baseURL(supabaseURL: config.url).appendingPathComponent(path))
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let accessToken { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+        if let body { request.httpBody = try JSONSerialization.data(withJSONObject: body) }
+        return try await send(request)
+    }
+
     // MARK: - Request building
 
     private func restRequest(path: String, query: String? = nil) -> URLRequest {

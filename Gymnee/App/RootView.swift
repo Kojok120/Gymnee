@@ -12,6 +12,7 @@ enum AppTab: Hashable {
 struct RootView: View {
     @Environment(PartyService.self) private var party
     @Environment(AuthService.self) private var auth
+    @Environment(ConnectService.self) private var connect
     @Environment(AppErrorCenter.self) private var errors
     @Environment(NotificationService.self) private var notifications
     @Environment(LocalSyncEngine.self) private var syncEngine
@@ -137,6 +138,10 @@ struct RootView: View {
         switch name {
         case "profile": NavigationStack { ProfileView(userId: userId).gymneeNavigationDestinations(userId: userId) }
         case "settings": NavigationStack { SettingsView() }
+        // 外部連携（#171）。ローカルの Debug アプリはサインインできないので見本のデータで出す。
+        case "connect": NavigationStack { ConnectionsView() }.onAppear { connect.showFixture() }
+        case "connect-approve":
+            ConnectApproveView(pairingId: ConnectService.fixturePairingId).onAppear { connect.showFixture() }
         case "social": SocialFeedView()
         case "friends": SocialFeedView(openFriends: true)
         case "shop": ShopView()
@@ -405,6 +410,13 @@ struct RootView: View {
                 selection = .social
             }
         }
+        // AI の接続の承認（#171。ユニバーサルリンク / gymnee:// で届く）。どのタブにいても上に出す。
+        .sheet(item: Binding(
+            get: { connect.pendingPairingId.map(PendingPairing.init) },
+            set: { connect.pendingPairingId = $0?.id }
+        )) { pending in
+            ConnectApproveView(pairingId: pending.id)
+        }
         // 記録のキャンセルからカレンダーへ。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeShowCalendar)) { _ in
             selection = .calendar
@@ -497,4 +509,9 @@ enum KeyboardDismissal {
             return true
         }
     }
+}
+
+/// 承認待ちの id をシートに渡すための入れ物（`sheet(item:)` は Identifiable が要る）。
+private struct PendingPairing: Identifiable {
+    let id: UUID
 }
