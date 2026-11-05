@@ -288,6 +288,7 @@ Gymnee をアプリの外の道具（Claude・ChatGPT などの AI、利用者�
 
 - アプリ側の入口は その他 > 連携（`ConnectionsView`）。AI の接続の承認は `https://gymnee.app/connect/approve?p=<id>`（ユニバーサルリンク）か `gymnee://connect/approve?p=<id>` で開く `ConnectApproveView`。通信は `ConnectService` → `SupabaseClient.connectCall`（アプリのトークンで呼び、401 は REST と同じく一度だけ更新して再試行）
 - 外部に渡す権限はアプリのログインより狭い（読む / 記録を足す / メニューを提案する）。外部から記録を消す・直すことはできない。消す・直す操作を外部に足すなら、先に削除の伝わり方（差分 pull は削除を伝えない）を決め直す
+- Slack / Discord / 汎用 Webhook への知らせは、`workouts` の完了をトリガーで拾って Worker の cron が送る（0047）。拾うのは完了が直近 24 時間以内の記録だけ。記録の push の順番やトリガーを変えるときは connect/AGENTS.md の「送り先への配信」を読む
 - 外部の AI からのメニュー提案は `coach_messages.proposal` に届き、取り込むかはアプリで決める（`PlannedWorkout` は端末専用で同期しないため）
 - 外部から足した記録はサーバーに直接入り、差分 pull で端末に降りる。自己ベストはサーバー側でアプリと同じ規則で判定する（`connect/src/domain/pr.ts` は `PRDetector` の写し。片方を変えたら両方直す）
 - ドキュメントは `docs/connect/`（gymnee.app/connect）。API リファレンスの `docs/connect/api/openapi.json` は `connect/` の `pnpm openapi` で書き出す。手で書かない
