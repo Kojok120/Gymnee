@@ -23,6 +23,8 @@ struct RecordView: View {
     @State private var path: [AppRoute] = []
     /// 計画/予定の「開始」から渡された、記録タブで再開するワークアウト（nil＝新規ライブ記録）。
     @State private var resumeTarget: Workout?
+    /// 下書きの破棄の確認（#168）。
+    @State private var draftDeletion: DeletionRequest?
     /// 未完了の下書き（クラッシュ/中断の自動保存）。ゲートに「再開」導線を出すために観測する。
     @Query(filter: #Predicate<Workout> { $0.completedAt == nil && $0.isPlanned == false }, sort: \Workout.date, order: .reverse)
     private var openDrafts: [Workout]
@@ -32,6 +34,17 @@ struct RecordView: View {
         openDrafts.filter { w in
             w.userId == uid && (w.exercises.contains { !$0.sets.isEmpty } || !(w.note ?? "").isEmpty)
         }
+    }
+
+    /// 下書きの破棄の確認（#168）。下書きはサーバーに送っていないので、消すと戻す手段が無い。
+    private func askDiscard(_ draft: Workout) {
+        let sets = draft.exercises.reduce(0) { $0 + $1.sets.count }
+        draftDeletion = DeletionRequest(
+            title: DeletionCopy.draftTitle,
+            message: DeletionCopy.draftMessage(sets: sets),
+            destructiveLabel: "破棄",
+            onDelete: { discardDraft(draft) }
+        )
     }
 
     /// 下書きを破棄する。計画から開始していた下書きは、リンクした PlannedWorkout を未消化へ戻してから削除する
@@ -71,7 +84,7 @@ struct RecordView: View {
                                 gateOpen = true
                             },
                             onResume: { draft in resumeTarget = draft; gateOpen = true },
-                            onDiscard: { draft in discardDraft(draft) }
+                            onDiscard: { draft in askDiscard(draft) }
                         )
                     }
                 }
@@ -81,6 +94,7 @@ struct RecordView: View {
                 EmptyStateView(systemImage: "person.crop.circle.badge.exclamationmark", title: "未ログイン")
             }
         }
+        .deletionConfirmation($draftDeletion)
         // 計画/予定の「開始」→ 記録タブで当該ワークアウトを再開（カレンダータブから遷移してくる）。
         .onReceive(NotificationCenter.default.publisher(for: .gymneeStartWorkout)) { note in
             guard let idStr = note.userInfo?["workoutId"] as? String, let id = UUID(uuidString: idStr),

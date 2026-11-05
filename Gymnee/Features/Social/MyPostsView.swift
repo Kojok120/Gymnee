@@ -11,6 +11,7 @@ struct MyPostsView: View {
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(AuthService.self) private var auth
+    @State private var deletion: DeletionRequest?
     @Query private var prs: [PersonalRecord]
     @Query private var workouts: [Workout]
     @Query private var allReactions: [PostReaction]
@@ -68,8 +69,9 @@ struct MyPostsView: View {
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .swipeActions {
-                        Button("削除", role: .destructive) { delete(entry) }
+                    // 払い切るだけでは消さない。押すと確認が出る（#168）。role を付けると確認前に行が消える動きになるので色だけ付ける。
+                    .swipeActions(allowsFullSwipe: false) {
+                        Button("削除") { askDelete(entry) }.tint(Theme.danger)
                     }
                     .contextMenu { postMenu(entry) }
             }
@@ -81,6 +83,7 @@ struct MyPostsView: View {
                 EmptyStateView(systemImage: "square.stack.3d.up", title: "投稿がありません", message: "チェックイン・ワークアウト・自己ベストがここに並びます。")
             }
         }
+        .deletionConfirmation($deletion)
         .navigationTitle("自分の投稿")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -139,7 +142,8 @@ struct MyPostsView: View {
         }
     }
 
-    private func delete(_ entry: FeedEntry) {
-        FeedEntryDeleter.delete(entry, workouts: workouts, prs: prs, context: context, sync: sync)
+    private func askDelete(_ entry: FeedEntry) {
+        let author = WorkoutDeleter.Author(userId: userId, name: auth.session?.displayName, isPermanentAccount: auth.isPermanentAccount)
+        deletion = FeedEntryDeleter.request(entry, workouts: workouts, prs: prs, author: author, context: context, sync: sync)
     }
 }

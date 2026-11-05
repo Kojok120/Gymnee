@@ -144,7 +144,8 @@ private struct SocialContent: View {
 
     @State private var reportTarget: ReportUserTarget?
     /// 削除の確認待ち（記録ごと消える不可逆操作なので、長押しから直接は実行しない）。
-    @State private var deleteTarget: FeedEntry?
+    /// 削除の確認（#168。消える中身を数で書き、公開済みなら「非公開にする」も出す）。
+    @State private var deletion: DeletionRequest?
     @State private var showActivity = false
     /// タップで開く投稿詳細（全投稿共通：リッチ詳細＋リアクションした人＋コメント）。
     @State private var postDetail: FeedEntry?
@@ -424,17 +425,7 @@ private struct SocialContent: View {
                            currentUserName: auth.session?.displayName,
                            onClose: { postDetail = nil })
         }
-        .confirmationDialog("この記録を削除しますか？", isPresented: deleteConfirmBinding, titleVisibility: .visible) {
-            Button("削除", role: .destructive) {
-                guard let entry = deleteTarget else { return }
-                FeedEntryDeleter.delete(entry, workouts: workouts, prs: prs, context: context, sync: sync)
-                deleteTarget = nil
-                Task { await refreshFeed() }
-            }
-            Button("キャンセル", role: .cancel) { deleteTarget = nil }
-        } message: {
-            Text("投稿だけでなく記録そのものが消えます。カレンダーや分析からも無くなり、元に戻せません。投稿を取り下げるだけなら「公開範囲」を非公開にしてください。")
-        }
+        .deletionConfirmation($deletion)
     }
 
     /// 招待カード。リンクは自分の id 入りで、受け取った人が開くと自分のプロフィール
@@ -460,8 +451,11 @@ private struct SocialContent: View {
         .background(Theme.bg1, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 
-    private var deleteConfirmBinding: Binding<Bool> {
-        Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
+
+    private func askDelete(_ entry: FeedEntry) {
+        let author = WorkoutDeleter.Author(userId: userId, name: auth.session?.displayName, isPermanentAccount: auth.isPermanentAccount)
+        deletion = FeedEntryDeleter.request(entry, workouts: workouts, prs: prs, author: author, context: context, sync: sync,
+                                            onDone: { Task { await refreshFeed() } })
     }
 
     /// カード（シングルタップでワークアウト詳細＋コメントを開く／ダブルタップでいいね）＋いいねバー。
@@ -539,7 +533,7 @@ private struct SocialContent: View {
                 }
             }
             // 「非公開」は投稿を取り下げるだけ。記録ごと消したいときはこちら。
-            Button("削除", systemImage: "trash", role: .destructive) { deleteTarget = entry }
+            Button("削除", systemImage: "trash", role: .destructive) { askDelete(entry) }
         } else if let authorId = entry.authorId {
             Button("通報", systemImage: "flag") {
                 reportTarget = ReportUserTarget(id: authorId, displayName: displayName(for: authorId),

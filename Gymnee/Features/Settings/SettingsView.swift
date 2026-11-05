@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import AuthenticationServices
 
-/// 設定（§5 / §7）。HealthKit・通知・エクスポート・サブスク・データ削除の各導線。
+/// 設定。HealthKit・通知・エクスポート・サブスク・データ削除の各導線。
 /// P0 ではプロフィール・同期状態・サインアウト・データ削除を実装。各機能は対応フェーズで有効化する。
 struct SettingsView: View {
     @Environment(AuthService.self) private var auth
@@ -378,11 +378,11 @@ struct SettingsView: View {
                         showCoachDeleteConfirm = true
                     }
                 }
-                Button("すべてのデータを削除", role: .destructive) {
+                Button(accountDeletionCopy.buttonLabel, role: .destructive) {
                     showDeleteConfirm = true
                 }
             } footer: {
-                Text("個人情報保護法（APPI）準拠：データの削除・エクスポートを提供します（§7）。")
+                Text(accountDeletionCopy.footer)
             }
 
             Section {
@@ -391,11 +391,12 @@ struct SettingsView: View {
         }
         .navigationTitle("設定")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("すべてのデータを削除しますか？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("削除する", role: .destructive) { deleteAllData() }
+        // 消える範囲（端末だけか、サーバーのアカウントごとか）を、そのまま書く（#169）。
+        .confirmationDialog(accountDeletionCopy.title, isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button(accountDeletionCopy.confirmLabel, role: .destructive) { deleteAllData() }
             Button("キャンセル", role: .cancel) {}
         } message: {
-            Text("この端末上の全記録が消えます。元に戻せません。")
+            Text(accountDeletionCopy.message)
         }
         .confirmationDialog("コーチとの会話を削除しますか？", isPresented: $showCoachDeleteConfirm, titleVisibility: .visible) {
             Button("削除する", role: .destructive) { deleteCoachMessages() }
@@ -534,10 +535,34 @@ struct SettingsView: View {
         }
     }
 
-    /// ローカルデータの全削除（§7 データ削除）。
+    private var accountDeletionCopy: DeletionCopy.AccountDeletion {
+        DeletionCopy.accountDeletion(isSignedIn: auth.isBackendAuthenticated)
+    }
+
+    /// 「すべてのデータを削除」/「アカウントを削除」。
+    /// サインイン中は**先にサーバーのアカウントを消し、消せたときだけ端末のデータを消す**（#169）。
+    /// 以前は端末を先に消していたので、サーバーの削除に失敗すると、端末の記録だけ消えてアカウントは残った。
+    private func deleteAllData() {
+        guard auth.isBackendAuthenticated else {
+            // ゲスト: サーバーには何も無い。端末のデータとローカルの ID を消す。
+            wipeLocalData()
+            Task { _ = await auth.deleteAccount() }
+            return
+        }
+        Task {
+            let ok = await auth.deleteAccount()
+            guard ok else {
+                errors.report("サーバーのアカウントを削除できませんでした。この端末の記録は残しています。通信を確かめ、サインインし直してからもう一度試してください。")
+                return
+            }
+            wipeLocalData()
+        }
+    }
+
+    /// 端末のデータの全削除。
     /// **`GymneeSchema` のモデルを 1 つ残らず消す**。消し漏れがあると「全部消した」と言いながら
     /// 会話や育成データが残る（実際に 9 型が漏れていた）。モデルを足したらここにも足すこと。
-    private func deleteAllData() {
+    private func wipeLocalData() {
         try? context.delete(model: Profile.self)
         try? context.delete(model: Workout.self)
         try? context.delete(model: Exercise.self)
@@ -570,14 +595,6 @@ struct SettingsView: View {
             try context.save()
         } catch {
             errors.report("データの削除に失敗しました。\(error.localizedDescription)")
-            return
-        }
-        // リモート接続時はサーバ側のアカウント（auth.users → 全データ CASCADE）も削除する。
-        Task {
-            let ok = await auth.deleteAccount()
-            if !ok {
-                errors.report("サーバ側データの削除に失敗しました。時間をおいて再度お試しください。")
-            }
         }
     }
 }
