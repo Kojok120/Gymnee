@@ -2,7 +2,7 @@ import SwiftUI
 
 /// その他 > 連携（#171）。Gymnee をアプリの外の道具とつなぐ入口。
 ///
-/// いまは AI（Claude・ChatGPT など。MCP）と API キーの 2 つ。LINE と Slack / Discord はこの画面に足していく。
+/// AI（Claude・ChatGPT など。MCP）・Slack / Discord・API キー。LINE はこの画面に足していく。
 /// 説明の段落は置かず、やり方の詳細は「使い方」（gymnee.app/connect）に任せる。
 struct ConnectionsView: View {
     @Environment(AuthService.self) private var auth
@@ -47,6 +47,7 @@ struct ConnectionsView: View {
                 }
             } else {
                 aiSection
+                DestinationSection()
                 apiSection
                 if let message = connect.loadError {
                     Section { Text(message).font(.footnote).foregroundStyle(Theme.danger) }

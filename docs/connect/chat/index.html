@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slack・Discord・Webhook — Gymnee 連携</title>
+<meta name="description" content="Gymnee の記録を Slack や Discord のチャンネルにお知らせする方法。追加ボタンでチャンネルを選ぶだけ。開発者向けの Webhook の仕様と署名の確かめ方も。">
+<meta property="og:title" content="Gymnee の記録を Slack・Discord にお知らせする">
+<meta property="og:image" content="../../assets/gymnee-icon.png">
+<meta name="theme-color" content="#0B0D0C">
+<link rel="icon" href="../../assets/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../connect.css">
+</head>
+<body>
+<header class="site"><div class="inner">
+  <img src="../../assets/gymnee-icon.png" alt=""><a class="brand" href="../../">Gymnee</a>
+  <nav><a href="../">連携</a><a href="../ai/">AI につなぐ</a><a href="./" aria-current="page">Slack・Discord</a><a href="../api/">API</a></nav>
+</div></header>
+<main>
+  <h1>記録を <span class="lime">Slack・Discord</span> にお知らせ</h1>
+  <p class="lead">筋トレ部や、ジム仲間のサーバーに。記録を終えたときと、月曜の朝に先週のふりかえりを、選んだチャンネルに流します。仲間の目があると続きます。</p>
+
+  <h2>つなぎ方</h2>
+  <ol class="steps">
+    <li>アプリの <em>その他 &gt; 連携</em> を開き、「Slack に追加」か「Discord に追加」を押します。</li>
+    <li>Slack・Discord の画面で、ワークスペース（サーバー）とチャンネルを選んで許可します。Discord はそのサーバーで「ウェブフックの管理」ができる人だけが追加できます。</li>
+    <li>チャンネルに「Gymnee とつながりました」と届けば完了です。</li>
+  </ol>
+
+  <h2>届く内容</h2>
+  <div class="table-wrap"><table>
+    <tr><th>記録を終えたとき</th><td>記録の名前・種目ごとのいちばん良かったセット・セット数・総量・時間・自己ベストの更新・今週の回数と目標</td></tr>
+    <tr><th>月曜の朝（8 時台）</th><td>先週の回数と目標・セット数・総量・鍛えた部位・連続達成週・パーティのボスの残り HP と自分の攻撃回数（記録の無かった週は送りません）</td></tr>
+  </table></div>
+  <p>どちらを送るかは、送り先ごとにアプリで選べます。メッセージには、仲間を Gymnee に誘うリンクが付きます。</p>
+  <div class="note">チャンネルにいる全員に見えます。表示名と記録の中身が載るので、送るチャンネルを選んでください。パーティのほかのメンバーの名前と回数は載せません。</div>
+
+  <h2>やめるとき</h2>
+  <ul>
+    <li>アプリの <em>その他 &gt; 連携</em> で送り先を選び、「この送り先を消す」を押します。</li>
+    <li>チャンネルや Webhook を Slack・Discord 側で消した場合は、Gymnee が気づいて自動で止めます。アプリに理由が出ます。</li>
+  </ul>
+
+  <h2>URL を貼って足す（上級者向け）</h2>
+  <p>アプリの「URL を貼って追加」に、次のどれかを貼れます。</p>
+  <h3>Slack の Incoming Webhook</h3>
+  <p>Slack アプリの設定で Incoming Webhooks を有効にし、チャンネルを選んで作った <code>https://hooks.slack.com/services/…</code> の URL。</p>
+  <h3>Discord の Webhook</h3>
+  <p>チャンネルの設定 &gt; 連携サービス &gt; ウェブフック &gt; 新しいウェブフック &gt; 「ウェブフック URL をコピー」で取れる <code>https://discord.com/api/webhooks/…</code> の URL。</p>
+  <h3>自分のサーバー（汎用 Webhook）</h3>
+  <p>https の URL ならどこにでも送れます。Zapier や Make、n8n の Webhook の受け口にも使えます。追加したときに表示される<strong>署名の鍵</strong>（<code>whsec_…</code>）で、Gymnee から届いたことを確かめられます。</p>
+
+  <h2>汎用 Webhook の仕様（開発者向け）</h2>
+  <p><a href="https://www.standardwebhooks.com/">Standard Webhooks</a> の形で送ります。本文は JSON で、次のヘッダーが付きます。</p>
+  <div class="table-wrap"><table>
+    <tr><th><code>webhook-id</code></th><td>配信の id。再試行でも同じなので、二重に処理しないための鍵に使えます</td></tr>
+    <tr><th><code>webhook-timestamp</code></th><td>送った時刻（UNIX 秒）。古すぎるものは捨ててください（5 分が目安）</td></tr>
+    <tr><th><code>webhook-signature</code></th><td><code>v1,</code> + base64(HMAC-SHA256(鍵, <code>"{id}.{timestamp}.{本文}"</code>))。鍵は <code>whsec_</code> の後ろを base64 で読んだもの</td></tr>
+  </table></div>
+
+  <h3>本文の例（記録を終えたとき）</h3>
+<pre><code>{
+  "type": "workout.completed",
+  "timestamp": "2026-11-05T10:02:11.000Z",
+  "data": {
+    "userName": "たろう",
+    "inviteUrl": "https://gymnee.app/invite?u=…",
+    "workout": {
+      "id": "…", "name": "胸と背中", "completedAt": "2026-11-05T10:00:00.000Z",
+      "durationMinutes": 45, "exerciseCount": 2, "setCount": 3, "volumeKg": 1100,
+      "exercises": [{ "name": "ベンチプレス", "muscle": "胸", "sets": 2, "best": "62.5kg × 8" }]
+    },
+    "personalRecords": [{ "exercise": "ベンチプレス", "best": "62.5kg × 8" }],
+    "week": { "workouts": 2, "goal": 3, "streakWeeks": 1 }
+  }
+}</code></pre>
+  <p><code>type</code> は <code>workout.completed</code>（記録を終えたとき）・<code>weekly.summary</code>（週のふりかえり）・<code>connection.test</code>（追加したときの確かめ）の 3 つです。届くのは、記録を終えてから 2〜3 分後です（アプリが記録を送り終えるのを待つため）。</p>
+
+  <h3>署名の確かめ方（Node.js）</h3>
+<pre><code>import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(secret, headers, body) {
+  const id = headers["webhook-id"], ts = headers["webhook-timestamp"];
+  if (Math.abs(Date.now() / 1000 - Number(ts)) &gt; 300) return false; // 5 分より古い・未来
+  const key = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
+  const expected = createHmac("sha256", key).update(`${id}.${ts}.${body}`).digest("base64");
+  return headers["webhook-signature"].split(" ").some((s) =&gt; {
+    const [v, sig] = s.split(",");
+    return v === "v1" &amp;&amp; sig.length === expected.length &amp;&amp; timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  });
+}</code></pre>
+  <p class="small muted"><code>body</code> は受け取ったままの文字列で計算してください（JSON を読み直して並べ替えると一致しません）。</p>
+
+  <h3>署名の確かめ方（Python）</h3>
+<pre><code>import base64, hashlib, hmac, time
+
+def verify(secret: str, headers: dict, body: str) -&gt; bool:
+    msg_id, ts = headers["webhook-id"], headers["webhook-timestamp"]
+    if abs(time.time() - int(ts)) &gt; 300:
+        return False
+    key = base64.b64decode(secret.removeprefix("whsec_"))
+    expected = base64.b64encode(hmac.new(key, f"{msg_id}.{ts}.{body}".encode(), hashlib.sha256).digest()).decode()
+    return any(hmac.compare_digest(sig.split(",", 1)[1], expected) for sig in headers["webhook-signature"].split())</code></pre>
+
+  <h3>届かなかったとき</h3>
+  <ul>
+    <li>2xx を返せば届いたとみなします。10 秒で打ち切るので、重い処理は受け取ったあとに回してください。</li>
+    <li>届かなければ 1 分・5 分・30 分・2 時間・6 時間あけて送り直し、6 回で諦めます。<code>429</code> には <code>Retry-After</code> に従います。</li>
+    <li><code>410</code> を返すと、その送り先を止めます。続けて 5 回諦めた送り先も止めます。止まった送り先は、アプリの「もう一度試す」で戻せます。</li>
+    <li>転送（3xx）には付いていきません。</li>
+  </ul>
+</main>
+<footer><div class="inner">
+  <a href="../">連携</a><a href="../../privacy-policy.html">プライバシーポリシー</a><a href="../../terms-of-service.html">利用規約</a>
+</div></footer>
+</body>
+</html>

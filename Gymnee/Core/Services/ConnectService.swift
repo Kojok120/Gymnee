@@ -30,12 +30,73 @@ final class ConnectService {
         let lastUsedAt: String?
     }
 
+    /// Slack / Discord / 汎用 Webhook の送り先（#171 の 2 段目）。
+    struct Destination: Decodable, Identifiable, Hashable, Sendable {
+        let id: String
+        let kind: String
+        let label: String
+        let events: [String]
+        /// 止まっていればその理由（消された・続けて届かなかった）。
+        let disabledReason: String?
+        let lastDeliveredAt: String?
+        let createdAt: String
+
+        static let workoutCompleted = "workout.completed"
+        static let weeklySummary = "weekly.summary"
+
+        var kindLabel: String {
+            switch kind {
+            case "slack": return "Slack"
+            case "discord": return "Discord"
+            default: return "Webhook"
+            }
+        }
+    }
+
+    struct Providers: Decodable, Hashable, Sendable {
+        let slack: Bool
+        let discord: Bool
+    }
+
     struct Connections: Decodable, Sendable {
         let mcpUrl: String
         let apiBaseUrl: String
         let docsUrl: String
         let aiClients: [AIClient]
         let apiTokens: [ApiToken]
+        let destinations: [Destination]
+        let providers: Providers
+
+        init(mcpUrl: String, apiBaseUrl: String, docsUrl: String, aiClients: [AIClient], apiTokens: [ApiToken],
+             destinations: [Destination] = [], providers: Providers = Providers(slack: false, discord: false)) {
+            self.mcpUrl = mcpUrl
+            self.apiBaseUrl = apiBaseUrl
+            self.docsUrl = docsUrl
+            self.aiClients = aiClients
+            self.apiTokens = apiTokens
+            self.destinations = destinations
+            self.providers = providers
+        }
+
+        private enum CodingKeys: String, CodingKey { case mcpUrl, apiBaseUrl, docsUrl, aiClients, apiTokens, destinations, providers }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            mcpUrl = try c.decode(String.self, forKey: .mcpUrl)
+            apiBaseUrl = try c.decode(String.self, forKey: .apiBaseUrl)
+            docsUrl = try c.decode(String.self, forKey: .docsUrl)
+            aiClients = try c.decode([AIClient].self, forKey: .aiClients)
+            apiTokens = try c.decode([ApiToken].self, forKey: .apiTokens)
+            // 送り先は 2 段目で足した。古いサーバーが返さなくても一覧は出す。
+            destinations = try c.decodeIfPresent([Destination].self, forKey: .destinations) ?? []
+            providers = try c.decodeIfPresent(Providers.self, forKey: .providers) ?? Providers(slack: false, discord: false)
+        }
+    }
+
+    /// 送り先を足した結果。汎用 Webhook の署名の鍵を見せるのはこの 1 回だけ。
+    struct CreatedDestination: Decodable, Sendable {
+        let destination: Destination
+        let signingSecret: String?
     }
 
     /// 作った直後の API キー。トークンそのものを見せるのはこの 1 回だけ。
@@ -137,6 +198,40 @@ final class ConnectService {
         await load()
     }
 
+    // MARK: - 送り先（Slack / Discord / 汎用 Webhook）
+
+    func addDestination(url: String, label: String?) async throws -> CreatedDestination {
+        var body: [String: Any] = ["url": url]
+        if let label, !label.isEmpty { body["label"] = label }
+        let created = try Self.decode(CreatedDestination.self, try await call("POST", "app/destinations", body: body))
+        await load()
+        return created
+    }
+
+    func updateDestination(id: String, events: [String]) async throws {
+        try await call("PATCH", "app/destinations/\(id)", body: ["events": events])
+        await load()
+    }
+
+    func resumeDestination(id: String) async throws {
+        try await call("POST", "app/destinations/\(id)/resume")
+        await load()
+    }
+
+    func deleteDestination(id: String) async throws {
+        try await call("DELETE", "app/destinations/\(id)")
+        await load()
+    }
+
+    private struct StartResponse: Decodable { let url: String; let callbackScheme: String }
+
+    /// 「Slack に追加」「Discord に追加」で開く認可の URL。
+    func chatConnectURL(provider: String) async throws -> (url: URL, callbackScheme: String) {
+        let res = try Self.decode(StartResponse.self, try await call("GET", "app/\(provider)/start"))
+        guard let url = URL(string: res.url) else { throw ConnectError.failed("つなぐ画面を開けませんでした。") }
+        return (url, res.callbackScheme)
+    }
+
     func pairing(id: UUID) async throws -> Pairing {
         #if DEBUG
         if isShowingFixture { return Self.fixturePairing }
@@ -176,7 +271,14 @@ final class ConnectService {
         connections = Connections(
             mcpUrl: "https://api.gymnee.app/mcp", apiBaseUrl: "https://api.gymnee.app/v1", docsUrl: "https://gymnee.app/connect/",
             aiClients: [AIClient(id: "g1", name: "Claude", domain: "claude.ai", scopes: [read, write], createdAt: "2026-11-03T10:00:00.000Z")],
-            apiTokens: [ApiToken(id: "t1", name: "自宅の Mac", prefix: "gym_pat_Qx3a", scopes: [read], createdAt: "2026-11-01T10:00:00.000Z", lastUsedAt: "2026-11-05T08:00:00.000Z")]
+            apiTokens: [ApiToken(id: "t1", name: "自宅の Mac", prefix: "gym_pat_Qx3a", scopes: [read], createdAt: "2026-11-01T10:00:00.000Z", lastUsedAt: "2026-11-05T08:00:00.000Z")],
+            destinations: [
+                Destination(id: "d1", kind: "slack", label: "#筋トレ部（ココバル）", events: [Destination.workoutCompleted, Destination.weeklySummary],
+                            disabledReason: nil, lastDeliveredAt: "2026-11-05T09:00:00.000Z", createdAt: "2026-11-02T10:00:00.000Z"),
+                Destination(id: "d2", kind: "discord", label: "Discord（ジム仲間）", events: [Destination.weeklySummary],
+                            disabledReason: "送り先が見つからない（チャンネルか Webhook が消された）", lastDeliveredAt: nil, createdAt: "2026-11-03T10:00:00.000Z"),
+            ],
+            providers: Providers(slack: true, discord: true)
         )
     }
     #endif

@@ -109,6 +109,39 @@ export interface PairingRow {
   expires_at: string;
 }
 
+export const DESTINATION_COLUMNS = "id,user_id,kind,label,events,consecutive_failures,disabled_at,disabled_reason,last_delivered_at,created_at";
+
+export interface DestinationRow {
+  id: string;
+  user_id: string;
+  kind: "slack" | "discord" | "webhook";
+  label: string;
+  events: string[];
+  consecutive_failures: number;
+  disabled_at: string | null;
+  disabled_reason: string | null;
+  last_delivered_at: string | null;
+  created_at: string;
+}
+
+export interface DestinationSecretRow extends DestinationRow {
+  target_ciphertext: string;
+  signing_secret_ciphertext: string | null;
+}
+
+export interface DeliveryRow {
+  id: string;
+  destination_id: string;
+  user_id: string;
+  event_type: string;
+  subject_key: string;
+  subject_id: string | null;
+  period_start: string | null;
+  status: string;
+  attempts: number;
+  next_attempt_at: string;
+}
+
 export interface PartyOverview {
   party_id: string;
   name: string | null;
@@ -347,6 +380,131 @@ export class Repo {
 
   async purgeExpiredPairings(): Promise<void> {
     await this.db.delete("connect_oauth_pairings", { expires_at: `lt.${new Date(Date.now() - 86_400_000).toISOString()}` });
+  }
+
+  // ---- 送り先（Slack / Discord / 汎用 Webhook） ----
+
+  listDestinations(userId: string): Promise<DestinationRow[]> {
+    return this.db.select<DestinationRow>("connect_destinations", {
+      select: DESTINATION_COLUMNS,
+      user_id: `eq.${assertUuid(userId)}`,
+      order: "created_at.asc",
+    });
+  }
+
+  async destination(userId: string, id: string): Promise<DestinationRow | null> {
+    const rows = await this.db.select<DestinationRow>("connect_destinations", {
+      select: DESTINATION_COLUMNS,
+      id: `eq.${assertUuid(id)}`,
+      user_id: `eq.${assertUuid(userId)}`,
+    });
+    return rows[0] ?? null;
+  }
+
+  async createDestination(
+    userId: string,
+    d: { kind: string; label: string; targetCiphertext: string; signingSecretCiphertext: string | null; events: string[] },
+  ): Promise<DestinationRow> {
+    const rows = await this.db.insert<DestinationRow>("connect_destinations", {
+      user_id: assertUuid(userId),
+      kind: d.kind,
+      label: d.label.slice(0, 120),
+      target_ciphertext: d.targetCiphertext,
+      signing_secret_ciphertext: d.signingSecretCiphertext,
+      events: d.events,
+    });
+    return rows[0]!;
+  }
+
+  async updateDestinationEvents(userId: string, id: string, events: string[]): Promise<DestinationRow | null> {
+    const rows = await this.db.update<DestinationRow>(
+      "connect_destinations",
+      { id: `eq.${assertUuid(id)}`, user_id: `eq.${assertUuid(userId)}` },
+      { events, updated_at: new Date().toISOString() },
+    );
+    return rows[0] ?? null;
+  }
+
+  /** 止まった送り先を、利用者が「もう一度試す」で戻す。 */
+  async resumeDestination(userId: string, id: string): Promise<DestinationRow | null> {
+    const rows = await this.db.update<DestinationRow>(
+      "connect_destinations",
+      { id: `eq.${assertUuid(id)}`, user_id: `eq.${assertUuid(userId)}` },
+      { disabled_at: null, disabled_reason: null, consecutive_failures: 0, updated_at: new Date().toISOString() },
+    );
+    return rows[0] ?? null;
+  }
+
+  async deleteDestination(userId: string, id: string): Promise<void> {
+    await this.db.delete("connect_destinations", { id: `eq.${assertUuid(id)}`, user_id: `eq.${assertUuid(userId)}` });
+  }
+
+  async destinationSucceeded(userId: string, id: string): Promise<void> {
+    await this.db.update(
+      "connect_destinations",
+      { id: `eq.${assertUuid(id)}`, user_id: `eq.${assertUuid(userId)}` },
+      { consecutive_failures: 0, last_delivered_at: new Date().toISOString() },
+    );
+  }
+
+  /** 配信を諦めた回数を 1 つ数え、続けて失敗していれば止める。`disableReason` があれば数によらず止める。 */
+  async destinationFailed(userId: string, id: string, failuresSoFar: number, disableAfter: number, disableReason?: string): Promise<void> {
+    const failures = failuresSoFar + 1;
+    const reason = disableReason ?? (failures >= disableAfter ? "続けて届かなかったので止めました" : null);
+    await this.db.update(
+      "connect_destinations",
+      { id: `eq.${assertUuid(id)}`, user_id: `eq.${assertUuid(userId)}` },
+      {
+        consecutive_failures: failures,
+        ...(reason ? { disabled_at: new Date().toISOString(), disabled_reason: reason } : {}),
+        updated_at: new Date().toISOString(),
+      },
+    );
+  }
+
+  // ---- 配信（cron のジョブが使う。どれも配信の行が持つ利用者 id で絞る） ----
+
+  fanoutEvents(limit = 50): Promise<number> {
+    return this.db.rpc("connect_fanout_events", { p_limit: limit });
+  }
+
+  enqueueWeekly(weekStart: Date): Promise<number> {
+    return this.db.rpc("connect_enqueue_weekly", { p_week_start: weekStart.toISOString() });
+  }
+
+  claimDeliveries(limit = 25): Promise<DeliveryRow[]> {
+    return this.db.rpc("connect_claim_deliveries", { p_limit: limit });
+  }
+
+  async finishDelivery(
+    delivery: DeliveryRow,
+    result: { status: "pending" | "succeeded" | "failed"; nextAttemptAt?: Date; httpStatus: number | null; error: string | null },
+  ): Promise<void> {
+    await this.db.update(
+      "connect_deliveries",
+      { id: `eq.${assertUuid(delivery.id)}`, user_id: `eq.${assertUuid(delivery.user_id)}` },
+      {
+        status: result.status,
+        ...(result.nextAttemptAt ? { next_attempt_at: result.nextAttemptAt.toISOString() } : {}),
+        last_status: result.httpStatus,
+        last_error: result.error?.slice(0, 300) ?? null,
+        updated_at: new Date().toISOString(),
+      },
+    );
+  }
+
+  /** 配信先を、配信の行の利用者 id とあわせて引く（秘密の暗号文を含む）。 */
+  async destinationWithSecrets(userId: string, id: string): Promise<DestinationSecretRow | null> {
+    const rows = await this.db.select<DestinationSecretRow>("connect_destinations", {
+      select: `${DESTINATION_COLUMNS},target_ciphertext,signing_secret_ciphertext`,
+      id: `eq.${assertUuid(id)}`,
+      user_id: `eq.${assertUuid(userId)}`,
+    });
+    return rows[0] ?? null;
+  }
+
+  purge(): Promise<void> {
+    return this.db.rpc("connect_purge", {});
   }
 
   // ---- PAT ----
