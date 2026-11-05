@@ -2,13 +2,13 @@
 // 今週の各日のメニューを「種目＋セット＋目標重量/レップ」まで組ませる。
 // GEMINI_API_KEY が未設定なら 503（クライアントは「準備中」表示）。
 //
-// デプロイ: supabase functions deploy plan-workouts
-// キー設定: supabase secrets set GEMINI_API_KEY=xxxx
+// デプロイ: supabase functions deploy plan-workouts --use-api --remote=ibtrbymfmxrruuwuzell（CLI v3。対象は毎回明示する）
+// キー設定: supabase secrets set --remote=ibtrbymfmxrruuwuzell GEMINI_API_KEY=xxxx
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 // モデル/APIバージョンは secrets で切替可能。既定は gemini-3.5-flash-lite(v1beta)。
 // （直接検証で当該モデル＋現行キーが v1beta/v1 とも 200 を返すことを確認済み）
-// 例: supabase secrets set GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1beta
+// 例: supabase secrets set --remote=ibtrbymfmxrruuwuzell GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1beta
 const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
 const API_VERSION = Deno.env.get("GEMINI_API_VERSION") ?? "v1beta";
 

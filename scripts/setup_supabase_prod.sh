@@ -8,7 +8,9 @@
 #   - 環境変数 SUPABASE_ACCESS_TOKEN（ダッシュボードの PAT, sbp_...）。未設定なら macOS keychain の
 #     `supabase login` トークンを使う（このマシン限定のフォールバック）。
 #   - secrets/ に AuthKey_*APNs*.p8（APNs配信鍵。ASC用 .p8 と混在可）と .env（GOOGLE_*/RESEND_API_KEY/RAKUTEN_*/任意で GEMINI_API_KEY）がある
-#   - jq / openssl / supabase CLI
+#   - jq / openssl / supabase CLI v3 以上（`--remote=<ref>` で対象を明示し、ホストを変える操作は `--yes`。
+#     v3 は対話端末でも既定の答えが No で、非対話では --yes が無いと失敗する。このスクリプトの起動自体を
+#     本番変更の同意とみなす。SQL の runsql も確認なしで流している）
 #
 # 流すもの: スキーマ(setup_all.sql) → auth設定(Apple/Google/email/SMTP/redirect/OTP) →
 #           Function deploy + secrets → push_config 投入
@@ -75,20 +77,20 @@ curl -s -w '\n[HTTP %{http_code}]\n' -X PATCH "$API/config/auth" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BODY" | jq -c '{message}' 2>/dev/null || true
 
 echo "▶ 3/5 Edge Function: send-push デプロイ＋secrets（APNS_HOST=本番）"
-supabase functions deploy send-push --project-ref "$PROD_REF"
-supabase secrets set --project-ref "$PROD_REF" \
+supabase functions deploy send-push --remote="$PROD_REF" --yes
+supabase secrets set --remote="$PROD_REF" --yes \
   APNS_KEY="$(cat "$P8")" APNS_KEY_ID="$KEYID" APNS_TEAM_ID=PG5P26J3W2 \
   APNS_BUNDLE_ID=com.gymnee.app APNS_HOST=api.push.apple.com PUSH_SHARED_SECRET="$PUSH_SECRET"
 
 echo "▶ 4/5 Edge Function: plan-workouts（AIワークアウト計画）"
-supabase functions deploy plan-workouts --project-ref "$PROD_REF"
+supabase functions deploy plan-workouts --remote="$PROD_REF" --yes
 GKEY="$(grep '^GEMINI_API_KEY=' "$SECRETS/.env" | cut -d= -f2- | tr -d '[:space:]')"
 if [ -n "$GKEY" ]; then
-  supabase secrets set --project-ref "$PROD_REF" \
+  supabase secrets set --remote="$PROD_REF" --yes \
     GEMINI_API_KEY="$GKEY" GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1
 else
   echo "  ⚠ secrets/.env に GEMINI_API_KEY が無いため未設定。AI計画を使うなら後で:"
-  echo "    supabase secrets set --project-ref $PROD_REF GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1"
+  echo "    supabase secrets set --remote=$PROD_REF --yes GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1"
 fi
 
 echo "▶ 5/5 push_config 投入"

@@ -25,21 +25,24 @@
 
 ## 2. Supabase: Edge Function のデプロイ
 
+CLI は v3 前提。リンク先（`supabase/.temp`）は削除済みの旧 dev を指していることがあるので、
+対象は毎回 `--remote=<ref>` で明示する。ホストを変える操作は確認が出る（既定は No。非対話は `--yes`）。
+
 ```bash
-supabase link --project-ref bdeaeykruwxazdoewxmg   # 本番化時は prod の ref に
-supabase functions deploy send-push
+REF=ibtrbymfmxrruuwuzell   # 本番（dev/beta は削除済み）
+supabase functions deploy send-push --use-api --remote=$REF   # --use-api: Docker 無しでサーバー側バンドル
 ```
 
 シークレットを設定（`.p8` は中身全文を渡す）:
 
 ```bash
 PUSH_SECRET=$(openssl rand -hex 24)          # 後で DB 設定にも使う
-supabase secrets set \
+supabase secrets set --remote=$REF \
   APNS_KEY="$(cat AuthKey_XXXXXXXXXX.p8)" \
   APNS_KEY_ID=XXXXXXXXXX \
   APNS_TEAM_ID=PG5P26J3W2 \
   APNS_BUNDLE_ID=com.gymnee.app \
-  APNS_HOST=api.sandbox.push.apple.com \
+  APNS_HOST=api.push.apple.com \
   PUSH_SHARED_SECRET="$PUSH_SECRET"
 ```
 
@@ -54,7 +57,7 @@ migration `0008_push_on_visit.sql` は `public.push_config`（1行・RLS で不�
 insert into public.push_config (id, send_push_url, push_secret)
 values (
   1,
-  'https://bdeaeykruwxazdoewxmg.supabase.co/functions/v1/send-push',
+  'https://ibtrbymfmxrruuwuzell.supabase.co/functions/v1/send-push',
   '<PUSH_SHARED_SECRET と同じ値>'
 )
 on conflict (id) do update
@@ -78,12 +81,14 @@ on conflict (id) do update
 - **E2E**: 実機 A・B を用意し、A が B をフォロー → B がアプリでチェックイン →
   A の端末に「B さんがジムに行きました」が届けば成功。
   - 届かない時の切り分け: `device_tokens` に B のフォロワー(A)の行があるか / `APNS_HOST` が
-    ビルドの署名(dev=sandbox / 配布=本番)と一致しているか / Function ログ（`supabase functions logs send-push`）。
+    ビルドの署名(dev=sandbox / 配布=本番)と一致しているか / Function ログ（ダッシュボードの
+    Edge Functions → send-push → Logs。CLI v3 に `functions logs` は無い）。
 
-## 5. 本番（prod プロジェクト分離時）
+## 5. 本番とローカル
 
-- `config.toml` の `project_id` と `app.send_push_url` を prod の ref に差し替え。
-- `APNS_HOST=api.push.apple.com` に変更（配布ビルドは本番 APNs）。
+- Supabase は本番 `ibtrbymfmxrruuwuzell` のみ（2026-07 に dev/beta を削除）。`config.toml` の `project_id` は
+  ローカル識別子のままにし、本番の ref に変えない。
+- 配布ビルドは本番 APNs なので `APNS_HOST=api.push.apple.com`。Xcode の dev 署名で試すときだけ sandbox にする。
 - それ以外（.p8 / Key ID / Team ID）は同一で可。
 
 ## 仕様メモ
