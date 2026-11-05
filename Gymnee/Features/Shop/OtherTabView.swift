@@ -19,7 +19,7 @@ struct OtherTabView: View {
                     card(title: "ショップ", subtitle: "サプリ・ギアを探す", icon: "bag.fill", tint: Theme.series2)
                 }
                 NavigationLink(value: AppRoute.connections) {
-                    card(title: "連携", subtitle: "Claude・ChatGPT・API", icon: "point.3.connected.trianglepath.dotted", tint: Theme.connect)
+                    card(title: "連携", subtitle: "Claude・Slack・Discord・API", icon: "point.3.connected.trianglepath.dotted", tint: Theme.connect)
                 }
                 NavigationLink(value: AppRoute.settings) {
                     card(title: "設定", subtitle: "通知・目標・アカウント", icon: "gearshape.fill", tint: Theme.info)
