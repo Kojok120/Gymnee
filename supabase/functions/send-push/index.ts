@@ -2,7 +2,7 @@
 // 各 DB トリガーから { event, <対象id> } を受け取り、対象ユーザーの device_tokens へ送信する。
 // event: reaction / comment / follow / report / post / live_start / cheer
 //
-// 必要なシークレット（`supabase secrets set ...`）:
+// 必要なシークレット（`supabase secrets set --remote=ibtrbymfmxrruuwuzell ...`）:
 //   APNS_KEY            … AuthKey_XXXX.p8 の中身全文（-----BEGIN PRIVATE KEY----- を含む。改行は実改行/\n どちらでも可）
 //   APNS_KEY_ID         … APNs Auth Key の Key ID（10桁）
 //   APNS_TEAM_ID        … Apple Team ID（例: PG5P26J3W2）

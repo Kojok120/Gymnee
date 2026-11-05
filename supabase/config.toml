@@ -1,6 +1,7 @@
-# Supabase CLI 設定。ローカル検証（supabase start）では project_id はローカル識別子として使う。
-# dev プロジェクトは削除済み。prod 操作は Management API（setup_supabase_prod.sh の runsql /
-# --project-ref 明示指定）で行い、ここを prod ref にはしない（bare `supabase db push` の誤爆防止）。
+# Supabase CLI 設定（CLI v3 前提）。ローカル検証（supabase start）では project_id はローカル識別子として使う。
+# dev プロジェクトは削除済み。prod 操作は Management API（setup_supabase_prod.sh の runsql）か
+# CLI の `--remote=<prod ref>` 明示指定で行い、ここを prod ref にはしない（誤爆防止）。
+# v3 では db / migration 系を対象無しで叩くとローカルを向き、ホストを変える操作は確認か --yes が要る。
 project_id = "gymnee-local"
 
 # ローカルポートは既定(5432x)から +100 した専用ブロック(5442x)。1台で他のローカル Supabase
@@ -15,7 +16,8 @@ shadow_port = 54420
 port = 54429
 [studio]
 port = 54423
-[inbucket]
+# ローカルのメール受け（Mailpit）の Web UI。v3 は旧名 [inbucket] を読めない（v2.108.0 以降は両対応）。
+[local_smtp]
 port = 54424
 [analytics]
 port = 54427

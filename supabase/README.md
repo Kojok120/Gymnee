@@ -14,7 +14,8 @@ psql "$DATABASE_URL" -f migrations/0004_functions.sql
 psql "$DATABASE_URL" -f seed.sql          # 商品カタログ（任意）
 ```
 
-Supabase CLI 派なら `supabase/migrations/` をそのまま `supabase db push` に載せられるよう番号命名済み。
+`supabase/migrations/` は番号命名済みで、ローカル（`supabase start` / `supabase db reset`）にはそのまま流れる。
+本番には `supabase db push` を使わない（リモートの migration 履歴が 0024 で止まっている。適用は Management API。AGENTS.md 参照）。
 
 ## テーブル（19）
 profiles / gyms / gym_equipment / visits / visit_partners / workouts / exercises /

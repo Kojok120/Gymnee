@@ -83,6 +83,7 @@ Gymnee は SwiftUI ベースの **iOS ネイティブ筋トレアプリ**です�
 - 追加した SQL は **必ず `supabase/setup_all.sql` にも同じ内容を番号順で反映**し、migration と同じコミットに入れる（このリポジトリの `.claude` フック・運用ルール。setup_all.sql は新規構築用の手保守ファイルで、漏れると機能が丸ごと欠ける）
 - 本番には実ユーザーのデータがある。drop・列の削除・型変更などの破壊的な変更は特に慎重に扱い、ドライランを省かない
 - **dev / ステージングの Supabase は無い**（dev プロジェクトは 2026-07 にコスト削減で削除済み。Supabase は本番 `ibtrbymfmxrruuwuzell` のみ）。検証は `scripts/sqltest/run.sh <migration...> <test.sql>`（一時 PostgreSQL で 2 周流して冪等性も見る）か、本番への `begin; ...; rollback;` のドライランで行い、本番への適用は Management API でユーザーの明示 OK のあとに行う。クライアントが新しい列を送るビルドは、migration が無いと同期が失敗するので**アプリ配信より先に適用**する。`supabase db push` は使わない（リモートの migration 履歴が 0024 で止まっている）
+- Supabase CLI は v3 前提。ホストへの操作は `--remote=<ref>` で対象を毎回明示する（`--project-ref` / `--linked` は廃止予定。`supabase/.temp` のリンク先は削除済みの旧 dev を指していることがあり、無指定の deploy はそこへ行って失敗する）。Edge Function の deploy は `supabase functions deploy <fn> --use-api --remote=ibtrbymfmxrruuwuzell`（この Mac に Docker が無い）。ホストを変える操作は確認が出て既定は No、非対話は `--yes`。`db` / `migration` 系は無指定だとローカルを向く。`config.toml` に旧名の `[inbucket]` を戻さない（v3 は読めず全コマンドが落ちる。`[local_smtp]` を使う）
 - **全ユーザーテーブルに RLS を必須**とする。マスタ（gyms / exercises のプリセット = `created_by IS NULL`）は全員参照・作成者のみ更新、公開コンテンツは `visibility` + `is_following()` で判定
 - Storage バケットのパスは `<uid>/<file>` 規約（RLS で本人のみ書込）。private バケット（progress-photos / visit-photos）は署名/認証付き GET で配信
 

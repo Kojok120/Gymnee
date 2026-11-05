@@ -6,7 +6,8 @@ Postgres / Auth(GoTrue) / Storage / RLS / マイグレーションを実機同�
 
 ## 前提
 - Docker Desktop 起動中
-- Supabase CLI（`supabase --version`）
+- Supabase CLI v3 以上（`supabase --version`）。v3 では `db` / `migration` 系を対象無しで叩くとローカルを向く
+  （本番は `--remote=<ref>` を付けたときだけ。Gymnee は本番に CLI で SQL を流さない）
 
 ## 起動
 ```bash
@@ -40,7 +41,7 @@ supabase db reset       # ローカル DB を作り直して全 migration + seed
 検証が通ったら prod（`ibtrbymfmxrruuwuzell`）へ Management API で適用する（`supabase db push` は使わない）。
 
 ## 制約
-- 外部 OAuth（Apple / Google）はローカルでは動かない。auth はメール OTP（ローカルは Inbucket が
-  メールを受ける・`supabase status` の Inbucket URL）で検証する。
+- 外部 OAuth（Apple / Google）はローカルでは動かない。auth はメール OTP（ローカルは Mailpit が
+  メールを受ける。config.toml の `[local_smtp]`、Web UI は http://127.0.0.1:54424）で検証する。
 - Edge Functions はローカルでも起動するが、secrets（APNs/Gemini/Resend）未設定のため通知/AI は限定的。
 - 停止は `supabase stop`（`--no-backup` でボリューム破棄）。

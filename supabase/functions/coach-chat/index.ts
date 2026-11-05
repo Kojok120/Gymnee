@@ -4,8 +4,8 @@
 // plan-workouts と分けている理由: あちらは「週の計画をまとめて組む」一括処理で、
 // こちらは「1 往復の会話」。プロンプトも応答形式も寿命も別物のため、同居させると両方が壊れやすい。
 //
-// デプロイ: supabase functions deploy coach-chat
-// キー設定: supabase secrets set GEMINI_API_KEY=xxxx （plan-workouts と同じキーを共用）
+// デプロイ: supabase functions deploy coach-chat --use-api --remote=ibtrbymfmxrruuwuzell（CLI v3。対象は毎回明示する）
+// キー設定: supabase secrets set --remote=ibtrbymfmxrruuwuzell GEMINI_API_KEY=xxxx （plan-workouts と同じキーを共用）
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
