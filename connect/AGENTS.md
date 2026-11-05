@@ -56,7 +56,7 @@ psql postgresql://postgres:postgres@127.0.0.1:54422/postgres -v ON_ERROR_STOP=1 
 ## デプロイ（本番への反映は岡本さんの明示 OK のあと）
 
 ```bash
-pnpm exec wrangler kv namespace create OAUTH_KV      # 初回だけ。id を wrangler.jsonc に書く
+pnpm exec wrangler kv namespace create gymnee-connect-oauth  # 作成済み（2026-11-05）。id は wrangler.jsonc
 pnpm exec wrangler secret put SUPABASE_SERVICE_ROLE_KEY   # ほかの秘密も同じ（wrangler.jsonc のコメント）
 pnpm exec wrangler deploy                            # api.gymnee.app（カスタムドメイン）
 ```

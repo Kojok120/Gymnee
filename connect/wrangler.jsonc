@@ -9,8 +9,8 @@
   "workers_dev": false,
   "routes": [{ "pattern": "api.gymnee.app", "custom_domain": true }],
   "kv_namespaces": [
-    // OAuth のクライアント・許可・トークン（ライブラリが使う）。id は `wrangler kv namespace create OAUTH_KV` の結果
-    { "binding": "OAUTH_KV", "id": "REPLACE_WITH_KV_ID" }
+    // OAuth のクライアント・許可・トークン（ライブラリが使う）。2026-11-05 に `wrangler kv namespace create gymnee-connect-oauth` で作成
+    { "binding": "OAUTH_KV", "id": "876ecde197944929b41dffccd804cb29" }
   ],
   "ratelimits": [
     // 利用者ごとに 1 分 120 回まで（API と MCP の合計）
