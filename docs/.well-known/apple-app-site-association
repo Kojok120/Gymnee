@@ -2,12 +2,52 @@
   "applinks": {
     "details": [
       {
-        "appIDs": ["PG5P26J3W2.com.gymnee.app"],
+        "appIDs": [
+          "PG5P26J3W2.com.gymnee.app"
+        ],
         "components": [
-          { "/": "/invite", "?": { "u": "?*" }, "comment": "フレンド招待リンク（末尾スラッシュ無し・招待者id必須）" },
-          { "/": "/invite/", "?": { "u": "?*" }, "comment": "フレンド招待リンク（id無しの素の /invite/ はWebガイドに任せる）" },
-          { "/": "/party", "?": { "p": "?*" }, "comment": "週ボスのパーティ招待（パーティid必須）" },
-          { "/": "/party/", "?": { "p": "?*" }, "comment": "週ボスのパーティ招待（id無しの素の /party/ はWebガイドに任せる）" }
+          {
+            "/": "/invite",
+            "?": {
+              "u": "?*"
+            },
+            "comment": "フレンド招待リンク（末尾スラッシュ無し・招待者id必須）"
+          },
+          {
+            "/": "/invite/",
+            "?": {
+              "u": "?*"
+            },
+            "comment": "フレンド招待リンク（id無しの素の /invite/ はWebガイドに任せる）"
+          },
+          {
+            "/": "/party",
+            "?": {
+              "p": "?*"
+            },
+            "comment": "週ボスのパーティ招待（パーティid必須）"
+          },
+          {
+            "/": "/party/",
+            "?": {
+              "p": "?*"
+            },
+            "comment": "週ボスのパーティ招待（id無しの素の /party/ はWebガイドに任せる）"
+          },
+          {
+            "/": "/connect/approve",
+            "?": {
+              "p": "?*"
+            },
+            "comment": "AI（MCP クライアント）の接続の承認（#171。承認待ちの id 必須）"
+          },
+          {
+            "/": "/connect/approve/",
+            "?": {
+              "p": "?*"
+            },
+            "comment": "同上（末尾スラッシュ付き）"
+          }
         ]
       }
     ]

@@ -1,0 +1,8 @@
+# wrangler dev --env local 用（.dev.vars.local に複製して使う。gitignore 済み）
+# ローカル Supabase の鍵は `supabase status --output-format json` の env にある（ローカル専用・秘密ではない）
+SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+# openssl rand -base64 32
+ENCRYPTION_KEY=
+# openssl rand -hex 32
+STATE_SECRET=

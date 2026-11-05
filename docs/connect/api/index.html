@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API — Gymnee 連携</title>
+<meta name="description" content="Gymnee の記録を読み書きする REST API。API キーの作り方、認証、権限、冪等な記録の追加、エラーの形。">
+<meta name="theme-color" content="#0B0D0C">
+<link rel="icon" href="../../assets/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../connect.css">
+</head>
+<body>
+<header class="site"><div class="inner">
+  <img src="../../assets/gymnee-icon.png" alt=""><a class="brand" href="../../">Gymnee</a>
+  <nav><a href="../">連携</a><a href="../ai/">AI につなぐ</a><a href="./" aria-current="page">API</a></nav>
+</div></header>
+<main>
+  <h1>Gymnee <span class="lime">API</span></h1>
+  <p class="lead">記録・自己ベスト・体重・パーティの状況を読み、記録を足す REST API です。MCP の道具と同じ定義から作っているので、できることは同じです。</p>
+  <p><a href="reference/">API リファレンス（全操作の入力と出力）</a> ・ <a href="openapi.json">openapi.json</a></p>
+
+  <h2>はじめかた</h2>
+  <ol class="steps">
+    <li>アプリの <em>その他 &gt; 連携 &gt; API キーを作る</em> で、名前とできることを選んで作ります。キーは作った直後の 1 回しか表示されません。</li>
+    <li>キーを <code>Authorization</code> ヘッダーに付けて呼びます。
+<pre><code>curl -s https://api.gymnee.app/v1/summary \
+  -H "Authorization: Bearer $GYMNEE_TOKEN"</code></pre></li>
+    <li>返ってくるのは <code>{"data": …}</code> の形の JSON です。</li>
+  </ol>
+
+  <h2>記録を足す</h2>
+  <p>「記録を足す」を付けたキーで呼べます。種目は名前か id で指定します。名前が一つに決まらないときは 422 と候補が返るので、選び直して送り直してください。</p>
+<pre><code>curl -s https://api.gymnee.app/v1/workouts \
+  -H "Authorization: Bearer $GYMNEE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 2026-11-05-morning" \
+  -d '{
+    "name": "胸の日",
+    "durationMinutes": 45,
+    "exercises": [
+      { "name": "ベンチプレス", "sets": [{ "weightKg": 60, "reps": 10 }, { "weightKg": 62.5, "reps": 8 }] },
+      { "name": "腕立て伏せ", "sets": [{ "reps": 20 }] }
+    ]
+  }'</code></pre>
+  <ul>
+    <li><strong>Idempotency-Key</strong> を付けると、同じ鍵での 2 回目は何も増やさず、1 回目の記録を返します（200）。通信が切れて送り直すときに二重にならないよう、付けることを勧めます。</li>
+    <li>自己ベストは、アプリで記録したときと同じ規則で判定します。</li>
+    <li>記録はアプリを開くと同期されます。消す・直すはアプリだけで行います。</li>
+    <li>1 年より前と、未来の時刻の記録は足せません。</li>
+  </ul>
+
+  <h2>権限</h2>
+  <div class="table-wrap"><table>
+    <tr><th>権限</th><th>できること</th></tr>
+    <tr><td><code>read</code></td><td>記録・自己ベスト・体重（アプリで記録した分。ヘルスケアから取り込んだ値は出しません）・パーティの状況を読む（どのキーにも付きます）</td></tr>
+    <tr><td><code>workouts:write</code></td><td>ワークアウトの記録を足す</td></tr>
+    <tr><td><code>coach:write</code></td><td>アプリのコーチ画面にメニューを提案する</td></tr>
+  </table></div>
+  <p>権限が足りない操作は 403 で、<code>WWW-Authenticate</code> ヘッダーに要る権限が入ります。</p>
+
+  <h2>決まりごと</h2>
+  <ul>
+    <li>日時は ISO 8601、重量は kg、距離は km、時間は秒です。補助付きの自重種目は、重量を負の値で表します（-10 = 10kg の補助）。</li>
+    <li>週は日本時間の月曜始まりです。</li>
+    <li>呼び出しは 1 人あたり 1 分に 120 回までです。超えると 429 と <code>Retry-After</code> が返ります。</li>
+    <li>読めるのは、キーを作った本人の記録だけです。</li>
+  </ul>
+
+  <h2>エラーの形</h2>
+<pre><code>{ "error": { "code": "unresolved", "message": "記録の中身を確かめて", "details": [ … ] } }</code></pre>
+  <div class="table-wrap"><table>
+    <tr><th>400</th><td>入力の形が違う（知らない項目も受け付けません）</td></tr>
+    <tr><th>401</th><td>キーが無い・消された</td></tr>
+    <tr><th>403</th><td>権限が足りない</td></tr>
+    <tr><th>404</th><td>見つからない</td></tr>
+    <tr><th>422</th><td>種目が決まらない・値が足りない（<code>details</code> に理由と候補）</td></tr>
+    <tr><th>429</th><td>呼び出しが多すぎる</td></tr>
+  </table></div>
+
+  <h2>OAuth で使う</h2>
+  <p>MCP クライアントのように OAuth 2.1 に対応したものは、キーを使わずにつなげます。認可サーバーの情報は <code>https://api.gymnee.app/.well-known/oauth-authorization-server</code> にあります（動的クライアント登録・Client ID Metadata Document・PKCE に対応）。ログインの代わりに、利用者が iPhone の Gymnee で承認します。</p>
+
+  <div class="warn">キーはパスワードと同じように扱ってください。コードに書き込んで公開しない・人に渡さない。漏れたら <em>その他 &gt; 連携</em> ですぐに消せます。</div>
+</main>
+<footer><div class="inner">
+  <a href="../">連携</a><a href="reference/">API リファレンス</a><a href="../../privacy-policy.html">プライバシーポリシー</a>
+</div></footer>
+</body>
+</html>

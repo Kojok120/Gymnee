@@ -14,6 +14,8 @@ enum AppRoute: Hashable {
     case body
     case shop
     case settings
+    /// 外部連携（AI・API キー。#171）。
+    case connections
     /// ブロック中のユーザー一覧（設定から）。遷移先 init が @Query を作るため必ず値ベースで開く。
     case blockedUsers(UUID)
     /// 記録一覧（履歴）。この先の詳細も値ベースで push するため、入口も値ベースに揃える
@@ -37,6 +39,7 @@ extension View {
                 ShopContent(userId: userId)
                     .navigationTitle("ショップ").navigationBarTitleDisplayMode(.inline)
             case .settings: SettingsView()
+            case .connections: ConnectionsView()
             case .blockedUsers(let uid): BlockedUsersView(currentUserId: uid)
             case .history: HistoryView(userId: userId)
             case .workoutDetail(let workout): WorkoutDetailView(workout: workout)

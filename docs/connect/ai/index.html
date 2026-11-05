@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI につなぐ — Gymnee 連携</title>
+<meta name="description" content="Claude・ChatGPT・Claude Code に Gymnee をつなぐ手順。URL を 1 つ足して、iPhone の Gymnee で承認するだけ。使える問いかけとレシピも。">
+<meta property="og:title" content="Gymnee を Claude・ChatGPT につなぐ">
+<meta property="og:image" content="../../assets/gymnee-icon.png">
+<meta name="theme-color" content="#0B0D0C">
+<link rel="icon" href="../../assets/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../connect.css">
+</head>
+<body>
+<header class="site"><div class="inner">
+  <img src="../../assets/gymnee-icon.png" alt=""><a class="brand" href="../../">Gymnee</a>
+  <nav><a href="../">連携</a><a href="./" aria-current="page">AI につなぐ</a><a href="../api/">API</a></nav>
+</div></header>
+<main>
+  <h1>Gymnee を <span class="lime">AI</span> につなぐ</h1>
+  <p class="lead">Claude や ChatGPT が、あなたの記録を読んで答えられるようになります。「今週どうだった？」「来週のメニューを組んで」と話しかけるだけです。</p>
+
+  <h2>3 ステップ</h2>
+  <ol class="steps">
+    <li><strong>この URL をコピー</strong>（アプリの <em>その他 &gt; 連携</em> にも出ています）
+      <div class="copyline"><code id="mcp-url">https://api.gymnee.app/mcp</code><button type="button" id="copy">コピー</button></div>
+    </li>
+    <li><strong>AI のアプリに足す</strong>。下の「アプリごとの場所」を見て、コネクタ（MCP サーバー）の追加の画面に貼ります。</li>
+    <li><strong>iPhone の Gymnee で承認</strong>。ブラウザに番号と QR コードが出ます。iPhone のカメラで読み取ると Gymnee が開くので、同じ番号か確かめて「承認する」を押します。</li>
+  </ol>
+  <p class="note">承認の画面で、渡す権限を選べます。「記録を足す」「メニューを提案する」を外せば、読むだけになります。</p>
+
+  <h2>アプリごとの場所</h2>
+  <p class="small muted">画面の名前は、それぞれのアプリの更新で変わることがあります。</p>
+
+  <h3>Claude（Web・デスクトップ・スマホ）</h3>
+  <p>設定の「コネクタ」から、カスタムコネクタを追加します。名前は <code>Gymnee</code>、URL は上の URL です。追加したら「連携」を押すと承認の画面が開きます。</p>
+
+  <h3>ChatGPT</h3>
+  <p>設定の「アプリ」（コネクタ）から、カスタムの MCP サーバーを追加し、上の URL を貼ります。プランや設定によっては、開発者モードを有効にする必要があります。</p>
+
+  <h3>Claude Code</h3>
+<pre><code>claude mcp add --transport http gymnee https://api.gymnee.app/mcp</code></pre>
+  <p>Claude Code の中で <code>/mcp</code> を開き、gymnee の認証を選ぶとブラウザに承認の画面が出ます。ブラウザを使わずにつなぐなら、アプリで作った API キーを渡します。</p>
+<pre><code>claude mcp add --transport http gymnee https://api.gymnee.app/mcp \
+  --header "Authorization: Bearer gym_pat_xxxxxxxx"</code></pre>
+
+  <h3>そのほかの MCP クライアント（Cursor など）</h3>
+  <p>リモートの MCP サーバー（Streamable HTTP）として登録します。OAuth に対応していれば URL だけ、対応していなければ API キーをヘッダーに付けます。</p>
+<pre><code>{
+  "mcpServers": {
+    "gymnee": {
+      "url": "https://api.gymnee.app/mcp",
+      "headers": { "Authorization": "Bearer gym_pat_xxxxxxxx" }
+    }
+  }
+}</code></pre>
+
+  <h2>ボタンで使える問いかけ</h2>
+  <p>つなぐと、AI のアプリの「/」や「＋」のメニューに次の 3 つが出ます。選ぶだけで、AI が必要な記録を読みに行きます。</p>
+  <div class="table-wrap"><table>
+    <tr><th>今週のふりかえり</th><td>今週を先週と比べて、よかったこと・偏り・来週の一手をまとめます。</td></tr>
+    <tr><th>来週のメニューを組む</th><td>週の目標と最近の重量から来週のメニューを組み、よければアプリのコーチ画面に届けます。</td></tr>
+    <tr><th>伸び悩みを見る</th><td>種目を 1 つ選ぶと、推定 1RM の推移から停滞しているかを見て、次の一手を出します。</td></tr>
+  </table></div>
+
+  <h2>話しかけ方のレシピ</h2>
+  <ul>
+    <li>「先月の脚のトレーニングを週ごとの総量で表にして」</li>
+    <li>「ベンチプレスの推定 1RM の推移を見て、次の 4 週の目安の重量を出して」</li>
+    <li>「今日やったのはベンチ 60kg 10 回 3 セットと懸垂 8 回 3 セット。記録しておいて」</li>
+    <li>「最近 1 週間休んでしまった。軽めのメニューを組んで、アプリに送って」</li>
+    <li>「体重の推移と、トレーニングの回数を並べて見せて」</li>
+  </ul>
+  <p class="note">記録を足すときは、AI が中身を見せて確かめてから足します。同じ記録が二重にならないようにもなっています。足した記録は、アプリを開くと同期されます。</p>
+
+  <h2>AI が使う道具</h2>
+  <p class="small muted">API と同じ定義から作っています。くわしい入力と出力は <a href="../api/reference/">API リファレンス</a>へ。</p>
+  <div class="table-wrap"><table id="tools">
+    <tr><th>道具</th><th>できること</th><th>要る権限</th></tr>
+    <tr><td colspan="3" class="muted">読み込み中…</td></tr>
+  </table></div>
+
+  <h2>困ったとき</h2>
+  <details><summary>QR コードを読んでも Gymnee が開かない</summary>
+    <p>iPhone で承認の画面を開いているなら「開かないときはこちら」を押してください。Gymnee が入っていないときは App Store から入れてから、もう一度読み取ります。</p></details>
+  <details><summary>番号が違う・自分で始めた覚えがない</summary>
+    <p>「拒否する」を押してください。他人が始めた接続を承認すると、その人があなたの記録を読めてしまいます。</p></details>
+  <details><summary>あとから権限を足したい・減らしたい</summary>
+    <p>アプリの <em>その他 &gt; 連携</em> で接続を解除し、つなぎ直して承認の画面で選び直してください。</p></details>
+  <details><summary>AI が「記録が見つからない」と言う</summary>
+    <p>サインインしているか、アプリを開いて同期できているかを確かめてください。AI が読むのはサーバーに同期された記録です。</p></details>
+  <details><summary>やめたい</summary>
+    <p><em>その他 &gt; 連携</em> で解除すると、その AI はすぐに記録を読めなくなります。アカウントを消すと、連携もすべて消えます。</p></details>
+</main>
+<footer><div class="inner">
+  <a href="../">連携</a><a href="../../privacy-policy.html">プライバシーポリシー</a><a href="../../terms-of-service.html">利用規約</a>
+</div></footer>
+<script>
+  document.getElementById("copy").addEventListener("click", function () {
+    var b = this;
+    navigator.clipboard.writeText(document.getElementById("mcp-url").textContent).then(function () {
+      b.textContent = "コピーした";
+      setTimeout(function () { b.textContent = "コピー"; }, 1600);
+    });
+  });
+  // 道具の一覧は API の定義（openapi.json）から作る。ここに手で書かない。
+  var scopeLabel = { "read": "読む", "workouts:write": "記録を足す", "coach:write": "提案する" };
+  fetch("../api/openapi.json").then(function (r) { return r.json(); }).then(function (doc) {
+    var rows = [];
+    Object.keys(doc.paths).forEach(function (path) {
+      Object.keys(doc.paths[path]).forEach(function (method) {
+        var op = doc.paths[path][method];
+        rows.push([op["x-mcp-tool"], op.summary, op["x-required-scope"]]);
+      });
+    });
+    var table = document.getElementById("tools");
+    while (table.rows.length > 1) table.deleteRow(1);
+    rows.forEach(function (r) {
+      var tr = table.insertRow();
+      var c0 = tr.insertCell(); var code = document.createElement("code"); code.textContent = r[0]; c0.appendChild(code);
+      tr.insertCell().textContent = r[1];
+      var c2 = tr.insertCell(); var pill = document.createElement("span"); pill.className = "pill"; pill.textContent = scopeLabel[r[2]] || r[2]; c2.appendChild(pill);
+    });
+  }).catch(function () {
+    document.getElementById("tools").rows[1].cells[0].textContent = "読み込めませんでした。API リファレンスを見てください。";
+  });
+</script>
+</body>
+</html>

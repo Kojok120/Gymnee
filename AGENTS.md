@@ -176,6 +176,7 @@ GymneeWidgets/              WidgetKit 拡張（ウィジェット + Live Activit
 GymneeWatch/                watchOS アプリ
 GymneeTests/                ドメインロジックのユニットテスト
 supabase/                   migrations / setup_all.sql / functions / seed
+connect/                    外部連携の Cloudflare Worker（api.gymnee.app。API・MCP・OAuth。領域の規約は connect/AGENTS.md）
 Config/                     環境別シークレット xcconfig（gitignore）
 ```
 
@@ -229,7 +230,7 @@ xcrun simctl launch <device> com.gymnee.app.dev -gymneeDemo -gymneeScreen <name>
 #   ドット絵 : pixelart / pixelart-items / pixelart-room / pixelart-pets
 #   分析系   : analytics（からだ＝人体図）/ muscle
 #   ソーシャル: social / friends / composer / share / summary
-#   その他   : profile / shop / other / settings
+#   その他   : profile / shop / other / settings / connect / connect-approve（外部連携。見本のデータ）
 # 季節のボス（issue #155）は `-gymneeSeasonalEvent halloween|christmas|newYear` を足すと今週をその週として出せる
 # 育成タブの部屋 / ボス部屋は `-gymnee.character.page room|boss` を足すと固定できる（撮影専用。
 # 引数の値が UserDefaults より優先されるので、渡している間は切り替えが効かない。UI テストでは使わない）
@@ -280,6 +281,17 @@ iOS の `.env` 相当は **xcconfig** で扱う。`Config/Secrets.example.xcconf
 - **CI**: `ci.yml` でビルド / テストを実行
 - 署名・プロビジョニング・ASC / APNs 鍵などの秘匿値は CI のシークレットおよび `Config/Secrets.*.xcconfig` で管理し、リポジトリに含めない
 - watchOS は環境により SDK 未導入で未ビルド検証の場合がある（ターゲット構成済み・iOS ビルドからは隔離）
+
+## 外部連携（#171）
+
+Gymnee をアプリの外の道具（Claude・ChatGPT などの AI、利用者のスクリプト）とつなぐ。サーバーは `connect/`（Cloudflare Worker、`api.gymnee.app`）で、規約と不変条件は [`connect/AGENTS.md`](connect/AGENTS.md)。仕様の正は Issue #171。
+
+- アプリ側の入口は その他 > 連携（`ConnectionsView`）。AI の接続の承認は `https://gymnee.app/connect/approve?p=<id>`（ユニバーサルリンク）か `gymnee://connect/approve?p=<id>` で開く `ConnectApproveView`。通信は `ConnectService` → `SupabaseClient.connectCall`（アプリのトークンで呼び、401 は REST と同じく一度だけ更新して再試行）
+- 外部に渡す権限はアプリのログインより狭い（読む / 記録を足す / メニューを提案する）。外部から記録を消す・直すことはできない。消す・直す操作を外部に足すなら、先に削除の伝わり方（差分 pull は削除を伝えない）を決め直す
+- 外部の AI からのメニュー提案は `coach_messages.proposal` に届き、取り込むかはアプリで決める（`PlannedWorkout` は端末専用で同期しないため）
+- 外部から足した記録はサーバーに直接入り、差分 pull で端末に降りる。自己ベストはサーバー側でアプリと同じ規則で判定する（`connect/src/domain/pr.ts` は `PRDetector` の写し。片方を変えたら両方直す）
+- ドキュメントは `docs/connect/`（gymnee.app/connect）。API リファレンスの `docs/connect/api/openapi.json` は `connect/` の `pnpm openapi` で書き出す。手で書かない
+- 確認: `connect/` の `pnpm test`・`pnpm e2e:local`（ローカル Supabase + wrangler dev）。アプリの連携画面は `-gymneeScreen connect` / `connect-approve`（ローカルの Debug アプリはサインインできないので見本のデータで出す）
 
 ## グロース分析ハーネス
 

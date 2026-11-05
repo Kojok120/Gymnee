@@ -8,6 +8,8 @@ on:
       - '**/*.md'
       - '.claude/**'
       - 'supabase/**'
+      # 外部連携の Worker は connect.yml で確かめる（iOS のビルドに関係しない）
+      - 'connect/**'
 
 concurrency:
   group: ci-${{ github.ref }}

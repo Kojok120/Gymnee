@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Gymnee で承認する</title>
+<meta name="theme-color" content="#0B0D0C">
+<link rel="icon" href="../../assets/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../connect.css">
+<style>main{max-width:440px;text-align:center;padding-top:56px}.btn{display:block;margin:22px 0 0;padding:15px;border-radius:13px;background:var(--lime);color:var(--bg0);font-weight:700;text-decoration:none}.btn.ghost{background:transparent;color:var(--lime);border:1px solid var(--lime);margin-top:10px}img.icon{width:80px;height:80px;border-radius:20px}</style>
+</head>
+<body>
+<!-- AI の接続の承認（#171）。ふだんはユニバーサルリンクでアプリが開き、このページは出ない。
+     出るのは、アプリが入っていない・リンクがブラウザで開かれたとき。 -->
+<main>
+  <img class="icon" src="../../assets/gymnee-icon.png" alt="Gymnee">
+  <h1 style="font-size:1.5rem;margin-top:18px">Gymnee アプリで承認します</h1>
+  <p class="muted">AI の接続を承認するには、iPhone の Gymnee アプリで開いてください。</p>
+  <a class="btn" id="open" href="#" hidden>Gymnee で開く</a>
+  <a class="btn ghost" href="https://apps.apple.com/jp/app/id6782380051">App Store で入手する</a>
+  <p class="small muted" style="margin-top:22px">自分で接続を始めた覚えがなければ、このページを閉じてください。</p>
+</main>
+<script>
+  // 同じドメインのページ内リンクではユニバーサルリンクが発火しないので、カスタムスキームで開く。
+  (function () {
+    var p = new URLSearchParams(location.search).get("p") || "";
+    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(p)) return;
+    var a = document.getElementById("open");
+    a.href = "gymnee://connect/approve?p=" + p.toLowerCase();
+    a.hidden = false;
+  })();
+</script>
+</body>
+</html>

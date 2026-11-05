@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 「その他」タブ（§5 ナビ）。プロフィール・ショップ・設定を大きなカードで選ぶ。
+/// 「その他」タブ（§5 ナビ）。プロフィール・ショップ・連携・設定を大きなカードで選ぶ。
 ///
 /// タブは iOS の上限 5 本（超えると More に畳まれる）。記録 / カレンダー / 育成 / ソーシャル を
 /// タブに置き、残りをここに集めている。外（在庫切れ通知のタップ）からショップを開けるよう
@@ -17,6 +17,9 @@ struct OtherTabView: View {
                 }
                 NavigationLink(value: AppRoute.shop) {
                     card(title: "ショップ", subtitle: "サプリ・ギアを探す", icon: "bag.fill", tint: Theme.series2)
+                }
+                NavigationLink(value: AppRoute.connections) {
+                    card(title: "連携", subtitle: "Claude・ChatGPT・API", icon: "point.3.connected.trianglepath.dotted", tint: Theme.connect)
                 }
                 NavigationLink(value: AppRoute.settings) {
                     card(title: "設定", subtitle: "通知・目標・アカウント", icon: "gearshape.fill", tint: Theme.info)

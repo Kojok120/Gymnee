@@ -68,6 +68,7 @@ enum Theme {
     static let danger = Color(light: 0xE0463F, dark: 0xFF5C5C)    // 削除/連続途切れ
     static let info = Color(light: 0x0AA3D9, dark: 0x4ECBFF)      // 有酸素/心拍
     static let series2 = Color(light: 0x7C4DFF, dark: 0xB388FF)   // ボリューム第2系列
+    static let connect = Color(light: 0x00A884, dark: 0x3EDDB0)   // 外部連携（その他 > 連携。#171）
 
     // MARK: - Legacy aliases (既存ファイルとの後方互換。実使用のあるものだけ残す)
 
