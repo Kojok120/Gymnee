@@ -13,7 +13,8 @@
 #     本番変更の同意とみなす。SQL の runsql も確認なしで流している）
 #
 # 流すもの: スキーマ(setup_all.sql) → auth設定(Apple/Google/email/SMTP/redirect/OTP) →
-#           Function deploy + secrets → push_config 投入
+#           Function deploy (send-push / plan-workouts / coach-chat) + secrets → push_config 投入
+#           deploy は --use-api（サーバー側でバンドル。Docker 不要）
 #
 # ★手動の前後作業（このスクリプトでは出来ない）は docs/production-setup.md を参照。
 set -euo pipefail
@@ -56,10 +57,10 @@ KEYID="$(basename "$P8" | sed -E 's/.*AuthKey_([A-Za-z0-9]{10}).*/\1/')"   # 10�
 PUSH_SECRET="$(openssl rand -hex 24)"
 TMPL='<div style="font-family:-apple-system,Helvetica,sans-serif;max-width:480px;margin:0 auto;padding:24px"><h2 style="color:#111">Gymnee サインイン</h2><p>確認コード:</p><p style="font-size:32px;font-weight:700;letter-spacing:6px;color:#111">{{ .Token }}</p><p style="color:#555">このコードをアプリに入力してください（1時間で失効します）。</p><p style="color:#999;font-size:12px">心当たりがない場合はこのメールを無視してください。</p></div>'
 
-echo "▶ 1/4 スキーマ適用（setup_all.sql）"
+echo "▶ 1/5 スキーマ適用（setup_all.sql）"
 runsql "$(cat "$ROOT/supabase/setup_all.sql")"
 
-echo "▶ 2/4 Auth 設定（Apple/Google/email/SMTP/redirect/OTP）"
+echo "▶ 2/5 Auth 設定（Apple/Google/email/SMTP/redirect/OTP）"
 # 匿名認証は不採用（IdentityAdoptionPolicy ガードで恒久対策・docs/identity-environment-design.md）。
 # anon key はアプリに同梱されるため、既に匿名を有効化した project でも false を明示して確実に無効化する。
 BODY="$(jq -n --arg gid "$GID" --arg gsec "$GSEC" --arg rkey "$RKEY" --arg tmpl "$TMPL" '{
@@ -77,19 +78,19 @@ curl -s -w '\n[HTTP %{http_code}]\n' -X PATCH "$API/config/auth" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$BODY" | jq -c '{message}' 2>/dev/null || true
 
 echo "▶ 3/5 Edge Function: send-push デプロイ＋secrets（APNS_HOST=本番）"
-supabase functions deploy send-push --remote="$PROD_REF" --yes
+supabase functions deploy send-push --use-api --remote="$PROD_REF" --yes
 supabase secrets set --remote="$PROD_REF" --yes \
   APNS_KEY="$(cat "$P8")" APNS_KEY_ID="$KEYID" APNS_TEAM_ID=PG5P26J3W2 \
   APNS_BUNDLE_ID=com.gymnee.app APNS_HOST=api.push.apple.com PUSH_SHARED_SECRET="$PUSH_SECRET"
 
-echo "▶ 4/5 Edge Function: plan-workouts（AIワークアウト計画）"
-supabase functions deploy plan-workouts --remote="$PROD_REF" --yes
+echo "▶ 4/5 Edge Function: plan-workouts（AIワークアウト計画）+ coach-chat（AIコーチ。同じ Gemini キーを共用）"
+supabase functions deploy plan-workouts coach-chat --use-api --remote="$PROD_REF" --yes
 GKEY="$(grep '^GEMINI_API_KEY=' "$SECRETS/.env" | cut -d= -f2- | tr -d '[:space:]')"
 if [ -n "$GKEY" ]; then
   supabase secrets set --remote="$PROD_REF" --yes \
     GEMINI_API_KEY="$GKEY" GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1
 else
-  echo "  ⚠ secrets/.env に GEMINI_API_KEY が無いため未設定。AI計画を使うなら後で:"
+  echo "  ⚠ secrets/.env に GEMINI_API_KEY が無いため未設定。AI計画とコーチを使うなら後で:"
   echo "    supabase secrets set --remote=$PROD_REF --yes GEMINI_API_KEY=<key> GEMINI_MODEL=gemini-3.5-flash-lite GEMINI_API_VERSION=v1"
 fi
 
