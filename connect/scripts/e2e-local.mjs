@@ -4,6 +4,7 @@
 // 2. アプリの口で API キー（PAT）を作る
 // 3. PAT で REST を読む・記録を足す（冪等・自己ベスト）
 // 4. PAT で MCP を呼ぶ
+// 4.5 送り先（汎用 Webhook）を足し、記録の完了が届くまで（cron を手で呼ぶ）
 // 5. OAuth（DCR → 承認画面 → アプリで承認 → トークン）で MCP を呼ぶ
 // 6. 後片付け（作った利用者を消す。記録は連鎖削除）
 import { createHash, randomBytes } from "node:crypto";
@@ -14,6 +15,11 @@ const status = JSON.parse(execFileSync("supabase", ["status", "--output-format",
 const SB = status.env.API_URL;
 const PUB = status.env.PUBLISHABLE_KEY;
 const SECRET = status.env.SECRET_KEY;
+const DB_URL = status.env.DB_URL;
+const PSQL = process.env.PSQL ?? "/opt/homebrew/opt/postgresql@16/bin/psql";
+const sql = (q) => execFileSync(PSQL, [DB_URL, "-tAX", "-c", q], { encoding: "utf8" }).trim();
+// 汎用 Webhook の確かめに使う、公開の受け口（POST に 200 を返すもの）
+const ECHO_URL = process.env.ECHO_URL ?? "https://httpbin.org/post";
 
 let failures = 0;
 function check(label, ok, detail) {
@@ -101,6 +107,39 @@ try {
   check("MCP の道具は権限ぶんだけ（log_workout あり・propose_menu なし）", toolNames.includes("log_workout") && !toolNames.includes("propose_menu"), toolNames);
   const called = await mcp(pat, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "get_summary", arguments: {} } });
   check("MCP で get_summary を呼ぶ", called.result?.content?.[0]?.text?.includes("weeklyGoal"), called);
+
+  // ---- 4.5 送り先と配信 ----
+  const added = await app("/destinations", { method: "POST", body: JSON.stringify({ url: ECHO_URL, label: "e2e" }) });
+  const addedBody = await j(added);
+  check("汎用 Webhook を足す（確かめの 1 通が届き、署名の鍵が 1 回だけ返る）", added.status === 201 && addedBody.signingSecret?.startsWith("whsec_"), addedBody);
+  const destId = addedBody.destination?.id;
+  const conn2 = await app("/connections").then(j);
+  const conn2Text = JSON.stringify(conn2);
+  check("一覧に送り先が出る（URL と鍵は出さない）", conn2.destinations?.length === 1 && !conn2Text.includes(ECHO_URL) && !conn2Text.includes(addedBody.signingSecret ?? "@@"), conn2.destinations);
+  const unreachable = await app("/destinations", { method: "POST", body: JSON.stringify({ url: "https://httpbin.org/status/410" }) });
+  check("届かない URL は足さない（422）", unreachable.status === 422, await j(unreachable));
+  const internal = await app("/destinations", { method: "POST", body: JSON.stringify({ url: "https://127.0.0.1/hook" }) });
+  check("内部の宛先は断る（422）", internal.status === 422, await j(internal));
+  const stored = sql(`select target_ciphertext from public.connect_destinations where id = '${destId}'`);
+  check("送り先の URL は暗号化して保存する", stored.startsWith("v1.") && !stored.includes("httpbin"), stored.slice(0, 40));
+
+  const logged = await api("/v1/workouts", { method: "POST", body: JSON.stringify({ name: "配信の確認", exercises: [{ name: "ベンチプレス", sets: [{ weightKg: 50, reps: 5 }] }] }) }).then(j);
+  const wid = logged.data?.workoutId;
+  check("記録を足すと知らせが積まれる（2 分待ってから送る）", sql(`select count(*) from public.connect_events where subject_id = '${wid}' and process_after > now()`) === "1");
+  sql(`update public.connect_events set process_after = now() - interval '1 second' where subject_id = '${wid}'`);
+  let scheduled = await fetch(`${WORKER}/cdn-cgi/handler/scheduled?cron=*+*+*+*+*`);
+  if (scheduled.status === 404) scheduled = await fetch(`${WORKER}/__scheduled?cron=*+*+*+*+*`);
+  let delivery = "";
+  for (let i = 0; i < 20; i++) {
+    delivery = sql(`select status || ':' || coalesce(last_status::text, '-') from public.connect_deliveries where subject_id = '${wid}'`);
+    if (delivery && !delivery.startsWith("pending")) break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  check("cron で送り先に届く（succeeded:200）", delivery === "succeeded:200", { scheduled: scheduled.status, delivery });
+  const patched = await app(`/destinations/${destId}`, { method: "PATCH", body: JSON.stringify({ events: ["weekly.summary"] }) }).then(j);
+  check("送る内容を変える", JSON.stringify(patched.destination?.events) === '["weekly.summary"]', patched);
+  const removed = await app(`/destinations/${destId}`, { method: "DELETE" });
+  check("送り先を消す", removed.status === 204 && (await app("/connections").then(j)).destinations?.length === 0);
 
   // ---- 5. OAuth ----
   const prm = await fetch(`${WORKER}/.well-known/oauth-protected-resource/mcp`).then(j);

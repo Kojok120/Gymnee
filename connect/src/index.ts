@@ -6,6 +6,8 @@
 //   /v1/*                                          REST API（OAuth か PAT）
 //   /openapi.json                                  API の仕様（認証なし）
 //   /app/*                                         iOS アプリ向け（アプリのサインイン）
+//   /slack/callback, /discord/callback              「追加」ボタンの戻り先（state で利用者を確かめる）
+//   scheduled（毎分）                               送り先への配信（jobs/deliver.ts）
 
 import { Hono } from "hono";
 import type { Env } from "./env.js";
@@ -18,7 +20,10 @@ import { finishAuthorize, pairingStatus, showAuthorize } from "./auth/consent.js
 import { CORS_HEADERS, errorBody, handleRest, json } from "./api/rest.js";
 import { openApiDocument } from "./api/openapi.js";
 import { handleMcp } from "./mcp/server.js";
-import { appRoutes } from "./app/routes.js";
+import { appRoutes, MAX_DESTINATIONS_PER_USER } from "./app/routes.js";
+import { backToApp, exchange, type ChatProvider } from "./integrations/chatOAuth.js";
+import { runDeliveries, sendHello } from "./jobs/deliver.js";
+import { encryptString } from "./domain/crypto.js";
 
 function repoFor(env: Env): Repo {
   return new Repo(new Postgrest({ url: env.SUPABASE_URL, serviceKey: env.SUPABASE_SERVICE_ROLE_KEY }));
@@ -78,9 +83,41 @@ app.on(["GET", "POST", "OPTIONS"], ["/v1", "/v1/*", "/.well-known/oauth-protecte
 // ---- アプリ向け ----
 app.route("/app", appRoutes());
 
+// ---- Slack / Discord の「追加」ボタンの戻り先 ----
+app.get("/:provider{slack|discord}/callback", async (c) => {
+  const provider = c.req.param("provider") as ChatProvider;
+  const redirect = (ok: boolean, message?: string) => new Response(null, { status: 302, headers: { Location: backToApp(provider, ok, message) } });
+  const result = await exchange(c.env, provider, new URL(c.req.url).searchParams);
+  if (!result.ok) return redirect(false, result.reason);
+  const repo = repoFor(c.env);
+  const { userId, url, label } = result.webhook;
+  if ((await repo.listDestinations(userId)).length >= MAX_DESTINATIONS_PER_USER) return redirect(false, `送り先は ${MAX_DESTINATIONS_PER_USER} 個まで`);
+  const name = (await repo.profile(userId))?.displayName ?? "Gymnee のユーザー";
+  const hello = await sendHello(c.env, provider, url, null, name, userId);
+  if (!hello.ok) return redirect(false, "チャンネルに送れませんでした。もう一度試してください。");
+  await repo.createDestination(userId, {
+    kind: provider,
+    label,
+    targetCiphertext: await encryptString(c.env.ENCRYPTION_KEY, url),
+    signingSecretCiphertext: null,
+    events: ["workout.completed", "weekly.summary"],
+  });
+  return redirect(true);
+});
+
 // ---- 残りは認可サーバー（メタデータ・トークン・登録・取り消し） ----
 app.all("*", (c) => authorizationServer(c.env).fetch(c.req.raw, c.env, c.executionCtx as ExecutionContext));
 
 export default {
   fetch: app.fetch,
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      runDeliveries(env, repoFor(env)).then(
+        (r) => {
+          if (r.sent > 0 || r.fannedOut > 0 || r.weekly > 0) console.log("deliveries", JSON.stringify(r));
+        },
+        (e) => console.error("deliveries failed", e instanceof Error ? e.message : String(e)),
+      ),
+    );
+  },
 } satisfies ExportedHandler<Env>;
