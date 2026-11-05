@@ -12,6 +12,9 @@ struct DayDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
     @Environment(GoogleCalendarService.self) private var googleCalendar
+    @Environment(AuthService.self) private var auth
+    @Environment(AppErrorCenter.self) private var errors
+    @State private var deletion: DeletionRequest?
     @Query private var workouts: [Workout]
     @Query private var planned: [PlannedWorkout]
     @State private var showAddPlan = false
@@ -67,7 +70,8 @@ struct DayDetailView: View {
                                     .buttonStyle(.borderedProminent).prominentLime().controlSize(.small)
                             }
                         }
-                        .swipeActions {
+                        // 計画は端末だけのものなので確認は出さないが、払い切るだけでは消さない。
+                        .swipeActions(allowsFullSwipe: false) {
                             Button("削除", role: .destructive) { deletePlan(plan) }
                         }
                     }
@@ -89,8 +93,9 @@ struct DayDetailView: View {
                         NavigationLink(value: AppRoute.workoutDetail(workout)) {
                             WorkoutRow(workout: workout)
                         }
-                        .swipeActions {
-                            Button("削除", role: .destructive) { deleteWorkout(workout) }
+                        // 払い切るだけでは消さない。押すと確認が出る（#168）。
+                        .swipeActions(allowsFullSwipe: false) {
+                            Button("削除") { askDelete(workout) }.tint(Theme.danger)
                         }
                     }
                 }
@@ -105,6 +110,7 @@ struct DayDetailView: View {
         .navigationTitle(titleText)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showAddPlan) { addPlanSheet }
+        .deletionConfirmation($deletion)
     }
 
     /// 計画追加シート。WeekPlannerView の追加シートと同形。
@@ -205,12 +211,10 @@ struct DayDetailView: View {
         return f.string(from: date)
     }
 
-    private func deleteWorkout(_ workout: Workout) {
-        let id = workout.id
-        PhotoStore.delete(workout.localPhotoFilename)
-        context.delete(workout) // 配下の workout_exercises / exercise_sets は cascade で削除
-        try? context.save()
-        sync.enqueue(PendingChange(entity: "workouts", recordId: id, operation: .delete, updatedAt: .now))
-        FeedPublisher.deleteFeedItem(forRefId: id, context: context, sync: sync)
+    /// 確認を出してから `WorkoutDeleter` で消す。保存に失敗したらサーバーには送らない（以前はここだけ保存の結果を見ずに積んでいた。#168）。
+    private func askDelete(_ workout: Workout) {
+        let author = WorkoutDeleter.Author(userId: userId, name: auth.session?.displayName, isPermanentAccount: auth.isPermanentAccount)
+        deletion = WorkoutDeleter.request(for: workout, author: author, context: context, sync: sync,
+                                          onFailure: { errors.report("記録を削除できませんでした。もう一度試してください。") })
     }
 }

@@ -41,6 +41,9 @@ private struct DateHistoryList: View {
     let userId: UUID
     @Environment(\.modelContext) private var context
     @Environment(LocalSyncEngine.self) private var sync
+    @Environment(AuthService.self) private var auth
+    @Environment(AppErrorCenter.self) private var errors
+    @State private var deletion: DeletionRequest?
     @Query private var workouts: [Workout]
     /// 進行中の下書き（未完了・予定でない）。中身のあるものだけ「下書き」として一覧先頭に出す。
     @Query private var draftWorkouts: [Workout]
@@ -95,8 +98,9 @@ private struct DateHistoryList: View {
                                     WorkoutRow(workout: workout)
                                 }
                             }
-                            .swipeActions {
-                                Button("削除", role: .destructive) { deleteWorkout(workout) }
+                            // 払い切るだけでは消さない。押すと確認が出る（#168）。
+                            .swipeActions(allowsFullSwipe: false) {
+                                Button("削除") { askDelete(workout) }.tint(Theme.danger)
                             }
                         }
                     }
@@ -113,6 +117,7 @@ private struct DateHistoryList: View {
                     }
                 }
             }
+            .deletionConfirmation($deletion)
         }
     }
 
@@ -147,14 +152,11 @@ private struct DateHistoryList: View {
         }
     }
 
-    /// 記録一覧からワークアウトを削除（カレンダー→日付詳細と同じ挙動）。
-    /// ローカル保存が成功した時だけ outbox に積む（保存失敗時にサーバーだけ消えるのを防ぐ）。
-    private func deleteWorkout(_ workout: Workout) {
-        let id = workout.id
-        context.delete(workout) // 配下の workout_exercises / exercise_sets は cascade で削除
-        do { try context.save() } catch { return }
-        sync.enqueue(PendingChange(entity: "workouts", recordId: id, operation: .delete, updatedAt: .now))
-        FeedPublisher.deleteFeedItem(forRefId: id, context: context, sync: sync)
+    /// 記録一覧からワークアウトを削除する。確認を出してから `WorkoutDeleter` で消す（日別・フィードと同じ手順。#168）。
+    private func askDelete(_ workout: Workout) {
+        let author = WorkoutDeleter.Author(userId: userId, name: auth.session?.displayName, isPermanentAccount: auth.isPermanentAccount)
+        deletion = WorkoutDeleter.request(for: workout, author: author, context: context, sync: sync,
+                                          onFailure: { errors.report("記録を削除できませんでした。もう一度試してください。") })
     }
 
     private func monthStart(_ date: Date) -> Date {

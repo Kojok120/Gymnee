@@ -11,6 +11,7 @@ struct ProgressPhotosView: View {
     @State private var showAdd = false
     @State private var showCompare = false
     @State private var fullscreen: ProgressPhoto?
+    @State private var photoDeletion: DeletionRequest?
 
     private let columns = [GridItem(.adaptive(minimum: 100), spacing: 6)]
 
@@ -107,17 +108,34 @@ struct ProgressPhotosView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    // サーバーからも消えて戻らないので、確認を出す（#168）。
                     Button("削除", role: .destructive) {
-                        let photoId = photo.id
-                        PhotoStore.delete(photo.localPhotoFilename)
-                        context.delete(photo)
-                        try? context.save()
-                        sync.enqueue(PendingChange(entity: "progress_photos", recordId: photoId, operation: .delete, updatedAt: .now))
-                        fullscreen = nil
+                        photoDeletion = DeletionRequest(
+                            title: DeletionCopy.photoTitle,
+                            message: DeletionCopy.photoMessage,
+                            onDelete: { deletePhoto(photo) }
+                        )
                     }
                 }
             }
+            .deletionConfirmation($photoDeletion)
         }
+    }
+
+    /// 保存できたときだけ、ファイルを消してサーバーの削除を積む。
+    private func deletePhoto(_ photo: ProgressPhoto) {
+        let photoId = photo.id
+        let filename = photo.localPhotoFilename
+        context.delete(photo)
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            return
+        }
+        PhotoStore.delete(filename)
+        sync.enqueue(PendingChange(entity: "progress_photos", recordId: photoId, operation: .delete, updatedAt: .now))
+        fullscreen = nil
     }
 
     private var grouped: [String: [ProgressPhoto]] {

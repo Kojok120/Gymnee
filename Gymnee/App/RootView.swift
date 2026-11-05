@@ -140,6 +140,8 @@ struct RootView: View {
         case "settings": NavigationStack { SettingsView() }
         // 外部連携（#171）。ローカルの Debug アプリはサインインできないので見本のデータで出す。
         case "connect": NavigationStack { ConnectionsView() }.onAppear { connect.showFixture() }
+        // 戻せない削除の確認（#168 / #169）。
+        case "delete-confirm", "account-delete": DebugDeletionPreview(kind: name)
         case "connect-approve":
             ConnectApproveView(pairingId: ConnectService.fixturePairingId).onAppear { connect.showFixture() }
         case "social": SocialFeedView()
