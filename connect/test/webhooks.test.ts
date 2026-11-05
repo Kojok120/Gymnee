@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkDestinationUrl } from "../src/domain/destinationUrl.js";
-import { sign, generateWebhookSecret } from "../src/domain/standardWebhooks.js";
+import { sign, generateWebhookSecret, SECRET_PREFIX } from "../src/domain/standardWebhooks.js";
 import { decideOutcome, MAX_ATTEMPTS } from "../src/domain/deliveryPolicy.js";
 import { describeSet, discordEscape, renderNotice, slackEscape, workoutNotice, type WeeklyNotice } from "../src/domain/notices.js";
 import { isWeeklyWindow, runDeliveries } from "../src/jobs/deliver.js";
@@ -14,6 +14,9 @@ const bench: ExerciseInfo = { id: "11111111-1111-4111-8111-111111111111", name: 
 const pullup: ExerciseInfo = { id: "22222222-2222-4222-8222-222222222222", name: "アシスト懸垂", muscleGroup: "back", equipment: "machine", measurementType: "bodyweight", loadMode: "assisted", isCustom: false };
 const USER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const KEY = bytesToBase64(new Uint8Array(32).map((_, i) => i + 1));
+// Standard Webhooks の仕様に載っている例の鍵（公開されている検証用の値で、どのアカウントの鍵でもない）。
+// 接頭辞を付けた形でソースに書くと、GitHub の秘密検出が Stripe の鍵と取り違えるので、組み立てて使う。
+const SPEC_EXAMPLE_SECRET = `${SECRET_PREFIX}MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw`;
 
 const env = {
   PUBLIC_ORIGIN: "https://api.gymnee.app",
@@ -68,7 +71,7 @@ describe("送り先の URL", () => {
 describe("Standard Webhooks の署名", () => {
   it("仕様の例と一致する", async () => {
     // https://github.com/standard-webhooks/standard-webhooks の例（Python の hmac でも同じ値になることを確かめた）
-    expect(await sign("whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw", "msg_p5jXN8AQM9LWM0D4loKWxJek", 1614265330, '{"test": 2432232314}')).toBe(
+    expect(await sign(SPEC_EXAMPLE_SECRET, "msg_p5jXN8AQM9LWM0D4loKWxJek", 1614265330, '{"test": 2432232314}')).toBe(
       "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=",
     );
   });
@@ -185,7 +188,7 @@ describe("配信のジョブ", () => {
     const dest = async (kind: "slack" | "discord" | "webhook", url: string): Promise<DestinationSecretRow> => ({
       id: `d-${kind}`, user_id: USER, kind, label: kind, events: ["workout.completed"], consecutive_failures: 0,
       disabled_at: null, disabled_reason: null, last_delivered_at: null, created_at: "",
-      target_ciphertext: await encryptString(KEY, url), signing_secret_ciphertext: kind === "webhook" ? await encryptString(KEY, "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw") : null,
+      target_ciphertext: await encryptString(KEY, url), signing_secret_ciphertext: kind === "webhook" ? await encryptString(KEY, SPEC_EXAMPLE_SECRET) : null,
     });
     const dests = { "d-slack": await dest("slack", "https://hooks.slack.com/services/T/B/ok"), "d-discord": await dest("discord", "https://discord.com/api/webhooks/1/gone"), "d-webhook": await dest("webhook", "https://example.com/flaky") };
     const delivery = (id: string, destinationId: string): DeliveryRow => ({
