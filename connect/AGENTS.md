@@ -69,6 +69,7 @@ psql postgresql://postgres:postgres@127.0.0.1:54422/postgres -v ON_ERROR_STOP=1 
 - `cloudflare:workers` は vitest（Node）に無いので、`test/stubs/` の代役を当てている
 - Workers では `fetch` を別のオブジェクトのメソッドとして呼ぶと Illegal invocation になる。関数で包んで渡す（`src/db/postgrest.ts`）
 - 承認画面の CSP に `form-action` を付けない（承認後のクライアントへのリダイレクトまで縛ってしまう）
+- テストに `whsec_…` などの鍵の形の文字列を接頭辞つきで直書きしない。公開の例の鍵でも GitHub の秘密検出が実在の鍵（Stripe など）と取り違えてアラートを出す（2026-11-05 に実例。接頭辞は実行時に付ける）
 
 ## デプロイ（本番への反映は岡本さんの明示 OK のあと）
 
