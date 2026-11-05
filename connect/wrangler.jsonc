@@ -1,0 +1,41 @@
+{
+  // Gymnee の外部連携（#171）。https://api.gymnee.app
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gymnee-connect",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // global_fetch_strictly_public: CIMD（クライアントの説明書）の取得や Webhook の送信で、内部の宛先に届かないようにする
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": false,
+  "routes": [{ "pattern": "api.gymnee.app", "custom_domain": true }],
+  "kv_namespaces": [
+    // OAuth のクライアント・許可・トークン（ライブラリが使う）。id は `wrangler kv namespace create OAUTH_KV` の結果
+    { "binding": "OAUTH_KV", "id": "REPLACE_WITH_KV_ID" }
+  ],
+  "ratelimits": [
+    // 利用者ごとに 1 分 120 回まで（API と MCP の合計）
+    { "name": "API_RATE_LIMITER", "namespace_id": "1711", "simple": { "limit": 120, "period": 60 } }
+  ],
+  "vars": {
+    "PUBLIC_ORIGIN": "https://api.gymnee.app",
+    "SITE_ORIGIN": "https://gymnee.app",
+    "SUPABASE_URL": "https://ibtrbymfmxrruuwuzell.supabase.co"
+  },
+  // 秘密は `wrangler secret put <NAME>`:
+  //   SUPABASE_PUBLISHABLE_KEY / SUPABASE_SERVICE_ROLE_KEY / ENCRYPTION_KEY / STATE_SECRET / GEMINI_API_KEY
+  //   LINE_* / SLACK_* / DISCORD_* / OPS_ALERT_WEBHOOK_URL
+  "observability": { "enabled": true },
+  "env": {
+    // ローカル（wrangler dev --env local）。接続先はローカル Supabase（docs/local-dev.md）
+    "local": {
+      "routes": [],
+      "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-oauth-kv" }],
+      "ratelimits": [],
+      "vars": {
+        "PUBLIC_ORIGIN": "http://localhost:8787",
+        "SITE_ORIGIN": "https://gymnee.app",
+        "SUPABASE_URL": "http://127.0.0.1:54421"
+      }
+    }
+  }
+}

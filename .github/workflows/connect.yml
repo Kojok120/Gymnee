@@ -1,0 +1,41 @@
+name: Connect (Worker)
+
+# 外部連携の Worker（connect/。#171）の型・テスト・OpenAPI のずれ・バンドルを確かめる。
+# iOS の CI とは別に走らせる（connect/ だけの変更で macOS を使わないため）。
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'connect/**'
+      - 'docs/connect/api/openapi.json'
+      - '.github/workflows/connect.yml'
+
+concurrency:
+  group: connect-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck & Test (connect)
+    if: '!github.event.pull_request.draft'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: connect
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: connect/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: connect/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: OpenAPI が operations.ts とずれていないか
+        run: pnpm openapi:check
+      - name: Worker としてバンドルできるか
+        run: pnpm exec wrangler deploy --dry-run --outdir dist
